@@ -241,7 +241,7 @@ const COLUMNS = [
   },
   {
     name: 'Dependencies',
-    text: { allowMultipleLines: false, maxLength: 500 }
+    text: { allowMultipleLines: false, maxLength: 255 }
   },
   {
     name: 'SortOrder',
@@ -292,13 +292,30 @@ async function doProvision() {
     log('Creating CORE_Tools list...');
 
     // Create the list
-    const listDef = {
-      displayName: CONFIG.listName,
-      list: { template: 'genericList' }
-    };
-    const listResp = await graphPost(basePath, listDef);
-    const listId = listResp.id;
-    log('List created: ' + listId, 'log-ok');
+    // Create the list (or find existing one)
+    let listId;
+    try {
+      const listDef = {
+        displayName: CONFIG.listName,
+        list: { template: 'genericList' }
+      };
+      const listResp = await graphPost(basePath, listDef);
+      listId = listResp.id;
+      log('List created: ' + listId, 'log-ok');
+    } catch (listErr) {
+      if (listErr.message.includes('already exists') || listErr.message.includes('nameAlreadyExists') || listErr.message.includes('409')) {
+        log('List already exists, looking it up...', 'log-warn');
+        const existing = await graphGet(basePath + '?$filter=displayName eq \'' + CONFIG.listName + '\'');
+        if (existing.value && existing.value.length > 0) {
+          listId = existing.value[0].id;
+          log('Found existing list: ' + listId, 'log-ok');
+        } else {
+          throw new Error('List exists but could not be found via filter');
+        }
+      } else {
+        throw listErr;
+      }
+    }
 
     // Add columns one at a time
     const colPath = basePath + '/' + listId + '/columns';
