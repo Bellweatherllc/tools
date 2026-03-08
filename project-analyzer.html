@@ -262,10 +262,15 @@
       </label>
       <span id="gear-icon" style="font-size:22px;line-height:22px;height:22px;display:flex;align-items:center;color:var(--silver);transition:color 0.2s">⚙</span>
     </div>
+    <div class="header-divider"></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="conn-dot" style="width:8px;height:8px;border-radius:50%;background:var(--silver);flex-shrink:0"></span>
+      <span id="conn-label" style="font-size:11px;color:var(--silver);font-weight:600;letter-spacing:0.5px;white-space:nowrap">Connecting…</span>
+      <button id="signin-btn" class="btn btn-secondary" style="font-size:11px;padding:4px 12px;display:none;color:var(--gold);border-color:var(--gold)" onclick="signIn()">Sign In</button>
+    </div>
   </div>
   <nav class="tabs">
-    <div class="tab active" onclick="switchTab('projects')">Projects</div>
-    <div class="tab" onclick="switchTab('assess')">Assess</div>
+    <div class="tab active" onclick="switchTab('assess')">Assess</div>
     <div class="tab" onclick="switchTab('results')">Results</div>
     <div class="tab" onclick="switchTab('summary')">Summary</div>
   </nav>
@@ -273,29 +278,8 @@
 
 <div class="main">
 
-  <!-- PROJECTS -->
-  <div id="tab-projects">
-    <div id="auth-banner" class="card" style="display:none">
-      <div class="card-header" style="margin-bottom:12px">
-        <div class="card-title">Connect to SharePoint</div>
-        <span id="auth-status-badge" class="card-badge" style="background:var(--gold-dim);color:var(--amber)">Not connected</span>
-      </div>
-      <p style="font-size:13px;color:var(--steel);margin-bottom:16px;line-height:1.6">Projects are loaded from the <strong>CORE_Projects</strong> list on BWCore. Sign in with your Bellweather Microsoft account to continue.</p>
-      <button class="btn btn-primary" onclick="signIn()">Sign In</button>
-      <div id="auth-error" style="display:none;font-size:12px;color:var(--red);margin-top:12px;padding:8px 12px;background:var(--red-bg);border-radius:6px;border:1px solid var(--red)"></div>
-    </div>
-    <div class="card"><div class="card-header" style="justify-content:space-between">
-      <div class="card-title">Projects</div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span id="conn-dot" style="width:8px;height:8px;border-radius:50%;background:var(--silver);display:inline-block"></span>
-        <span id="conn-label" style="font-size:11px;color:var(--silver);font-weight:600;letter-spacing:0.5px">—</span>
-        <button id="refresh-btn" class="btn btn-secondary" style="font-size:11px;padding:5px 12px;display:none" onclick="fetchProjects()">↺ Refresh</button>
-      </div>
-    </div><div id="projects-list"></div></div>
-  </div>
-
   <!-- ASSESS -->
-  <div id="tab-assess" style="display:none">
+  <div id="tab-assess">
     <div class="card">
       <div class="card-header"><div class="card-title">Assessment Setup</div></div>
       <div class="form-row">
@@ -393,13 +377,12 @@ function toggleAdminMode(){
 }
 
 // ══════════════════════════════════════════════════ TABS ═══════
-const TABS=['projects','assess','results','summary'];
+const TABS=['assess','results','summary'];
 function switchTab(name){
   TABS.forEach(t=>document.getElementById('tab-'+t).style.display=(t===name)?'block':'none');
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',TABS[i]===name));
   if(name==='assess')  { populateAssessSelects(); renderAssessBlocks(); }
   if(name==='results') populateResultsSelect();
-  if(name==='projects') renderProjectsList();
 }
 
 // ══════════════════════════════════════════════════ SHAREPOINT ═
@@ -451,15 +434,12 @@ async function initMsal() {
 }
 
 async function signIn() {
-  document.getElementById('auth-error').style.display = 'none';
   try {
     await msalInstance.loginRedirect({
       scopes: ['https://graph.microsoft.com/Sites.ReadWrite.All']
     });
   } catch (err) {
-    const el = document.getElementById('auth-error');
-    el.textContent = 'Sign-in error: ' + (err.message || 'Unknown error');
-    el.style.display = 'block';
+    showToast('Sign-in error: ' + (err.message || 'Unknown error'));
   }
 }
 
@@ -485,22 +465,20 @@ async function graphFetch(url) {
 }
 
 function showAuthBanner() {
-  document.getElementById('auth-banner').style.display = 'block';
   setConnected(false);
-  renderProjectsList();
+  document.getElementById('signin-btn').style.display = '';
+  populateAssessSelects();
+  populateResultsSelect();
 }
 
 function setConnected(on) {
-  document.getElementById('auth-banner').style.display = on ? 'none' : 'block';
-  document.getElementById('conn-dot').style.background = on ? 'var(--green)' : 'var(--silver)';
+  document.getElementById('conn-dot').style.background = on ? 'var(--green)' : 'var(--amber)';
   document.getElementById('conn-label').textContent = on ? 'SharePoint' : 'Not connected';
-  document.getElementById('conn-label').style.color = on ? 'var(--steel)' : 'var(--silver)';
-  if (document.getElementById('refresh-btn')) document.getElementById('refresh-btn').style.display = on ? '' : 'none';
+  document.getElementById('conn-label').style.color = on ? 'rgba(255,255,255,0.55)' : 'var(--amber)';
+  document.getElementById('signin-btn').style.display = on ? 'none' : '';
 }
 
 async function fetchProjects() {
-  const el = document.getElementById('projects-list');
-  el.innerHTML = '<div class="empty-state" style="padding:32px 24px"><div class="empty-state-icon" style="font-size:22px">⏳</div><p style="font-size:13px">Loading projects from SharePoint...</p></div>';
   try {
     const data = await graphFetch(SP_CONFIG.projectsUrl);
     spProjects = (data.value || []).map(item => {
@@ -521,43 +499,12 @@ async function fetchProjects() {
     });
     spLoaded = true;
     setConnected(true);
-    renderProjectsList();
     populateAssessSelects();
     populateResultsSelect();
   } catch (err) {
-    el.innerHTML = `<div class="empty-state" style="padding:32px 24px"><div class="empty-state-icon" style="font-size:22px">⚠️</div><p style="font-size:13px;color:var(--red)">Failed to load projects: ${err.message}</p><button class="btn btn-secondary" style="margin-top:16px" onclick="fetchProjects()">Retry</button></div>`;
+    setConnected(false);
+    showToast('Failed to load projects: ' + err.message);
   }
-}
-function renderProjectsList(){
-  const s=getStore(); const el=document.getElementById('projects-list');
-  if(!spLoaded){
-    el.innerHTML='<div class="empty-state" style="padding:32px 24px"><div class="empty-state-icon" style="font-size:22px">🔗</div><p style="font-size:13px">Sign in to load projects from SharePoint.</p></div>';
-    return;
-  }
-  if(!spProjects.length){
-    el.innerHTML='<div class="empty-state" style="padding:32px 24px"><div class="empty-state-icon">📋</div><p>No projects found in CORE_Projects.</p></div>';
-    return;
-  }
-  el.innerHTML=spProjects.map(p=>{
-    const c=s.assessments.filter(a=>a.projectId===p.id).length;
-    const statusColor = {
-      Lead:'var(--blue)', IDEA:'var(--amber)', FDDA:'var(--amber)',
-      CA:'var(--green)', Construction:'var(--green)', Warranty:'var(--silver)', Complete:'var(--silver)'
-    }[p.status] || 'var(--silver)';
-    const statusBg = {
-      Lead:'var(--blue-bg)', IDEA:'var(--amber-bg)', FDDA:'var(--amber-bg)',
-      CA:'var(--green-bg)', Construction:'var(--green-bg)', Warranty:'var(--snow)', Complete:'var(--snow)'
-    }[p.status] || 'var(--snow)';
-    const meta=[p.jobCode, p.status].filter(Boolean).join(' · ');
-    return `<div class="project-item" onclick="goAssess('${p.id}')">
-      <div style="flex:1">
-        <div class="project-name">${p.name}</div>
-        <div class="project-meta">${meta}${p.caValue?' &nbsp;·&nbsp; '+p.caValue:''}</div>
-      </div>
-      ${p.status?`<span class="project-badge" style="background:${statusBg};color:${statusColor};border:1px solid ${statusColor}">${p.status}</span>`:''}
-      <span class="project-badge ${c>0?'badge-active':'badge-pending'}" style="margin-left:8px">${c} assessment${c!==1?'s':''}</span>
-    </div>`;
-  }).join('');
 }
 function goAssess(id){switchTab('assess');setTimeout(()=>{document.getElementById('assess-project').value=id;},60);}
 
@@ -743,7 +690,7 @@ function submitAssessment(){
   });
   const s=getStore();
   s.assessments.push({id:Date.now().toString(),projectId,assessorName:name,assessorDept:dept,submittedDate:new Date().toLocaleDateString(),scores,openNotes:document.getElementById('open-notes').value.trim()});
-  save({assessments:s.assessments}); renderProjectsList(); showToast(`Submitted — ${name}`); clearAssessForm();
+  save({assessments:s.assessments}); showToast(`Submitted — ${name}`); clearAssessForm();
 }
 function clearAssessForm(){
   document.getElementById('assessor-name').value=''; document.getElementById('assessor-dept').value=''; document.getElementById('open-notes').value='';
@@ -889,7 +836,7 @@ function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').repl
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
 
 // ══════════════════════════════════════════════════ INIT ═══════
-renderProjectsList();
+renderAssessBlocks();
 initMsal();
 </script>
 </body>
