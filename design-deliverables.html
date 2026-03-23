@@ -129,16 +129,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 .add-issue-btn:hover{background:var(--issue-accent-light);border-color:var(--issue-accent);}
 .dot-0{background:#2c4a3e;}.dot-1{background:#3d3228;}.dot-2{background:#2a3545;}.dot-3{background:#4a3828;}.dot-4{background:#2a3a4a;}.dot-5{background:#3a2a45;}
 .footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--border);font-size:11px;color:var(--ink-light);display:flex;justify-content:space-between;align-items:center;gap:12px;}
+
+.drag-handle{flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:16px;padding:0 2px;cursor:grab;opacity:0;transition:opacity .15s;align-self:stretch;}
+.drag-handle span{display:block;width:10px;height:2px;background:var(--ink-light);border-radius:2px;pointer-events:none;}
+.deliverable:hover .drag-handle,.issue-card:hover .drag-handle,.phase-row:hover .drag-handle{opacity:0.4;}
+.drag-handle:hover{opacity:0.8 !important;}
+.drag-handle:active{cursor:grabbing;opacity:0.8 !important;}
+.is-dragging{opacity:0.35;outline:2px dashed var(--accent-rule);}
+.drop-line{height:3px;background:var(--accent);border-radius:2px;margin:2px 0;pointer-events:none;}
 @media(max-width:600px){.detail-grid,.edit-grid{grid-template-columns:1fr;}.edit-field.full{grid-column:1;}.masthead{flex-direction:column;}}
-.drag-handle{flex-shrink:0;width:18px;display:flex;flex-direction:column;justify-content:center;gap:3px;padding:2px;cursor:grab;opacity:0.3;transition:opacity .15s;}
-.drag-handle:hover{opacity:0.7;}
-.drag-handle span{display:block;width:14px;height:1.5px;background:var(--ink);border-radius:1px;}
-.drag-handle:active{cursor:grabbing;}
-.dragging{opacity:0.4;}
-.drag-over-top{border-top:2px solid var(--accent) !important;}
-.drag-over-bottom{border-bottom:2px solid var(--accent) !important;}
-.phase-row.drag-over-top{border-top:2px solid var(--accent);}
-.phase-row.drag-over-bottom{border-bottom:2px solid var(--accent);}
+
+
 
 </style>
 </head>
@@ -354,7 +355,7 @@ async function onSignedIn() {
 
 // ── RENDER ──────────────────────────────────────────────────────────
 
-function render() { renderIssues(); renderPhases(); attachDragHandlers(); }
+function render() { renderIssues(); renderPhases(); }
 
 function findIssue(id) { for (var i=0;i<state.issues.length;i++) { if (state.issues[i].id===id) return state.issues[i]; } return null; }
 function findPhase(id) { for (var i=0;i<state.phases.length;i++) { if (state.phases[i].id===id) return state.phases[i]; } return null; }
@@ -385,7 +386,7 @@ function buildIssueCard(issue) {
   }
   card.innerHTML = ''
     +'<div class="issue-header" data-action="toggle-issue">'
-    +'<div class="drag-handle" draggable="true" data-action="issue-drag-handle"><span></span><span></span><span></span></div>'
+    +'<div class="drag-handle" data-drag="handle"><span></span><span></span><span></span></div>'
     +'<div class="issue-toggle">+</div>'
     +'<div class="issue-title-row"><div class="issue-title">'+esc(issue.title)+'</div>'+(meta?'<div class="issue-meta">'+esc(meta)+'</div>':'')+'</div>'
     +'<button class="icon-btn danger" data-action="delete-issue">&#10005;</button>'
@@ -432,16 +433,14 @@ function saveIssue(card) {
   issue.related = card.querySelector('[data-role="irelated"]').value.split(',').map(function(s){return s.trim();}).filter(Boolean);
   saveData();
   renderIssues();
-  attachDragHandlers();
-  var nc = document.querySelector('[data-issue-id="'+id+'"]');
+    var nc = document.querySelector('[data-issue-id="'+id+'"]');
   if (nc) { nc.classList.add('open'); nc.querySelector('.issue-toggle').textContent='−'; }
 }
 function deleteIssue(card) {
   var id = card.getAttribute('data-issue-id');
   if (!confirm('Remove this issue?')) return;
   state.issues = state.issues.filter(function(i){return i.id!==id;});
-  saveData(); renderIssues(); attachDragHandlers();
-}
+  saveData(); renderIssues(); }
 function addIssue() {
   var issue = { id: uid(), title: 'New Issue', related: [], body: '' };
   state.issues.push(issue);
@@ -465,10 +464,11 @@ function buildPhaseRow(phase, index) {
   row.setAttribute('data-phase-id', phase.id);
   var num = NUMERALS[index] || String(index+1);
   row.innerHTML = ''
-    +'<div class="phase-track" style="position:relative;"><div class="phase-dot dot-'+(index%6)+'">'+num+'</div>'+'<div class="drag-handle" draggable="true" data-action="phase-drag-handle" style="position:absolute;top:2px;right:-4px;"><span></span><span></span><span></span></div>'+(isLast?'':'<div class="phase-line"></div>')+'</div>'
+    +'<div class="phase-track"><div class="phase-dot dot-'+(index%6)+'">'+num+'</div>'+(isLast?'':'<div class="phase-line"></div>')+'</div>'
     +'<div class="phase-content">'
     +'<div class="phase-title-block">'
     +'<div class="phase-title-display">'
+    +'<div class="drag-handle" data-drag="handle" style="align-self:stretch;"><span></span><span></span><span></span></div>'
     +'<div class="phase-title-text"><div class="phase-title">'+esc(phase.title)+'</div><div class="phase-subtitle">'+esc(phase.subtitle)+'</div></div>'
     +'<button class="icon-btn" data-action="edit-phase">&#9998;</button>'
     +'<button class="icon-btn danger" data-action="delete-phase">&#10005;</button>'
@@ -505,14 +505,12 @@ function savePhase(row) {
   if (!ph) return;
   ph.title = row.querySelector('[data-role="ptitle"]').value.trim();
   ph.subtitle = row.querySelector('[data-role="psub"]').value.trim();
-  saveData(); renderPhases(); attachDragHandlers();
-}
+  saveData(); renderPhases(); }
 function deletePhase(row) {
   var id = row.getAttribute('data-phase-id');
   if (!confirm('Delete this phase and all its deliverables?')) return;
   state.phases = state.phases.filter(function(p){return p.id!==id;});
-  saveData(); renderPhases(); attachDragHandlers();
-}
+  saveData(); renderPhases(); }
 function addPhase() {
   var ph = { id: uid(), title: 'New Phase', subtitle: '', deliverables: [] };
   state.phases.push(ph);
@@ -546,7 +544,7 @@ function buildDlCard(d, phaseId) {
   var notesHtml = d.notes ? '<div style="margin-top:10px;"><div class="detail-label" style="margin-bottom:5px;">Notes</div><div class="notes-display">'+esc(d.notes)+'</div></div>' : '';
   card.innerHTML = ''
     +'<div class="deliverable-header">'
-    +'<div class="drag-handle" draggable="true" data-action="drag-handle"><span></span><span></span><span></span></div>'
+    +'<div class="drag-handle" data-drag="handle"><span></span><span></span><span></span></div>'
     +'<div class="deliverable-toggle" data-action="toggle-dl">+</div>'
     +'<div class="deliverable-name" data-action="toggle-dl">'+esc(d.name)+'</div>'
     +'<div style="display:flex;gap:6px;"><span class="tag tag-tool">'+esc(d.tool)+'</span></div>'
@@ -651,135 +649,164 @@ function addDl(phaseId) {
 }
 
 
+
+
+
 // ── DRAG AND DROP ────────────────────────────────────────────────────────────
+// Strategy: handles are always draggable=true. A <div class="drop-line"> is
+// inserted into the DOM as a live placeholder so you always see exactly where
+// the item will land. On drop we move the real element to that position.
 
-var dragState = { type: null, id: null, phaseId: null };
+var DD = { el: null, type: null, phaseId: null };
+var dropLine = document.createElement('div');
+dropLine.className = 'drop-line';
 
-function clearDragStyles() {
-  document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(function(el) {
-    el.classList.remove('drag-over-top', 'drag-over-bottom');
-  });
+function ddContainer(type, phaseId) {
+  if (type === 'dl')    return document.querySelector('[data-dl-list="' + phaseId + '"]');
+  if (type === 'issue') return document.getElementById('issues-list');
+  if (type === 'phase') return document.getElementById('phases-list');
+  return null;
 }
 
-function setupDragOnEl(el, type, id, phaseId) {
-  el.addEventListener('dragstart', function(e) {
-    dragState = { type: type, id: id, phaseId: phaseId || null };
-    e.dataTransfer.effectAllowed = 'move';
-    setTimeout(function() { el.classList.add('dragging'); }, 0);
-  });
+function ddItems(type, phaseId) {
+  var c = ddContainer(type, phaseId);
+  if (!c) return [];
+  var sel = type === 'dl' ? '[data-dl-id]' : type === 'issue' ? '[data-issue-id]' : '.phase-row[data-phase-id]';
+  return Array.from(c.querySelectorAll(':scope > ' + sel));
+}
 
-  el.addEventListener('dragend', function() {
-    el.classList.remove('dragging');
-    clearDragStyles();
-    if (type === 'dl' && phaseId) {
-      var order = [];
-      document.querySelectorAll('[data-dl-list="'+phaseId+'"] [data-dl-id]').forEach(function(c) {
-        order.push(c.getAttribute('data-dl-id'));
-      });
-      var ph = findPhase(phaseId);
-      if (ph) {
-        var map = {};
-        ph.deliverables.forEach(function(d) { map[d.id] = d; });
-        ph.deliverables = order.map(function(id) { return map[id]; }).filter(Boolean);
-        saveData();
-      }
-    } else if (type === 'issue') {
-      var order = [];
-      document.querySelectorAll('#issues-list [data-issue-id]').forEach(function(c) {
-        order.push(c.getAttribute('data-issue-id'));
-      });
-      var map = {};
-      state.issues.forEach(function(i) { map[i.id] = i; });
-      state.issues = order.map(function(id) { return map[id]; }).filter(Boolean);
-      saveData();
-    } else if (type === 'phase') {
-      var order = [];
-      document.querySelectorAll('#phases-list [data-phase-id]').forEach(function(r) {
-        order.push(r.getAttribute('data-phase-id'));
-      });
-      var map = {};
-      state.phases.forEach(function(p) { map[p.id] = p; });
-      state.phases = order.map(function(id) { return map[id]; }).filter(Boolean);
-      saveData();
-      renderPhases();
-    }
-    dragState = { type: null, id: null, phaseId: null };
-  });
+function ddGetCard(el, type) {
+  if (type === 'dl')    return el.closest('[data-dl-id]');
+  if (type === 'issue') return el.closest('[data-issue-id]');
+  if (type === 'phase') return el.closest('.phase-row[data-phase-id]');
+  return null;
+}
 
-  el.addEventListener('dragover', function(e) {
-    if (dragState.type !== type) return;
-    if (type === 'dl' && dragState.phaseId !== phaseId) return;
-    if (dragState.id === id) return;
+function ddPlaceLine(target, after) {
+  if (after) {
+    target.parentNode.insertBefore(dropLine, target.nextSibling);
+  } else {
+    target.parentNode.insertBefore(dropLine, target);
+  }
+}
+
+function ddRemoveLine() {
+  if (dropLine.parentNode) dropLine.parentNode.removeChild(dropLine);
+}
+
+function ddSyncState(type, phaseId) {
+  if (type === 'dl') {
+    var ph = findPhase(phaseId);
+    if (!ph) return;
+    var ids = [];
+    ddItems(type, phaseId).forEach(function(c) { ids.push(c.getAttribute('data-dl-id')); });
+    var map = {};
+    ph.deliverables.forEach(function(d) { map[d.id] = d; });
+    ph.deliverables = ids.map(function(id) { return map[id]; }).filter(Boolean);
+  } else if (type === 'issue') {
+    var ids = [];
+    ddItems(type, null).forEach(function(c) { ids.push(c.getAttribute('data-issue-id')); });
+    var map = {};
+    state.issues.forEach(function(i) { map[i.id] = i; });
+    state.issues = ids.map(function(id) { return map[id]; }).filter(Boolean);
+  } else if (type === 'phase') {
+    var ids = [];
+    ddItems(type, null).forEach(function(r) { ids.push(r.getAttribute('data-phase-id')); });
+    var map = {};
+    state.phases.forEach(function(p) { map[p.id] = p; });
+    state.phases = ids.map(function(id) { return map[id]; }).filter(Boolean);
+    // re-render to update numerals + connector lines
+    saveData();
+    renderPhases();
+    return;
+  }
+  saveData();
+}
+
+// dragstart
+document.addEventListener('dragstart', function(e) {
+  var handle = e.target.closest('[data-drag="handle"]');
+  if (!handle) return;
+
+  var card = handle.closest('[data-dl-id]');
+  var type = 'dl', phaseId = null;
+  if (!card) { card = handle.closest('[data-issue-id]'); type = 'issue'; }
+  if (!card) { card = handle.closest('.phase-row[data-phase-id]'); type = 'phase'; }
+  if (!card) return;
+
+  DD.el      = card;
+  DD.type    = type;
+  DD.phaseId = card.getAttribute('data-phase-id') || null;
+
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', '');
+  setTimeout(function() { card.classList.add('is-dragging'); }, 0);
+});
+
+// dragover — move the drop line
+document.addEventListener('dragover', function(e) {
+  if (!DD.el) return;
+
+  var target = ddGetCard(e.target, DD.type);
+
+  // ignore if over drop line itself
+  if (e.target === dropLine || dropLine.contains(e.target)) {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    clearDragStyles();
-    var rect = el.getBoundingClientRect();
-    el.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drag-over-top' : 'drag-over-bottom');
-  });
+    return;
+  }
 
-  el.addEventListener('drop', function(e) {
-    if (dragState.type !== type) return;
-    if (type === 'dl' && dragState.phaseId !== phaseId) return;
-    if (dragState.id === id) return;
-    e.preventDefault();
+  // if not over a valid target, remove line
+  if (!target || target === DD.el) {
+    ddRemoveLine();
+    return;
+  }
 
-    var parent, fromEl;
-    if (type === 'dl') {
-      parent = document.querySelector('[data-dl-list="'+phaseId+'"]');
-      fromEl = parent ? parent.querySelector('[data-dl-id="'+dragState.id+'"]') : null;
-    } else if (type === 'issue') {
-      parent = document.getElementById('issues-list');
-      fromEl = parent.querySelector('[data-issue-id="'+dragState.id+'"]');
-    } else {
-      parent = document.getElementById('phases-list');
-      fromEl = parent.querySelector('[data-phase-id="'+dragState.id+'"]');
+  // deliverables must stay within same phase
+  if (DD.type === 'dl') {
+    if (target.getAttribute('data-phase-id') !== DD.phaseId) {
+      ddRemoveLine();
+      return;
     }
+  }
 
-    if (!fromEl) return;
-    var rect = el.getBoundingClientRect();
-    if (e.clientY < rect.top + el.offsetHeight / 2) {
-      parent.insertBefore(fromEl, el);
-    } else {
-      parent.insertBefore(fromEl, el.nextSibling);
-    }
-  });
-}
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
 
-function attachDragHandlers() {
-  // Deliverables
-  document.querySelectorAll('[data-dl-id]').forEach(function(card) {
-    var id      = card.getAttribute('data-dl-id');
-    var phaseId = card.getAttribute('data-phase-id');
-    var handle  = card.querySelector('[data-action="drag-handle"]');
-    if (!handle) return;
-    card.setAttribute('draggable', 'false');
-    handle.addEventListener('mousedown', function() { card.setAttribute('draggable', 'true'); });
-    handle.addEventListener('mouseup',   function() { setTimeout(function() { card.setAttribute('draggable', 'false'); }, 100); });
-    setupDragOnEl(card, 'dl', id, phaseId);
-  });
+  var rect  = target.getBoundingClientRect();
+  var after = e.clientY > rect.top + rect.height * 0.5;
+  ddPlaceLine(target, after);
+});
 
-  // Issues
-  document.querySelectorAll('[data-issue-id]').forEach(function(card) {
-    var id     = card.getAttribute('data-issue-id');
-    var handle = card.querySelector('[data-action="issue-drag-handle"]');
-    if (!handle) return;
-    card.setAttribute('draggable', 'false');
-    handle.addEventListener('mousedown', function() { card.setAttribute('draggable', 'true'); });
-    handle.addEventListener('mouseup',   function() { setTimeout(function() { card.setAttribute('draggable', 'false'); }, 100); });
-    setupDragOnEl(card, 'issue', id, null);
-  });
+// dragleave — only hide if leaving the whole document
+document.addEventListener('dragleave', function(e) {
+  if (!e.relatedTarget) ddRemoveLine();
+});
 
-  // Phases
-  document.querySelectorAll('#phases-list .phase-row[data-phase-id]').forEach(function(row) {
-    var id     = row.getAttribute('data-phase-id');
-    var handle = row.querySelector('[data-action="phase-drag-handle"]');
-    if (!handle) return;
-    row.setAttribute('draggable', 'false');
-    handle.addEventListener('mousedown', function() { row.setAttribute('draggable', 'true'); });
-    handle.addEventListener('mouseup',   function() { setTimeout(function() { row.setAttribute('draggable', 'false'); }, 100); });
-    setupDragOnEl(row, 'phase', id, null);
-  });
-}
+// dragend — always clean up
+document.addEventListener('dragend', function() {
+  if (!DD.el) return;
+  DD.el.classList.remove('is-dragging');
+  ddRemoveLine();
+  DD.el = null; DD.type = null; DD.phaseId = null;
+});
+
+// drop — insert element where the line is, then sync
+document.addEventListener('drop', function(e) {
+  if (!DD.el || !dropLine.parentNode) return;
+  e.preventDefault();
+
+  var parent = dropLine.parentNode;
+  parent.insertBefore(DD.el, dropLine);
+  ddRemoveLine();
+
+  DD.el.classList.remove('is-dragging');
+
+  var type    = DD.type;
+  var phaseId = DD.phaseId;
+  DD.el = null; DD.type = null; DD.phaseId = null;
+
+  ddSyncState(type, phaseId);
+});
 
 // ── EVENT DELEGATION ─────────────────────────────────────────────────
 
