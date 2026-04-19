@@ -854,6 +854,59 @@ body {
   cursor: pointer; font-family: 'TT Norms Pro', sans-serif;
 }
 .btn-signin:hover { background: #152130; }
+/* ══════════════ FOLDER BROWSE & COMPACT ACTIONS ══════════════ */
+.compact-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.folder-browse-modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-card {
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 24px 28px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.modal-header h2 {
+  flex: 1;
+  font-family: 'Swear Text', serif;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--navy);
+}
+.folder-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  margin-bottom: 6px;
+  transition: background 0.12s;
+}
+.folder-item:hover { background: var(--bg); border-color: var(--teak); }
+.folder-item-name { flex: 1; font-weight: 500; color: var(--text); }
+.folder-item-meta { font-size: 11px; color: var(--text-sec); }
 /* ══════════════ PROMPT PANEL ══════════════ */
 .prompt-panel {
   background: var(--bg);
@@ -953,7 +1006,7 @@ body {
 <!-- ══════════════ MAIN ══════════════ -->
 <div class="main" id="main">
   <!-- Empty state / drop zone -->
-  <div id="emptyState" style="display: none;">
+  <div id="emptyState" style="display: block;">
     <div class="intro-help">
       <h3>What this tool does</h3>
       <p>Drop in a <strong>Design Agreement: Scope Outline</strong> .docx and this extracts the project header, sections, items (with level 0/1 nesting preserved), allowances, and TBDs into the structured envelope that Phase 1 CA generation expects.</p>
@@ -969,15 +1022,30 @@ body {
   </div>
 
   <!-- Compact drop zone after load -->
-  <div class="drop-zone compact" id="compactDrop" style="display: flex;" onclick="document.getElementById(&#39;fileInput&#39;).click()">
-    <div><h2>Source:</h2> <span class="filename" id="currentFile">WORTMAN Design Agreement Scope Outline.docx</span></div>
-    <div class="muted-inline">Click to load a different file</div>
+  <div class="drop-zone compact" id="compactDrop" style="display: none;">
+    <div><h2>Source:</h2> <span class="filename" id="currentFile"></span></div>
+    <div class="compact-actions">
+      <span class="muted-inline" id="compactBrowseBtn" onclick="openFolderBrowse()" style="display:none;cursor:pointer;">&#8635; Browse project folder</span>
+      <span class="muted-inline" onclick="document.getElementById(&#39;fileInput&#39;).click()" style="cursor:pointer;">&#8593; Load local file</span>
+    </div>
+  </div>
+
+  <!-- Folder browse modal (shown when launched from CA Sources) -->
+  <div class="modal-bg" id="folderBrowseModal" onclick="if(event.target===this)closeFolderBrowse()" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Browse project folder</h2>
+        <button class="modal-close" onclick="closeFolderBrowse()">&#x2715;</button>
+      </div>
+      <div id="folderBrowseStatus" style="font-size:12px;color:var(--text-sec);padding:8px 0;"></div>
+      <div id="folderBrowseList"></div>
+    </div>
   </div>
 
   <div id="errorContainer"></div>
 
   <!-- Review UI -->
-  <div id="reviewArea" style="display: block;">
+  <div id="reviewArea" style="display: none;">
     <!-- Header metadata card -->
     <div class="header-meta-card">
       <div class="meta-title"><h3>Project header</h3></div>
@@ -1197,6 +1265,7 @@ async function initSharePoint() {
 
     const file = await fetchFileFromSharePoint(spLaunchParams.driveId, spLaunchParams.fileId, fileName);
     document.getElementById('btnSaveToSP').style.display = '';
+    document.getElementById('compactBrowseBtn').style.display = '';
     await handleFile(file);
   } catch (e) {
     setSpStatus('Load failed', 'error');
@@ -2599,7 +2668,10 @@ async function runEnrichment() {
 }
 
 async function reRunEnrichment() {
-  if (!STATE.envelope) return;
+  if (!STATE.envelope) {
+    showError('No document loaded — drop or fetch a scope outline first.');
+    return;
+  }
   if (!STATE.apiKey) { openSettings(); return; }
   await runEnrichment();
 }
@@ -2642,6 +2714,53 @@ const LS_KEY = 'bw-scope-extractor-apikey';
 function loadApiKey() {
   STATE.apiKey = localStorage.getItem(LS_KEY) || null;
 }
+// Folder browse — only available when launched from CA Sources (spLaunchParams has driveId + folderId)
+async function openFolderBrowse() {
+  if (!spLaunchParams?.folderId || !spLaunchParams?.driveId) return;
+  const modal = document.getElementById('folderBrowseModal');
+  const status = document.getElementById('folderBrowseStatus');
+  const list   = document.getElementById('folderBrowseList');
+  modal.style.display = 'flex';
+  status.textContent = 'Loading project folder…';
+  list.innerHTML = '';
+  try {
+    const res = await SherpaAuth.graph(
+      `${SherpaAuth.GRAPH_BASE}/drives/${spLaunchParams.driveId}/items/${spLaunchParams.folderId}/children?$select=id,name,size,lastModifiedDateTime&$top=50`
+    );
+    const docx = (res.value || []).filter(f => f.name.toLowerCase().endsWith('.docx'));
+    if (!docx.length) {
+      status.textContent = 'No .docx files found in project folder.';
+      return;
+    }
+    status.textContent = `${docx.length} .docx file${docx.length > 1 ? 's' : ''} in project folder — click to load`;
+    list.innerHTML = docx.map(f => `
+      <div class="folder-item" onclick="loadFolderItem('${f.id}', '${f.name.replace(/'/g, "\\'")}')">
+        <div class="folder-item-name">${escapeHtml(f.name)}</div>
+        <div class="folder-item-meta">${f.lastModifiedDateTime ? new Date(f.lastModifiedDateTime).toLocaleDateString() : ''}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    status.textContent = 'Could not load folder: ' + e.message;
+  }
+}
+
+async function loadFolderItem(fileId, fileName) {
+  closeFolderBrowse();
+  setSpStatus('Fetching…', 'saving');
+  try {
+    const file = await fetchFileFromSharePoint(spLaunchParams.driveId, fileId, fileName);
+    setSpStatus('', '');
+    await handleFile(file);
+  } catch (e) {
+    setSpStatus('Load failed', 'error');
+    showToast('Could not load file: ' + e.message);
+  }
+}
+
+function closeFolderBrowse() {
+  document.getElementById('folderBrowseModal').style.display = 'none';
+}
+
 // Prompt panel — shows enrichment instructions (skeleton omitted for readability)
 const ENRICHMENT_PROMPT_TEMPLATE = `You are extracting structured data from a Bellweather Design-Build "Scope Outline" — an internal document describing the scope of a residential renovation project. The skeleton has been parsed; your job is to enrich it with:
 
@@ -2788,6 +2907,7 @@ function init() {
       closeSettings();
       closeEnvelope();
       closePopover();
+      closeFolderBrowse();
     }
   });
 }
