@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estimate Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,500;1,300&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="lib/sherpa-auth.js"></script>
+<style>
+:root {
+  --navy:#1f2e3e; --gold:#d8b64f;
+  --bg:#F6F2EE; --surface:#fff; --border:#E5E1D8; --border-strong:#B7A9A3;
+  --text:#282828; --text-dim:#9091A0; --text-mute:#B7A9A3;
+  --silver:rgba(255,255,255,.5);
+  --ok:#2a7a4a; --ok-bg:#edf7f1; --ok-border:#b8dcc5;
+  --warn:#9a6f1a; --warn-bg:#fbf4e4; --warn-border:#e4ceaa;
+  --info:#2a4a7a; --info-bg:#edf1f7; --info-border:#b8c5dc;
+  --action:#263860; --action-hover:#1a2d54;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+  --r-sm:4px;--r-md:6px;--r-lg:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'DM Sans',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.55;min-height:100vh;}
+
+/* AUTH */
+.auth-overlay{position:fixed;inset:0;background:rgba(26,26,26,.55);backdrop-filter:blur(3px);z-index:600;display:none;align-items:center;justify-content:center;}
+.auth-overlay.active{display:flex;}
+.auth-card{background:var(--surface);border-radius:var(--r-lg);padding:32px 36px;max-width:380px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2);}
+.auth-card h2{font-size:18px;font-weight:600;margin-bottom:var(--s2);}
+.auth-card p{font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:var(--s5);}
+.auth-go{font-family:inherit;font-size:13px;font-weight:600;padding:10px 24px;background:var(--navy);color:#fff;border:none;border-radius:var(--r-sm);cursor:pointer;}
+.auth-go:hover{background:var(--action);}
+.auth-error{margin-top:var(--s3);font-size:12px;color:var(--warn);display:none;}
+.auth-error.show{display:block;}
+
+/* HEADER */
+.header{background:var(--navy);color:#fff;padding:0 28px;display:flex;align-items:stretch;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.15);position:sticky;top:0;z-index:100;}
+.header-left{display:flex;align-items:center;gap:14px;padding:12px 0;}
+.wordmark{font-family:'Fraunces',serif;font-size:22px;font-weight:400;color:#fff;line-height:1;}
+.wordmark span{font-style:italic;font-weight:300;}
+.header-divider{width:1px;background:rgba(255,255,255,.2);align-self:stretch;margin:12px 4px;}
+.header-sub{display:flex;flex-direction:column;gap:2px;}
+.header-title{font-size:13px;font-weight:600;color:#fff;}
+.header-subtitle{font-size:10px;font-weight:500;color:var(--silver);text-transform:uppercase;letter-spacing:1.5px;}
+.header-right{display:flex;align-items:center;gap:10px;padding:12px 0;}
+.version-badge{background:rgba(255,255,255,.1);color:var(--gold);padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.5px;}
+.icon-btn{background:transparent;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.85);padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s;display:inline-flex;align-items:center;gap:6px;}
+.icon-btn:hover{background:rgba(255,255,255,.08);color:#fff;}
+.header-user{font-size:11px;color:var(--silver);}
+
+/* STEP TRACKER */
+.step-tracker{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;height:34px;display:flex;align-items:stretch;}
+.step-tracker-step{font-size:11px;font-weight:600;color:var(--text-mute);padding:0 14px;display:flex;align-items:center;letter-spacing:.04em;text-transform:uppercase;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:default;user-select:none;white-space:nowrap;}
+.step-tracker-step.active{color:var(--info);border-bottom-color:var(--info);}
+.step-tracker-sep{font-size:11px;color:var(--border-strong);display:flex;align-items:center;padding:0 2px;user-select:none;}
+
+/* STATUS STRIP */
+.status-strip{display:flex;align-items:center;gap:14px;padding:8px 28px;background:var(--surface);border-bottom:1px solid var(--border);font-size:12px;}
+.status-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:12px;font-weight:600;font-size:11px;}
+.status-pill.empty{background:#f0f0f0;color:#888;}
+.status-pill.loading{background:var(--info-bg);color:var(--info);}
+.status-pill.ready{background:var(--ok-bg);color:var(--ok);}
+.status-pill.saving{background:var(--warn-bg);color:var(--warn);}
+.status-pill.error{background:#fef2f2;color:#b91c1c;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.6s infinite ease-in-out;}
+.status-pill.empty .status-dot,.status-pill.ready .status-dot{animation:none;}
+.status-pill.empty .status-dot{opacity:.4;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.status-filename{font-weight:600;color:var(--text);}
+.strip-spacer{flex:1;}
+.strip-btn{font-family:inherit;background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:5px 10px;border-radius:var(--r-sm);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .12s;}
+.strip-btn:hover{border-color:var(--border-strong);color:var(--text);}
+.strip-btn:disabled{opacity:.4;cursor:not-allowed;}
+.save-status{font-size:11px;color:var(--text-mute);}
+
+/* MAIN */
+.main{max-width:960px;margin:0 auto;padding:var(--s5) 28px 100px;}
+
+/* STATUS BAR (inline message) */
+.status-bar{border-radius:var(--r-md);padding:var(--s3) var(--s4);font-size:12px;margin-bottom:var(--s4);display:none;background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);}
+.status-bar.active{display:block;}
+.status-bar.error{background:#fef2f2;border-color:#fca5a5;color:#b91c1c;}
+.status-bar.success{background:var(--ok-bg);border-color:var(--ok-border);color:var(--ok);}
+
+/* UPLOAD ZONE */
+.upload-zone{border:2px dashed var(--border-strong);border-radius:var(--r-lg);padding:48px var(--s5);text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);margin-bottom:var(--s5);}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--navy);background:#fffcf0;}
+.upload-zone h2{font-family:'Fraunces',serif;font-size:22px;font-weight:400;color:var(--navy);margin-bottom:6px;}
+.upload-zone-sub{font-size:13px;color:var(--text-dim);margin-bottom:var(--s5);}
+.upload-cta{display:inline-block;background:var(--navy);color:#fff;padding:9px 20px;border-radius:5px;font-size:12px;font-weight:600;letter-spacing:.3px;}
+.upload-zone-formats{font-size:11px;color:var(--text-mute);margin-top:14px;letter-spacing:.5px;text-transform:uppercase;}
+.upload-zone input{display:none;}
+
+/* COMPACT FILE STRIP */
+.compact-drop{border:1px solid var(--border);border-radius:var(--r-md);padding:12px 20px;margin-bottom:var(--s4);display:flex;justify-content:space-between;align-items:center;background:var(--surface);cursor:pointer;font-size:12px;color:var(--text-dim);transition:all .15s;}
+.compact-drop:hover{border-color:var(--border-strong);background:var(--bg);}
+.compact-drop .cf-name{font-weight:600;color:var(--text);}
+.compact-drop .cf-hint{font-size:11px;color:var(--text-mute);}
+
+/* SECTION CARDS */
+.section-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:var(--s4);}
+.section-card-header{padding:var(--s3) var(--s4);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:var(--s3);background:var(--bg);}
+.section-card-title{font-size:13px;font-weight:600;flex:1;}
+.section-card-meta{font-size:11px;color:var(--text-mute);}
+
+/* WORKSHEET TABS */
+.ws-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg);overflow-x:auto;}
+.ws-tab{font-family:inherit;font-size:11px;font-weight:600;padding:8px 16px;border:none;background:none;cursor:pointer;color:var(--text-mute);letter-spacing:.03em;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:color .12s;}
+.ws-tab:hover{color:var(--text);}
+.ws-tab.active{color:var(--info);border-bottom-color:var(--info);}
+
+/* LINE ITEMS TABLE */
+.line-table{width:100%;border-collapse:collapse;font-size:12px;}
+.line-table th{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mute);padding:8px var(--s4);border-bottom:1px solid var(--border);text-align:left;background:var(--bg);white-space:nowrap;}
+.line-table th.num{text-align:right;}
+.line-table td{padding:7px var(--s4);border-bottom:1px solid var(--border);vertical-align:middle;}
+.line-table tr:last-child td{border-bottom:none;}
+.line-table tr:hover td{background:#fafaf8;}
+.line-table tr.zero-row td{background:var(--warn-bg);}
+.line-table tr.zero-row:hover td{filter:brightness(.97);}
+.line-table td.num{text-align:right;font-variant-numeric:tabular-nums;}
+.line-table td.amount-zero{color:var(--warn);font-weight:600;}
+.zero-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px;background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border);vertical-align:middle;letter-spacing:.04em;}
+select.section-chip-sel{font-family:inherit;font-size:11px;padding:2px 4px;border:1px solid var(--border-strong);border-radius:var(--r-sm);background:var(--surface);color:var(--text);cursor:pointer;}
+
+/* FILTER BAR */
+.filter-bar{display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border-bottom:1px solid var(--border);background:var(--surface);}
+.filter-bar label{font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;cursor:pointer;}
+.filter-bar input[type=checkbox]{accent-color:var(--action);cursor:pointer;}
+.filter-count{font-size:11px;color:var(--text-mute);margin-left:auto;}
+
+/* COMMENT ROWS */
+.comment-row{display:flex;align-items:flex-start;gap:var(--s3);padding:var(--s3) var(--s4);border-bottom:1px solid var(--border);}
+.comment-row:last-child{border-bottom:none;}
+.comment-check{flex-shrink:0;margin-top:2px;accent-color:var(--action);cursor:pointer;width:14px;height:14px;}
+.comment-body{flex:1;min-width:0;}
+.comment-cell{font-size:10px;font-weight:700;color:var(--text-mute);letter-spacing:.04em;text-transform:uppercase;margin-bottom:3px;}
+.comment-text{font-size:12px;color:var(--text);line-height:1.5;margin-bottom:6px;white-space:pre-wrap;}
+.comment-section-row{display:flex;align-items:center;gap:var(--s2);}
+.comment-section-label{font-size:11px;color:var(--text-dim);}
+.comment-none{padding:var(--s5) var(--s4);text-align:center;color:var(--text-mute);font-style:italic;font-size:12px;}
+
+/* NOTES */
+.notes-hint{padding:var(--s3) var(--s4);font-size:11px;color:var(--text-mute);border-bottom:1px solid var(--border);font-style:italic;background:var(--bg);}
+.notes-textarea{width:100%;padding:var(--s3);font-size:12px;font-family:inherit;border:none;resize:vertical;min-height:120px;color:var(--text);background:var(--surface);line-height:1.6;outline:none;}
+
+/* AI RESULTS */
+.ai-result-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:var(--s2);}
+.ai-summary-text{font-size:13px;color:var(--text);line-height:1.65;padding:var(--s3) var(--s4);background:var(--bg);border-radius:var(--r-md);border:1px solid var(--border);}
+.ai-flag-item{padding:6px var(--s3);border-left:2px solid var(--warn-border);background:var(--warn-bg);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:12px;margin-bottom:4px;line-height:1.45;color:var(--text);}
+.ai-flag-note{font-size:11px;color:var(--text-mute);margin-top:2px;}
+.ai-result-section{margin-bottom:var(--s4);}
+
+/* SETTINGS MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);z-index:500;display:none;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--surface);border-radius:var(--r-lg);padding:var(--s6);max-width:440px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);}
+.modal h2{font-size:17px;font-weight:600;margin-bottom:var(--s3);}
+.modal p{font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:var(--s2);}
+.modal-key-input{width:100%;margin:var(--s4) 0;padding:9px 10px;border:1px solid var(--border-strong);border-radius:var(--r-sm);font-size:13px;font-family:monospace;outline:none;}
+.modal-key-input:focus{border-color:var(--action);}
+.modal-actions{display:flex;justify-content:flex-end;gap:var(--s2);margin-top:var(--s4);}
+.modal-btn{font-family:inherit;font-size:13px;padding:7px 16px;border-radius:var(--r-sm);cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:background .12s;}
+.modal-btn:hover{background:var(--bg);}
+.modal-btn.primary{background:var(--navy);color:#fff;border-color:var(--navy);font-weight:600;}
+.modal-btn.primary:hover{background:var(--action);}
+.modal-btn.danger{color:#b91c1c;}
+
+/* PROMPT PANEL (slide-in) */
+.prompt-panel{position:fixed;right:0;top:0;bottom:0;width:640px;max-width:90vw;background:var(--surface);border-left:1px solid var(--border);box-shadow:-4px 0 24px rgba(0,0,0,.1);z-index:300;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;}
+.prompt-panel.open{transform:translateX(0);}
+.prompt-panel-head{padding:var(--s4) var(--s5);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:var(--s3);}
+.prompt-panel-head h3{font-size:14px;font-weight:600;flex:1;margin:0;}
+.prompt-panel-btn{font-family:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text-dim);cursor:pointer;}
+.prompt-panel-btn:hover{background:var(--bg);color:var(--text);}
+.prompt-panel-body{flex:1;overflow-y:auto;padding:var(--s4) var(--s5);}
+.prompt-pre{font-family:monospace;font-size:11px;line-height:1.7;color:var(--text-dim);white-space:pre-wrap;word-break:break-word;}
+.prompt-note{font-size:11px;color:var(--text-mute);font-style:italic;margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--border);}
+
+/* NAV BAR */
+.nav-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:var(--s3) var(--s6);display:flex;align-items:center;gap:var(--s3);z-index:100;}
+.nav-left{flex:1;display:flex;align-items:center;gap:var(--s2);}
+.nav-hint{font-size:11px;color:var(--text-mute);}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border-radius:var(--r-md);font-size:13px;font-weight:500;border:1px solid transparent;cursor:pointer;font-family:inherit;transition:background .12s;}
+.btn-ghost{background:transparent;color:var(--text-dim);border-color:var(--border);}
+.btn-ghost:hover{background:var(--bg);color:var(--text);}
+.btn-primary{background:var(--navy);color:#fff;font-weight:600;}
+.btn-primary:hover:not(:disabled){background:var(--action);}
+.btn-primary:disabled{background:var(--border-strong);cursor:not-allowed;opacity:.6;}
+</style>
+</head>
+<body>
+
+<!-- AUTH OVERLAY -->
+<div class="auth-overlay" id="auth-overlay">
+  <div class="auth-card">
+    <h2>Sign in to SharePoint</h2>
+    <p>Sign in with your Bellweather account to load and save estimate data.</p>
+    <button class="auth-go" onclick="doSignIn()">Sign in</button>
+    <div class="auth-error" id="auth-error"></div>
+    <div style="margin-top:14px;font-size:10px;color:#B7A9A3;letter-spacing:.03em;">CA Writing Tool &nbsp;·&nbsp; Estimate Extractor &nbsp;·&nbsp; v2</div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <div class="wordmark">Bell<span>w</span>eather</div>
+    <div class="header-divider"></div>
+    <div class="header-sub">
+      <div class="header-title">Estimate Extractor</div>
+      <div class="header-subtitle">CA Tool &nbsp;·&nbsp; Sources Component</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="version-badge">v2</div>
+    <button class="icon-btn" id="btn-show-prompt" onclick="openPromptPanel()" style="display:none" title="View the prompt sent to Claude">{ } Prompt</button>
+    <button class="icon-btn" onclick="openSettings()" title="API key &amp; settings">⚙ Settings</button>
+    <span class="header-user" id="user-label"></span>
+    <button class="icon-btn" id="signout-btn" onclick="doSignOut()" style="display:none">Sign out</button>
+  </div>
+</div>
+
+<!-- STEP TRACKER -->
+<div class="step-tracker">
+  <span class="step-tracker-step">1 · Setup</span>
+  <span class="step-tracker-sep">›</span>
+  <span class="step-tracker-step active">2 · Sources</span>
+  <span class="step-tracker-sep">›</span>
+  <span class="step-tracker-step">3 · Generate</span>
+  <span class="step-tracker-sep">›</span>
+  <span class="step-tracker-step">4 · Document</span>
+</div>
+
+<!-- STATUS STRIP -->
+<div class="status-strip">
+  <span class="status-pill empty" id="status-pill">
+    <span class="status-dot"></span>
+    <span id="status-text">No file</span>
+  </span>
+  <span class="status-filename" id="status-filename"></span>
+  <div class="strip-spacer"></div>
+  <span class="save-status" id="save-status"></span>
+  <button class="strip-btn" id="btn-rerun-ai" style="display:none" onclick="runAIAnalysis()">↻ Re-run AI analysis</button>
+  <button class="strip-btn" id="btn-reset" style="display:none" onclick="resetAll()">Reset</button>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-bg" id="settings-modal" onclick="if(event.target===this)closeSettings()">
+  <div class="modal">
+    <h2>Settings</h2>
+    <p>Paste your Anthropic API key to enable AI analysis — scope summary, section review, and zero-item flags. The key is stored in your browser's localStorage only.</p>
+    <p style="font-size:11px;color:var(--text-mute)">Prototype-phase only. At integration time this will be replaced by the proxy pattern defined in the CA Sources page.</p>
+    <input type="password" class="modal-key-input" id="api-key-input" placeholder="sk-ant-…" autocomplete="off">
+    <div class="modal-actions">
+      <button class="modal-btn danger" onclick="clearApiKey()">Clear key</button>
+      <button class="modal-btn" onclick="closeSettings()">Cancel</button>
+      <button class="modal-btn primary" onclick="saveApiKey()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROMPT PANEL -->
+<div class="prompt-panel" id="prompt-panel">
+  <div class="prompt-panel-head">
+    <h3>Prompt sent to Claude</h3>
+    <button class="prompt-panel-btn" onclick="copyPrompt()">Copy</button>
+    <button class="prompt-panel-btn" onclick="closePromptPanel()">Close</button>
+  </div>
+  <div class="prompt-panel-body">
+    <pre class="prompt-pre" id="prompt-display"></pre>
+    <div class="prompt-note">This is the exact prompt sent to Claude, including the extracted line items and comments appended at the bottom. It updates each time you run AI analysis.</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <div class="status-bar" id="status-bar"></div>
+
+  <!-- UPLOAD ZONE (empty state) -->
+  <div id="empty-state">
+    <div class="upload-zone" id="upload-zone"
+      ondragover="dzOver(event)" ondragleave="dzLeave(event)" ondrop="dzDrop(event)"
+      onclick="document.getElementById('file-input').click()">
+      <input type="file" id="file-input" accept=".xlsx,.xls" onchange="handleFileInput(this)">
+      <h2>Drop the estimate file here</h2>
+      <div class="upload-zone-sub">or click to choose a file</div>
+      <div class="upload-cta">Choose file</div>
+      <div class="upload-zone-formats">.xlsx — Bellweather V4 format</div>
+    </div>
+  </div>
+
+  <!-- COMPACT FILE STRIP (shown after load) -->
+  <div class="compact-drop" id="compact-drop" style="display:none"
+    onclick="document.getElementById('file-input').click()">
+    <div><span style="color:var(--text-dim)">Source: </span><span class="cf-name" id="current-file">—</span></div>
+    <div class="cf-hint">Click to load a different file</div>
+  </div>
+
+  <!-- LINE ITEMS CARD -->
+  <div class="section-card" id="items-card" style="display:none">
+    <div class="section-card-header">
+      <span class="section-card-title">Line Items</span>
+      <span class="section-card-meta" id="items-meta"></span>
+    </div>
+    <div class="ws-tabs" id="ws-tabs"></div>
+    <div class="filter-bar">
+      <label><input type="checkbox" id="filter-zero" onchange="renderActiveSheet()"> Show $0 items only</label>
+      <span class="filter-count" id="filter-count"></span>
+    </div>
+    <div id="items-table-wrap" style="overflow-x:auto;max-height:420px;overflow-y:auto;"></div>
+  </div>
+
+  <!-- COMMENTS CARD -->
+  <div class="section-card" id="comments-card" style="display:none">
+    <div class="section-card-header">
+      <span class="section-card-title">Cell Comments</span>
+      <span class="section-card-meta" id="comments-meta"></span>
+    </div>
+    <div id="comments-body"></div>
+  </div>
+
+  <!-- MANUAL NOTES CARD -->
+  <div class="section-card" id="notes-card" style="display:none">
+    <div class="section-card-header">
+      <span class="section-card-title">Additional Notes</span>
+      <span class="section-card-meta">optional</span>
+    </div>
+    <div class="notes-hint">Paste or type any estimating notes, assumptions, or flags that should travel with this CA — trade-specific decisions, scope clarifications, anything you'd want the salesperson to know when reviewing.</div>
+    <textarea class="notes-textarea" id="manual-notes" placeholder="Type notes here…" oninput="markDirty()"></textarea>
+  </div>
+
+  <!-- AI RESULTS CARD -->
+  <div class="section-card" id="ai-results-card" style="display:none">
+    <div class="section-card-header" style="background:var(--ok-bg);border-bottom-color:var(--ok-border)">
+      <span class="section-card-title" style="color:var(--ok)">AI Analysis Results</span>
+      <span class="section-card-meta" id="ai-results-meta"></span>
+    </div>
+    <div style="padding:var(--s4)">
+      <div class="ai-result-section">
+        <div class="ai-result-label">Scope Summary</div>
+        <div class="ai-summary-text" id="ai-summary-text"></div>
+      </div>
+      <div class="ai-result-section" id="ai-flags-section" style="display:none">
+        <div class="ai-result-label">Zero-Item Flags</div>
+        <div id="ai-flags-list"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- NAV BAR -->
+<footer class="nav-bar">
+  <div class="nav-left">
+    <button class="btn btn-ghost" onclick="window.close()">← Close</button>
+    <span class="nav-hint" id="nav-hint">Drop an estimate file to begin.</span>
+  </div>
+  <button class="btn btn-primary" id="btn-save" disabled onclick="saveToSharePoint()">Save to SharePoint ↑</button>
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CA SECTION MAPPING
+// ═══════════════════════════════════════════════════════════════
+const CA_SECTION_MAP = {
+  '5010':'01','5014':null,'5016':null,'5021':'01','5026':'01','5040':'03',
+  '5100':'13','5101':null,'5103':'13','5121':'01','5122':'02','5123':'03',
+  '5124':'04','51251':'05.1','51252':'05.2','51253':'05.3','5126':'06',
+  '51271':'07.1','51272':'07.2','51281':'08.1','51282':'08.2',
+  '5129':'09','5130':'10','5131':'11','5132':'12',
+};
+const CA_SECTION_OPTIONS = [
+  {value:'',label:'— No section —'},{value:'01',label:'01 · Site Work'},
+  {value:'02',label:'02 · Demolition'},{value:'03',label:'03 · Masonry / Structural'},
+  {value:'04',label:'04 · Rough Carpentry'},{value:'05.1',label:'05.1 · Insulation'},
+  {value:'05.2',label:'05.2 · Roofing / Siding'},{value:'05.3',label:'05.3 · Windows / Ext. Doors'},
+  {value:'06',label:'06 · Finish Carpentry'},{value:'07.1',label:'07.1 · Drywall'},
+  {value:'07.2',label:'07.2 · Painting'},{value:'08.1',label:'08.1 · Flooring'},
+  {value:'08.2',label:'08.2 · Tile'},{value:'09',label:'09 · Plumbing'},
+  {value:'10',label:'10 · Electrical'},{value:'11',label:'11 · HVAC'},
+  {value:'12',label:'12 · Specialty / Misc'},{value:'13',label:'13 · Selections'},
+  {value:'14',label:'14 · TBD Items'},{value:'15',label:'15 · Additional Terms'},
+];
+function sectionSelectHtml(sel) {
+  return '<select class="section-chip-sel" onchange="markDirty()">' +
+    CA_SECTION_OPTIONS.map(o=>`<option value="${o.value}"${o.value===sel?' selected':''}>${escapeHtml(o.label)}</option>`).join('')+'</select>';
+}
+function mapCostCode(desc) {
+  if (!desc) return null;
+  const m = String(desc).match(/^(\d+)/);
+  if (!m) return null;
+  const code = m[1];
+  for (const k of Object.keys(CA_SECTION_MAP).sort((a,b)=>b.length-a.length))
+    if (code.startsWith(k)) return CA_SECTION_MAP[k]||null;
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LAUNCH PARAMS
+// ═══════════════════════════════════════════════════════════════
+function readLaunchParams() {
+  const src = location.hash.includes('code=') ? '' : location.search;
+  const p = new URLSearchParams(src);
+  return {driveId:p.get('driveId')||null,folderId:p.get('folderId')||null,fileId:p.get('fileId')||null,projectName:p.get('projectName')||null,autoRun:p.get('autoRun')==='1'};
+}
+function clearLaunchParams() {
+  const p = new URLSearchParams(location.search);
+  ['driveId','folderId','fileId','projectName','autoRun'].forEach(k=>p.delete(k));
+  history.replaceState({}, '', location.pathname + (p.toString()?'?'+p.toString():''));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let launchParams=readLaunchParams(), workbook=null, fileName=null;
+let allSheets=[], activeSheetIdx=0, dirty=false;
+
+// ═══════════════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════════════
+(async()=>{
+  try {
+    await SherpaAuth.init();
+    if (SherpaAuth.isSignedIn()) await onAuth(); else showAuthOverlay();
+  } catch(e) { showAuthError('Auth init failed: '+e.message); showAuthOverlay(); }
+})();
+function doSignIn()  { SherpaAuth.signIn(); }
+function doSignOut() { SherpaAuth.signOut(); }
+async function onAuth() {
+  hideAuthOverlay();
+  const acct = SherpaAuth.getAccount();
+  document.getElementById('user-label').textContent = acct?.username || '';
+  document.getElementById('signout-btn').style.display = 'inline-flex';
+  if (launchParams.fileId && launchParams.driveId && launchParams.autoRun) await autoLoadFromSherpa();
+}
+function showAuthOverlay() { document.getElementById('auth-overlay').classList.add('active'); }
+function hideAuthOverlay() { document.getElementById('auth-overlay').classList.remove('active'); }
+function showAuthError(msg) { const el=document.getElementById('auth-error'); el.textContent=msg; el.classList.add('show'); }
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO-LOAD FROM SHERPA
+// ═══════════════════════════════════════════════════════════════
+async function autoLoadFromSherpa() {
+  setPill('loading','Loading from SharePoint…');
+  try {
+    // No $select — @microsoft.graph.downloadUrl is stripped when $select is used
+    const meta = await SherpaAuth.graph(`${SherpaAuth.GRAPH_BASE}/drives/${launchParams.driveId}/items/${launchParams.fileId}`);
+    const downloadUrl = meta['@microsoft.graph.downloadUrl'];
+    if (!downloadUrl) throw new Error('No download URL on file metadata');
+    const resp = await fetch(downloadUrl);
+    if (!resp.ok) throw new Error('Download failed: '+resp.status);
+    const buf = await resp.arrayBuffer();
+    fileName = meta.name || 'estimate.xlsx';
+    await parseWorkbook(buf);
+    clearLaunchParams();
+  } catch(e) {
+    setStatusMsg('Could not load from SharePoint: '+e.message+'. Use manual upload.','error');
+    setPill('error','Load failed');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FILE UPLOAD
+// ═══════════════════════════════════════════════════════════════
+function dzOver(e)  { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag-over'); }
+function dzLeave(e) { document.getElementById('upload-zone').classList.remove('drag-over'); }
+function dzDrop(e)  { e.preventDefault(); document.getElementById('upload-zone').classList.remove('drag-over'); const f=e.dataTransfer.files[0]; if(f) readFile(f); }
+function handleFileInput(input) { if(input.files[0]) readFile(input.files[0]); input.value=''; }
+function readFile(file) {
+  if (!file.name.match(/\.(xlsx|xls)$/i)) { setStatusMsg('Please upload an .xlsx or .xls file.','error'); return; }
+  fileName = file.name;
+  setPill('loading','Parsing…');
+  const reader = new FileReader();
+  reader.onload = e => parseWorkbook(e.target.result).catch(err=>{ setStatusMsg('Parse error: '+err.message,'error'); setPill('error','Parse failed'); });
+  reader.onerror = ()=>{ setStatusMsg('Could not read file.','error'); setPill('error','Read error'); };
+  reader.readAsArrayBuffer(file);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WORKBOOK PARSING
+// ═══════════════════════════════════════════════════════════════
+async function parseWorkbook(buffer) {
+  try { workbook = XLSX.read(buffer,{type:'array',cellText:true,cellNF:true,cellDates:true}); }
+  catch(e) { setStatusMsg('Could not parse file: '+e.message,'error'); return; }
+
+  allSheets = workbook.SheetNames.map(name=>({name,lineItems:extractLineItems(name),comments:extractComments(name)}));
+
+  try {
+    const tcBySheet = await extractAllThreadedComments(buffer, workbook.SheetNames);
+    allSheets.forEach(sheet=>{
+      (tcBySheet[sheet.name]||[]).forEach(tc=>{
+        if (sheet.comments.find(c=>c.cell===tc.cell)) return;
+        const rowNum = parseInt((tc.cell.match(/(\d+)$/)||[])[1]||'0');
+        const mi = rowNum ? sheet.lineItems.find(li=>li.row===rowNum) : null;
+        sheet.comments.push({worksheet:sheet.name,cell:tc.cell,text:tc.text,include:true,caSection:mi?.caSection||''});
+      });
+    });
+  } catch(e) { console.warn('Threaded comment extraction failed:',e); }
+
+  activeSheetIdx = 0;
+  renderUI();
+}
+
+async function extractAllThreadedComments(buffer, sheetNames) {
+  const result = {};
+  sheetNames.forEach(n=>{result[n]=[];});
+  let zip;
+  try { zip = await JSZip.loadAsync(buffer); } catch(e) { return result; }
+
+  const wbXml = await zip.files['xl/workbook.xml']?.async('string');
+  if (!wbXml) return result;
+  const wbDoc = new DOMParser().parseFromString(wbXml,'application/xml');
+  const rIdToSheet = {};
+  wbDoc.querySelectorAll('sheet').forEach(s=>{
+    const rId = s.getAttribute('r:id')||s.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');
+    const name = s.getAttribute('name');
+    if (rId&&name) rIdToSheet[rId]=name;
+  });
+
+  const wbRels = await zip.files['xl/_rels/workbook.xml.rels']?.async('string');
+  if (!wbRels) return result;
+  const wbRelsDoc = new DOMParser().parseFromString(wbRels,'application/xml');
+  const rIdToFile = {};
+  wbRelsDoc.querySelectorAll('Relationship').forEach(r=>{
+    if ((r.getAttribute('Type')||'').toLowerCase().includes('worksheet')) {
+      const rId=r.getAttribute('Id'), target=r.getAttribute('Target');
+      if (rId&&target) rIdToFile[rId]=target.replace(/^\/xl\//,'').replace(/^xl\//,'');
+    }
+  });
+
+  for (const [rId,sheetFile] of Object.entries(rIdToFile)) {
+    const sheetName = rIdToSheet[rId]; if (!sheetName) continue;
+    const sheetBase = sheetFile.replace(/^worksheets\//,'');
+    const sheetRelsXml = await zip.files['xl/worksheets/_rels/'+sheetBase+'.rels']?.async('string');
+    if (!sheetRelsXml) continue;
+    const sheetRelsDoc = new DOMParser().parseFromString(sheetRelsXml,'application/xml');
+    const tcRels = Array.from(sheetRelsDoc.querySelectorAll('Relationship')).filter(r=>(r.getAttribute('Type')||'').toLowerCase().includes('threadedcomment'));
+    for (const tcRel of tcRels) {
+      const target = tcRel.getAttribute('Target')||'';
+      const tcXml = await zip.files['xl/'+target.replace(/^\.\.\//,'')]?.async('string');
+      if (!tcXml) continue;
+      const tcDoc = new DOMParser().parseFromString(tcXml,'application/xml');
+      tcDoc.querySelectorAll('threadedComment[ref]').forEach(tc=>{
+        const ref = tc.getAttribute('ref');
+        const directText = [];
+        tc.childNodes.forEach(child=>{
+          if (child.nodeName==='text') child.querySelectorAll('t').forEach(t=>{const txt=t.textContent.trim();if(txt)directText.push(txt);});
+        });
+        const text = directText.join(' ').trim();
+        if (ref&&text) result[sheetName].push({cell:ref,text});
+      });
+    }
+  }
+  return result;
+}
+
+function extractLineItems(sheetName) {
+  const ws = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+  const items = [];
+  for (let i=0;i<rows.length;i++) {
+    const row = rows[i];
+    if (!row||row.length===0) continue;
+    const descRaw = row[0];
+    if (descRaw==null||typeof descRaw!=='string'||!descRaw.trim()) continue;
+    const desc = descRaw.trim();
+    if (/^(job name|updated|only fill|comp job|total|estimate sale price)/i.test(desc)) continue;
+    const nums = row.slice(1).filter(v=>typeof v==='number'&&!isNaN(v));
+    if (nums.length===0) continue;
+    let amount = null;
+    if (typeof row[12]==='number'&&!isNaN(row[12])) { amount=row[12]; }
+    else {
+      for (let j=row.length-1;j>=1;j--) { const v=row[j]; if(typeof v==='number'&&!isNaN(v)&&!(v>0&&v<=1)){amount=v;break;} }
+      if (amount===null) amount=nums[nums.length-1];
+    }
+    items.push({worksheet:sheetName,row:i+1,description:desc,amount,isZero:(amount===null||amount===0),caSection:mapCostCode(desc)||''});
+  }
+  return items;
+}
+
+function extractComments(sheetName) {
+  const ws = workbook.Sheets[sheetName];
+  const comments = [];
+  for (const addr of Object.keys(ws)) {
+    if (addr.startsWith('!')) continue;
+    const cell = ws[addr];
+    if (!cell||!cell.c) continue;
+    const text = cell.c.map(c=>(c.t||'').trim()).filter(Boolean).join('\n');
+    if (!text) continue;
+    const m = addr.match(/^[A-Z]+(\d+)$/);
+    const rowIdx = m?(parseInt(m[1])-1):-1;
+    const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+    const descRow = rowIdx>=0?(rows[rowIdx]||[]):[];
+    comments.push({worksheet:sheetName,cell:addr,text,include:true,caSection:mapCostCode(String(descRow[0]||''))||''});
+  }
+  return comments;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════
+function renderUI() {
+  const totalItems    = allSheets.reduce((n,s)=>n+s.lineItems.length,0);
+  const zeroItems     = allSheets.reduce((n,s)=>n+s.lineItems.filter(li=>li.isZero).length,0);
+  const totalComments = allSheets.reduce((n,s)=>n+s.comments.length,0);
+
+  document.getElementById('empty-state').style.display   = 'none';
+  document.getElementById('compact-drop').style.display  = '';
+  document.getElementById('current-file').textContent    = fileName || '—';
+  document.getElementById('status-filename').textContent = fileName || '';
+  document.getElementById('btn-reset').style.display     = '';
+  setPill('ready','Parsed');
+  setStatusMsg('');
+
+  document.getElementById('items-meta').textContent = totalItems+' items · '+zeroItems+' at $0';
+  document.getElementById('items-card').style.display = '';
+
+  document.getElementById('ws-tabs').innerHTML = allSheets.map((s,i)=>{
+    const z = s.lineItems.filter(li=>li.isZero).length;
+    return `<button class="ws-tab${i===0?' active':''}" onclick="switchSheet(${i})">${escapeHtml(s.name)}${z?` <span style="color:var(--warn)">(${z})</span>`:''}`;
+  }).join('');
+  renderActiveSheet();
+
+  document.getElementById('comments-card').style.display = '';
+  document.getElementById('comments-meta').textContent = totalComments
+    ? totalComments+' found — select which to include in CA'
+    : 'No comments extracted';
+  renderComments();
+
+  document.getElementById('notes-card').style.display = '';
+  document.getElementById('btn-save').disabled = false;
+  document.getElementById('btn-show-prompt').style.display = '';
+  document.getElementById('nav-hint').textContent = 'Review line items and comments, then save to SharePoint.';
+
+  if (getApiKey()) {
+    document.getElementById('btn-rerun-ai').style.display = '';
+    runAIAnalysis();
+  }
+}
+
+function switchSheet(idx) {
+  activeSheetIdx = idx;
+  document.querySelectorAll('.ws-tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+  renderActiveSheet();
+}
+
+function renderActiveSheet() {
+  const sheet    = allSheets[activeSheetIdx];
+  const showZero = document.getElementById('filter-zero').checked;
+  const items    = showZero ? sheet.lineItems.filter(li=>li.isZero) : sheet.lineItems;
+  document.getElementById('filter-count').textContent =
+    items.length+' of '+sheet.lineItems.length+' items · '+sheet.lineItems.filter(li=>li.isZero).length+' at $0';
+  const wrap = document.getElementById('items-table-wrap');
+  if (items.length===0) {
+    wrap.innerHTML = `<div style="padding:var(--s5);text-align:center;color:var(--text-mute);font-style:italic;font-size:12px;">${showZero?'No $0 items on this sheet.':'No line items found.'}</div>`;
+    return;
+  }
+  wrap.innerHTML =
+    '<table class="line-table"><thead><tr><th>Description</th><th class="num">Amount</th><th>CA Section</th></tr></thead><tbody>' +
+    items.map(li=>`<tr class="${li.isZero?'zero-row':''}">
+      <td>${escapeHtml(li.description)}${li.isZero?'<span class="zero-badge">$0</span>':''}</td>
+      <td class="num ${li.isZero?'amount-zero':''}">${li.amount===null?'—':formatAmt(li.amount)}</td>
+      <td>${sectionSelectHtml(li.caSection)}</td></tr>`).join('') +
+    '</tbody></table>';
+  wrap.querySelectorAll('select').forEach((sel,i)=>{
+    const li=items[i]; sel.addEventListener('change',()=>{li.caSection=sel.value;markDirty();});
+  });
+}
+
+function renderComments() {
+  const body = document.getElementById('comments-body');
+  const allComments = allSheets.flatMap(s=>s.comments);
+  if (allComments.length===0) {
+    body.innerHTML='<div class="comment-none">No cell comments could be extracted. Use the Additional Notes section below to capture any relevant estimating context.</div>';
+    return;
+  }
+  body.innerHTML = allComments.map((c,i)=>{
+    const badge = c.aiRelevance
+      ? `<span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;margin-left:6px;background:${c.aiRelevance==='high'?'var(--ok-bg)':c.aiRelevance==='medium'?'var(--warn-bg)':'var(--bg)'};color:${c.aiRelevance==='high'?'var(--ok)':c.aiRelevance==='medium'?'var(--warn)':'var(--text-mute)'};border:1px solid ${c.aiRelevance==='high'?'var(--ok-border)':c.aiRelevance==='medium'?'var(--warn-border)':'var(--border)'};">${c.aiRelevance.toUpperCase()}</span>` : '';
+    const aiNote = c.aiNote?`<div style="font-size:11px;color:var(--text-dim);font-style:italic;margin-top:3px;">${escapeHtml(c.aiNote)}</div>`:'';
+    return `<div class="comment-row">
+      <input type="checkbox" class="comment-check" ${c.include?'checked':''} onchange="allSheets.flatMap(s=>s.comments)[${i}].include=this.checked;markDirty()">
+      <div class="comment-body">
+        <div class="comment-cell">${escapeHtml(c.worksheet)} · ${escapeHtml(c.cell)}${badge}</div>
+        <div class="comment-text">${escapeHtml(c.text)}</div>
+        ${aiNote}
+        <div class="comment-section-row"><span class="comment-section-label">CA Section:</span>${sectionSelectHtml(c.caSection)}</div>
+      </div></div>`;
+  }).join('');
+  body.querySelectorAll('select').forEach((sel,i)=>{
+    const c=allSheets.flatMap(s=>s.comments)[i];
+    sel.addEventListener('change',()=>{c.caSection=sel.value;markDirty();});
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RESET
+// ═══════════════════════════════════════════════════════════════
+function resetAll() {
+  workbook=null;fileName=null;allSheets=[];activeSheetIdx=0;dirty=false;
+  document.getElementById('empty-state').style.display   = '';
+  document.getElementById('compact-drop').style.display  = 'none';
+  document.getElementById('items-card').style.display    = 'none';
+  document.getElementById('comments-card').style.display = 'none';
+  document.getElementById('notes-card').style.display    = 'none';
+  document.getElementById('ai-results-card').style.display = 'none';
+  document.getElementById('btn-save').disabled           = true;
+  document.getElementById('btn-reset').style.display     = 'none';
+  document.getElementById('btn-rerun-ai').style.display  = 'none';
+  document.getElementById('btn-show-prompt').style.display = 'none';
+  document.getElementById('status-filename').textContent = '';
+  document.getElementById('nav-hint').textContent = 'Drop an estimate file to begin.';
+  setPill('empty','No file');
+  setStatusMsg('');
+  closePromptPanel();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SAVE
+// ═══════════════════════════════════════════════════════════════
+async function saveToSharePoint() {
+  if (!launchParams.folderId||!launchParams.driveId) { downloadJson(); return; }
+  const btn = document.getElementById('btn-save');
+  btn.disabled=true; btn.textContent='Saving…';
+  showSaveStatus('Saving…'); setPill('saving','Saving…');
+  try {
+    const result = await SherpaAuth.graph(
+      SherpaAuth.GRAPH_BASE+'/drives/'+launchParams.driveId+'/items/'+launchParams.folderId+':/'+encodeURIComponent('estimate_extracted.json')+':/content',
+      {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildEnvelope(),null,2)}
+    );
+    if (!result?.id&&!result?.name) throw new Error('Unexpected response from upload');
+    dirty=false; showSaveStatus('Saved ✓',3000); setPill('ready','Saved');
+    setStatusMsg('Saved to SharePoint — you can close this tab and return to Sources.','success');
+  } catch(e) {
+    showSaveStatus('Error'); setPill('error','Save failed');
+    setStatusMsg('Save failed: '+e.message,'error');
+  } finally { btn.disabled=false; btn.textContent='Save to SharePoint ↑'; }
+}
+
+function downloadJson() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(buildEnvelope(),null,2)],{type:'application/json'}));
+  a.download='estimate_extracted.json'; a.click(); URL.revokeObjectURL(a.href);
+  setStatusMsg('Downloaded estimate_extracted.json — upload it to the project SharePoint folder manually.','success');
+}
+
+function buildEnvelope() {
+  const all = allSheets.flatMap(s=>s.lineItems);
+  const allC = allSheets.flatMap(s=>s.comments);
+  return {
+    source_type:'estimate',source_version:'1.0',extracted_at:new Date().toISOString(),
+    source_file:fileName||'unknown.xlsx',completeness:all.length>0?1.0:0.0,
+    data:{
+      worksheets:allSheets.map(s=>s.name),
+      line_items:all.map(li=>({worksheet:li.worksheet,row:li.row,description:li.description,amount:li.amount,is_zero:li.isZero,ca_section:li.caSection||null})),
+      selected_comments:allC.filter(c=>c.include).map(c=>({worksheet:c.worksheet,cell:c.cell,comment:c.text,ca_section:c.caSection||null,include:true})),
+      manual_notes:(document.getElementById('manual-notes')?.value||'').trim()||null,
+      summary:{total_items:all.length,zero_items:all.filter(li=>li.isZero).length,comments_found:allC.length,comments_selected:allC.filter(c=>c.include).length,worksheets:allSheets.map(s=>s.name)},
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS — localStorage, matching SOE pattern
+// ═══════════════════════════════════════════════════════════════
+const LS_KEY = 'ca_estimate_api_key';
+function getApiKey()  { try { return localStorage.getItem(LS_KEY)||''; } catch(e) { return ''; } }
+function _storeKey(k) { try { if(k) localStorage.setItem(LS_KEY,k); else localStorage.removeItem(LS_KEY); } catch(e) {} }
+
+function openSettings() {
+  document.getElementById('api-key-input').value = getApiKey();
+  document.getElementById('settings-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('api-key-input').focus(),50);
+}
+function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
+function saveApiKey() {
+  _storeKey(document.getElementById('api-key-input').value.trim());
+  closeSettings();
+  if (getApiKey()&&allSheets.length) document.getElementById('btn-rerun-ai').style.display='';
+}
+function clearApiKey() { _storeKey(''); document.getElementById('api-key-input').value=''; }
+
+// ═══════════════════════════════════════════════════════════════
+// PROMPT PANEL
+// ═══════════════════════════════════════════════════════════════
+const EXTRACTION_PROMPT_TEMPLATE = `You are reviewing a construction project estimate to support writing a Construction Agreement (CA) for Bellweather Design Build, a residential design-build firm in Philadelphia.
+
+You have been given structured data extracted from the project estimate spreadsheet: line items with cost codes, amounts, and current CA section assignments, plus any cell comments.
+
+Your tasks:
+
+1. SECTION REVIEW — For each line item, confirm or correct the CA section assignment. Use only these sections: 01 Site Work, 02 Demolition, 03 Masonry/Structural, 04 Rough Carpentry, 05.1 Insulation, 05.2 Roofing/Siding, 05.3 Windows/Ext Doors, 06 Finish Carpentry, 07.1 Drywall, 07.2 Painting, 08.1 Flooring, 08.2 Tile, 09 Plumbing, 10 Electrical, 11 HVAC, 12 Specialty/Misc, 13 Selections, 14 TBD Items. If no section applies, use null.
+
+2. COMMENT RELEVANCE — For each comment, assess whether it contains information relevant to CA scope language. Rate relevance as "high", "medium", or "low", and suggest a CA section.
+
+3. ZERO-ITEM FLAGS — For each line item at $0, assess whether it is genuinely out of scope or whether it may be an oversight. Flag any item where the description, code, or related comments suggest it should be in scope. Be specific about why it's flagged.
+
+4. SCOPE SUMMARY — Write a 2-4 sentence plain-language summary of what this project covers based on the estimate, suitable for a salesperson reviewing the CA before client presentation.
+
+You must respond with ONLY a raw JSON object — no markdown, no code fences, no preamble. Schema:
+
+{
+  "line_items": [
+    { "description": "original description text", "ca_section": "01", "section_note": "optional correction note or null" }
+  ],
+  "comments": [
+    { "cell": "K23", "relevance": "high", "ca_section": "13", "ca_note": "brief note on why this is relevant to the CA" }
+  ],
+  "zero_flags": [
+    { "description": "item description", "flag": "why this might be in scope", "recommend": "suggested action" }
+  ],
+  "scope_summary": "2-4 sentence summary of project scope"
+}`;
+
+function buildPromptWithData() {
+  const all  = allSheets.flatMap(s=>s.lineItems);
+  const allC = allSheets.flatMap(s=>s.comments);
+  const itemsText = all.map(li=>`${li.description} | Amount: ${li.amount===null?'n/a':(li.isZero?'$0':formatAmt(li.amount))} | Section: ${li.caSection||'unassigned'}`).join('\n');
+  const commentsText = allC.length ? allC.map(c=>`[${c.cell}] ${c.text}`).join('\n') : '(none found)';
+  return EXTRACTION_PROMPT_TEMPLATE+'\n\n---\nFILE: '+(fileName||'estimate.xlsx')+'\n\nLINE ITEMS:\n'+itemsText+'\n\nCELL COMMENTS:\n'+commentsText;
+}
+
+function openPromptPanel() {
+  document.getElementById('prompt-display').textContent = buildPromptWithData();
+  document.getElementById('prompt-panel').classList.add('open');
+}
+function closePromptPanel() { document.getElementById('prompt-panel').classList.remove('open'); }
+function copyPrompt() {
+  navigator.clipboard.writeText(buildPromptWithData()).then(()=>{
+    const btn = document.querySelectorAll('.prompt-panel-btn')[0];
+    const orig = btn.textContent; btn.textContent='Copied!';
+    setTimeout(()=>{btn.textContent=orig;},1500);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AI ANALYSIS
+// ═══════════════════════════════════════════════════════════════
+let aiResult = null;
+
+async function runAIAnalysis() {
+  const key = getApiKey();
+  if (!key) { openSettings(); return; }
+  const rerunBtn = document.getElementById('btn-rerun-ai');
+  rerunBtn.disabled=true; rerunBtn.textContent='↻ Analysing…';
+  setPill('loading','AI analysis…');
+  document.getElementById('prompt-display').textContent = buildPromptWithData();
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-5-20250929',max_tokens:4096,messages:[{role:'user',content:buildPromptWithData()}]}),
+    });
+    if (!resp.ok) { const err=await resp.json().catch(()=>({})); throw new Error(err.error?.message||resp.statusText||'API error '+resp.status); }
+    const data    = await resp.json();
+    const rawText = (data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim();
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'').trim();
+    aiResult = JSON.parse(cleaned);
+    applyAIResults(aiResult);
+    renderAIResultPanel(aiResult);
+    markDirty();
+    setPill('ready','Analysis complete');
+    setStatusMsg('');
+  } catch(e) {
+    console.error('AI analysis failed:',e);
+    setStatusMsg('AI analysis failed: '+e.message,'error');
+    setPill('error','Analysis failed');
+  } finally { rerunBtn.disabled=false; rerunBtn.textContent='↻ Re-run AI analysis'; }
+}
+
+function applyAIResults(parsed) {
+  const all  = allSheets.flatMap(s=>s.lineItems);
+  const allC = allSheets.flatMap(s=>s.comments);
+  (parsed.line_items||[]).forEach(ai=>{
+    if(!ai.description||!ai.ca_section) return;
+    const match = all.find(li=>li.description.toLowerCase().includes(ai.description.toLowerCase().slice(0,20)));
+    if(match) match.caSection=ai.ca_section;
+  });
+  (parsed.comments||[]).forEach(ai=>{
+    if(!ai.cell) return;
+    const match = allC.find(c=>c.cell===ai.cell);
+    if(match){if(ai.ca_section)match.caSection=ai.ca_section;match.aiRelevance=ai.relevance||null;match.aiNote=ai.ca_note||null;}
+  });
+  renderActiveSheet(); renderComments();
+}
+
+function renderAIResultPanel(parsed) {
+  const card = document.getElementById('ai-results-card');
+  card.style.display='';
+  document.getElementById('ai-results-meta').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('ai-summary-text').textContent = parsed.scope_summary||'(no summary returned)';
+  const flags=parsed.zero_flags||[];
+  const flagsSec=document.getElementById('ai-flags-section');
+  if (flags.length>0) {
+    flagsSec.style.display='';
+    document.getElementById('ai-flags-list').innerHTML=flags.map(f=>
+      `<div class="ai-flag-item"><strong>${escapeHtml(f.description)}</strong><div class="ai-flag-note">${escapeHtml(f.flag)}${f.recommend?' — '+escapeHtml(f.recommend):''}</div></div>`
+    ).join('');
+  } else { flagsSec.style.display='none'; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════
+function setPill(state,text) {
+  document.getElementById('status-pill').className='status-pill '+state;
+  document.getElementById('status-text').textContent=text;
+}
+function setStatusMsg(msg,cls) {
+  const el=document.getElementById('status-bar');
+  if(!msg){el.style.display='none';el.className='status-bar';return;}
+  el.className='status-bar active'+(cls?' '+cls:''); el.textContent=msg;
+}
+function showSaveStatus(msg,clearAfter) {
+  const el=document.getElementById('save-status'); el.textContent=msg;
+  if(clearAfter) setTimeout(()=>{el.textContent='';},clearAfter);
+}
+function markDirty() { dirty=true; }
+function formatAmt(v) {
+  if(v===null||v===undefined) return '—';
+  if(typeof v==='number'){if(v===0)return '$0';if(v>0&&v<=1)return(v*100).toFixed(1)+'%';return '$'+Math.round(v).toLocaleString('en-US');}
+  return String(v);
+}
+function escapeHtml(s) {
+  if(s==null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+</script>
+</body>
+</html>
