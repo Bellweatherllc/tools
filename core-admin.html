@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bellweather – CORE Admin</title>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<style>
+/* ── Fonts ── */
+@font-face { font-family: 'TT Norms Pro'; src: url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TT Norms Pro'; src: url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'TT Norms Pro'; src: url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_DemiBold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Swear Text'; src: url('https://bellweatherllc.github.io/tools/fonts/SwearText-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Swear Text'; src: url('https://bellweatherllc.github.io/tools/fonts/SwearText-MediumItalic.woff2') format('woff2'); font-weight: 500; font-style: italic; font-display: swap; }
+
+:root {
+  --limestone: #282828;
+  --cotton: #F6F2EE;
+  --navy: #263860;
+  --navy-dim: rgba(38,56,96,0.08);
+  --slate: #9091A0;
+  --teak: #B7A9A3;
+  --linen: #E5E1D8;
+  --concrete: #D2D5D8;
+  --glass: #EDF5F9;
+  --marble: #FFFFFF;
+  --green: #2d8a5e;
+  --green-bg: #e8f5ee;
+  --red: #b94444;
+  --red-bg: #fce8e8;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(40,40,40,0.07), 0 4px 12px rgba(40,40,40,0.05);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'TT Norms Pro', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--cotton); color: var(--limestone); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+/* ── Header ── */
+.header { background: var(--limestone); color: var(--marble); padding: 0 32px; display: flex; align-items: stretch; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.header-left { display: flex; align-items: center; gap: 14px; padding: 10px 0; }
+.header-logo { height: 30px; object-fit: contain; }
+.header-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.18); }
+.header-subtitle { font-family: 'TT Norms Pro', sans-serif; font-size: 11px; font-weight: 500; color: var(--teak); text-transform: uppercase; letter-spacing: 2.5px; }
+.header-version { font-size: 10px; color: rgba(255,255,255,0.28); font-weight: 500; letter-spacing: 0.05em; margin-left: 6px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.conn-indicator { display: flex; align-items: center; gap: 6px; }
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teak); }
+.conn-label { font-size: 11px; color: var(--teak); }
+
+/* ── Login ── */
+#loginOverlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--cotton); z-index: 100; }
+.login-card { background: var(--marble); border-radius: 12px; box-shadow: var(--shadow); padding: 48px 40px; text-align: center; max-width: 400px; width: 100%; }
+.login-logo { height: 26px; margin-bottom: 28px; }
+.login-title { font-family: 'Swear Text', serif; font-size: 26px; font-weight: 500; margin-bottom: 4px; }
+.login-version { font-size: 11px; color: var(--teak); margin-bottom: 8px; letter-spacing: 0.05em; }
+.login-subtitle { font-size: 13px; color: var(--slate); margin-bottom: 32px; line-height: 1.5; }
+.btn-login { background: var(--navy); color: var(--marble); border: none; border-radius: var(--radius); padding: 12px 28px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'TT Norms Pro', sans-serif; transition: background 0.15s; }
+.btn-login:hover { background: #1e2d50; }
+.login-error { margin-top: 14px; font-size: 12px; color: var(--red); display: none; }
+
+/* ── App shell ── */
+#appContainer { display: none; }
+
+/* ── Landing ── */
+#view-landing { padding: 40px 32px; max-width: 1100px; margin: 0 auto; }
+.landing-title { font-family: 'Swear Text', serif; font-size: 24px; font-weight: 500; margin-bottom: 6px; }
+.landing-subtitle { font-size: 13px; color: var(--slate); margin-bottom: 36px; }
+
+.module-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+.module-card { background: var(--marble); border-radius: 10px; box-shadow: var(--shadow); padding: 28px 24px; display: flex; flex-direction: column; gap: 12px; border: 1.5px solid transparent; transition: border-color 0.15s, box-shadow 0.15s; position: relative; }
+.module-card.active:hover { border-color: var(--navy); box-shadow: 0 4px 20px rgba(38,56,96,0.12); cursor: pointer; }
+.module-card.inactive { opacity: 0.6; }
+.module-icon { font-size: 28px; line-height: 1; }
+.module-name { font-family: 'Swear Text', serif; font-size: 17px; font-weight: 500; }
+.module-desc { font-size: 13px; color: var(--slate); line-height: 1.5; flex: 1; }
+.module-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.module-status { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+.module-status.live { background: var(--green-bg); color: var(--green); }
+.module-status.soon { background: var(--linen); color: var(--slate); }
+.module-open { background: var(--navy); color: var(--marble); border: none; border-radius: var(--radius); padding: 7px 18px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'TT Norms Pro', sans-serif; transition: background 0.15s; }
+.module-open:hover { background: #1e2d50; }
+
+/* ── Sub-view shell ── */
+#view-module { display: none; padding: 32px; max-width: 980px; margin: 0 auto; }
+.back-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+.back-btn { background: none; border: none; color: var(--slate); font-size: 13px; font-family: 'TT Norms Pro', sans-serif; cursor: pointer; display: flex; align-items: center; gap: 5px; padding: 0; transition: color 0.15s; }
+.back-btn:hover { color: var(--limestone); }
+.back-crumb { font-size: 13px; color: var(--teak); }
+.back-crumb-current { font-size: 13px; color: var(--limestone); font-weight: 500; }
+
+/* ── Team Members module ── */
+.module-page-title { font-family: 'Swear Text', serif; font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+.module-page-subtitle { font-size: 13px; color: var(--slate); margin-bottom: 24px; }
+
+/* ── Add form ── */
+.add-form { background: var(--marble); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 20px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 160px 1fr auto; gap: 12px; align-items: end; }
+.add-form-field { display: flex; flex-direction: column; gap: 5px; }
+.add-form-label { font-size: 11px; font-weight: 600; color: var(--slate); text-transform: uppercase; letter-spacing: 0.06em; }
+.field-input { border: 1.5px solid var(--linen); border-radius: var(--radius); padding: 8px 12px; font-size: 13px; font-family: 'TT Norms Pro', sans-serif; color: var(--limestone); background: var(--marble); outline: none; transition: border-color 0.15s; width: 100%; }
+.field-input:focus { border-color: var(--navy); }
+.field-select { border: 1.5px solid var(--linen); border-radius: var(--radius); padding: 8px 12px; font-size: 13px; font-family: 'TT Norms Pro', sans-serif; color: var(--limestone); background: var(--marble); outline: none; transition: border-color 0.15s; width: 100%; }
+.field-select:focus { border-color: var(--navy); }
+
+/* ── Chip Input ── */
+.chip-input-wrap {
+  border: 1.5px solid var(--linen);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  min-height: 38px;
+  background: var(--marble);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  cursor: text;
+  transition: border-color 0.15s;
+}
+.chip-input-wrap:focus-within { border-color: var(--navy); }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: var(--navy-dim); color: var(--navy); border-radius: 4px; padding: 2px 7px 2px 8px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.chip-remove { cursor: pointer; opacity: 0.45; font-size: 14px; line-height: 1; padding: 0 1px; transition: opacity 0.1s; }
+.chip-remove:hover { opacity: 1; }
+.chip-text-input { border: none; outline: none; font-size: 13px; font-family: 'TT Norms Pro', sans-serif; color: var(--limestone); background: transparent; min-width: 90px; flex: 1; padding: 2px 4px; }
+
+.sort-bar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+.sort-label { font-size: 12px; color: var(--slate); }
+
+/* ── Buttons ── */
+.btn { border: none; border-radius: var(--radius); padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'TT Norms Pro', sans-serif; transition: background 0.15s; }
+.btn-primary { background: var(--navy); color: var(--marble); }
+.btn-primary:hover { background: #1e2d50; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-ghost { background: transparent; color: var(--slate); border: 1.5px solid var(--linen); }
+.btn-ghost:hover { background: var(--linen); color: var(--limestone); }
+.btn-danger { background: transparent; color: var(--red); border: 1.5px solid #f0c0c0; }
+.btn-danger:hover { background: var(--red-bg); }
+.btn-save { background: var(--green); color: var(--marble); }
+.btn-save:hover { background: #236e4a; }
+
+/* ── Members table ── */
+.members-table { background: var(--marble); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.table-header { display: grid; grid-template-columns: 1fr 140px 1fr 80px 110px; padding: 10px 16px; background: var(--linen); font-size: 11px; font-weight: 600; color: var(--slate); text-transform: uppercase; letter-spacing: 0.06em; }
+.member-row { display: grid; grid-template-columns: 1fr 140px 1fr 80px 110px; padding: 12px 16px; border-bottom: 1px solid var(--cotton); align-items: center; transition: background 0.1s; }
+.member-row:last-child { border-bottom: none; }
+.member-row:hover { background: var(--cotton); }
+.member-row.editing { background: rgba(38,56,96,0.04); }
+.member-name { font-size: 14px; font-weight: 500; }
+.member-dept { font-size: 13px; color: var(--slate); }
+.member-roles { display: flex; flex-wrap: wrap; gap: 4px; }
+.role-chip { display: inline-block; background: var(--navy-dim); color: var(--navy); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 500; }
+.active-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 12px; }
+.active-badge.yes { background: var(--green-bg); color: var(--green); }
+.active-badge.no { background: var(--linen); color: var(--slate); }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.edit-input { border: 1.5px solid var(--navy); border-radius: 5px; padding: 5px 9px; font-size: 13px; font-family: 'TT Norms Pro', sans-serif; color: var(--limestone); background: var(--marble); outline: none; width: 100%; }
+.edit-select { border: 1.5px solid var(--navy); border-radius: 5px; padding: 5px 9px; font-size: 13px; font-family: 'TT Norms Pro', sans-serif; color: var(--limestone); background: var(--marble); outline: none; width: 100%; }
+.empty-state { padding: 48px; text-align: center; color: var(--slate); font-size: 14px; }
+.loading { padding: 48px; text-align: center; color: var(--slate); font-size: 14px; }
+
+/* ── Toast ── */
+.toast { position: fixed; bottom: 24px; right: 24px; background: var(--limestone); color: var(--marble); padding: 12px 20px; border-radius: var(--radius); font-size: 13px; opacity: 0; transform: translateY(8px); transition: all 0.2s; pointer-events: none; z-index: 999; }
+.toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <img class="header-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-W.svg" alt="Bellweather">
+    <div class="header-divider"></div>
+    <span class="header-subtitle">CORE Admin</span>
+    <span class="header-version">v2</span>
+  </div>
+  <div class="header-right">
+    <div class="conn-indicator">
+      <div class="conn-dot" id="connDot"></div>
+      <span class="conn-label" id="connLabel">Connecting…</span>
+    </div>
+  </div>
+</div>
+
+<!-- Login -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <img class="login-logo" src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather">
+    <div class="login-title">CORE Admin</div>
+    <div class="login-version">v2</div>
+    <div class="login-subtitle">Sign in with your Bellweather Microsoft account to manage operational data.</div>
+    <button class="btn-login" onclick="login()">Sign in with Microsoft</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<div id="appContainer">
+
+  <!-- ── Landing ── -->
+  <div id="view-landing">
+    <div class="landing-title">Admin Dashboard</div>
+    <div class="landing-subtitle">Direct access to CORE operational lists and configuration.</div>
+
+    <div class="module-grid">
+
+      <div class="module-card active" onclick="openModule('team-members')">
+        <div class="module-icon">👤</div>
+        <div class="module-name">Team Members</div>
+        <div class="module-desc">Add, edit, and deactivate members on the CORE team roster. Changes sync directly to SharePoint.</div>
+        <div class="module-footer">
+          <span class="module-status live">Live</span>
+          <button class="module-open" onclick="event.stopPropagation();openModule('team-members')">Open</button>
+        </div>
+      </div>
+
+      <div class="module-card active" onclick="window.open('https://bellweatherllc.github.io/tools/core-projects-manager.html','_blank')">
+        <div class="module-icon">🏗️</div>
+        <div class="module-name">Projects</div>
+        <div class="module-desc">Manage the master Projects list — statuses, team assignments, and key dates.</div>
+        <div class="module-footer">
+          <span class="module-status live">Live</span>
+          <button class="module-open" onclick="event.stopPropagation();window.open('https://bellweatherllc.github.io/tools/core-projects-manager.html','_blank')">Open</button>
+        </div>
+      </div>
+
+      <div class="module-card inactive">
+        <div class="module-icon">📋</div>
+        <div class="module-name">Permit Jurisdictions</div>
+        <div class="module-desc">Configure jurisdiction templates and checklist items used across the Permit Tracker.</div>
+        <div class="module-footer">
+          <span class="module-status soon">Coming Soon</span>
+        </div>
+      </div>
+
+      <div class="module-card inactive">
+        <div class="module-icon">⚙️</div>
+        <div class="module-name">CORE Settings</div>
+        <div class="module-desc">Manage global configuration values, tool defaults, and list schema references.</div>
+        <div class="module-footer">
+          <span class="module-status soon">Coming Soon</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Module sub-view ── -->
+  <div id="view-module">
+    <div class="back-bar">
+      <button class="back-btn" onclick="goBack()">← Back</button>
+      <span class="back-crumb">CORE Admin</span>
+      <span class="back-crumb" style="margin:0 4px;">›</span>
+      <span class="back-crumb-current" id="moduleCrumb"></span>
+    </div>
+
+    <!-- Team Members content -->
+    <div id="module-team-members" style="display:none;">
+      <div class="module-page-title">Team Members</div>
+      <div class="module-page-subtitle">Manage the CORE team roster. Changes sync directly to SharePoint (CORE_TeamMembers).</div>
+
+      <div class="add-form">
+        <div class="add-form-field">
+          <div class="add-form-label">Name</div>
+          <input type="text" id="newName" class="field-input" placeholder="Full name…">
+        </div>
+        <div class="add-form-field">
+          <div class="add-form-label">Department</div>
+          <select id="newDept" class="field-select">
+            <option value="">—</option>
+            <option value="Operations">Operations</option>
+            <option value="Sales">Sales</option>
+            <option value="Design">Design</option>
+            <option value="Production">Production</option>
+          </select>
+        </div>
+        <div class="add-form-field">
+          <div class="add-form-label">Role(s) — Enter or comma to add</div>
+          <div class="chip-input-wrap" id="newRolesWrap" onclick="document.getElementById('newRoleInput').focus()">
+            <input type="text" id="newRoleInput" class="chip-text-input" placeholder="e.g. Project Manager…">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="addMember()">Add Member</button>
+      </div>
+
+      <div class="sort-bar">
+        <span class="sort-label">Sort by:</span>
+        <button class="btn btn-ghost btn-sm" onclick="sortBy('name')">Name</button>
+        <button class="btn btn-ghost btn-sm" onclick="sortBy('department')">Department</button>
+        <button class="btn btn-ghost btn-sm" onclick="sortBy('sortOrder')">Sort Order</button>
+      </div>
+
+      <div class="members-table">
+        <div class="table-header">
+          <div>Name</div>
+          <div>Department</div>
+          <div>Role(s)</div>
+          <div>Active</div>
+          <div></div>
+        </div>
+        <div id="memberList"><div class="loading">Loading…</div></div>
+      </div>
+    </div>
+
+  </div><!-- end view-module -->
+
+</div><!-- end appContainer -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Config ──
+// NOTE: Add https://bellweatherllc.github.io/tools/core-admin.html to Azure App Registration redirect URIs
+const SP_CONFIG = {
+  clientId: '84b37f0e-b149-4089-9bdc-fc654715db23',
+  tenantId: 'ff0e3f46-615a-4a22-8a80-4bb83d627785',
+  redirectUri: 'https://bellweatherllc.github.io/tools/core-admin.html',
+  siteUrl: 'https://bellweather.sharepoint.com/sites/BWCore',
+  listName: 'CORE_TeamMembers'
+};
+const DEPTS = ['Operations', 'Sales', 'Design', 'Production'];
+
+let msalInstance = null;
+let accessToken = null;
+let members = [];
+let editingId = null;
+let currentSort = 'name';
+let membersLoaded = false;
+
+// In-progress roles for the Add form
+let newRoles = [];
+
+// ── Role helpers ──
+function parseRoles(str) {
+  if (!str) return [];
+  return str.split('|').map(s => s.trim()).filter(Boolean);
+}
+function serializeRoles(arr) {
+  return arr.join('|');
+}
+
+// ── Chip input: Add form ──
+function renderNewRoleChips() {
+  const wrap = document.getElementById('newRolesWrap');
+  const input = document.getElementById('newRoleInput');
+  wrap.querySelectorAll('.chip').forEach(c => c.remove());
+  newRoles.forEach((r, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = `${escHtml(r)}<span class="chip-remove" onclick="removeNewRole(${i})">×</span>`;
+    wrap.insertBefore(chip, input);
+  });
+}
+
+function removeNewRole(i) {
+  newRoles.splice(i, 1);
+  renderNewRoleChips();
+}
+
+function addNewRoleFromInput() {
+  const input = document.getElementById('newRoleInput');
+  const val = input.value.trim().replace(/,+$/, '');
+  if (val) {
+    newRoles.push(val);
+    input.value = '';
+    renderNewRoleChips();
+  }
+}
+
+// ── Chip input: Edit row ──
+function getEditRoles(id) {
+  const wrap = document.getElementById(`editRolesWrap_${id}`);
+  if (!wrap) return [];
+  return JSON.parse(wrap.dataset.roles || '[]');
+}
+
+function setEditRoles(id, arr) {
+  const wrap = document.getElementById(`editRolesWrap_${id}`);
+  if (!wrap) return;
+  wrap.dataset.roles = JSON.stringify(arr);
+  renderEditRoleChips(id, arr);
+}
+
+function renderEditRoleChips(id, arr) {
+  const wrap = document.getElementById(`editRolesWrap_${id}`);
+  if (!wrap) return;
+  const input = document.getElementById(`editRoleInput_${id}`);
+  wrap.querySelectorAll('.chip').forEach(c => c.remove());
+  arr.forEach((r, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = `${escHtml(r)}<span class="chip-remove" onclick="removeEditRole('${id}',${i})">×</span>`;
+    wrap.insertBefore(chip, input);
+  });
+}
+
+function removeEditRole(id, i) {
+  const roles = getEditRoles(id);
+  roles.splice(i, 1);
+  setEditRoles(id, roles);
+}
+
+function addEditRoleFromInput(id) {
+  const input = document.getElementById(`editRoleInput_${id}`);
+  if (!input) return;
+  const val = input.value.trim().replace(/,+$/, '');
+  if (val) {
+    const roles = getEditRoles(id);
+    roles.push(val);
+    input.value = '';
+    setEditRoles(id, roles);
+  }
+}
+
+// ── Auth ──
+function listApiUrl() {
+  return `${SP_CONFIG.siteUrl}/_api/web/lists/getbytitle('${SP_CONFIG.listName}')`;
+}
+
+async function initMsal() {
+  if (msalInstance) return;
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: SP_CONFIG.clientId,
+      authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`,
+      redirectUri: SP_CONFIG.redirectUri
+    },
+    cache: { cacheLocation: 'sessionStorage' }
+  });
+  await msalInstance.initialize();
+  const result = await msalInstance.handleRedirectPromise();
+  if (result) {
+    accessToken = result.accessToken;
+    showApp();
+  } else {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) showApp();
+  }
+}
+
+async function login() {
+  try {
+    document.getElementById('loginError').style.display = 'none';
+    if (!msalInstance) await initMsal();
+    await msalInstance.loginRedirect({
+      scopes: ['https://bellweather.sharepoint.com/AllSites.Manage']
+    });
+  } catch (err) {
+    const el = document.getElementById('loginError');
+    el.textContent = 'Login failed: ' + (err.message || 'Unknown error.');
+    el.style.display = 'block';
+  }
+}
+
+function showApp() {
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.getElementById('appContainer').style.display = 'block';
+  document.getElementById('connDot').style.background = '#2d8a5e';
+  document.getElementById('connLabel').textContent = 'SharePoint';
+  showLanding();
+}
+
+async function getToken() {
+  const accounts = msalInstance.getAllAccounts();
+  if (!accounts.length) throw new Error('Not signed in');
+  const resp = await msalInstance.acquireTokenSilent({
+    scopes: ['https://bellweather.sharepoint.com/AllSites.Manage'],
+    account: accounts[0]
+  });
+  return resp.accessToken;
+}
+
+async function spFetch(url, options = {}) {
+  if (!accessToken) accessToken = await getToken();
+  const headers = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Accept': 'application/json;odata=nometadata',
+    'Content-Type': 'application/json;odata=nometadata',
+    ...(options.headers || {})
+  };
+  let resp = await fetch(url, { ...options, headers });
+  if (resp.status === 401) {
+    accessToken = await getToken();
+    headers.Authorization = `Bearer ${accessToken}`;
+    resp = await fetch(url, { ...options, headers });
+  }
+  if (!resp.ok && resp.status !== 204) {
+    const text = await resp.text();
+    throw new Error(`SharePoint error ${resp.status}: ${text}`);
+  }
+  return resp;
+}
+
+// ── Navigation ──
+function showLanding() {
+  document.getElementById('view-landing').style.display = 'block';
+  document.getElementById('view-module').style.display = 'none';
+}
+
+function goBack() {
+  document.querySelectorAll('#view-module > div[id^="module-"]').forEach(el => el.style.display = 'none');
+  document.getElementById('view-module').style.display = 'none';
+  document.getElementById('view-landing').style.display = 'block';
+}
+
+function openModule(id) {
+  document.getElementById('view-landing').style.display = 'none';
+  document.querySelectorAll('#view-module > div[id^="module-"]').forEach(el => el.style.display = 'none');
+  const pane = document.getElementById('module-' + id);
+  if (!pane) return;
+  pane.style.display = 'block';
+  const labels = { 'team-members': 'Team Members' };
+  document.getElementById('moduleCrumb').textContent = labels[id] || id;
+  document.getElementById('view-module').style.display = 'block';
+  if (id === 'team-members' && !membersLoaded) {
+    loadMembers();
+  }
+}
+
+// ── Team Members data ──
+async function loadMembers() {
+  try {
+    const resp = await spFetch(`${listApiUrl()}/items?$select=Id,EmployeeName,Department,Role,Active,SortOrder&$orderby=SortOrder asc&$top=500`);
+    const data = await resp.json();
+    members = (data.value || []).map(item => ({
+      id: String(item.Id),
+      name: item.EmployeeName || '',
+      department: item.Department || '',
+      roles: parseRoles(item.Role || ''),
+      active: item.Active !== false,
+      sortOrder: item.SortOrder || 0
+    }));
+    membersLoaded = true;
+    renderList();
+  } catch (err) {
+    document.getElementById('memberList').innerHTML = `<div class="empty-state">Error loading: ${escHtml(err.message)}</div>`;
+  }
+}
+
+function sortBy(field) { currentSort = field; renderList(); }
+
+function getSorted() {
+  return [...members].sort((a, b) => {
+    if (currentSort === 'department') return a.department.localeCompare(b.department) || a.name.localeCompare(b.name);
+    if (currentSort === 'sortOrder') return (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name);
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function renderList() {
+  const sorted = getSorted();
+  if (!sorted.length) {
+    document.getElementById('memberList').innerHTML = '<div class="empty-state">No team members yet.</div>';
+    return;
+  }
+  document.getElementById('memberList').innerHTML = sorted.map(m => {
+    if (editingId === m.id) {
+      return `<div class="member-row editing">
+        <div><input class="edit-input" id="editName_${m.id}" value="${escHtml(m.name)}"></div>
+        <div><select class="edit-select" id="editDept_${m.id}">
+          <option value="">—</option>
+          ${DEPTS.map(d => `<option value="${d}" ${m.department===d?'selected':''}>${d}</option>`).join('')}
+        </select></div>
+        <div>
+          <div class="chip-input-wrap" id="editRolesWrap_${m.id}" data-roles="${escHtml(JSON.stringify(m.roles))}" onclick="document.getElementById('editRoleInput_${m.id}').focus()">
+            ${m.roles.map((r,i) => `<span class="chip">${escHtml(r)}<span class="chip-remove" onclick="removeEditRole('${m.id}',${i})">×</span></span>`).join('')}
+            <input type="text" id="editRoleInput_${m.id}" class="chip-text-input" placeholder="Add role…">
+          </div>
+        </div>
+        <div><select class="edit-select" id="editActive_${m.id}">
+          <option value="true" ${m.active?'selected':''}>Active</option>
+          <option value="false" ${!m.active?'selected':''}>Inactive</option>
+        </select></div>
+        <div class="row-actions">
+          <button class="btn btn-save btn-sm" onclick="saveEdit('${m.id}')">Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelEdit()">Cancel</button>
+        </div>
+      </div>`;
+    }
+    const roleChips = m.roles.length
+      ? m.roles.map(r => `<span class="role-chip">${escHtml(r)}</span>`).join('')
+      : `<span style="color:var(--teak);font-size:12px;">—</span>`;
+    return `<div class="member-row">
+      <div class="member-name">${escHtml(m.name)}</div>
+      <div class="member-dept">${escHtml(m.department)}</div>
+      <div class="member-roles">${roleChips}</div>
+      <div><span class="active-badge ${m.active?'yes':'no'}">${m.active?'● Active':'○ Inactive'}</span></div>
+      <div class="row-actions">
+        <button class="btn btn-ghost btn-sm" onclick="startEdit('${m.id}')">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteMember('${m.id}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Attach keyboard handler to the edit role input after DOM render
+  if (editingId) {
+    const input = document.getElementById(`editRoleInput_${editingId}`);
+    if (input) {
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ',') {
+          e.preventDefault();
+          addEditRoleFromInput(editingId);
+        } else if (e.key === 'Backspace' && input.value === '') {
+          const roles = getEditRoles(editingId);
+          if (roles.length) { roles.pop(); setEditRoles(editingId, roles); }
+        }
+      });
+    }
+  }
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function startEdit(id) { editingId = id; renderList(); document.getElementById(`editName_${id}`)?.focus(); }
+function cancelEdit() { editingId = null; renderList(); }
+
+async function saveEdit(id) {
+  const name = document.getElementById(`editName_${id}`).value.trim();
+  const dept = document.getElementById(`editDept_${id}`).value;
+  const active = document.getElementById(`editActive_${id}`).value === 'true';
+  addEditRoleFromInput(id); // flush any partial text
+  const roles = getEditRoles(id);
+  if (!name) { showToast('Name is required.'); return; }
+  try {
+    await spFetch(`${listApiUrl()}/items(${parseInt(id)})`, {
+      method: 'POST',
+      headers: { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+      body: JSON.stringify({ EmployeeName: name, Department: dept, Role: serializeRoles(roles), Active: active })
+    });
+    const m = members.find(x => x.id === id);
+    if (m) { m.name = name; m.department = dept; m.roles = roles; m.active = active; }
+    editingId = null; renderList(); showToast('Saved.');
+  } catch (err) { showToast('Error: ' + err.message); }
+}
+
+async function addMember() {
+  const name = document.getElementById('newName').value.trim();
+  const dept = document.getElementById('newDept').value;
+  addNewRoleFromInput(); // flush any partial text
+  if (!name) { showToast('Enter a name first.'); return; }
+  try {
+    const maxSort = members.length ? Math.max(...members.map(m => m.sortOrder || 0)) : 0;
+    const resp = await spFetch(`${listApiUrl()}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ EmployeeName: name, Department: dept, Role: serializeRoles(newRoles), Active: true, SortOrder: maxSort + 10 })
+    });
+    const item = await resp.json();
+    members.push({ id: String(item.Id), name: item.EmployeeName, department: item.Department || '', roles: parseRoles(item.Role || ''), active: true, sortOrder: item.SortOrder || 0 });
+    document.getElementById('newName').value = '';
+    document.getElementById('newDept').value = '';
+    newRoles = [];
+    renderNewRoleChips();
+    renderList(); showToast(`${name} added.`);
+  } catch (err) { showToast('Error: ' + err.message); }
+}
+
+async function deleteMember(id) {
+  const m = members.find(x => x.id === id);
+  if (!m || !confirm(`Remove ${m.name} from the roster?`)) return;
+  try {
+    await spFetch(`${listApiUrl()}/items(${parseInt(id)})`, {
+      method: 'POST',
+      headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' }
+    });
+    members = members.filter(x => x.id !== id);
+    renderList(); showToast(`${m.name} removed.`);
+  } catch (err) { showToast('Error: ' + err.message); }
+}
+
+// ── Toast ──
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+window.addEventListener('load', () => {
+  // Attach keyboard handler for Add form role input
+  const newRoleInput = document.getElementById('newRoleInput');
+  if (newRoleInput) {
+    newRoleInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        addNewRoleFromInput();
+      } else if (e.key === 'Backspace' && newRoleInput.value === '') {
+        if (newRoles.length) { newRoles.pop(); renderNewRoleChips(); }
+      }
+    });
+  }
+  initMsal().catch(console.error);
+});
+</script>
+</body>
+</html>
