@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reference CA Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,500;1,300&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="lib/sherpa-auth.js"></script>
+<style>
+:root {
+  --navy:#1f2e3e; --gold:#d8b64f;
+  --bg:#F6F2EE; --surface:#fff; --border:#E5E1D8; --border-strong:#B7A9A3;
+  --text:#282828; --text-dim:#9091A0; --text-mute:#B7A9A3;
+  --silver:rgba(255,255,255,.5);
+  --ok:#2a7a4a; --ok-bg:#edf7f1; --ok-border:#b8dcc5;
+  --warn:#9a6f1a; --warn-bg:#fbf4e4; --warn-border:#e4ceaa;
+  --info:#2a4a7a; --info-bg:#edf1f7; --info-border:#b8c5dc;
+  --action:#263860; --action-hover:#1a2d54;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+  --r-sm:4px;--r-md:6px;--r-lg:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'DM Sans',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.55;min-height:100vh;}
+
+/* AUTH */
+.auth-overlay{position:fixed;inset:0;background:rgba(26,26,26,.55);backdrop-filter:blur(3px);z-index:600;display:none;align-items:center;justify-content:center;}
+.auth-overlay.active{display:flex;}
+.auth-card{background:var(--surface);border-radius:var(--r-lg);padding:32px 36px;max-width:380px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2);}
+.auth-card h2{font-size:18px;font-weight:600;margin-bottom:var(--s2);}
+.auth-card p{font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:var(--s5);}
+.auth-go{font-family:inherit;font-size:13px;font-weight:600;padding:10px 24px;background:var(--navy);color:#fff;border:none;border-radius:var(--r-sm);cursor:pointer;}
+.auth-go:hover{background:var(--action);}
+.auth-error{margin-top:var(--s3);font-size:12px;color:var(--warn);display:none;}
+.auth-error.show{display:block;}
+
+/* HEADER */
+.header{background:var(--navy);color:#fff;padding:0 28px;display:flex;align-items:stretch;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,.15);position:sticky;top:0;z-index:100;}
+.header-left{display:flex;align-items:center;gap:14px;padding:12px 0;}
+.wordmark{font-family:'Fraunces',serif;font-size:22px;font-weight:400;color:#fff;line-height:1;}
+.wordmark span{font-style:italic;font-weight:300;}
+.header-divider{width:1px;background:rgba(255,255,255,.2);align-self:stretch;margin:12px 4px;}
+.header-sub{display:flex;flex-direction:column;gap:2px;}
+.header-title{font-size:13px;font-weight:600;color:#fff;}
+.header-subtitle{font-size:10px;font-weight:500;color:var(--silver);text-transform:uppercase;letter-spacing:1.5px;}
+.header-right{display:flex;align-items:center;gap:10px;padding:12px 0;}
+.version-badge{background:rgba(255,255,255,.1);color:var(--gold);padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.5px;}
+.icon-btn{background:transparent;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.85);padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s;display:inline-flex;align-items:center;gap:6px;}
+.icon-btn:hover{background:rgba(255,255,255,.08);color:#fff;}
+.header-user{font-size:11px;color:var(--silver);}
+
+/* STEP TRACKER */
+.step-tracker{background:var(--surface);border-bottom:1px solid var(--border);padding:0 20px;height:34px;display:flex;align-items:stretch;}
+.step-tracker-step{font-size:11px;font-weight:600;color:var(--text-mute);padding:0 14px;display:flex;align-items:center;letter-spacing:.04em;text-transform:uppercase;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:default;user-select:none;white-space:nowrap;}
+.step-tracker-step.active{color:var(--info);border-bottom-color:var(--info);}
+.step-tracker-sep{font-size:11px;color:var(--border-strong);display:flex;align-items:center;padding:0 2px;user-select:none;}
+
+/* STATUS STRIP */
+.status-strip{display:flex;align-items:center;gap:14px;padding:8px 28px;background:var(--surface);border-bottom:1px solid var(--border);font-size:12px;}
+.status-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:12px;font-weight:600;font-size:11px;}
+.status-pill.empty{background:#f0f0f0;color:#888;}
+.status-pill.loading{background:var(--info-bg);color:var(--info);}
+.status-pill.ready{background:var(--ok-bg);color:var(--ok);}
+.status-pill.saving{background:var(--warn-bg);color:var(--warn);}
+.status-pill.error{background:#fef2f2;color:#b91c1c;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.6s infinite ease-in-out;}
+.status-pill.empty .status-dot,.status-pill.ready .status-dot{animation:none;}
+.status-pill.empty .status-dot{opacity:.4;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.strip-spacer{flex:1;}
+.save-status{font-size:11px;color:var(--text-mute);}
+.strip-btn{font-family:inherit;background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:5px 10px;border-radius:var(--r-sm);font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .12s;}
+.strip-btn:hover{border-color:var(--border-strong);color:var(--text);}
+
+/* MAIN */
+.main{max-width:960px;margin:0 auto;padding:var(--s5) 28px 100px;}
+
+/* STATUS BAR */
+.status-bar{border-radius:var(--r-md);padding:var(--s3) var(--s4);font-size:12px;margin-bottom:var(--s4);display:none;background:var(--info-bg);border:1px solid var(--info-border);color:var(--info);}
+.status-bar.active{display:block;}
+.status-bar.error{background:#fef2f2;border-color:#fca5a5;color:#b91c1c;}
+.status-bar.success{background:var(--ok-bg);border-color:var(--ok-border);color:var(--ok);}
+
+/* DROP ZONE */
+.upload-zone{border:2px dashed var(--border-strong);border-radius:var(--r-lg);padding:48px var(--s5);text-align:center;cursor:pointer;transition:all .2s;background:var(--surface);margin-bottom:var(--s5);}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--navy);background:#fffcf0;}
+.upload-zone h2{font-family:'Fraunces',serif;font-size:22px;font-weight:400;color:var(--navy);margin-bottom:6px;}
+.upload-zone-sub{font-size:13px;color:var(--text-dim);margin-bottom:var(--s5);}
+.upload-cta{display:inline-block;background:var(--navy);color:#fff;padding:9px 20px;border-radius:5px;font-size:12px;font-weight:600;letter-spacing:.3px;}
+.upload-zone-formats{font-size:11px;color:var(--text-mute);margin-top:14px;letter-spacing:.5px;text-transform:uppercase;}
+.upload-zone input{display:none;}
+
+/* FILE QUEUE */
+.file-queue{margin-bottom:var(--s4);}
+.file-row{display:flex;align-items:center;gap:var(--s3);padding:10px var(--s4);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;}
+.file-row.done{border-color:var(--ok-border);background:var(--ok-bg);}
+.file-row.error-row{border-color:#fca5a5;background:#fef2f2;}
+.file-row.processing{border-color:var(--info-border);background:var(--info-bg);}
+.file-name{flex:1;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.file-status{font-size:11px;color:var(--text-mute);}
+.file-status.done{color:var(--ok);}
+.file-status.error{color:#b91c1c;}
+.file-status.processing{color:var(--info);}
+.file-remove{font-family:inherit;background:none;border:none;cursor:pointer;color:var(--text-mute);font-size:16px;padding:2px 6px;border-radius:var(--r-sm);line-height:1;}
+.file-remove:hover{background:#fce8e8;color:#a33;}
+.add-more-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:1px dashed var(--border-strong);border-radius:var(--r-md);font-size:12px;color:var(--text-dim);cursor:pointer;background:none;width:100%;font-family:inherit;transition:all .12s;}
+.add-more-btn:hover{border-color:var(--action);color:var(--action);background:var(--info-bg);}
+
+/* SECTION CARDS */
+.section-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:var(--s4);}
+.section-card-header{padding:var(--s3) var(--s4);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:var(--s3);background:var(--bg);}
+.section-card-title{font-size:13px;font-weight:600;flex:1;}
+.section-card-meta{font-size:11px;color:var(--text-mute);}
+
+/* CA SUMMARY CARD */
+.ca-summary{padding:var(--s4);}
+.ca-summary + .ca-summary{border-top:1px solid var(--border);}
+.ca-summary-header{display:flex;align-items:baseline;gap:var(--s3);margin-bottom:var(--s3);}
+.ca-summary-name{font-size:14px;font-weight:600;color:var(--text);}
+.ca-summary-meta{font-size:11px;color:var(--text-mute);}
+.ca-section-row{display:grid;grid-template-columns:140px 1fr;gap:var(--s2);padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;}
+.ca-section-row:last-child{border-bottom:none;}
+.ca-section-num{font-weight:600;color:var(--text-dim);white-space:nowrap;}
+.ca-section-text{color:var(--text);line-height:1.5;}
+.ca-exclusions{margin-top:var(--s3);padding:var(--s3);background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:var(--r-sm);}
+.ca-exclusions-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--warn);margin-bottom:4px;}
+.ca-exclusion-item{font-size:12px;color:var(--text);line-height:1.5;}
+
+/* SETTINGS MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);backdrop-filter:blur(2px);z-index:500;display:none;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--surface);border-radius:var(--r-lg);padding:var(--s6);max-width:440px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18);}
+.modal h2{font-size:17px;font-weight:600;margin-bottom:var(--s3);}
+.modal p{font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:var(--s2);}
+.modal-key-input{width:100%;margin:var(--s4) 0;padding:9px 10px;border:1px solid var(--border-strong);border-radius:var(--r-sm);font-size:13px;font-family:monospace;outline:none;}
+.modal-key-input:focus{border-color:var(--action);}
+.modal-actions{display:flex;justify-content:flex-end;gap:var(--s2);margin-top:var(--s4);}
+.modal-btn{font-family:inherit;font-size:13px;padding:7px 16px;border-radius:var(--r-sm);cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:background .12s;}
+.modal-btn:hover{background:var(--bg);}
+.modal-btn.primary{background:var(--navy);color:#fff;border-color:var(--navy);font-weight:600;}
+.modal-btn.primary:hover{background:var(--action);}
+.modal-btn.danger{color:#b91c1c;}
+
+/* PROMPT PANEL */
+.prompt-panel{position:fixed;right:0;top:0;bottom:0;width:640px;max-width:90vw;background:var(--surface);border-left:1px solid var(--border);box-shadow:-4px 0 24px rgba(0,0,0,.1);z-index:300;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;}
+.prompt-panel.open{transform:translateX(0);}
+.prompt-panel-head{padding:var(--s4) var(--s5);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:var(--s3);}
+.prompt-panel-head h3{font-size:14px;font-weight:600;flex:1;margin:0;}
+.prompt-panel-btn{font-family:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text-dim);cursor:pointer;}
+.prompt-panel-btn:hover{background:var(--bg);color:var(--text);}
+.prompt-panel-body{flex:1;overflow-y:auto;padding:var(--s4) var(--s5);}
+.prompt-pre{font-family:monospace;font-size:11px;line-height:1.7;color:var(--text-dim);white-space:pre-wrap;word-break:break-word;}
+.prompt-note{font-size:11px;color:var(--text-mute);font-style:italic;margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--border);}
+
+/* NAV BAR */
+.nav-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:var(--s3) var(--s6);display:flex;align-items:center;gap:var(--s3);z-index:100;}
+.nav-left{flex:1;display:flex;align-items:center;gap:var(--s2);}
+.nav-hint{font-size:11px;color:var(--text-mute);}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border-radius:var(--r-md);font-size:13px;font-weight:500;border:1px solid transparent;cursor:pointer;font-family:inherit;transition:background .12s;}
+.btn-ghost{background:transparent;color:var(--text-dim);border-color:var(--border);}
+.btn-ghost:hover{background:var(--bg);color:var(--text);}
+.btn-primary{background:var(--navy);color:#fff;font-weight:600;}
+.btn-primary:hover:not(:disabled){background:var(--action);}
+.btn-primary:disabled{background:var(--border-strong);cursor:not-allowed;opacity:.6;}
+</style>
+</head>
+<body>
+
+<!-- AUTH OVERLAY -->
+<div class="auth-overlay" id="auth-overlay">
+  <div class="auth-card">
+    <h2>Sign in to SharePoint</h2>
+    <p>Sign in with your Bellweather account to save reference CA data.</p>
+    <button class="auth-go" onclick="doSignIn()">Sign in</button>
+    <div class="auth-error" id="auth-error"></div>
+    <div style="margin-top:14px;font-size:10px;color:#B7A9A3;letter-spacing:.03em;">CA Writing Tool &nbsp;·&nbsp; Reference CA Extractor &nbsp;·&nbsp; v1</div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <div class="wordmark">Bell<span>w</span>eather</div>
+    <div class="header-divider"></div>
+    <div class="header-sub">
+      <div class="header-title">Reference CA Extractor</div>
+      <div class="header-subtitle">CA Tool &nbsp;·&nbsp; Sources Component</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="version-badge">v1</div>
+    <button class="icon-btn" id="btn-show-prompt" onclick="openPromptPanel()" style="display:none">{ } Prompt</button>
+    <button class="icon-btn" onclick="openSettings()">⚙ Settings</button>
+    <span class="header-user" id="user-label"></span>
+    <button class="icon-btn" id="signout-btn" onclick="doSignOut()" style="display:none">Sign out</button>
+  </div>
+</div>
+
+<!-- STEP TRACKER -->
+<div class="step-tracker">
+  <span class="step-tracker-step">1 · Setup</span>
+  <span class="step-tracker-sep">›</span>
+  <span class="step-tracker-step active">2 · Sources</span>
+  <span class="step-tracker-sep">›</span>
+  <span class="step-tracker-step">3 · Generate</span>
+  <span class="step-tracker-sep">›</span>
+  <span class="step-tracker-step">4 · Document</span>
+</div>
+
+<!-- STATUS STRIP -->
+<div class="status-strip">
+  <span class="status-pill empty" id="status-pill">
+    <span class="status-dot"></span>
+    <span id="status-text">No files</span>
+  </span>
+  <div class="strip-spacer"></div>
+  <span class="save-status" id="save-status"></span>
+  <button class="strip-btn" id="btn-reset" style="display:none" onclick="resetAll()">Reset</button>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-bg" id="settings-modal" onclick="if(event.target===this)closeSettings()">
+  <div class="modal">
+    <h2>Settings</h2>
+    <p>Paste your Anthropic API key to enable AI summarisation of reference CAs. The key is stored in your browser's localStorage only.</p>
+    <p style="font-size:11px;color:var(--text-mute)">Prototype-phase only. At integration time this will be replaced by the proxy pattern.</p>
+    <input type="password" class="modal-key-input" id="api-key-input" placeholder="sk-ant-…" autocomplete="off">
+    <div class="modal-actions">
+      <button class="modal-btn danger" onclick="clearApiKey()">Clear key</button>
+      <button class="modal-btn" onclick="closeSettings()">Cancel</button>
+      <button class="modal-btn primary" onclick="saveApiKey()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROMPT PANEL -->
+<div class="prompt-panel" id="prompt-panel">
+  <div class="prompt-panel-head">
+    <h3>Prompt sent to Claude</h3>
+    <button class="prompt-panel-btn" onclick="copyPrompt()">Copy</button>
+    <button class="prompt-panel-btn" onclick="closePromptPanel()">Close</button>
+  </div>
+  <div class="prompt-panel-body">
+    <pre class="prompt-pre" id="prompt-display"></pre>
+    <div class="prompt-note">Each CA is sent to Claude as a document attachment alongside this prompt. Claude reads the full contract and returns a structured summary — which CA sections are present, key scope language per section, and notable exclusions. Each CA is processed individually.</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <div class="status-bar" id="status-bar"></div>
+
+  <!-- UPLOAD ZONE -->
+  <div class="upload-zone" id="upload-zone"
+    ondragover="dzOver(event)" ondragleave="dzLeave(event)" ondrop="dzDrop(event)"
+    onclick="document.getElementById('file-input').click()">
+    <input type="file" id="file-input" accept=".docx,.pdf" multiple onchange="handleFileInput(this)">
+    <h2>Drop reference CA files here</h2>
+    <div class="upload-zone-sub">Comp CAs, benchmark projects, similar scope — add as many as are relevant</div>
+    <div class="upload-cta">Choose files</div>
+    <div class="upload-zone-formats">.docx or .pdf</div>
+  </div>
+
+  <!-- FILE QUEUE -->
+  <div class="file-queue" id="file-queue" style="display:none">
+    <div id="file-rows"></div>
+    <button class="add-more-btn" onclick="document.getElementById('file-input').click()">+ Add more CAs</button>
+  </div>
+
+  <!-- SUMMARIES CARD -->
+  <div class="section-card" id="summaries-card" style="display:none">
+    <div class="section-card-header">
+      <span class="section-card-title">CA Summaries</span>
+      <span class="section-card-meta" id="summaries-meta"></span>
+    </div>
+    <div id="summaries-body"></div>
+  </div>
+
+</div>
+
+<!-- NAV BAR -->
+<footer class="nav-bar">
+  <div class="nav-left">
+    <button class="btn btn-ghost" onclick="window.close()">← Close</button>
+    <span class="nav-hint" id="nav-hint">Add reference CA files to begin.</span>
+  </div>
+  <button class="btn btn-primary" id="btn-save" disabled onclick="saveToSharePoint()">Save to SharePoint ↑</button>
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// PROMPT
+// ═══════════════════════════════════════════════════════════════
+const SUMMARY_PROMPT = `You are reading a Bellweather Design Build Construction Agreement (CA) — a residential renovation contract. Summarise this document for use as a reference benchmark when writing a new CA for a different project.
+
+Extract the following and return ONLY a raw JSON object — no markdown, no code fences, no preamble:
+
+{
+  "project_name": "Client name or project identifier from the contract",
+  "project_address": "Property address",
+  "contract_date": "Contract date if present, or null",
+  "scope_summary": "2-3 sentence plain-language description of what this project covers — major trade areas, notable elements",
+  "sections": [
+    {
+      "section_number": "01",
+      "section_name": "Site Work",
+      "present": true,
+      "key_language": "2-3 sentence summary of what this section says — specific materials, methods, or scope decisions worth noting as a benchmark"
+    }
+  ],
+  "exclusions": [
+    "Each notable exclusion as a plain-language string"
+  ],
+  "notable_patterns": [
+    "Any scope language, clause structure, or decisions in this CA that are worth reusing or referencing — e.g. specific warranty language, owner-supplied appliance handling, condo restriction clauses"
+  ]
+}
+
+Include only sections that are substantively present — omit boilerplate or blank sections. The sections array should reflect what was actually scoped in this contract.`;
+
+// ═══════════════════════════════════════════════════════════════
+// LAUNCH PARAMS
+// ═══════════════════════════════════════════════════════════════
+function readLaunchParams() {
+  const src = location.hash.includes('code=') ? '' : location.search;
+  const p = new URLSearchParams(src);
+  return {driveId:p.get('driveId')||null,folderId:p.get('folderId')||null,projectName:p.get('projectName')||null};
+}
+const launchParams = readLaunchParams();
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// each entry: {id, file, name, status ('pending'|'processing'|'done'|'error'), summary, base64, mediaType}
+// ═══════════════════════════════════════════════════════════════
+let caFiles  = [];
+let nextId   = 0;
+let dirty    = false;
+
+// ═══════════════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════════════
+(async()=>{
+  try {
+    await SherpaAuth.init();
+    if (SherpaAuth.isSignedIn()) await onAuth(); else showAuthOverlay();
+  } catch(e) { showAuthError('Auth init failed: '+e.message); showAuthOverlay(); }
+})();
+function doSignIn()  { SherpaAuth.signIn(); }
+function doSignOut() { SherpaAuth.signOut(); }
+async function onAuth() {
+  hideAuthOverlay();
+  const acct = SherpaAuth.getAccount();
+  document.getElementById('user-label').textContent = acct?.username || '';
+  document.getElementById('signout-btn').style.display = 'inline-flex';
+}
+function showAuthOverlay() { document.getElementById('auth-overlay').classList.add('active'); }
+function hideAuthOverlay() { document.getElementById('auth-overlay').classList.remove('active'); }
+function showAuthError(msg) { const el=document.getElementById('auth-error'); el.textContent=msg; el.classList.add('show'); }
+
+// ═══════════════════════════════════════════════════════════════
+// FILE HANDLING
+// ═══════════════════════════════════════════════════════════════
+function dzOver(e)  { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag-over'); }
+function dzLeave(e) { document.getElementById('upload-zone').classList.remove('drag-over'); }
+function dzDrop(e)  { e.preventDefault(); document.getElementById('upload-zone').classList.remove('drag-over'); addFiles(Array.from(e.dataTransfer.files)); }
+function handleFileInput(input) { addFiles(Array.from(input.files)); input.value=''; }
+
+function addFiles(files) {
+  const valid = files.filter(f => /\.(docx|pdf)$/i.test(f.name));
+  if (!valid.length) { setStatusMsg('Please drop .docx or .pdf files only.','error'); return; }
+  setStatusMsg('');
+
+  valid.forEach(file => {
+    const entry = {id: nextId++, file, name: file.name, status: 'pending', summary: null, base64: null, mediaType: file.name.endsWith('.pdf') ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'};
+    caFiles.push(entry);
+  });
+
+  renderFileQueue();
+  document.getElementById('upload-zone').style.display = 'none';
+  document.getElementById('file-queue').style.display = '';
+  document.getElementById('btn-reset').style.display = '';
+  document.getElementById('btn-show-prompt').style.display = '';
+  setPill('loading', caFiles.length + ' file' + (caFiles.length !== 1 ? 's' : '') + ' queued');
+
+  processQueue();
+}
+
+function removeFile(id) {
+  caFiles = caFiles.filter(e => e.id !== id);
+  if (caFiles.length === 0) { resetAll(); return; }
+  renderFileQueue();
+  renderSummaries();
+  updatePill();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROCESSING QUEUE — reads each file then calls Claude in sequence
+// ═══════════════════════════════════════════════════════════════
+async function processQueue() {
+  const key = getApiKey();
+  if (!key) { openSettings(); return; }
+
+  for (const entry of caFiles) {
+    if (entry.status !== 'pending') continue;
+    entry.status = 'processing';
+    renderFileRow(entry);
+    updatePill();
+
+    try {
+      // Step 1: read file to base64
+      if (!entry.base64) {
+        entry.base64 = await readFileAsBase64(entry.file);
+      }
+
+      // Step 2: send to Claude
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 4096,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: { type: 'base64', media_type: entry.mediaType, data: entry.base64 }
+              },
+              { type: 'text', text: SUMMARY_PROMPT }
+            ]
+          }]
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(()=>({}));
+        throw new Error(err.error?.message || resp.statusText || 'API error '+resp.status);
+      }
+
+      const data    = await resp.json();
+      const rawText = (data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim();
+      const cleaned = rawText.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'').trim();
+      entry.summary = JSON.parse(cleaned);
+      entry.status  = 'done';
+    } catch(e) {
+      console.error('Failed to process', entry.name, e);
+      entry.status = 'error';
+      entry.errorMsg = e.message;
+    }
+
+    renderFileRow(entry);
+    renderSummaries();
+    updatePill();
+    dirty = true;
+  }
+
+  const doneCount = caFiles.filter(e => e.status === 'done').length;
+  if (doneCount > 0) {
+    document.getElementById('btn-save').disabled = false;
+    document.getElementById('nav-hint').textContent = 'Review summaries, then save to SharePoint.';
+  }
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = e => resolve(e.target.result.split(',')[1]);
+    r.onerror = () => reject(new Error('Could not read file'));
+    r.readAsDataURL(file);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════
+function renderFileQueue() {
+  const container = document.getElementById('file-rows');
+  container.innerHTML = caFiles.map(e => fileRowHtml(e)).join('');
+}
+
+function renderFileRow(entry) {
+  const el = document.getElementById('frow-'+entry.id);
+  if (el) el.outerHTML = fileRowHtml(entry);
+  else renderFileQueue();
+}
+
+function fileRowHtml(e) {
+  const statusText = {
+    pending:    'Queued',
+    processing: 'Sending to Claude…',
+    done:       '✓ Summarised',
+    error:      '⚠ Error: ' + (e.errorMsg || 'unknown'),
+  }[e.status] || '';
+  const statusCls = {pending:'',processing:'processing',done:'done',error:'error'}[e.status]||'';
+  const rowCls    = {pending:'',processing:'processing',done:'done',error:'error-row'}[e.status]||'';
+  return `<div class="file-row ${rowCls}" id="frow-${e.id}">
+    <span class="file-name" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</span>
+    <span class="file-status ${statusCls}">${escapeHtml(statusText)}</span>
+    ${e.status === 'pending' ? `<button class="file-remove" onclick="removeFile(${e.id})" title="Remove">×</button>` : ''}
+  </div>`;
+}
+
+function renderSummaries() {
+  const done = caFiles.filter(e => e.status === 'done' && e.summary);
+  const card = document.getElementById('summaries-card');
+  const body = document.getElementById('summaries-body');
+
+  if (!done.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('summaries-meta').textContent = done.length + ' of ' + caFiles.length + ' complete';
+
+  body.innerHTML = done.map(e => {
+    const s = e.summary;
+    const sections = (s.sections || []).filter(sec => sec.present !== false);
+    const exclusions = s.exclusions || [];
+    const patterns   = s.notable_patterns || [];
+
+    return `<div class="ca-summary">
+      <div class="ca-summary-header">
+        <span class="ca-summary-name">${escapeHtml(s.project_name || e.name)}</span>
+        <span class="ca-summary-meta">${escapeHtml(s.project_address || '')}${s.contract_date ? ' · ' + escapeHtml(s.contract_date) : ''}</span>
+      </div>
+      ${s.scope_summary ? `<div style="font-size:12px;color:var(--text-dim);margin-bottom:var(--s3);line-height:1.6;">${escapeHtml(s.scope_summary)}</div>` : ''}
+      ${sections.map(sec => `
+        <div class="ca-section-row">
+          <span class="ca-section-num">${escapeHtml(sec.section_number||'')} · ${escapeHtml(sec.section_name||'')}</span>
+          <span class="ca-section-text">${escapeHtml(sec.key_language||'')}</span>
+        </div>`).join('')}
+      ${exclusions.length ? `
+        <div class="ca-exclusions">
+          <div class="ca-exclusions-label">Exclusions</div>
+          ${exclusions.map(ex=>`<div class="ca-exclusion-item">— ${escapeHtml(ex)}</div>`).join('')}
+        </div>` : ''}
+      ${patterns.length ? `
+        <div style="margin-top:var(--s3);padding:var(--s3);background:var(--info-bg);border:1px solid var(--info-border);border-radius:var(--r-sm);">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--info);margin-bottom:4px;">Notable patterns</div>
+          ${patterns.map(p=>`<div style="font-size:12px;color:var(--text);line-height:1.5;">— ${escapeHtml(p)}</div>`).join('')}
+        </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function updatePill() {
+  const done  = caFiles.filter(e => e.status === 'done').length;
+  const proc  = caFiles.filter(e => e.status === 'processing').length;
+  const err   = caFiles.filter(e => e.status === 'error').length;
+  const total = caFiles.length;
+  if (proc) { setPill('loading', 'Processing ' + proc + ' of ' + total + '…'); return; }
+  if (done === total && !err) { setPill('ready', done + ' CA' + (done !== 1 ? 's' : '') + ' summarised'); return; }
+  if (err && !proc) { setPill('error', err + ' error' + (err !== 1 ? 's' : '')); return; }
+  setPill('loading', done + ' of ' + total + ' done');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RESET
+// ═══════════════════════════════════════════════════════════════
+function resetAll() {
+  caFiles=[]; nextId=0; dirty=false;
+  document.getElementById('upload-zone').style.display       = '';
+  document.getElementById('file-queue').style.display        = 'none';
+  document.getElementById('summaries-card').style.display    = 'none';
+  document.getElementById('btn-save').disabled               = true;
+  document.getElementById('btn-reset').style.display         = 'none';
+  document.getElementById('btn-show-prompt').style.display   = 'none';
+  document.getElementById('nav-hint').textContent            = 'Add reference CA files to begin.';
+  setPill('empty','No files');
+  setStatusMsg('');
+  closePromptPanel();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SAVE
+// ═══════════════════════════════════════════════════════════════
+async function saveToSharePoint() {
+  if (!launchParams.folderId || !launchParams.driveId) { downloadJson(); return; }
+  const btn = document.getElementById('btn-save');
+  btn.disabled=true; btn.textContent='Saving…';
+  showSaveStatus('Saving…'); setPill('saving','Saving…');
+  try {
+    const result = await SherpaAuth.graph(
+      SherpaAuth.GRAPH_BASE+'/drives/'+launchParams.driveId+'/items/'+launchParams.folderId+':/'+encodeURIComponent('reference_cas_extracted.json')+':/content',
+      {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildEnvelope(),null,2)}
+    );
+    if (!result?.id && !result?.name) throw new Error('Unexpected response from upload');
+    dirty=false; showSaveStatus('Saved ✓',3000); setPill('ready','Saved');
+    setStatusMsg('Saved to SharePoint — return to Sources.','success');
+  } catch(e) {
+    showSaveStatus('Error'); setPill('error','Save failed');
+    setStatusMsg('Save failed: '+e.message,'error');
+  } finally { btn.disabled=false; btn.textContent='Save to SharePoint ↑'; }
+}
+
+function downloadJson() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(buildEnvelope(),null,2)],{type:'application/json'}));
+  a.download='reference_cas_extracted.json'; a.click(); URL.revokeObjectURL(a.href);
+  setStatusMsg('Downloaded — upload to the project SharePoint folder manually.','success');
+}
+
+function buildEnvelope() {
+  const done = caFiles.filter(e => e.status === 'done' && e.summary);
+  return {
+    source_type:    'reference_cas',
+    source_version: '1.0',
+    extracted_at:   new Date().toISOString(),
+    completeness:   done.length > 0 ? 1.0 : 0.0,
+    data: {
+      cas: done.map(e => ({
+        source_file:  e.name,
+        ...e.summary,
+      })),
+      summary: {
+        total_files:     caFiles.length,
+        summarised:      done.length,
+        errors:          caFiles.filter(e => e.status === 'error').length,
+      }
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════
+const LS_KEY = 'ca_refcas_api_key';
+function getApiKey()  { try { return localStorage.getItem(LS_KEY)||''; } catch(e) { return ''; } }
+function _storeKey(k) { try { if(k) localStorage.setItem(LS_KEY,k); else localStorage.removeItem(LS_KEY); } catch(e) {} }
+function openSettings() { document.getElementById('api-key-input').value=getApiKey(); document.getElementById('settings-modal').classList.add('open'); setTimeout(()=>document.getElementById('api-key-input').focus(),50); }
+function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
+function saveApiKey()   { _storeKey(document.getElementById('api-key-input').value.trim()); closeSettings(); }
+function clearApiKey()  { _storeKey(''); document.getElementById('api-key-input').value=''; }
+
+// ═══════════════════════════════════════════════════════════════
+// PROMPT PANEL
+// ═══════════════════════════════════════════════════════════════
+function openPromptPanel() { document.getElementById('prompt-display').textContent=SUMMARY_PROMPT; document.getElementById('prompt-panel').classList.add('open'); }
+function closePromptPanel() { document.getElementById('prompt-panel').classList.remove('open'); }
+function copyPrompt() {
+  navigator.clipboard.writeText(SUMMARY_PROMPT).then(()=>{
+    const btn=document.querySelectorAll('.prompt-panel-btn')[0]; const orig=btn.textContent;
+    btn.textContent='Copied!'; setTimeout(()=>{btn.textContent=orig;},1500);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════
+function setPill(state,text) {
+  document.getElementById('status-pill').className='status-pill '+state;
+  document.getElementById('status-text').textContent=text;
+}
+function setStatusMsg(msg,cls) {
+  const el=document.getElementById('status-bar');
+  if(!msg){el.style.display='none';el.className='status-bar';return;}
+  el.className='status-bar active'+(cls?' '+cls:''); el.textContent=msg;
+}
+function showSaveStatus(msg,clearAfter) {
+  const el=document.getElementById('save-status'); el.textContent=msg;
+  if(clearAfter) setTimeout(()=>{el.textContent='';},clearAfter);
+}
+function escapeHtml(s) {
+  if(s==null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+</script>
+</body>
+</html>
