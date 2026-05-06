@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FBA — Admin Panel · Bellweather Design-Build</title>
+
+<!-- MSAL for Azure AD authentication -->
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --limestone: #282828;
+    --cotton: #F6F2EE;
+    --navy: #263860;
+    --slate: #9091A0;
+    --mahogany: #54423E;
+    --teak: #B7A9A3;
+    --concrete: #D2D5D8;
+    --glass: #EDF5F9;
+    --linen: #E5E1D8;
+    --marble: #FFFFFF;
+    --navy-light: #2e4275;
+    --sidebar-w: 224px;
+    --sidebar-collapsed: 60px;
+    --status-incomplete: #54423E;
+    --status-progress: #263860;
+    --status-nominated: #7a5c1e;
+    --status-uptodate: #2d5a3d;
+    --status-overdue: #8b2020;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--cotton); color: var(--limestone); min-height: 100vh; overflow-x: hidden; }
+
+  /* ── LOGIN SCREEN ── */
+  .login-screen {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--navy);
+  }
+  .login-card {
+    background: var(--cotton); border-radius: 10px; padding: 48px;
+    width: 400px; text-align: center;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.3);
+  }
+  .login-brand { font-family: 'Playfair Display', serif; font-size: 28px; color: var(--navy); margin-bottom: 4px; }
+  .login-brand span { font-style: italic; }
+  .login-sub { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--teak); margin-bottom: 32px; }
+  .login-title { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--limestone); margin-bottom: 8px; }
+  .login-desc { font-size: 13px; color: var(--slate); line-height: 1.6; margin-bottom: 32px; }
+  .login-btn {
+    width: 100%; padding: 13px; background: var(--navy); color: var(--cotton);
+    border: none; border-radius: 6px; font-family: 'DM Sans', sans-serif;
+    font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .login-btn:hover { background: var(--navy-light); }
+  .login-error { font-size: 12px; color: #8b2020; margin-top: 12px; display: none; }
+
+  /* ── LOADING ── */
+  .loading-screen {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--cotton); display: none;
+  }
+  .loading-spinner {
+    width: 32px; height: 32px; border: 2px solid var(--linen);
+    border-top-color: var(--navy); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── APP ── */
+  .app { display: none; min-height: 100vh; }
+  .app.visible { display: flex; }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: var(--sidebar-w); background: var(--navy);
+    display: flex; flex-direction: column;
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
+    transition: width 0.25s cubic-bezier(0.4,0,0.2,1); overflow: hidden;
+  }
+  .sidebar.collapsed { width: var(--sidebar-collapsed); }
+  .sidebar-brand {
+    padding: 22px 18px 18px; border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: space-between; min-height: 70px; flex-shrink: 0;
+  }
+  .brand-text { opacity: 1; transition: opacity 0.2s; white-space: nowrap; overflow: hidden; }
+  .sidebar.collapsed .brand-text { opacity: 0; pointer-events: none; }
+  .brand-wordmark { font-family: 'Playfair Display', serif; font-size: 19px; color: var(--cotton); letter-spacing: 0.01em; line-height: 1.1; }
+  .brand-wordmark span { font-style: italic; }
+  .brand-sub { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--teak); margin-top: 3px; }
+  .collapse-btn {
+    width: 26px; height: 26px; border-radius: 4px; background: rgba(255,255,255,0.08);
+    border: none; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--teak); flex-shrink: 0; transition: all 0.15s;
+  }
+  .collapse-btn:hover { background: rgba(255,255,255,0.15); color: var(--cotton); }
+  .collapse-btn svg { transition: transform 0.25s; }
+  .sidebar.collapsed .collapse-btn svg { transform: rotate(180deg); }
+  .sidebar-label {
+    font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--slate); padding: 16px 20px 5px; white-space: nowrap; overflow: hidden;
+    opacity: 1; transition: opacity 0.15s;
+  }
+  .sidebar.collapsed .sidebar-label { opacity: 0; }
+  .sidebar-nav { flex: 1; padding: 4px 0; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+    font-size: 13px; font-weight: 400; color: rgba(246,242,238,0.65);
+    cursor: pointer; transition: all 0.15s; border-left: 2px solid transparent;
+    text-decoration: none; white-space: nowrap; position: relative;
+  }
+  .nav-item:hover { color: var(--cotton); background: rgba(255,255,255,0.05); }
+  .nav-item.active { color: var(--cotton); background: rgba(255,255,255,0.08); border-left-color: var(--teak); font-weight: 500; }
+  .nav-icon { width: 16px; height: 16px; opacity: 0.7; flex-shrink: 0; }
+  .nav-item.active .nav-icon { opacity: 1; }
+  .nav-label { opacity: 1; transition: opacity 0.15s; overflow: hidden; }
+  .sidebar.collapsed .nav-label { opacity: 0; }
+  .sidebar.collapsed .nav-item:hover::after {
+    content: attr(data-label); position: absolute;
+    left: calc(var(--sidebar-collapsed) + 8px); top: 50%; transform: translateY(-50%);
+    background: var(--limestone); color: var(--cotton); padding: 5px 10px;
+    border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none;
+    z-index: 200; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .nav-future {
+    display: flex; align-items: center; gap: 10px; padding: 8px 20px;
+    font-size: 12px; color: rgba(246,242,238,0.28); cursor: default;
+    border-left: 2px solid transparent; white-space: nowrap;
+  }
+  .future-tag { font-size: 9px; background: rgba(255,255,255,0.08); color: var(--teak); padding: 1px 6px; border-radius: 10px; margin-left: auto; transition: opacity 0.15s; }
+  .sidebar.collapsed .future-tag, .sidebar.collapsed .nav-future .nav-label { opacity: 0; }
+  .sidebar-footer {
+    padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .user-chip { display: flex; align-items: center; gap: 10px; overflow: hidden; }
+  .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--mahogany); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--cotton); flex-shrink: 0; }
+  .user-info { overflow: hidden; opacity: 1; transition: opacity 0.15s; white-space: nowrap; }
+  .sidebar.collapsed .user-info { opacity: 0; }
+  .user-name { font-size: 12px; font-weight: 500; color: var(--cotton); }
+  .user-role { font-size: 10px; color: var(--slate); }
+  .gear-btn { width: 28px; height: 28px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12); background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--slate); transition: all 0.15s; flex-shrink: 0; }
+  .gear-btn:hover { border-color: rgba(255,255,255,0.3); color: var(--cotton); }
+  .gear-btn.active { border-color: var(--teak); color: var(--teak); }
+
+  /* ── MAIN ── */
+  .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; transition: margin-left 0.25s cubic-bezier(0.4,0,0.2,1); }
+  .main.collapsed { margin-left: var(--sidebar-collapsed); }
+
+  /* ── TOPBAR ── */
+  .topbar { background: var(--marble); border-bottom: 1px solid var(--linen); padding: 0 28px; height: 56px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .page-title { font-family: 'Playfair Display', serif; font-size: 19px; color: var(--navy); font-weight: 600; }
+  .page-subtitle { font-size: 12px; color: var(--slate); padding-left: 12px; border-left: 1px solid var(--concrete); }
+  .version-tag { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teak); background: var(--linen); padding: 3px 8px; border-radius: 3px; }
+  .topbar-right { display: flex; align-items: center; gap: 8px; }
+
+  /* ── BUTTONS ── */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 4px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; border: none; }
+  .btn-primary { background: var(--navy); color: var(--cotton); }
+  .btn-primary:hover { background: var(--navy-light); }
+  .btn-secondary { background: transparent; color: var(--navy); border: 1px solid var(--concrete); }
+  .btn-secondary:hover { border-color: var(--navy); background: var(--glass); }
+  .btn-danger { background: transparent; color: #8b2020; border: 1px solid #e8c0c0; }
+  .btn-danger:hover { background: #fdf0f0; }
+  .btn-promote { background: #2d5a3d; color: #fff; }
+  .btn-promote:hover { background: #245030; }
+  .btn-sm { padding: 5px 10px; font-size: 11px; }
+
+  /* ── CONTENT ── */
+  .content { padding: 24px 28px; flex: 1; }
+  .view-panel { display: none; }
+  .view-panel.active { display: block; animation: fadeIn 0.2s ease; }
+
+  /* ── STATS ── */
+  .stats-row { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; margin-bottom: 20px; }
+  .stat-card { background: var(--marble); border: 1px solid var(--linen); border-radius: 6px; padding: 14px 16px; transition: all 0.15s; }
+  .stat-card.clickable { cursor: pointer; }
+  .stat-card.clickable:hover { border-color: var(--navy); box-shadow: 0 2px 10px rgba(38,56,96,0.08); }
+  .stat-card.active-filter { border-color: var(--navy); background: var(--glass); }
+  .stat-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--slate); margin-bottom: 5px; }
+  .stat-value { font-family: 'Playfair Display', serif; font-size: 26px; color: var(--navy); line-height: 1; }
+  .stat-meta { font-size: 11px; color: var(--teak); margin-top: 3px; }
+
+  /* ── ROSTER ── */
+  .roster-container { background: var(--marble); border: 1px solid var(--linen); border-radius: 6px; overflow: hidden; }
+  .roster-toolbar { padding: 12px 16px; border-bottom: 1px solid var(--linen); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .search-input { flex: 1; min-width: 160px; max-width: 240px; height: 32px; border: 1px solid var(--concrete); border-radius: 4px; padding: 0 10px 0 30px; font-family: 'DM Sans', sans-serif; font-size: 12px; color: var(--limestone); background: var(--cotton); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239091A0' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 9px center; outline: none; transition: border-color 0.15s; }
+  .search-input:focus { border-color: var(--navy); }
+  .filter-select { height: 32px; border: 1px solid var(--concrete); border-radius: 4px; padding: 0 24px 0 9px; font-family: 'DM Sans', sans-serif; font-size: 12px; color: var(--limestone); background: var(--cotton); cursor: pointer; outline: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='5' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239091A0' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; transition: border-color 0.15s; }
+  .filter-select:focus { border-color: var(--navy); }
+  .active-filter-pill { display: inline-flex; align-items: center; gap: 5px; background: var(--navy); color: var(--cotton); padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .active-filter-pill button { background: none; border: none; color: var(--cotton); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; opacity: 0.7; }
+  .active-filter-pill button:hover { opacity: 1; }
+  .roster-count { margin-left: auto; font-size: 12px; color: var(--slate); white-space: nowrap; }
+
+  /* ── TABLE ── */
+  .roster-table { width: 100%; border-collapse: collapse; }
+  .roster-table th { padding: 8px 13px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--slate); background: var(--cotton); border-bottom: 1px solid var(--linen); white-space: nowrap; user-select: none; cursor: pointer; }
+  .roster-table th:hover { color: var(--navy); }
+  .sort-arrow { opacity: 0.4; font-size: 10px; }
+  .sort-arrow.active { opacity: 1; color: var(--navy); }
+  .roster-table td { padding: 11px 13px; font-size: 13px; border-bottom: 1px solid var(--linen); vertical-align: middle; }
+  .roster-table tr:last-child td { border-bottom: none; }
+  .roster-table tbody tr { transition: background 0.1s; cursor: pointer; }
+  .roster-table tbody tr:hover { background: var(--cotton); }
+  .staff-name { font-weight: 500; color: var(--limestone); }
+  .staff-seat { font-size: 11px; color: var(--slate); margin-top: 1px; }
+  .dept-badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 500; border: 1px solid; }
+  .dept-Production { background: #e8f0e8; color: #2d5a3d; border-color: #c0d8c0; }
+  .dept-Design { background: #f0e8f0; color: #5a2d5a; border-color: #d8c0d8; }
+  .dept-Sales { background: #f0ece8; color: #5a3d2d; border-color: #d8c8c0; }
+  .dept-Operations { background: #e8e8f0; color: #2d2d5a; border-color: #c0c0d8; }
+  .tier-pip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+  .tier-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .tier-pip.t1 .tier-dot { background: var(--teak); }
+  .tier-pip.t2 .tier-dot { background: var(--slate); }
+  .tier-pip.t3 .tier-dot { background: var(--navy); }
+  .tier-pip.t1 { color: var(--mahogany); }
+  .tier-pip.t2 { color: var(--slate); }
+  .tier-pip.t3 { color: var(--navy); }
+  .trail-progress { display: flex; align-items: center; gap: 7px; }
+  .trail-bar { width: 52px; height: 4px; background: var(--linen); border-radius: 2px; overflow: hidden; }
+  .trail-fill { height: 100%; border-radius: 2px; background: var(--navy); }
+  .trail-text { font-size: 12px; color: var(--slate); }
+  .last-active { font-size: 12px; color: var(--slate); }
+  .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .status-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .s-incomplete { background: #f5eeec; color: var(--status-incomplete); }
+  .s-incomplete .status-dot { background: var(--status-incomplete); }
+  .s-progress { background: var(--glass); color: var(--status-progress); }
+  .s-progress .status-dot { background: var(--status-progress); }
+  .s-nominated { background: #faf3e0; color: var(--status-nominated); border: 1px solid #f0dfa0; }
+  .s-nominated .status-dot { background: var(--status-nominated); }
+  .s-uptodate { background: #eaf3ec; color: var(--status-uptodate); }
+  .s-uptodate .status-dot { background: var(--status-uptodate); }
+  .s-overdue { background: #fdf0f0; color: var(--status-overdue); }
+  .s-overdue .status-dot { background: var(--status-overdue); }
+  .row-actions { display: flex; gap: 3px; opacity: 0; transition: opacity 0.15s; }
+  .roster-table tbody tr:hover .row-actions { opacity: 1; }
+  .icon-btn { width: 26px; height: 26px; border-radius: 4px; border: 1px solid var(--concrete); background: var(--marble); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; color: var(--slate); }
+  .icon-btn:hover { border-color: var(--navy); color: var(--navy); background: var(--glass); }
+
+  /* ── DRAWER ── */
+  .drawer-overlay { position: fixed; inset: 0; background: rgba(38,56,96,0.18); z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+  .drawer-overlay.open { opacity: 1; pointer-events: all; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 520px; background: var(--marble); box-shadow: -6px 0 36px rgba(38,56,96,0.12); z-index: 300; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); display: flex; flex-direction: column; overflow: hidden; }
+  .drawer.open { transform: translateX(0); }
+  .drawer-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--linen); display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; }
+  .drawer-title { font-family: 'Playfair Display', serif; font-size: 19px; color: var(--navy); font-weight: 600; }
+  .drawer-subtitle { font-size: 12px; color: var(--slate); margin-top: 2px; }
+  .close-btn { width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--concrete); background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--slate); transition: all 0.15s; flex-shrink: 0; }
+  .close-btn:hover { border-color: var(--navy); color: var(--navy); }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
+  .drawer-footer { padding: 12px 24px; border-top: 1px solid var(--linen); display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0; background: var(--cotton); }
+
+  /* ── FORM ── */
+  .form-section { margin-bottom: 22px; }
+  .form-section-title { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--slate); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--linen); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .form-row.single { grid-template-columns: 1fr; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-label { font-size: 11px; font-weight: 500; color: var(--limestone); }
+  .form-label .req { color: #8b2020; margin-left: 2px; }
+  .form-input, .form-select { height: 34px; border: 1px solid var(--concrete); border-radius: 4px; padding: 0 10px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--limestone); background: var(--marble); transition: border-color 0.15s; outline: none; width: 100%; }
+  .form-input:focus, .form-select:focus { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(38,56,96,0.07); }
+  .form-select { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='5' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239091A0' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+  .tier-notice { background: var(--glass); border: 1px solid var(--concrete); border-radius: 4px; padding: 9px 12px; font-size: 12px; color: var(--navy); margin-top: 6px; line-height: 1.55; }
+  .upload-zone { border: 1.5px dashed var(--concrete); border-radius: 4px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.15s; background: var(--cotton); }
+  .upload-zone:hover { border-color: var(--navy); background: var(--glass); }
+  .upload-text { font-size: 13px; color: var(--slate); }
+  .upload-text strong { color: var(--navy); font-weight: 500; }
+  .upload-meta { font-size: 11px; color: var(--teak); margin-top: 2px; }
+  .sequence-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .sequence-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--cotton); border: 1px solid var(--linen); border-radius: 4px; font-size: 12px; color: var(--limestone); }
+  .seq-num { width: 18px; height: 18px; border-radius: 50%; background: var(--navy); color: var(--cotton); font-size: 9px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .seq-name { flex: 1; }
+  .seq-handle { color: var(--concrete); cursor: grab; }
+
+  /* ── STAFF FILE ── */
+  .staff-file-header { background: var(--navy); padding: 20px 24px 16px; display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; }
+  .staff-file-name { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--cotton); font-weight: 600; }
+  .staff-file-meta { font-size: 12px; color: var(--teak); margin-top: 2px; }
+  .staff-file-close { width: 28px; height: 28px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--cotton); transition: all 0.15s; }
+  .staff-file-close:hover { border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); }
+  .file-tabs { display: flex; border-bottom: 1px solid var(--linen); background: var(--marble); flex-shrink: 0; }
+  .file-tab { padding: 10px 16px; font-size: 12px; font-weight: 500; color: var(--slate); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .file-tab:hover { color: var(--navy); }
+  .file-tab.active { color: var(--navy); border-bottom-color: var(--navy); }
+  .file-tab-content { display: none; }
+  .file-tab-content.active { display: block; animation: fadeIn 0.2s ease; }
+  .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 14px; }
+  .profile-field { padding: 10px 12px; background: var(--cotton); border: 1px solid var(--linen); border-radius: 4px; }
+  .profile-field-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--slate); margin-bottom: 3px; }
+  .profile-field-value { font-size: 13px; font-weight: 500; color: var(--limestone); }
+  .disc-card { background: var(--glass); border: 1px solid var(--concrete); border-radius: 6px; padding: 13px 15px; margin-bottom: 12px; }
+  .disc-card-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--slate); margin-bottom: 8px; }
+  .disc-profile { display: flex; gap: 11px; align-items: center; }
+  .disc-type { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 600; color: var(--navy); flex-shrink: 0; }
+  .disc-desc { font-size: 12px; color: var(--slate); line-height: 1.5; }
+  .reflection-summary-card { background: var(--marble); border: 1px solid var(--linen); border-radius: 6px; padding: 13px 15px; margin-bottom: 12px; }
+  .reflection-summary-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--slate); margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+  .reflection-row { display: flex; gap: 8px; margin-bottom: 7px; align-items: flex-start; }
+  .reflection-row:last-child { margin-bottom: 0; }
+  .reflection-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .reflection-dot.strength { background: var(--status-uptodate); }
+  .reflection-dot.gap { background: var(--status-nominated); }
+  .reflection-dot.commitment { background: var(--navy); }
+  .reflection-text { font-size: 12px; color: var(--limestone); line-height: 1.5; }
+  .reflection-text strong { font-weight: 600; color: var(--slate); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; display: block; margin-bottom: 1px; }
+  .promotion-banner { background: #eaf3ec; border: 1px solid #b8d8be; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .promotion-banner-text { font-size: 12px; color: #2d5a3d; line-height: 1.5; }
+  .promotion-banner-text strong { font-weight: 600; }
+  .trail-card { border: 1px solid var(--linen); border-radius: 6px; overflow: hidden; margin-bottom: 9px; }
+  .trail-card-header { padding: 10px 13px; display: flex; align-items: center; justify-content: space-between; background: var(--cotton); border-bottom: 1px solid var(--linen); }
+  .trail-card-name { font-weight: 500; font-size: 13px; color: var(--limestone); display: flex; align-items: center; gap: 6px; }
+  .trail-attempt-badge { font-size: 10px; background: var(--linen); color: var(--slate); padding: 2px 6px; border-radius: 10px; }
+  .trail-card-body { padding: 12px 13px; }
+  .trail-entry { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--linen); }
+  .trail-entry:last-child { border-bottom: none; padding-bottom: 0; }
+  .trail-entry-num { width: 20px; height: 20px; border-radius: 50%; background: var(--glass); border: 1px solid var(--concrete); color: var(--navy); font-size: 9px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .trail-entry-date { font-size: 11px; color: var(--slate); margin-bottom: 2px; }
+  .trail-entry-summary { font-size: 12px; color: var(--limestone); line-height: 1.5; }
+  .generate-summary-btn { width: 100%; padding: 10px; background: var(--navy); color: var(--cotton); border: none; border-radius: 4px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; transition: background 0.15s; margin-top: 12px; }
+  .generate-summary-btn:hover { background: var(--navy-light); }
+
+  /* ── SETTINGS ── */
+  .settings-grid { display: grid; grid-template-columns: 240px 1fr; gap: 20px; }
+  .settings-nav { display: flex; flex-direction: column; gap: 2px; }
+  .settings-nav-item { padding: 9px 14px; border-radius: 4px; font-size: 13px; color: var(--slate); cursor: pointer; transition: all 0.15s; border: 1px solid transparent; }
+  .settings-nav-item:hover { background: var(--marble); color: var(--limestone); }
+  .settings-nav-item.active { background: var(--marble); color: var(--navy); font-weight: 500; border-color: var(--linen); }
+  .settings-panel { background: var(--marble); border: 1px solid var(--linen); border-radius: 6px; padding: 22px; }
+  .settings-panel-title { font-family: 'Playfair Display', serif; font-size: 16px; color: var(--navy); margin-bottom: 4px; }
+  .settings-panel-desc { font-size: 12px; color: var(--slate); margin-bottom: 20px; line-height: 1.5; }
+  .settings-section { margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--linen); }
+  .settings-section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  .settings-section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--limestone); margin-bottom: 12px; }
+  .lt-member-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--linen); }
+  .lt-member-row:last-child { border-bottom: none; }
+  .lt-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--navy); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--cotton); flex-shrink: 0; }
+  .lt-info { flex: 1; }
+  .lt-name { font-size: 13px; font-weight: 500; color: var(--limestone); }
+  .lt-role { font-size: 11px; color: var(--slate); }
+  .lt-badge { font-size: 10px; background: var(--glass); color: var(--navy); padding: 2px 7px; border-radius: 10px; border: 1px solid var(--concrete); }
+  .lt-badge.master { background: #f5f0e8; color: var(--mahogany); border-color: #d8cbb8; }
+  .cadence-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--linen); }
+  .cadence-row:last-child { border-bottom: none; }
+  .cadence-label { font-size: 13px; color: var(--limestone); font-weight: 500; }
+  .cadence-desc { font-size: 11px; color: var(--slate); margin-top: 1px; }
+  .cadence-value { display: flex; align-items: center; gap: 8px; }
+  .cadence-input { width: 60px; height: 32px; border: 1px solid var(--concrete); border-radius: 4px; padding: 0 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--limestone); text-align: center; outline: none; }
+  .cadence-input:focus { border-color: var(--navy); }
+  .cadence-unit { font-size: 12px; color: var(--slate); }
+
+  /* ── CONFIRM ── */
+  .confirm-dialog { position: fixed; inset: 0; z-index: 400; display: flex; align-items: center; justify-content: center; background: rgba(38,56,96,0.2); opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .confirm-dialog.open { opacity: 1; pointer-events: all; }
+  .confirm-box { background: var(--marble); border-radius: 8px; padding: 24px; width: 360px; box-shadow: 0 20px 60px rgba(38,56,96,0.18); transform: translateY(6px); transition: transform 0.2s; }
+  .confirm-dialog.open .confirm-box { transform: translateY(0); }
+  .confirm-title { font-family: 'Playfair Display', serif; font-size: 17px; color: var(--navy); margin-bottom: 8px; }
+  .confirm-body { font-size: 13px; color: var(--slate); line-height: 1.6; margin-bottom: 18px; }
+  .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ── TOAST ── */
+  .toast { position: fixed; bottom: 22px; right: 22px; background: var(--limestone); color: var(--cotton); padding: 10px 16px; border-radius: 6px; font-size: 13px; z-index: 500; transform: translateY(60px); opacity: 0; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { background: #2d5a3d; }
+  .toast.error { background: #8b2020; }
+
+  .divider { height: 1px; background: var(--linen); margin: 16px 0; }
+  .empty-state { text-align: center; padding: 32px; color: var(--slate); font-size: 13px; }
+  .sp-loading { text-align: center; padding: 32px; color: var(--slate); font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+  .drawer-body::-webkit-scrollbar { width: 4px; }
+  .drawer-body::-webkit-scrollbar-thumb { background: var(--concrete); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-brand">Bell<span>w</span>eather</div>
+    <div class="login-sub">Design · Build</div>
+    <div class="login-title">Framework for Better Accountability</div>
+    <div class="login-desc">Admin Panel — sign in with your Bellweather Microsoft 365 account to continue.</div>
+    <button class="login-btn" onclick="signIn()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Sign in with Microsoft 365
+    </button>
+    <div class="login-error" id="loginError">Sign-in failed. Please try again or contact your administrator.</div>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-spinner"></div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-text">
+        <div class="brand-wordmark">Bell<span>w</span>eather</div>
+        <div class="brand-sub">Design · Build</div>
+      </div>
+      <button class="collapse-btn" onclick="toggleSidebar()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+    </div>
+    <div class="sidebar-label">FBA Admin</div>
+    <nav class="sidebar-nav">
+      <a class="nav-item active" id="nav-roster" data-label="Staff Roster" onclick="showView('roster')">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span class="nav-label">Staff Roster</span>
+      </a>
+      <a class="nav-item" id="nav-briefs" data-label="Reflection Briefs" onclick="showView('briefs')">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span class="nav-label">Reflection Briefs</span>
+      </a>
+      <a class="nav-item" id="nav-sops" data-label="Processes &amp; SOPs" onclick="showView('sops')">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        <span class="nav-label">Processes &amp; SOPs</span>
+      </a>
+      <div class="sidebar-label" style="margin-top:4px">Coming Soon</div>
+      <div class="nav-future">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span class="nav-label">Preview as Staff</span>
+        <span class="future-tag">Soon</span>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <div class="user-avatar" id="userAvatar">?</div>
+        <div class="user-info">
+          <div class="user-name" id="userName">Loading...</div>
+          <div class="user-role">Leadership Team · Admin</div>
+        </div>
+      </div>
+      <button class="gear-btn" id="gearBtn" onclick="showView('settings')" title="System Settings">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 1.41 14.14M4.93 19.07A10 10 0 0 1 3.52 4.93"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="page-title" id="pageTitle">Staff Roster</div>
+        <div class="page-subtitle">Framework for Better Accountability</div>
+        <span class="version-tag">Admin v1.6</span>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-secondary btn-sm" onclick="exportRoster()">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="openAddStaff()">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Staff Member
+        </button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ROSTER -->
+      <div class="view-panel active" id="view-roster">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">Total Participants</div><div class="stat-value" id="stat-total">—</div><div class="stat-meta">Active on FBA</div></div>
+          <div class="stat-card"><div class="stat-label">Tier 3 · Leading</div><div class="stat-value" style="color:var(--navy)" id="stat-t3">—</div><div class="stat-meta">Senior staff</div></div>
+          <div class="stat-card"><div class="stat-label">Tier 2 · Practicing</div><div class="stat-value" style="color:var(--slate)" id="stat-t2">—</div><div class="stat-meta">Mid-level staff</div></div>
+          <div class="stat-card"><div class="stat-label">Tier 1 · Foundational</div><div class="stat-value" style="color:var(--teak)" id="stat-t1">—</div><div class="stat-meta">Foundational track</div></div>
+          <div class="stat-card clickable" id="attentionCard" onclick="filterByAttention()">
+            <div class="stat-label" style="color:#7a5c1e">Needs Attention</div>
+            <div class="stat-value" style="color:#7a5c1e;font-size:24px" id="stat-attention">—</div>
+            <div class="stat-meta" style="color:#9a7c3e">Click to filter</div>
+          </div>
+        </div>
+        <div class="roster-container">
+          <div class="roster-toolbar">
+            <input type="text" class="search-input" placeholder="Search by name or seat..." id="searchInput" oninput="filterRoster()">
+            <select class="filter-select" id="deptFilter" onchange="filterRoster()">
+              <option value="">All Departments</option>
+              <option>Production</option><option>Design</option><option>Sales</option><option>Operations</option>
+            </select>
+            <select class="filter-select" id="tierFilter" onchange="filterRoster()">
+              <option value="">All Tiers</option>
+              <option value="Tier 1 — Foundational">Tier 1</option>
+              <option value="Tier 2 — Practicing">Tier 2</option>
+              <option value="Tier 3 — Leading">Tier 3</option>
+            </select>
+            <div id="attentionPill" style="display:none">
+              <div class="active-filter-pill">Needs Attention <button onclick="clearAttentionFilter()">×</button></div>
+            </div>
+            <span class="roster-count" id="rosterCount">—</span>
+          </div>
+          <table class="roster-table">
+            <thead>
+              <tr>
+                <th onclick="sortBy('FullName')">Name &amp; Seat <span class="sort-arrow" id="sort-FullName">↕</span></th>
+                <th onclick="sortBy('Department')">Department <span class="sort-arrow" id="sort-Department">↕</span></th>
+                <th onclick="sortBy('Tier')">Tier <span class="sort-arrow" id="sort-Tier">↕</span></th>
+                <th>Trails</th>
+                <th onclick="sortBy('LastActive')">Last Active <span class="sort-arrow" id="sort-LastActive">↕</span></th>
+                <th onclick="sortBy('Status')">Status <span class="sort-arrow" id="sort-Status">↕</span></th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="rosterBody">
+              <tr><td colspan="7"><div class="sp-loading"><div class="loading-spinner" style="width:20px;height:20px;border-width:2px"></div> Loading staff from SharePoint...</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- BRIEFS -->
+      <div class="view-panel" id="view-briefs">
+        <div style="display:flex;gap:7px;margin-bottom:18px">
+          <div class="scope-tab active" style="padding:6px 14px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--navy);background:var(--navy);color:var(--cotton)" onclick="switchBriefScope('individual',this)">Individual</div>
+          <div class="scope-tab" style="padding:6px 14px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--concrete);color:var(--slate);background:var(--marble);transition:all 0.15s" onclick="switchBriefScope('department',this)">By Department</div>
+          <div class="scope-tab" style="padding:6px 14px;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--concrete);color:var(--slate);background:var(--marble);transition:all 0.15s" onclick="switchBriefScope('company',this)">Company-Wide</div>
+        </div>
+        <div id="briefs-individual">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-family:'Playfair Display',serif;font-size:16px;color:var(--navy)">Individual Reflection Briefs</div>
+            <select class="filter-select" id="staffBriefFilter" style="width:200px" onchange="filterIndividualBriefs()"><option value="">All Staff — Recent</option></select>
+          </div>
+          <p style="font-size:12px;color:var(--slate);line-height:1.55;margin-bottom:14px">Reflection briefs are visible to the full Leadership Team and to each individual staff member. AI conversation transcripts are never stored or displayed.</p>
+          <div id="individualBriefList"><div class="sp-loading"><div class="loading-spinner" style="width:20px;height:20px;border-width:2px"></div> Loading briefs from SharePoint...</div></div>
+        </div>
+        <div id="briefs-department" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-family:'Playfair Display',serif;font-size:16px;color:var(--navy)">Department Summary</div>
+            <select class="filter-select" style="width:180px"><option>Production</option><option>Design</option><option>Sales</option><option>Operations</option></select>
+          </div>
+          <div style="background:var(--glass);border:1px solid var(--concrete);border-radius:6px;padding:10px 13px;font-size:12px;color:var(--navy);line-height:1.55;margin-bottom:14px">Department summaries synthesize themes across all individual briefs. Individuals are never named — patterns only.</div>
+          <div style="background:var(--marble);border:1px solid var(--linen);border-radius:6px;padding:14px;margin-bottom:10px">
+            <div style="font-weight:600;font-size:13px;color:var(--limestone);margin-bottom:4px">No department summary generated yet</div>
+            <div style="font-size:12px;color:var(--slate)">Add staff and complete trails to generate a department summary.</div>
+          </div>
+          <button class="generate-summary-btn" onclick="generateDeptSummary()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Generate Department Summary
+          </button>
+        </div>
+        <div id="briefs-company" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-family:'Playfair Display',serif;font-size:16px;color:var(--navy)">Company-Wide Summary</div>
+            <span style="font-size:12px;color:var(--slate)">All departments · All staff</span>
+          </div>
+          <div style="background:var(--glass);border:1px solid var(--concrete);border-radius:6px;padding:10px 13px;font-size:12px;color:var(--navy);line-height:1.55;margin-bottom:14px">Company-wide summaries identify cultural patterns across all staff. No individuals or departments are named.</div>
+          <div style="background:var(--marble);border:1px solid var(--linen);border-radius:6px;padding:14px;margin-bottom:10px">
+            <div style="font-weight:600;font-size:13px;color:var(--limestone);margin-bottom:4px">No company summary generated yet</div>
+            <div style="font-size:12px;color:var(--slate)">Complete trails across departments to generate a company-wide summary.</div>
+          </div>
+          <button class="generate-summary-btn" onclick="generateCompanySummary()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Generate Company-Wide Summary
+          </button>
+        </div>
+      </div>
+
+      <!-- SOPS -->
+      <div class="view-panel" id="view-sops">
+        <div style="padding:48px;text-align:center;color:var(--slate)">
+          <div style="font-family:'Playfair Display',serif;font-size:20px;color:var(--navy);margin-bottom:8px">Processes &amp; SOPs</div>
+          <div style="font-size:13px">Content management for core processes and linked SOPs — coming in a future phase.</div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="view-panel" id="view-settings">
+        <div class="settings-grid">
+          <div class="settings-nav">
+            <div class="settings-nav-item active" onclick="switchSettings('team',this)">Leadership Team Access</div>
+            <div class="settings-nav-item" onclick="switchSettings('cadence',this)">Engagement Cadence</div>
+          </div>
+          <div>
+            <div class="settings-panel" id="settings-team">
+              <div class="settings-panel-title">Leadership Team Access</div>
+              <div class="settings-panel-desc">All LT members have full Admin access. Add or remove members here.</div>
+              <div class="settings-section">
+                <div class="settings-section-title">Current LT Members</div>
+                <div id="ltMemberList"><div class="sp-loading"><div class="loading-spinner" style="width:16px;height:16px;border-width:2px"></div> Loading...</div></div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="showToast('Invite sent to new LT member',true)">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add LT Member
+              </button>
+            </div>
+            <div class="settings-panel" id="settings-cadence" style="display:none">
+              <div class="settings-panel-title">Engagement Cadence</div>
+              <div class="settings-panel-desc">Days without activity before status changes to Overdue. Applied to all tiers.</div>
+              <div class="settings-section">
+                <div class="settings-section-title">Status Thresholds</div>
+                <div class="cadence-row">
+                  <div><div class="cadence-label">Overdue Window</div><div class="cadence-desc">Days without activity before Overdue</div></div>
+                  <div class="cadence-value"><input type="number" class="cadence-input" id="overdueDays" value="90" min="30" max="180"><span class="cadence-unit">days</span></div>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="saveCadenceSettings()">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- ADD STAFF DRAWER -->
+<div class="drawer-overlay" id="addOverlay" onclick="closeAddStaff()"></div>
+<div class="drawer" id="addDrawer">
+  <div class="drawer-header">
+    <div><div class="drawer-title">Add Staff Member</div><div class="drawer-subtitle">Configure profile, tier, and trail sequence</div></div>
+    <button class="close-btn" onclick="closeAddStaff()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  </div>
+  <div class="drawer-body">
+    <div class="form-section">
+      <div class="form-section-title">Basic Information</div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">First Name <span class="req">*</span></label><input type="text" class="form-input" id="add-fname" placeholder="First name"></div>
+        <div class="form-group"><label class="form-label">Last Name <span class="req">*</span></label><input type="text" class="form-input" id="add-lname" placeholder="Last name"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Email <span class="req">*</span></label><input type="email" class="form-input" id="add-email" placeholder="email@bellweather.com"></div>
+        <div class="form-group"><label class="form-label">Department <span class="req">*</span></label>
+          <select class="form-select" id="add-dept"><option value="">Select...</option><option>Production</option><option>Design</option><option>Sales</option><option>Operations</option></select>
+        </div>
+      </div>
+      <div class="form-row single">
+        <div class="form-group"><label class="form-label">Seat / Title <span class="req">*</span></label><input type="text" class="form-input" id="add-seat" placeholder="e.g. Project Manager, Field Mechanic"></div>
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">Tier Assignment</div>
+      <div class="form-row single">
+        <div class="form-group">
+          <label class="form-label">Engagement Tier <span class="req">*</span></label>
+          <select class="form-select" id="add-tier" onchange="handleTierChange()">
+            <option value="">— Select a tier (required) —</option>
+            <option value="Tier 1 — Foundational">Tier 1 — Foundational</option>
+            <option value="Tier 2 — Practicing">Tier 2 — Practicing</option>
+            <option value="Tier 3 — Leading">Tier 3 — Leading</option>
+          </select>
+        </div>
+      </div>
+      <div class="tier-notice" id="tierNotice" style="display:none"></div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">DISC Report</div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">DISC Profile</label><input type="text" class="form-input" id="add-disc" placeholder="e.g. S/C, D/I"></div>
+        <div class="form-group"><label class="form-label">DISC Notes</label><input type="text" class="form-input" id="add-discnotes" placeholder="Brief descriptor"></div>
+      </div>
+    </div>
+    <div class="form-section" id="sequenceSection" style="display:none">
+      <div class="form-section-title">Trail Sequence <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--slate)">— Tier 1 only</span></div>
+      <p style="font-size:12px;color:var(--slate);margin-bottom:9px;line-height:1.5">Set the order trails will unlock. Each opens after the previous is completed.</p>
+      <div class="sequence-list" id="sequenceList">
+        <div class="sequence-item"><span class="seq-num">1</span><span class="seq-name">Production</span><span class="seq-handle">⠿</span></div>
+        <div class="sequence-item"><span class="seq-num">2</span><span class="seq-name">Logistics &amp; Pre-Construction</span><span class="seq-handle">⠿</span></div>
+        <div class="sequence-item"><span class="seq-num">3</span><span class="seq-name">Design</span><span class="seq-handle">⠿</span></div>
+        <div class="sequence-item"><span class="seq-num">4</span><span class="seq-name">Sales</span><span class="seq-handle">⠿</span></div>
+        <div class="sequence-item"><span class="seq-num">5</span><span class="seq-name">Operations</span><span class="seq-handle">⠿</span></div>
+        <div class="sequence-item"><span class="seq-num">6</span><span class="seq-name">Leadership</span><span class="seq-handle">⠿</span></div>
+        <div class="sequence-item"><span class="seq-num">7</span><span class="seq-name">Marketing</span><span class="seq-handle">⠿</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="drawer-footer">
+    <button class="btn btn-secondary" onclick="closeAddStaff()">Cancel</button>
+    <button class="btn btn-primary" id="saveStaffBtn" onclick="saveNewStaff()">Add Staff Member</button>
+  </div>
+</div>
+
+<!-- STAFF FILE DRAWER -->
+<div class="drawer-overlay" id="fileOverlay" onclick="closeStaffFile()"></div>
+<div class="drawer" id="fileDrawer" style="width:580px">
+  <div class="staff-file-header">
+    <div><div class="staff-file-name" id="fileName">—</div><div class="staff-file-meta" id="fileMeta">—</div></div>
+    <button class="staff-file-close" onclick="closeStaffFile()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  </div>
+  <div class="file-tabs">
+    <div class="file-tab active" onclick="switchTab('profile')">Profile</div>
+    <div class="file-tab" onclick="switchTab('trails')">Trail History</div>
+    <div class="file-tab" onclick="switchTab('briefs')">Reflection Briefs</div>
+    <div class="file-tab" onclick="switchTab('edit')">Edit</div>
+  </div>
+  <div class="drawer-body">
+    <div class="file-tab-content active" id="tab-profile">
+      <div id="promotionBanner" style="display:none" class="promotion-banner">
+        <div class="promotion-banner-text" id="promotionText">—</div>
+        <button class="btn btn-promote btn-sm" onclick="openConfirm('promote')">Confirm Promotion</button>
+      </div>
+      <div class="profile-grid">
+        <div class="profile-field"><div class="profile-field-label">Department</div><div class="profile-field-value" id="pf-dept">—</div></div>
+        <div class="profile-field"><div class="profile-field-label">Seat / Title</div><div class="profile-field-value" id="pf-seat">—</div></div>
+        <div class="profile-field"><div class="profile-field-label">Tier</div><div class="profile-field-value" id="pf-tier">—</div></div>
+        <div class="profile-field"><div class="profile-field-label">Last Active</div><div class="profile-field-value" id="pf-active">—</div></div>
+        <div class="profile-field"><div class="profile-field-label">Trails Complete</div><div class="profile-field-value" id="pf-trails">—</div></div>
+        <div class="profile-field"><div class="profile-field-label">Status</div><div class="profile-field-value" id="pf-status">—</div></div>
+      </div>
+      <div class="disc-card">
+        <div class="disc-card-title">DISC Assessment</div>
+        <div class="disc-profile">
+          <div class="disc-type" id="pf-disc">—</div>
+          <div class="disc-desc" id="pf-disc-desc">—</div>
+        </div>
+      </div>
+      <div class="reflection-summary-card" id="reflectionSummaryCard" style="display:none">
+        <div class="reflection-summary-title">Rolling Reflection Summary <span id="reflectionSummaryMeta"></span></div>
+        <div id="reflectionSummaryBody"></div>
+      </div>
+    </div>
+    <div class="file-tab-content" id="tab-trails"><div id="trailHistory" class="empty-state">Loading trail history...</div></div>
+    <div class="file-tab-content" id="tab-briefs">
+      <p style="font-size:12px;color:var(--slate);margin-bottom:12px;line-height:1.5">Reflection briefs are visible to this staff member and the full Leadership Team. AI transcripts are never stored.</p>
+      <div id="briefList" class="empty-state">Loading briefs...</div>
+      <button class="generate-summary-btn" onclick="generateStaffSummary()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Generate AI Summary Across All Briefs
+      </button>
+    </div>
+    <div class="file-tab-content" id="tab-edit">
+      <div class="form-section">
+        <div class="form-section-title">Staff Information</div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Full Name</label><input type="text" class="form-input" id="edit-name"></div>
+          <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" id="edit-email"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Department</label>
+            <select class="form-select" id="edit-dept"><option>Production</option><option>Design</option><option>Sales</option><option>Operations</option></select>
+          </div>
+          <div class="form-group"><label class="form-label">Seat / Title</label><input type="text" class="form-input" id="edit-seat"></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">Tier Assignment</div>
+        <div class="form-row single">
+          <div class="form-group"><label class="form-label">Engagement Tier <span class="req">*</span></label>
+            <select class="form-select" id="edit-tier">
+              <option value="Tier 1 — Foundational">Tier 1 — Foundational</option>
+              <option value="Tier 2 — Practicing">Tier 2 — Practicing</option>
+              <option value="Tier 3 — Leading">Tier 3 — Leading</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">DISC</div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">DISC Profile</label><input type="text" class="form-input" id="edit-disc"></div>
+          <div class="form-group"><label class="form-label">DISC Notes</label><input type="text" class="form-input" id="edit-discnotes"></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <button class="btn btn-danger btn-sm" onclick="openConfirm('archive')">Archive Staff Member</button>
+        <button class="btn btn-primary btn-sm" onclick="saveStaffEdits()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM -->
+<div class="confirm-dialog" id="confirmDialog">
+  <div class="confirm-box">
+    <div class="confirm-title" id="confirmTitle">Confirm</div>
+    <div class="confirm-body" id="confirmBody">—</div>
+    <div class="confirm-actions">
+      <button class="btn btn-secondary btn-sm" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="confirmOkBtn" onclick="confirmOk()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIGURATION ────────────────────────────────────────────
+const CONFIG = {
+  clientId: 'bcdfa295-7257-4b01-bb1d-ea9eef6fded3',
+  tenantId: 'ff0e3f46-615a-4a22-8a80-4bb83d627785',
+  sharePointSite: 'https://bellweather.sharepoint.com/sites/BWCore',
+  cloudflareWorker: 'https://fba-api-proxy.joeywillhite.workers.dev',
+  listNames: {
+    staff: 'FBA_Staff',
+    trailAttempts: 'FBA_TrailAttempts',
+    reflectionBriefs: 'FBA_ReflectionBriefs',
+    systemSettings: 'FBA_SystemSettings'
+  }
+};
+
+// ── MSAL SETUP ───────────────────────────────────────────────
+const msalConfig = {
+  auth: {
+    clientId: CONFIG.clientId,
+    authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
+    redirectUri: window.location.origin + window.location.pathname
+  },
+  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+};
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+const loginRequest = {
+  scopes: ['User.Read', 'Sites.ReadWrite.All']
+};
+
+const spRequest = {
+  scopes: ['https://bellweather.sharepoint.com/AllSites.Write']
+};
+
+// ── STATE ────────────────────────────────────────────────────
+let currentUser = null;
+let staffData = [];
+let trailData = [];
+let briefData = [];
+let currentStaff = null;
+let currentConfirmAction = null;
+let attentionFilterActive = false;
+let sortField = null;
+let sortDir = 1;
+let sidebarCollapsed = false;
+
+const ATTENTION_STATUSES = ['Nominated for Tier 2', 'Overdue', 'Setup Incomplete'];
+const TRAILS = ['Production', 'Logistics & Pre-Construction', 'Design', 'Sales', 'Operations', 'Leadership', 'Marketing'];
+
+// ── AUTH ─────────────────────────────────────────────────────
+async function init() {
+  try {
+    const response = await msalInstance.handleRedirectPromise();
+    if (response) {
+      currentUser = response.account;
+      await loadApp();
+    } else {
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length > 0) {
+        currentUser = accounts[0];
+        await loadApp();
+      } else {
+        showLoginScreen();
+      }
+    }
+  } catch (err) {
+    console.error('Auth init error:', err);
+    showLoginScreen();
+  }
+}
+
+async function signIn() {
+  try {
+    await msalInstance.loginRedirect(loginRequest);
+  } catch (err) {
+    document.getElementById('loginError').style.display = 'block';
+    console.error('Sign in error:', err);
+  }
+}
+
+async function getToken() {
+  try {
+    const response = await msalInstance.acquireTokenSilent({
+      scopes: ['https://bellweather.sharepoint.com/AllSites.Write'],
+      account: currentUser
+    });
+    return response.accessToken;
+  } catch (err) {
+    await msalInstance.acquireTokenRedirect({
+      scopes: ['https://bellweather.sharepoint.com/AllSites.Write'],
+      account: currentUser
+    });
+  }
+}
+
+// ── SHAREPOINT API ───────────────────────────────────────────
+async function spGet(listName, filter = '', select = '') {
+  const token = await getToken();
+  let url = `${CONFIG.sharePointSite}/_api/web/lists/getbytitle('${listName}')/items`;
+  const params = [];
+  if (filter) params.push(`$filter=${filter}`);
+  if (select) params.push(`$select=${select}`);
+  params.push('$top=500');
+  if (params.length) url += '?' + params.join('&');
+
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json;odata=nometadata'
+    }
+  });
+  if (!res.ok) throw new Error(`SharePoint GET failed: ${res.status}`);
+  const data = await res.json();
+  return data.value;
+}
+
+async function spPost(listName, body) {
+  const token = await getToken();
+  const url = `${CONFIG.sharePointSite}/_api/web/lists/getbytitle('${listName}')/items`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json;odata=nometadata',
+      'Content-Type': 'application/json;odata=nometadata'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`SharePoint POST failed: ${res.status}`);
+  return await res.json();
+}
+
+async function spPatch(listName, itemId, body) {
+  const token = await getToken();
+  const url = `${CONFIG.sharePointSite}/_api/web/lists/getbytitle('${listName}')/items(${itemId})`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json;odata=nometadata',
+      'Content-Type': 'application/json;odata=nometadata',
+      'X-HTTP-Method': 'MERGE',
+      'IF-MATCH': '*'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`SharePoint PATCH failed: ${res.status}`);
+}
+
+// ── LOAD APP ─────────────────────────────────────────────────
+async function loadApp() {
+  showLoading();
+  try {
+    const displayName = currentUser.name || currentUser.username;
+    const initials = displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    document.getElementById('userName').textContent = displayName.split(' ')[0];
+    document.getElementById('userAvatar').textContent = initials;
+
+    await Promise.all([loadStaff(), loadTrailAttempts(), loadBriefs(), loadSettings()]);
+
+    showApp();
+  } catch (err) {
+    console.error('Load error:', err);
+    showToast('Error loading data from SharePoint. Check console for details.', false);
+    showApp();
+  }
+}
+
+async function loadStaff() {
+  staffData = await spGet(CONFIG.listNames.staff, "IsActive eq 1");
+  renderRoster(getFilteredData());
+  updateStats();
+  populateStaffBriefFilter();
+}
+
+async function loadTrailAttempts() {
+  trailData = await spGet(CONFIG.listNames.trailAttempts);
+}
+
+async function loadBriefs() {
+  briefData = await spGet(CONFIG.listNames.reflectionBriefs);
+  filterIndividualBriefs();
+}
+
+async function loadSettings() {
+  try {
+    const settings = await spGet(CONFIG.listNames.systemSettings);
+    const overdue = settings.find(s => s.SettingName === 'OverdueDays');
+    if (overdue) document.getElementById('overdueDays').value = overdue.SettingValue;
+
+    const adminSetting = settings.find(s => s.SettingName === 'AdminEmails');
+    const ltList = document.getElementById('ltMemberList');
+    if (adminSetting) {
+      const emails = adminSetting.SettingValue.split(',').map(e => e.trim());
+      ltList.innerHTML = emails.map(email => {
+        const name = email.split('@')[0];
+        const initials = name.substring(0, 2).toUpperCase();
+        return `<div class="lt-member-row">
+          <div class="lt-avatar" style="background:var(--mahogany)">${initials}</div>
+          <div class="lt-info"><div class="lt-name">${email}</div><div class="lt-role">Leadership Team</div></div>
+          <span class="lt-badge">Admin</span>
+        </div>`;
+      }).join('');
+    } else {
+      ltList.innerHTML = '<div style="font-size:13px;color:var(--slate)">No LT members configured yet.</div>';
+    }
+  } catch (err) {
+    console.error('Settings load error:', err);
+  }
+}
+
+// ── ROSTER ───────────────────────────────────────────────────
+function tierNum(tierStr) {
+  if (!tierStr) return 0;
+  if (tierStr.includes('1')) return 1;
+  if (tierStr.includes('2')) return 2;
+  if (tierStr.includes('3')) return 3;
+  return 0;
+}
+
+function tierLabel(tierStr) {
+  if (!tierStr) return '—';
+  const n = tierNum(tierStr);
+  return ['', 'Foundational', 'Practicing', 'Leading'][n] || tierStr;
+}
+
+function statusClass(s) {
+  return {
+    'Setup Incomplete': 's-incomplete',
+    'In Progress': 's-progress',
+    'Nominated for Tier 2': 's-nominated',
+    'Up to Date': 's-uptodate',
+    'Overdue': 's-overdue'
+  }[s] || 's-progress';
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return 'Never';
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diff = Math.floor((now - d) / (1000 * 60 * 60 * 24));
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  if (diff < 7) return `${diff} days ago`;
+  if (diff < 14) return '1 week ago';
+  if (diff < 30) return `${Math.floor(diff/7)} weeks ago`;
+  return `${Math.floor(diff/30)} month${diff > 45 ? 's' : ''} ago`;
+}
+
+function getStaffTrailCount(staffId) {
+  return trailData.filter(t => t.StaffIDId === staffId && t.IsComplete).length;
+}
+
+function renderRow(s) {
+  const trails = getStaffTrailCount(s.ID || s.Id);
+  const fill = Math.round((trails / 7) * 100);
+  const tn = tierNum(s.Tier);
+  const tl = tierLabel(s.Tier);
+  return `<tr onclick="openStaffFile(${s.ID || s.Id})">
+    <td><div class="staff-name">${s.FullName || s.Title || '—'}</div><div class="staff-seat">${s.Seat || '—'}</div></td>
+    <td><span class="dept-badge dept-${s.Department || ''}">${s.Department || '—'}</span></td>
+    <td><span class="tier-pip t${tn}"><span class="tier-dot"></span>Tier ${tn} · ${tl}</span></td>
+    <td><div class="trail-progress"><div class="trail-bar"><div class="trail-fill" style="width:${fill}%"></div></div><span class="trail-text">${trails}/7</span></div></td>
+    <td><span class="last-active">${formatDate(s.LastActive)}</span></td>
+    <td><span class="status-badge ${statusClass(s.Status)}"><span class="status-dot"></span>${s.Status || 'Setup Incomplete'}</span></td>
+    <td><div class="row-actions">
+      <div class="icon-btn" onclick="event.stopPropagation();openStaffFile(${s.ID || s.Id})" title="View">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </div>
+      <div class="icon-btn" onclick="event.stopPropagation();openStaffFileTab(${s.ID || s.Id},'edit')" title="Edit">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </div>
+    </div></td>
+  </tr>`;
+}
+
+function getFilteredData() {
+  const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  const dept = document.getElementById('deptFilter')?.value || '';
+  const tier = document.getElementById('tierFilter')?.value || '';
+  let data = staffData.filter(s => {
+    const name = `${s.FullName || ''} ${s.Seat || ''}`.toLowerCase();
+    return (!q || name.includes(q)) &&
+           (!dept || s.Department === dept) &&
+           (!tier || s.Tier === tier) &&
+           (!attentionFilterActive || ATTENTION_STATUSES.includes(s.Status));
+  });
+  if (sortField) {
+    data = [...data].sort((a, b) => {
+      let av = a[sortField] || '', bv = b[sortField] || '';
+      if (sortField === 'LastActive') { av = new Date(a.LastActive || 0); bv = new Date(b.LastActive || 0); return (av - bv) * sortDir; }
+      if (typeof av === 'string') return av.localeCompare(bv) * sortDir;
+      return (av - bv) * sortDir;
+    });
+  }
+  return data;
+}
+
+function renderRoster(data) {
+  const body = document.getElementById('rosterBody');
+  if (!body) return;
+  if (data.length === 0) {
+    body.innerHTML = '<tr><td colspan="7"><div class="empty-state">No staff members found.</div></td></tr>';
+  } else {
+    body.innerHTML = data.map(renderRow).join('');
+  }
+  document.getElementById('rosterCount').textContent = `${data.length} member${data.length !== 1 ? 's' : ''}`;
+}
+
+function filterRoster() { renderRoster(getFilteredData()); }
+
+function updateStats() {
+  const active = staffData;
+  document.getElementById('stat-total').textContent = active.length;
+  document.getElementById('stat-t3').textContent = active.filter(s => s.Tier && s.Tier.includes('3')).length;
+  document.getElementById('stat-t2').textContent = active.filter(s => s.Tier && s.Tier.includes('2')).length;
+  document.getElementById('stat-t1').textContent = active.filter(s => s.Tier && s.Tier.includes('1')).length;
+  document.getElementById('stat-attention').textContent = active.filter(s => ATTENTION_STATUSES.includes(s.Status)).length;
+}
+
+function sortBy(field) {
+  if (sortField === field) { sortDir *= -1; }
+  else { sortField = field; sortDir = 1; }
+  document.querySelectorAll('.sort-arrow').forEach(a => { a.textContent = '↕'; a.classList.remove('active'); });
+  const el = document.getElementById(`sort-${field}`);
+  if (el) { el.textContent = sortDir === 1 ? '↑' : '↓'; el.classList.add('active'); }
+  filterRoster();
+}
+
+function filterByAttention() {
+  attentionFilterActive = true;
+  document.getElementById('attentionCard').classList.add('active-filter');
+  document.getElementById('attentionPill').style.display = 'block';
+  filterRoster();
+}
+
+function clearAttentionFilter() {
+  attentionFilterActive = false;
+  document.getElementById('attentionCard').classList.remove('active-filter');
+  document.getElementById('attentionPill').style.display = 'none';
+  filterRoster();
+}
+
+// ── ADD STAFF ────────────────────────────────────────────────
+function openAddStaff() {
+  document.getElementById('addOverlay').classList.add('open');
+  document.getElementById('addDrawer').classList.add('open');
+}
+
+function closeAddStaff() {
+  document.getElementById('addOverlay').classList.remove('open');
+  document.getElementById('addDrawer').classList.remove('open');
+}
+
+function handleTierChange() {
+  const val = document.getElementById('add-tier').value;
+  const notice = document.getElementById('tierNotice');
+  const seq = document.getElementById('sequenceSection');
+  const msgs = {
+    'Tier 1 — Foundational': '<strong>Tier 1 — Foundational.</strong> Trails unlock in the sequence you define below, one at a time. Completing all trails triggers a Tier 2 nomination.',
+    'Tier 2 — Practicing': '<strong>Tier 2 — Practicing.</strong> Full trail map access. AI calibrated to practicing depth.',
+    'Tier 3 — Leading': '<strong>Tier 3 — Leading.</strong> Full trail map access. AI calibrated to leading depth.'
+  };
+  if (val) { notice.innerHTML = msgs[val] || ''; notice.style.display = 'block'; seq.style.display = val.includes('1') ? 'block' : 'none'; }
+  else { notice.style.display = 'none'; seq.style.display = 'none'; }
+}
+
+async function saveNewStaff() {
+  const fname = document.getElementById('add-fname').value.trim();
+  const lname = document.getElementById('add-lname').value.trim();
+  const email = document.getElementById('add-email').value.trim();
+  const dept = document.getElementById('add-dept').value;
+  const seat = document.getElementById('add-seat').value.trim();
+  const tier = document.getElementById('add-tier').value;
+
+  if (!fname || !lname || !email || !dept || !seat || !tier) {
+    showToast('Please fill in all required fields', false);
+    return;
+  }
+
+  const btn = document.getElementById('saveStaffBtn');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  try {
+    const newStaff = {
+      Title: `${fname} ${lname}`,
+      Email: email,
+      Department: dept,
+      Seat: seat,
+      Tier: tier,
+      DISCProfile: document.getElementById('add-disc').value.trim(),
+      DISCNotes: document.getElementById('add-discnotes').value.trim(),
+      Status: 'Setup Incomplete',
+      IsActive: true
+    };
+
+    if (tier.includes('1')) {
+      const seqItems = document.querySelectorAll('#sequenceList .seq-name');
+      newStaff.TrailSequence = Array.from(seqItems).map(i => i.textContent).join(', ');
+    }
+
+    await spPost(CONFIG.listNames.staff, newStaff);
+    await loadStaff();
+    closeAddStaff();
+    showToast(`${fname} ${lname} added — ready to log in to Basecamp`, true);
+
+    // Reset form
+    ['add-fname','add-lname','add-email','add-seat','add-disc','add-discnotes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('add-dept').value = '';
+    document.getElementById('add-tier').value = '';
+    document.getElementById('tierNotice').style.display = 'none';
+    document.getElementById('sequenceSection').style.display = 'none';
+  } catch (err) {
+    console.error('Save staff error:', err);
+    showToast('Error saving to SharePoint. Please try again.', false);
+  } finally {
+    btn.textContent = 'Add Staff Member';
+    btn.disabled = false;
+  }
+}
+
+// ── STAFF FILE ───────────────────────────────────────────────
+function openStaffFile(id) { openStaffFileTab(id, 'profile'); }
+
+function openStaffFileTab(id, tab) {
+  const s = staffData.find(x => (x.ID || x.Id) === id);
+  if (!s) return;
+  currentStaff = s;
+
+  const sId = s.ID || s.Id;
+  const trails = getStaffTrailCount(sId);
+  const tn = tierNum(s.Tier);
+
+  document.getElementById('fileName').textContent = s.FullName || s.Title || '—';
+  document.getElementById('fileMeta').textContent = `${s.Seat || '—'} · ${s.Department || '—'} · Tier ${tn} — ${tierLabel(s.Tier)}`;
+  document.getElementById('pf-dept').textContent = s.Department || '—';
+  document.getElementById('pf-seat').textContent = s.Seat || '—';
+  document.getElementById('pf-tier').textContent = s.Tier || '—';
+  document.getElementById('pf-active').textContent = formatDate(s.LastActive);
+  document.getElementById('pf-trails').textContent = `${trails} of 7`;
+  document.getElementById('pf-status').textContent = s.Status || 'Setup Incomplete';
+  document.getElementById('pf-disc').textContent = s.DISCProfile || 'Not uploaded';
+  document.getElementById('pf-disc-desc').textContent = s.DISCNotes || 'DISC report has not been uploaded for this staff member.';
+
+  document.getElementById('edit-name').value = s.FullName || s.Title || '';
+  document.getElementById('edit-email').value = s.Email || '';
+  document.getElementById('edit-seat').value = s.Seat || '';
+  document.getElementById('edit-dept').value = s.Department || '';
+  document.getElementById('edit-tier').value = s.Tier || '';
+  document.getElementById('edit-disc').value = s.DISCProfile || '';
+  document.getElementById('edit-discnotes').value = s.DISCNotes || '';
+
+  const staffBriefs = briefData.filter(b => b.StaffIDId === sId);
+  const summaryCard = document.getElementById('reflectionSummaryCard');
+  if (staffBriefs.length > 0) {
+    document.getElementById('reflectionSummaryMeta').textContent = `Across ${staffBriefs.length} brief${staffBriefs.length > 1 ? 's' : ''}`;
+    const confidence = staffBriefs.map(b => b.ConfidenceNotes).filter(Boolean).join(' ');
+    const uncertainty = staffBriefs.map(b => b.UncertaintyNotes).filter(Boolean).join(' ');
+    const commitment = staffBriefs[staffBriefs.length - 1]?.CommitmentStatement || '';
+    document.getElementById('reflectionSummaryBody').innerHTML = `
+      <div class="reflection-row"><div class="reflection-dot strength"></div><div class="reflection-text"><strong>Consistent strength</strong>${confidence || 'No confidence notes recorded yet.'}</div></div>
+      <div class="reflection-row"><div class="reflection-dot gap"></div><div class="reflection-text"><strong>Recurring uncertainty</strong>${uncertainty || 'No uncertainty notes recorded yet.'}</div></div>
+      <div class="reflection-row"><div class="reflection-dot commitment"></div><div class="reflection-text"><strong>Most recent commitment</strong>${commitment || 'No commitment statement recorded yet.'}</div></div>`;
+    summaryCard.style.display = 'block';
+  } else {
+    summaryCard.style.display = 'none';
+  }
+
+  const banner = document.getElementById('promotionBanner');
+  const promoText = document.getElementById('promotionText');
+  const name = (s.FullName || s.Title || '').split(' ')[0];
+  if (s.Status === 'Nominated for Tier 2' && tn === 1) {
+    promoText.innerHTML = `<strong>${name} has completed all assigned trails</strong> and has been nominated for Tier 2. Review their briefs and confirm when ready.`;
+    banner.style.display = 'flex';
+  } else if (tn === 2 && trails === 7) {
+    promoText.innerHTML = `<strong>${name} has completed all 7 trails at Tier 2.</strong> Consider advancing to Tier 3 — Leading when ready.`;
+    banner.style.display = 'flex';
+  } else {
+    banner.style.display = 'none';
+  }
+
+  const staffTrails = trailData.filter(t => t.StaffIDId === sId);
+  const trailHistory = document.getElementById('trailHistory');
+  if (staffTrails.length > 0) {
+    trailHistory.innerHTML = staffTrails.map(t => `
+      <div class="trail-card">
+        <div class="trail-card-header">
+          <div class="trail-card-name">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            ${t.TrailName} <span class="trail-attempt-badge">Attempt ${t.AttemptNumber || 1}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="openConfirm('reset','${t.TrailName}',${t.ID || t.Id})">Reset Trail</button>
+        </div>
+        <div class="trail-card-body">
+          <div class="trail-entry">
+            <div class="trail-entry-num">${t.AttemptNumber || 1}</div>
+            <div class="trail-entry-info">
+              <div class="trail-entry-date">${t.DateCompleted ? new Date(t.DateCompleted).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : 'Date not recorded'} · Attempt ${t.AttemptNumber || 1}</div>
+              <div class="trail-entry-summary">${t.ConversationSummary || 'No summary available.'}</div>
+            </div>
+          </div>
+        </div>
+      </div>`).join('');
+  } else {
+    trailHistory.innerHTML = '<div class="empty-state">No trails completed yet.</div>';
+  }
+
+  const staffBriefCards = briefData.filter(b => b.StaffIDId === sId);
+  const briefList = document.getElementById('briefList');
+  if (staffBriefCards.length > 0) {
+    briefList.innerHTML = staffBriefCards.map(b => `
+      <div class="trail-card" style="margin-bottom:9px">
+        <div class="trail-card-header">
+          <div class="trail-card-name">${b.TrailName} · Attempt ${b.AttemptNumber || 1} · ${b.DateGenerated ? new Date(b.DateGenerated).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</div>
+          <button class="btn btn-secondary btn-sm" onclick="viewFullBrief(${b.ID || b.Id})">View Full</button>
+        </div>
+        <div class="trail-card-body" style="font-size:12px;color:var(--slate);line-height:1.6">
+          <strong style="color:var(--limestone)">Confidence:</strong> ${b.ConfidenceNotes || '—'}<br>
+          <strong style="color:var(--limestone)">Uncertainty:</strong> ${b.UncertaintyNotes || '—'}<br>
+          <strong style="color:var(--limestone)">Commitment:</strong> ${b.CommitmentStatement || '—'}
+        </div>
+      </div>`).join('');
+    briefList.className = '';
+  } else {
+    briefList.innerHTML = 'No reflection briefs yet.';
+    briefList.className = 'empty-state';
+  }
+
+  switchTab(tab);
+  document.getElementById('fileOverlay').classList.add('open');
+  document.getElementById('fileDrawer').classList.add('open');
+}
+
+function closeStaffFile() {
+  document.getElementById('fileOverlay').classList.remove('open');
+  document.getElementById('fileDrawer').classList.remove('open');
+}
+
+function switchTab(tab) {
+  const tabs = ['profile', 'trails', 'briefs', 'edit'];
+  document.querySelectorAll('.file-tab').forEach((t, i) => t.classList.toggle('active', tabs[i] === tab));
+  document.querySelectorAll('.file-tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+}
+
+async function saveStaffEdits() {
+  if (!currentStaff) return;
+  const id = currentStaff.ID || currentStaff.Id;
+  try {
+    await spPatch(CONFIG.listNames.staff, id, {
+      Title: document.getElementById('edit-name').value,
+      FullName: document.getElementById('edit-name').value,
+      Email: document.getElementById('edit-email').value,
+      Department: document.getElementById('edit-dept').value,
+      Seat: document.getElementById('edit-seat').value,
+      Tier: document.getElementById('edit-tier').value,
+      DISCProfile: document.getElementById('edit-disc').value,
+      DISCNotes: document.getElementById('edit-discnotes').value
+    });
+    await loadStaff();
+    closeStaffFile();
+    showToast('Changes saved', true);
+  } catch (err) {
+    console.error('Save edits error:', err);
+    showToast('Error saving changes. Please try again.', false);
+  }
+}
+
+function viewFullBrief(briefId) {
+  const brief = briefData.find(b => (b.ID || b.Id) === briefId);
+  if (!brief) return;
+  showToast(`Brief: ${brief.BriefSummary || 'No summary available'}`, true);
+}
+
+// ── BRIEFS PAGE ──────────────────────────────────────────────
+function populateStaffBriefFilter() {
+  const sel = document.getElementById('staffBriefFilter');
+  if (!sel) return;
+  while (sel.options.length > 1) sel.remove(1);
+  staffData.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.ID || s.Id;
+    opt.textContent = s.FullName || s.Title || '—';
+    sel.appendChild(opt);
+  });
+}
+
+function filterIndividualBriefs() {
+  const val = document.getElementById('staffBriefFilter')?.value;
+  const list = document.getElementById('individualBriefList');
+  if (!list) return;
+  const briefs = val ? briefData.filter(b => b.StaffIDId === parseInt(val)) : briefData.slice(0, 10);
+  if (briefs.length === 0) {
+    list.innerHTML = '<div class="empty-state">No reflection briefs found. Briefs are generated when staff complete trail conversations.</div>';
+    return;
+  }
+  list.innerHTML = briefs.map(b => {
+    const staff = staffData.find(s => (s.ID || s.Id) === b.StaffIDId);
+    const staffName = staff ? (staff.FullName || staff.Title) : '—';
+    return `<div style="background:var(--marble);border:1px solid var(--linen);border-radius:6px;padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:9px">
+        <div><div style="font-weight:600;font-size:13px;color:var(--limestone)">${staffName} — ${b.TrailName || '—'}</div><div style="font-size:11px;color:var(--slate)">Attempt ${b.AttemptNumber || 1} · ${b.DateGenerated ? new Date(b.DateGenerated).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</div></div>
+        <button class="btn btn-secondary btn-sm">View Full</button>
+      </div>
+      <div style="font-size:12px;color:var(--limestone);line-height:1.6">
+        <strong style="color:var(--navy)">Confidence:</strong> ${b.ConfidenceNotes || '—'}<br>
+        <strong style="color:var(--navy)">Uncertainty:</strong> ${b.UncertaintyNotes || '—'}<br>
+        <strong style="color:var(--navy)">Commitment:</strong> ${b.CommitmentStatement || '—'}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function switchBriefScope(scope, el) {
+  document.querySelectorAll('.scope-tab').forEach(t => {
+    t.style.background = 'var(--marble)'; t.style.color = 'var(--slate)'; t.style.borderColor = 'var(--concrete)';
+  });
+  el.style.background = 'var(--navy)'; el.style.color = 'var(--cotton)'; el.style.borderColor = 'var(--navy)';
+  ['individual', 'department', 'company'].forEach(s => {
+    document.getElementById(`briefs-${s}`).style.display = s === scope ? 'block' : 'none';
+  });
+}
+
+async function generateDeptSummary() {
+  showToast('Generating department summary via AI...', false);
+  setTimeout(() => showToast('Department summary feature coming in Phase 2', false), 1500);
+}
+
+async function generateCompanySummary() {
+  showToast('Generating company-wide summary via AI...', false);
+  setTimeout(() => showToast('Company summary feature coming in Phase 2', false), 1500);
+}
+
+async function generateStaffSummary() {
+  showToast('Generating AI summary across all briefs...', false);
+  setTimeout(() => showToast('Staff summary feature coming in Phase 2', false), 1500);
+}
+
+// ── CONFIRM ──────────────────────────────────────────────────
+let pendingResetTrailId = null;
+
+function openConfirm(action, trail, trailId) {
+  currentConfirmAction = action;
+  pendingResetTrailId = trailId || null;
+  const name = currentStaff ? (currentStaff.FullName || currentStaff.Title || '').split(' ')[0] : 'Staff member';
+  const titles = { promote: 'Confirm Promotion', reset: 'Reset Trail', archive: 'Archive Staff Member', export: 'Export Roster' };
+  const bodies = {
+    promote: `Promote ${name} to the next tier? This updates their access and AI conversation depth.`,
+    reset: `Reset the ${trail || ''} trail? Prior journal entries and reflection briefs are preserved. The AI will use the previous brief as context — going deeper on the next attempt.`,
+    archive: `Archive ${name}? All data is preserved. Their login access will be removed immediately.`,
+    export: 'Export the current filtered roster as a CSV.'
+  };
+  const okLabels = { promote: 'Confirm Promotion', reset: 'Reset Trail', archive: 'Archive Staff', export: 'Export CSV' };
+  document.getElementById('confirmTitle').textContent = titles[action] || 'Confirm';
+  document.getElementById('confirmBody').textContent = bodies[action] || '';
+  document.getElementById('confirmOkBtn').textContent = okLabels[action] || 'Confirm';
+  document.getElementById('confirmDialog').classList.add('open');
+}
+
+function closeConfirm() { document.getElementById('confirmDialog').classList.remove('open'); }
+
+async function confirmOk() {
+  closeConfirm();
+  if (currentConfirmAction === 'promote') await confirmPromotion();
+  else if (currentConfirmAction === 'reset') await confirmReset();
+  else if (currentConfirmAction === 'archive') await confirmArchive();
+  else if (currentConfirmAction === 'export') exportRoster();
+}
+
+async function confirmPromotion() {
+  if (!currentStaff) return;
+  const id = currentStaff.ID || currentStaff.Id;
+  const tn = tierNum(currentStaff.Tier);
+  const newTier = tn === 1 ? 'Tier 2 — Practicing' : 'Tier 3 — Leading';
+  try {
+    await spPatch(CONFIG.listNames.staff, id, { Tier: newTier, Status: 'In Progress' });
+    await loadStaff();
+    closeStaffFile();
+    showToast(`${(currentStaff.FullName || '').split(' ')[0]} promoted to ${newTier}`, true);
+  } catch (err) {
+    showToast('Error updating tier. Please try again.', false);
+  }
+}
+
+async function confirmReset() {
+  if (!pendingResetTrailId) { showToast('Trail reset noted — connect trail attempt record to complete', true); return; }
+  try {
+    await spPatch(CONFIG.listNames.trailAttempts, pendingResetTrailId, { IsComplete: false });
+    await loadTrailAttempts();
+    showToast('Trail reset — new conversation ready', true);
+  } catch (err) {
+    showToast('Error resetting trail. Please try again.', false);
+  }
+}
+
+async function confirmArchive() {
+  if (!currentStaff) return;
+  const id = currentStaff.ID || currentStaff.Id;
+  try {
+    await spPatch(CONFIG.listNames.staff, id, { IsActive: false, Status: 'Setup Incomplete' });
+    await loadStaff();
+    closeStaffFile();
+    showToast(`${(currentStaff.FullName || '').split(' ')[0]} archived — access removed, data preserved`, true);
+  } catch (err) {
+    showToast('Error archiving staff member. Please try again.', false);
+  }
+}
+
+function exportRoster() {
+  const data = getFilteredData();
+  const headers = ['Name', 'Seat', 'Department', 'Tier', 'Trails Complete', 'Last Active', 'Status'];
+  const rows = data.map(s => [
+    s.FullName || s.Title || '',
+    s.Seat || '',
+    s.Department || '',
+    s.Tier || '',
+    getStaffTrailCount(s.ID || s.Id),
+    s.LastActive ? new Date(s.LastActive).toLocaleDateString() : 'Never',
+    s.Status || ''
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'fba-roster.csv'; a.click();
+  URL.revokeObjectURL(url);
+  showToast('Roster exported as CSV', true);
+}
+
+// ── SETTINGS ─────────────────────────────────────────────────
+function switchSettings(panel, el) {
+  document.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  ['team', 'cadence'].forEach(p => {
+    document.getElementById(`settings-${p}`).style.display = p === panel ? 'block' : 'none';
+  });
+}
+
+async function saveCadenceSettings() {
+  const days = document.getElementById('overdueDays').value;
+  try {
+    const settings = await spGet(CONFIG.listNames.systemSettings, "SettingName eq 'OverdueDays'");
+    if (settings.length > 0) {
+      await spPatch(CONFIG.listNames.systemSettings, settings[0].ID || settings[0].Id, { SettingValue: days });
+    }
+    showToast('Cadence settings saved', true);
+  } catch (err) {
+    showToast('Error saving settings. Please try again.', false);
+  }
+}
+
+// ── NAV ──────────────────────────────────────────────────────
+function showView(v) {
+  document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`view-${v}`).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navEl = document.getElementById(`nav-${v}`);
+  if (navEl) navEl.classList.add('active');
+  const titles = { roster: 'Staff Roster', briefs: 'Reflection Briefs', sops: 'Processes & SOPs', settings: 'System Settings' };
+  document.getElementById('pageTitle').textContent = titles[v] || 'Admin';
+  document.getElementById('gearBtn').classList.toggle('active', v === 'settings');
+}
+
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  document.getElementById('sidebar').classList.toggle('collapsed', sidebarCollapsed);
+  document.getElementById('main').classList.toggle('collapsed', sidebarCollapsed);
+}
+
+// ── UI HELPERS ───────────────────────────────────────────────
+function showLoginScreen() {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('app').classList.remove('visible');
+}
+
+function showLoading() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('loadingScreen').style.display = 'flex';
+  document.getElementById('app').classList.remove('visible');
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('app').classList.add('visible');
+}
+
+function showToast(msg, success) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast${success ? ' success' : success === false ? ' error' : ''} show`;
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ── INIT ─────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
