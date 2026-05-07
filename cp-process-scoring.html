@@ -6,7 +6,12 @@
 <title>Bellweather — Process Impact Scoring</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Lora:ital,wght@0,400;1,400;1,500&display=swap" rel="stylesheet">
-<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js" onload="onMSALReady()" onerror="document.getElementById('auth-error').textContent='Failed to load authentication library. Please refresh.';"></script>
+<script>
+function onMSALReady(){
+  if(typeof initMSAL==="function"){initMSAL();init();}
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.0/lib/msal-browser.min.js" defer onload="onMSALReady()" onerror="document.getElementById('auth-error').textContent='Failed to load auth library. Please refresh.';"></script>
 <style>
 :root {
   --limestone:#282828; --cotton:#F6F2EE; --navy:#263860; --slate:#9091A0;
@@ -552,37 +557,45 @@ SCORERS.forEach(s=>{
 
 // ── MSAL SETUP ────────────────────────────────────────────────────────────────
 function initMSAL(){
+  if(msalInstance)return; // prevent double init
   msalInstance = new msal.PublicClientApplication({
     auth:{
       clientId: CONFIG.clientId,
-      authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`,
-      redirectUri: window.location.href.split('?')[0].split('#')[0]
+      authority: 'https://login.microsoftonline.com/'+CONFIG.tenantId,
+      redirectUri: window.location.origin+window.location.pathname
     },
     cache:{cacheLocation:'sessionStorage',storeAuthStateInCookie:false}
   });
 }
 
 async function signIn(){
+  const errEl=document.getElementById('auth-error');
+  const loadEl=document.getElementById('auth-loading');
+  const btnEl=document.getElementById('signin-btn');
   try{
-    document.getElementById('signin-btn').disabled=true;
-    document.getElementById('auth-loading').style.display='block';
-    document.getElementById('auth-error').textContent='';
-    // Ensure MSAL is initialized
-    if(!msalInstance){
-      if(typeof msal === 'undefined'){
-        document.getElementById('auth-error').textContent='Auth library not loaded. Please refresh the page.';
-        document.getElementById('signin-btn').disabled=false;
-        document.getElementById('auth-loading').style.display='none';
-        return;
-      }
-      initMSAL();
+    btnEl.disabled=true;
+    loadEl.style.display='block';
+    errEl.textContent='';
+    if(typeof msal === 'undefined'){
+      errEl.textContent='Auth library not loaded. Please hard-refresh (Ctrl+Shift+R) and try again.';
+      btnEl.disabled=false;loadEl.style.display='none';return;
     }
-    const result = await msalInstance.loginPopup({scopes:CONFIG.scopes});
+    if(!msalInstance)initMSAL();
+    const result = await msalInstance.loginPopup({
+      scopes: CONFIG.scopes,
+      prompt: 'select_account'
+    });
     await handleAuth(result);
   }catch(e){
-    document.getElementById('auth-error').textContent='Sign-in failed: '+e.message;
-    document.getElementById('signin-btn').disabled=false;
-    document.getElementById('auth-loading').style.display='none';
+    console.error('Sign-in error:',e);
+    if(e.errorCode==='popup_window_error'||e.message.includes('popup')){
+      errEl.textContent='Popup was blocked. Please allow popups for this site and try again.';
+    } else if(e.errorCode==='user_cancelled'){
+      errEl.textContent='Sign-in cancelled.';
+    } else {
+      errEl.textContent='Sign-in failed: '+(e.message||e.errorCode||'Unknown error');
+    }
+    btnEl.disabled=false;loadEl.style.display='none';
   }
 }
 
@@ -1016,19 +1029,18 @@ function renderBullet(proc,sec,b,pi,si,bi){
   const critBtns=CRITERIA.map(c=>`<button class="btn-crit${sv.criteria===c?' sel':critEnabled}" onclick="setCritIdx(${pi},${si},${bi},'${esc(c)}')">${c}</button>`).join('');
   const subsHTML=hasSubs?`<button class="subs-toggle" id="sbtn-${sid}" onclick="toggleSubs('${sid}')">▾ details</button>
     <div class="subs-list" id="${sid}">${b.subs.map(sub=>`<div class="sub-item">${sub}</div>`).join('')}</div>`:'';
-  // Lock voting after submission unless admin mode
   const isLocked=isComplete(scorer,1)&&!adminMode;
   const yesDisabled=isLocked?'disabled':'';
   const noDisabled=isLocked?'disabled':'';
-  const adminClick=adminMode?`onclick="adminEditBullet(${pi},${si},${bi})"`:''
-  return `<div class="${rc}" ${adminMode?`onclick="adminEditBullet(${pi},${si},${bi})"`:''}>
-    <div class="bullet-left"><span class="bullet-text">${b.text}</span>${subsHTML}</div>
-    <div class="controls" onclick="event.stopPropagation()">
-      <button class="btn-yes${isYes?' sel':''}" onclick="voteIdx(${pi},${si},${bi},'yes')" ${yesDisabled}>Yes</button>
-      <button class="btn-no${isNo?' sel':''}" onclick="voteIdx(${pi},${si},${bi},'no')" ${noDisabled}>No</button>
-      <div class="crit-group">${critBtns}</div>
-    </div>
-  </div>`;
+  const rowClick=adminMode?' onclick="adminEditBullet('+pi+','+si+','+bi+')"':'';
+  return '<div class="'+rc+'"'+rowClick+'>'
+    +'<div class="bullet-left"><span class="bullet-text">'+b.text+'</span>'+subsHTML+'</div>'
+    +'<div class="controls" onclick="event.stopPropagation()">'
+    +'<button class="btn-yes'+(isYes?' sel':'')+'" onclick="voteIdx('+pi+','+si+','+bi+','yes')" '+yesDisabled+'>Yes</button>'
+    +'<button class="btn-no'+(isNo?' sel':'')+'" onclick="voteIdx('+pi+','+si+','+bi+','no')" '+noDisabled+'>No</button>'
+    +'<div class="crit-group">'+critBtns+'</div>'
+    +'</div>'
+    +'</div>';
 }
 
 function renderRound2(){
@@ -1122,19 +1134,16 @@ function updateScoreboard(){
   // Round status bar
   const rsDiv=document.getElementById('rs-scorers');
   if(rsDiv){
-    rsDiv.innerHTML=`<div style="display:flex;gap:12px;flex-wrap:wrap;">
-      ${SCORERS.map(s=>{
-        const done=isComplete(s,round);
-        const votes=votedCount(s,round);
-        const total=round===1?TOTAL:round===2?getR2Candidates().length:ROUND_BUDGETS[round];
-        return `<div class="rs-scorer ${done?'submitted':''}">
-          <span>${done?'<span class="rs-check">✓</span>':'<span class="rs-pending">○</span>'}</span>
-          <span>${s}</span>
-          ${!done?`<span style="font-size:10px;color:var(--slate);">${votes}/${total}</span>`:''}
-          ${adminMode&&done?`<button class="rs-reset-btn visible" onclick="resetScorerRound('${s}',${round})">Reset</button>`:''}
-        </div>`;
-      }).join('')}
-    </div>`;
+    const scorerHtml=SCORERS.map(function(s){
+      const done=isComplete(s,round);
+      const votes=votedCount(s,round);
+      const total=round===1?TOTAL:round===2?getR2Candidates().length:ROUND_BUDGETS[round];
+      const check=done?'<span class="rs-check">&#10003;</span>':'<span class="rs-pending">○</span>';
+      const prog=!done?'<span style="font-size:10px;color:var(--slate);">'+votes+'/'+total+'</span>':'';
+      const reset=adminMode&&done?'<button class="rs-reset-btn visible" onclick="resetScorerRound(''+s+'','+round+')">Reset</button>':'';
+      return '<div class="rs-scorer '+(done?'submitted':'')+'">'+check+'<span>'+s+'</span>'+prog+reset+'</div>';
+    }).join('');
+    rsDiv.innerHTML='<div style="display:flex;gap:12px;flex-wrap:wrap;">'+scorerHtml+'</div>';
     document.getElementById('round-status').querySelector('.rs-label').textContent=`Round ${round}:`;
   }
   // Submit button
@@ -1230,24 +1239,12 @@ async function init(){
   }
 }
 
-function onMSALReady(){
-  if(!msalInstance) initMSAL();
-  init();
-}
 // Multiple safety nets for MSAL loading
 window.addEventListener('load', function(){
   if(typeof msal !== 'undefined' && !msalInstance){
     initMSAL();
     init();
   }
-});
-document.addEventListener('DOMContentLoaded', function(){
-  setTimeout(function(){
-    if(typeof msal !== 'undefined' && !msalInstance){
-      initMSAL();
-      init();
-    }
-  }, 500);
 });
 </script>
 </body>
