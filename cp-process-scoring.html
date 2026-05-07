@@ -226,6 +226,10 @@ body{font-family:'Outfit',sans-serif;background:var(--cotton);color:var(--limest
 
 .no-content{text-align:center;padding:50px 20px;color:var(--slate);font-size:14px;}
 .no-content strong{display:block;font-size:16px;color:var(--limestone);margin-bottom:6px;font-weight:500;}
+.b-row.missing{border-left:3px solid var(--mahogany);background:#FFF8F0;animation:pulse 1.5s ease-in-out 3;}
+@keyframes pulse{0%,100%{background:#FFF8F0;}50%{background:#FFE0C0;}}
+.find-missing-btn{background:none;border:1px solid var(--mahogany);color:var(--mahogany);font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit;margin-left:8px;transition:all 0.15s;}
+.find-missing-btn:hover{background:#FFF0E8;}
 </style>
 </head>
 <body>
@@ -1090,7 +1094,15 @@ function updateSubmitBtn(){
   btn.disabled = alreadyDone;
   var voted = votedCount(scorer, round);
   var total = round === 1 ? TOTAL : round === 2 ? getR2Candidates().length : ROUND_BUDGETS[round];
-  cnt.textContent = alreadyDone ? 'Round ' + round + ' locked' : voted + ' of ' + total + ' votes cast';
+  var remaining = total - voted;
+  if(alreadyDone){
+    cnt.innerHTML = 'Round ' + round + ' locked';
+  } else if(remaining > 0 && remaining <= 5){
+    cnt.innerHTML = voted + ' of ' + total + ' &mdash; <strong style="color:var(--mahogany);">' + remaining + ' missing</strong>'
+      + '<button class="find-missing-btn" onclick="findMissing()">Find them &#8595;</button>';
+  } else {
+    cnt.textContent = voted + ' of ' + total + ' votes cast';
+  }
   if(wrap) wrap.style.display = alreadyDone ? 'none' : 'flex';
 }
 
@@ -1104,6 +1116,36 @@ function updateProgress(){
   document.getElementById('prog').innerHTML = '<strong>' + scorer + '</strong> — '
     + (done ? 'Submitted \u2713' : (round === 1 ? voted + '/' + TOTAL + ' (' + pct + ')' : pct + ' votes'))
     + ' &middot; Round ' + round;
+}
+
+// ── FIND MISSING ─────────────────────────────────────────────────────────────
+function findMissing(){
+  // Open all process sections
+  PROCESSES.forEach(function(p){ openProcs[p.name] = true; });
+  renderAll();
+  // After render, find unvoted rows and scroll to first
+  setTimeout(function(){
+    var missing = [];
+    PROCESSES.forEach(function(p, pi){ p.sections.forEach(function(s, si){ s.bullets.forEach(function(b, bi){
+      var k = bkey(p.name, s.name, b.text);
+      var v = (scores[scorer] || {})[k] || {};
+      if(!v.vote){
+        var sid = 'sid_' + k.replace(/[^a-zA-Z0-9]/g, '_');
+        // Find the row by looking for the subs toggle or bullet text
+        var rows = document.querySelectorAll('.b-row');
+        rows.forEach(function(row){
+          var txt = row.querySelector('.b-text');
+          if(txt && txt.textContent === b.text){
+            row.classList.add('missing');
+            missing.push(row);
+          }
+        });
+      }
+    }); }); });
+    if(missing.length > 0){
+      missing[0].scrollIntoView({behavior:'smooth', block:'center'});
+    }
+  }, 100);
 }
 
 // ── EXPORT ────────────────────────────────────────────────────────────────────
