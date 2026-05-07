@@ -652,7 +652,6 @@ async function loadAllScores(){
       if(item.Bullet === 'SUBMITTED'){
         console.log('Found SUBMITTED marker:', item.Scorer, 'Round:', item.Round, 'Vote:', item.Vote);
       }
-      if(item.Bullet === 'SUBMITTED') return; // skip submission markers here
       var s = item.Scorer, r = +item.Round, k = bkey(item.Process, item.Section, item.Bullet);
       if(r === 1){
         if(!scores[s]) scores[s] = {};
@@ -665,18 +664,21 @@ async function loadAllScores(){
         cscores[r][s][k] = {picked: item.Vote === 'yes', spId: item.Id};
       }
     });
-    // Restore submitted state from SUBMITTED marker rows
-    items.forEach(function(item){
-      if(item.Bullet === 'SUBMITTED' && item.Vote === 'yes'){
-        var r = +item.Round;
-        var s = item.Scorer;
-        if(r && s){
-          if(!submitted[r]) submitted[r] = {};
-          submitted[r][s] = true;
-          console.log('Restored submission:', s, 'Round', r);
+    // Restore submitted state from CP_ScoringSession
+    try{
+      var sessions = await spGet(CONFIG.spSessionList);
+      console.log('Sessions loaded:', sessions.length, JSON.stringify(sessions.map(function(s){ return {Scorer:s.Scorer,Round:s.Round,Status:s.Status}; })));
+      sessions.forEach(function(item){
+        if(item.Status === 'complete' && item.Scorer){
+          var r = +item.Round;
+          if(r){
+            if(!submitted[r]) submitted[r] = {};
+            submitted[r][item.Scorer] = true;
+            console.log('Restored submission:', item.Scorer, 'Round', r);
+          }
         }
-      }
-    });
+      });
+    } catch(e){ console.error('Session load error:', e); }
     setSP(true);
   } catch(e){
     console.error('Load error:', e);
@@ -706,10 +708,17 @@ async function saveVote(proc, sec, bullet, vote, criteria, r){
 
 async function saveSession(){
   try{
-    var existing = await spGet(CONFIG.spSessionList, "Scorer eq '" + scorer + "' and Round eq " + round);
-    var item = {Round:round, Scorer:scorer, Status:'complete', CompletedAt:new Date().toISOString()};
-    if(existing.length > 0) await spPatch(CONFIG.spSessionList, existing[0].Id, item);
-    else await spPost(CONFIG.spSessionList, item);
+    var filter = "Scorer eq '" + scorer + "' and Round eq " + round;
+    var existing = await spGet(CONFIG.spSessionList, filter);
+    var titleVal = scorer + '_R' + round;
+    var item = {Title: titleVal, Round: round, Scorer: scorer, Status: 'complete'};
+    if(existing.length > 0){
+      await spPatch(CONFIG.spSessionList, existing[0].Id, item);
+      console.log('Session patched:', titleVal);
+    } else {
+      await spPost(CONFIG.spSessionList, item);
+      console.log('Session posted:', titleVal);
+    }
   } catch(e){ console.error('Session save error:', e); }
 }
 
