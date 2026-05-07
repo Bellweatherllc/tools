@@ -1026,6 +1026,73 @@ function renderSection(proc,sec,pi,si){
 }
 
 function renderBullet(proc,sec,b,pi,si,bi){
+  var k=bk(proc,sec,b.text);
+  var sv=(scores[scorer]||{})[k]||{};
+  var isYes=sv.vote==='yes', isNo=sv.vote==='no';
+  var aggYes=getR1Votes(proc,sec,b.text).yes;
+  var isSuper=isYes&&aggYes>=4;
+  var isLocked=isComplete(scorer,1)&&!adminMode;
+  var sid='s_'+k.replace(/[^a-zA-Z0-9]/g,'_');
+
+  var rc='bullet-row';
+  if(isSuper) rc+=' is-super';
+  else if(isYes) rc+=' is-yes';
+  else if(isNo) rc+=' is-no';
+
+  var critBtns='';
+  for(var ci=0;ci<CRITERIA.length;ci++){
+    var c=CRITERIA[ci];
+    var isSel=sv.criteria===c;
+    var enabled=isYes?' enabled':'';
+    var cls='btn-crit'+(isSel?' sel':enabled);
+    critBtns+='<button class="'+cls+'" data-pi="'+pi+'" data-si="'+si+'" data-bi="'+bi+'" data-crit="'+c+'" onclick="handleCritClick(this)">'+c+'</button>';
+  }
+
+  var subsHTML='';
+  if(b.subs&&b.subs.length){
+    var subItems='';
+    for(var s=0;s<b.subs.length;s++) subItems+='<div class="sub-item">'+b.subs[s]+'</div>';
+    subsHTML='<button class="subs-toggle" id="sbtn-'+sid+'" data-sid="'+sid+'" onclick="handleSubsClick(this)">&#9660; details</button>'
+            +'<div class="subs-list" id="'+sid+'">'+subItems+'</div>';
+  }
+
+  var rowAttr=adminMode?' data-pi="'+pi+'" data-si="'+si+'" data-bi="'+bi+'" onclick="handleAdminClick(this)"':'';
+  var dis=isLocked?'disabled':'';
+  var yesCls='btn-yes'+(isYes?' sel':'');
+  var noCls='btn-no'+(isNo?' sel':'');
+
+  return '<div class="'+rc+'"'+rowAttr+'>'
+    +'<div class="bullet-left"><span class="bullet-text">'+b.text+'</span>'+subsHTML+'</div>'
+    +'<div class="controls" onclick="event.stopPropagation()">'
+    +'<button class="'+yesCls+'" data-pi="'+pi+'" data-si="'+si+'" data-bi="'+bi+'" data-vote="yes" onclick="handleVoteClick(this)" '+dis+'>Yes</button>'
+    +'<button class="'+noCls+'" data-pi="'+pi+'" data-si="'+si+'" data-bi="'+bi+'" data-vote="no" onclick="handleVoteClick(this)" '+dis+'>No</button>'
+    +'<div class="crit-group">'+critBtns+'</div>'
+    +'</div>'
+    +'</div>';
+}
+function handleVoteClick(el){
+  var pi=+el.dataset.pi,si=+el.dataset.si,bi=+el.dataset.bi,v=el.dataset.vote;
+  voteIdx(pi,si,bi,v);
+}
+function handleCritClick(el){
+  var pi=+el.dataset.pi,si=+el.dataset.si,bi=+el.dataset.bi,c=el.dataset.crit;
+  setCritIdx(pi,si,bi,c);
+}
+function handleAdminClick(el){
+  var pi=+el.dataset.pi,si=+el.dataset.si,bi=+el.dataset.bi;
+  adminEditBullet(pi,si,bi);
+}
+function handleSubsClick(el){
+  toggleSubs(el.dataset.sid);
+}
+function renderSection(proc,sec,pi,si){
+  return `<div>
+    <div class="sec-hdr">${sec.name}</div>
+    ${sec.bullets.map((b,bi)=>renderBullet(proc,sec.name,b,pi,si,bi)).join('')}
+  </div>`;
+}
+
+function renderBullet(proc,sec,b,pi,si,bi){
   const k=bk(proc,sec,b.text);
   const sv=(scores[scorer]||{})[k]||{};
   const isYes=sv.vote==='yes',isNo=sv.vote==='no';
@@ -1033,38 +1100,198 @@ function renderBullet(proc,sec,b,pi,si,bi){
   const isSuper=isYes&&aggYes>=4;
   const hasSubs=b.subs&&b.subs.length;
   const sid='s_'+k.replace(/[^a-zA-Z0-9]/g,'_');
-  const isLocked=isComplete(scorer,1)&&!adminMode;
-
   let rc='bullet-row';
-  if(isSuper)rc+=' is-super';
-  else if(isYes)rc+=' is-yes';
-  else if(isNo)rc+=' is-no';
-
+  if(isSuper)rc+=' is-super';else if(isYes)rc+=' is-yes';else if(isNo)rc+=' is-no';
   const critEnabled=isYes?' enabled':'';
-  const critBtns=CRITERIA.map(function(c){
-    const sel=sv.criteria===c?' sel':critEnabled;
-    return '<button class="btn-crit'+sel+'" onclick="setCritIdx('+pi+','+si+','+bi+',''+esc(c)+'')">' +c+'</button>';
-  }).join('');
-
-  let subsHTML='';
-  if(hasSubs){
-    const subItems=b.subs.map(function(sub){return '<div class="sub-item">'+sub+'</div>';}).join('');
-    subsHTML='<button class="subs-toggle" id="sbtn-'+sid+'" onclick="toggleSubs(''+sid+'')">&#9660; details</button>'
-            +'<div class="subs-list" id="'+sid+'">'+subItems+'</div>';
-  }
-
-  const rowClick=adminMode?' onclick="adminEditBullet('+pi+','+si+','+bi+')"':'';
-  const yesClick='voteIdx('+pi+','+si+','+bi+',"yes")';
-  const noClick='voteIdx('+pi+','+si+','+bi+',"no")';
-  const yesDis=isLocked?'disabled':'';
-  const noDis=isLocked?'disabled':'';
-
-  return '<div class="'+rc+'"'+rowClick+'>'
-    +'<div class="bullet-left"><span class="bullet-text">'+b.text+'</span>'+subsHTML+'</div>'
-    +'<div class="controls" onclick="event.stopPropagation()">'
-    +'<button class="btn-yes'+(isYes?' sel':'')+'" onclick="'+yesClick+'" '+yesDis+'>Yes</button>'
-    +'<button class="btn-no'+(isNo?' sel':'')+'" onclick="'+noClick+'" '+noDis+'>No</button>'
-    +'<div class="crit-group">'+critBtns+'</div>'
-    +'</div>'
-    +'</div>';
+  const critBtns=CRITERIA.map(c=>`<button class="btn-crit${sv.criteria===c?' sel':critEnabled}" onclick="setCritIdx(${pi},${si},${bi},'${esc(c)}')">${c}</button>`).join('');
+  const subsHTML=hasSubs?`<button class="subs-toggle" id="sbtn-${sid}" onclick="toggleSubs('${sid}')">▾ details</button>
+    <div class="subs-list" id="${sid}">${b.subs.map(sub=>`<div class="sub-item">${sub}</div>`).join('')}</div>`:'';
+  return `<div class="${rc}">
+    <div class="bullet-left"><span class="bullet-text">${b.text}</span>${subsHTML}</div>
+    <div class="controls">
+      <button class="btn-yes${isYes?' sel':''}" onclick="voteIdx(${pi},${si},${bi},'yes')">Yes</button>
+      <button class="btn-no${isNo?' sel':''}" onclick="voteIdx(${pi},${si},${bi},'no')">No</button>
+      <div class="crit-group">${critBtns}</div>
+    </div>
+  </div>`;
 }
+
+function renderRound2(){
+  const cands=getR2Candidates();
+  const superList=getSuperYes();
+  let html=`<div class="r2-notice"><strong>★ ${superList.length} Super Yes items locked.</strong> ${cands.length} items need resolution. Vote Yes to elevate to Super Yes, No to eliminate.</div>`;
+  if(!cands.length){html+=`<div class="round-done"><strong>All resolved!</strong>Check the speedometer. Proceed to Round 3 if needed.</div>`;return html;}
+  const isOpen=openR2.candidates;
+  html+=`<div class="r2-group">
+    <div class="r2-group-hdr" onclick="toggleR2Group('candidates')">
+      <div><span class="r2-group-name">3-Vote Yes Items</span><span class="r2-group-desc">${cands.length} items — vote to elevate or eliminate</span></div>
+      <span class="ph-chev ${isOpen?'open':''}">▼</span>
+    </div>
+    <div class="r2-group-body ${isOpen?'open':''}">
+      ${cands.map(item=>{
+        const r2=(r2scores[2][scorer]||{})[bk(item.proc,item.sec,item.bullet)]||{};
+        // Find indices for onclick
+        const pi=PROCESSES.findIndex(p=>p.name===item.proc);
+        const si=PROCESSES[pi].sections.findIndex(s=>s.name===item.sec);
+        const bi=PROCESSES[pi].sections[si].bullets.findIndex(b=>b.text===item.bullet);
+        let rc='r2-bullet-row';
+        if(r2.vote==='yes')rc+=' is-yes';else if(r2.vote==='no')rc+=' is-no';
+        return `<div class="${rc}">
+          <div style="flex:1;">
+            <span class="bullet-text">${item.bullet}</span>
+            <div class="r2-dist">Round 1: <strong>3 Yes</strong> · 2 No</div>
+            <div class="r2-proc">${item.proc} › ${item.sec}</div>
+          </div>
+          <div class="controls" style="padding-top:0;">
+            <button class="btn-yes${r2.vote==='yes'?' sel':''}" onclick="voteR2Idx(${pi},${si},${bi},'yes')">Yes</button>
+            <button class="btn-no${r2.vote==='no'?' sel':''}" onclick="voteR2Idx(${pi},${si},${bi},'no')">No</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+  return html;
+}
+
+function renderConstrained(){
+  const r=round,budget=ROUND_BUDGETS[r],used=getBudgetUsed(r),remaining=budget-used;
+  const superList=getSuperYes(),cands=getConstrainedCandidates();
+  let html=`<div class="r2-notice"><strong>★ ${superList.length} Super Yes items locked.</strong> Pick your top ${budget} from ${cands.length} remaining candidates. <strong>${remaining} votes left.</strong></div>`;
+  html+=`<div class="r2-group">
+    <div class="r2-group-hdr" onclick="toggleR2Group('candidates')">
+      <div><span class="r2-group-name">Remaining Candidates</span><span class="r2-group-desc">${cands.length} items — pick your top ${budget}</span></div>
+      <span class="ph-chev ${openR2.candidates?'open':''}">▼</span>
+    </div>
+    <div class="r2-group-body ${openR2.candidates?'open':''}">
+      ${cands.map(item=>{
+        const pi=PROCESSES.findIndex(p=>p.name===item.proc);
+        const si=PROCESSES[pi].sections.findIndex(s=>s.name===item.sec);
+        const bi=PROCESSES[pi].sections[si].bullets.findIndex(b=>b.text===item.bullet);
+        const isPicked=(cscores[r][scorer]||{})[bk(item.proc,item.sec,item.bullet)]?.picked;
+        const disabled=!isPicked&&remaining===0;
+        return `<div class="c-bullet-row${isPicked?' is-picked':''}">
+          <div style="flex:1;"><span class="bullet-text">${item.bullet}</span><div class="c-proc">${item.proc} › ${item.sec}</div></div>
+          <div class="controls" style="padding-top:0;">
+            <button class="btn-yes${isPicked?' sel':''}" onclick="toggleConstrainedIdx(${pi},${si},${bi})" ${disabled?'disabled':''}>${isPicked?'✓ Yes':'Yes'}</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+  return html;
+}
+
+function toggleProc(name){openProcs[name]=!openProcs[name];renderAll();}
+function toggleR2Group(id){openR2[id]=!openR2[id];renderAll();}
+
+// ── SCOREBOARD ────────────────────────────────────────────────────────────────
+function updateScoreboard(){
+  const sc=scores[scorer]||{};
+  let superCount=0,yesCount=0,noCount=0;
+  const superList=[],yesList=[],noList=[];
+  PROCESSES.forEach(p=>p.sections.forEach(s=>s.bullets.forEach(b=>{
+    const v=sc[bk(p.name,s.name,b.text)]||{};
+    const {yes}=getR1Votes(p.name,s.name,b.text);
+    if(v.vote==='yes'&&yes>=4){superCount++;superList.push({bullet:b.text,sec:s.name,crit:v.criteria});}
+    else if(v.vote==='yes'){yesCount++;yesList.push({bullet:b.text,sec:s.name,crit:v.criteria});}
+    else if(v.vote==='no'){noCount++;noList.push({bullet:b.text,sec:s.name});}
+  })));
+  document.getElementById('sb-totals').innerHTML=`
+    <div class="sb-chip"><span class="sb-num super">${superCount}</span><span class="sb-lbl">Super Yes</span></div>
+    <div class="sb-chip"><span class="sb-num yes">${yesCount}</span><span class="sb-lbl">Yes</span></div>
+    <div class="sb-chip"><span class="sb-num no">${noCount}</span><span class="sb-lbl">No</span></div>`;
+  const ri=i=>`<div class="sb-item"><span style="flex:1">${i.bullet}</span><span class="sb-proc">${i.sec}</span>${i.crit?`<span class="sb-crit">${CRIT_FULL[i.crit]||i.crit}</span>`:''}</div>`;
+  const rs=items=>items.length?items.map(ri).join(''):'<div class="sb-empty">None yet</div>';
+  document.getElementById('sb-detail').innerHTML=`
+    <div><div class="sb-section-hdr super-hdr">★ Super Yes (${superList.length})</div>${rs(superList)}</div>
+    <div><div class="sb-section-hdr yes-hdr">● Yes (${yesList.length})</div>${rs(yesList)}</div>
+    <div><div class="sb-section-hdr no-hdr">○ No (${noList.length})</div>${rs(noList)}</div>`;
+}
+
+// ── SPEEDOMETER ───────────────────────────────────────────────────────────────
+function updateSpeedometer(){
+  if(!allComplete(1))return;
+  const n=countSuperYes(),maxD=50;
+  const pct=Math.min((n/maxD)*100,100);
+  const zS=(TARGET_MIN/maxD)*100,zW=((TARGET_MAX-TARGET_MIN)/maxD)*100;
+  const fill=document.getElementById('speed-fill');
+  fill.style.width=pct+'%';
+  fill.className='speed-fill'+(n>=TARGET_MIN&&n<=TARGET_MAX?' in-zone':n>TARGET_MAX?' over':'');
+  document.getElementById('speed-zone').style.cssText=`left:${zS}%;width:${zW}%`;
+  const num=document.getElementById('speed-num');
+  num.textContent=n;
+  num.className='speed-num'+(n>=TARGET_MIN&&n<=TARGET_MAX?' in-zone':n>TARGET_MAX?' over':' under');
+  const note=document.getElementById('speed-note');
+  if(n<TARGET_MIN)note.textContent=`Need ${TARGET_MIN-n} more Super Yes items.`;
+  else if(n>TARGET_MAX)note.textContent=`${n-TARGET_MAX} over ceiling — use next round to cut.`;
+  else note.textContent=`In the zone — ${n} consensus Super Yes items. `;
+}
+
+// ── BUDGET BAR ────────────────────────────────────────────────────────────────
+function updateBudgetBar(){
+  if(round!==3&&round!==4)return;
+  const budget=ROUND_BUDGETS[round],used=getBudgetUsed(round),remaining=budget-used;
+  document.getElementById('budget-count').textContent=remaining;
+  document.getElementById('budget-count').className='budget-count'+(remaining===0?' exhausted':'');
+  document.getElementById('budget-label').textContent=`Round ${round} votes remaining:`;
+  document.getElementById('budget-pips').innerHTML=Array.from({length:budget},(_,i)=>`<div class="pip${i<used?' used':''}"></div>`).join('');
+}
+
+// ── PROGRESS ──────────────────────────────────────────────────────────────────
+function updateProgress(){
+  if(!scorer)return;
+  const done=votedCount(scorer,round);
+  const total=round===1?TOTAL:round===2?getR2Candidates().length:ROUND_BUDGETS[round];
+  const pct=round===1?Math.round((done/TOTAL)*100)+'%':`${done}/${total}`;
+  document.getElementById('prog-txt').innerHTML=`<strong>${scorer}</strong> — ${round===1?done+'/'+TOTAL+' ('+pct+')':pct+' votes'} · Round ${round} · Auto-saving to SP`;
+}
+
+// ── EXPORT ────────────────────────────────────────────────────────────────────
+function exportResults(){
+  const lines=[`BELLWEATHER — Process Impact Scoring\nGenerated: ${new Date().toLocaleDateString()}\n${'─'.repeat(50)}`];
+  const superList=getSuperYes();
+  lines.push(`\nSUPER YES — Consensus (4–5 votes) — ${superList.length} items\n`);
+  superList.forEach(i=>lines.push(`  ★ [${i.proc} › ${i.sec}] ${i.bullet}`));
+  const cands=getR2Candidates();
+  if(cands.length){lines.push(`\n3-VOTE YES — Pending (${cands.length} items)\n`);cands.forEach(i=>lines.push(`  • [${i.proc} › ${i.sec}] ${i.bullet}`));}
+  lines.push(`\nSPEEDOMETER: ${countSuperYes()} Super Yes items (target: 25–30)`);
+  lines.push(`\nSCORER COMPLETION\n`);
+  SCORERS.forEach(s=>{lines.push(`  ${s}: ${isComplete(s,round)?'✓ Complete':'In progress'} (${votedCount(s,round)} votes)`)});
+  const blob=new Blob([lines.join('\n')],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`BW-ProcessScoring-R${round}-${new Date().toISOString().slice(0,10)}.txt`;
+  a.click();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init(){
+  initMSAL();
+  // Check for existing session
+  const accounts=msalInstance.getAllAccounts();
+  if(accounts.length>0){
+    try{
+      const result=await msalInstance.acquireTokenSilent({scopes:CONFIG.scopes,account:accounts[0]});
+      await handleAuth(result);
+    }catch(e){
+      // Silent auth failed — show sign-in
+      document.getElementById('main-content').innerHTML='<div class="no-scorer"><strong>Select your name above to begin.</strong>Sign in to load your scores from SharePoint.</div>';
+      document.getElementById('prog-txt').textContent='Please sign in.';
+    }
+  } else {
+    document.getElementById('main-content').innerHTML='<div class="no-scorer"><strong>Select your name above to begin.</strong>Sign in to load your scores from SharePoint.</div>';
+    document.getElementById('prog-txt').textContent='Please sign in.';
+  }
+}
+
+function onMSALReady(){
+  init();
+}
+// Fallback in case onload already fired
+if(typeof msal !== 'undefined'){init();}
+window.addEventListener('load',function(){
+  if(typeof msal!=='undefined'&&!msalInstance){initMSAL();init();}
+});
+</script>
+</body>
+</html>
