@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v432</title>
+<title>BW Project Pipeline — v435</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -194,8 +194,10 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .note-pop-cancel:hover{background:rgba(0,0,0,.06);}
 .note-pop-save{font-size:11px;font-weight:600;color:#fff;background:var(--navy);border:none;cursor:pointer;padding:4px 12px;border-radius:4px;}
 .note-pop-save:hover{background:#2e4560;}
-/* ── Ghost lanes (design phases shown in production view) ── */
-.lane-row.ghost{ pointer-events:all; }
+.bar-caret-stack{display:none;}
+.admin-mode .bar-caret-stack{display:flex;}
+.lane-row.ghost{ pointer-events:all; border-bottom:none; }
+.fc-proj-row.ghost{ border-bottom:none; }
 .lane-row.ghost .phase-bar{ opacity:0.28; }
 .lane-row.ghost .resize-hdl,.lane-row.ghost .resize-hdl-left{ display:none; }
 .fc-proj-row.ghost .fc-proj-sub{ opacity:0.35; font-style:italic; }
@@ -2173,7 +2175,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v432</div>
+    <div class="auth-version" id="authVersionBadge">v435</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2198,7 +2200,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v432</div>
+  <div class="proto-badge" id="versionBadge">v435</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2397,6 +2399,7 @@ function newPlanningId(){ return 'pl-'+Date.now(); }
 let APPROVED_HISTORY=[];
 let PROD_PM_COLLAPSED=new Set(); // set of pmId strings
 let PROD_UNASSIGNED_COLLAPSED=false;
+let DESIGN_UNASSIGNED_COLLAPSED=false;
 let DESIGN_COLLAPSED=new Set();  // set of designerId strings
 let PROD_ROW_ORDER=['revenue','unassigned','total'];
 let DES_ROW_ORDER=[]; // populated after SP load from DESIGNERS array
@@ -3034,7 +3037,7 @@ function initPhaseStartWeeks(proj){
   const phases=proj.designLane.phases;
   // Ensure Design Production phase exists
   if(!phases.find(ph=>ph.isDesignProd)){
-    phases.push({id:proj.id+'-dp',name:'Design Production',durWeeks:18,hours:4,color:'#3d7a58',isDesignProd:true,linkedRight:null,startWeek:undefined});
+    phases.push({id:proj.id+'-dp',name:'Design Production',durWeeks:18,hours:4,color:'#4A8AB5',isDesignProd:true,linkedRight:null,startWeek:undefined});
   }
   let pos=proj.designLane.startWeek;
   const pdIdx=phases.findIndex(ph=>/plan detailing/i.test(ph.name));
@@ -3167,7 +3170,7 @@ function renderCollapsedBand(projId){
     const allowedLanes=band.dataset.bandLanes?band.dataset.bandLanes.split(','):['design','permitting','production'];
     // Collect all phase intervals keyed by allowed lanes
     const laneIntervals={design:[],permitting:[],production:[]};
-    proj.designLane.phases.filter(ph=>ph.durWeeks>0&&!/construction design/i.test(ph.name)).forEach(ph=>{
+    proj.designLane.phases.filter(ph=>ph.durWeeks>0&&!/construction design/i.test(ph.name)&&!ph.isDesignProd).forEach(ph=>{
       laneIntervals.design.push({start:ph.startWeek, end:ph.startWeek+ph.durWeeks});
     });
     if(proj.permitting.durWeeks>0){
@@ -3707,7 +3710,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   overlay.style.cssText=`width:${w2px(C.numWeeks)}px;height:${proj.collapsed?collapsedOverlayH:overlayH}px;overflow:visible;`;
   const msToRender=skipMsNames?proj.milestones.filter(ms=>!skipMsNames.includes(ms.name)):proj.milestones;
   msToRender.forEach(ms=>overlay.appendChild(buildMsTall(proj,ms,C.msRowH,proj.collapsed?collapsedOverlayH:overlayH,laneIds,grpNudgeY)));
-  const band=buildCollapsedBand(proj,laneIds);
+  const band=buildCollapsedBand(proj,[...ghostLaneIds,...laneIds]);
   wrap.appendChild(band); wrap.appendChild(overlay); return wrap;
 }
 
@@ -3865,9 +3868,11 @@ function buildDesignSection(){
     // Unassigned projects
     const tlGrp=el('div','unassigned-group-tl'); tlGrp.classList.toggle('has-projects',unassigned.length>0);
     tlGrp.style.width=w2px(C.numWeeks)+'px';
-    if(unassigned.length>0){
-      unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['design','permitting'],true,true)); tlGrp.appendChild(sg); });
-    } else { const s=el('div','unassigned-placeholder-tl'); s.style.width=w2px(C.numWeeks)+'px'; tlGrp.appendChild(s); }
+    if(!DESIGN_UNASSIGNED_COLLAPSED){
+      if(unassigned.length>0){
+        unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['design','permitting'],true,true)); tlGrp.appendChild(sg); });
+      } else { const s=el('div','unassigned-placeholder-tl'); s.style.width=w2px(C.numWeeks)+'px'; tlGrp.appendChild(s); }
+    }
     tc.appendChild(tlGrp);
     const orderedDesignersTl=DES_ROW_ORDER.length
       ?DES_ROW_ORDER.map(id=>DESIGNERS.find(d=>d.id===id)).filter(Boolean)
@@ -3891,14 +3896,18 @@ function buildDesignSection(){
 
   // FC side — no date stub; the sticky band above handles the date header
   // Unassigned separator bar
-  const fcUnSep=el('div','unassigned-hdr-fc'); fcUnSep.style.cssText='height:22px;background:var(--sep);display:flex;align-items:center;padding-left:10px;';
+  const fcUnSep=el('div','unassigned-hdr-fc'); fcUnSep.style.cssText='height:22px;background:var(--sep);display:flex;align-items:center;padding-left:6px;gap:4px;';
+  const unChev=el('div','fc-chevron'+(DESIGN_UNASSIGNED_COLLAPSED?' collapsed':''));
+  unChev.style.cssText='width:18px;height:18px;flex-shrink:0;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.5);';
+  unChev.textContent='▾'; unChev.dataset.toggleDesignUnassignedCollapse='1';
   const fcUnLbl=el('span',''); fcUnLbl.textContent='Unassigned'; fcUnLbl.style.cssText='font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(40,40,40,.45);';
-  fcUnSep.appendChild(fcUnLbl);
+  fcUnSep.appendChild(unChev); fcUnSep.appendChild(fcUnLbl);
   fc.appendChild(fcUnSep);
-  // Unassigned projects
   const fcGrp=el('div','unassigned-group-fc'); fcGrp.classList.toggle('has-projects',unassigned.length>0);
-  if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'design')); fcGrp.appendChild(buildFcLanesBlock(proj,['Design','Permits/Zoning'])); }); }
-  else { fcGrp.appendChild(el('div','unassigned-placeholder-fc')); }
+  if(!DESIGN_UNASSIGNED_COLLAPSED){
+    if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'design')); fcGrp.appendChild(buildFcLanesBlock(proj,['Design','Permits/Zoning'])); }); }
+    else { fcGrp.appendChild(el('div','unassigned-placeholder-fc')); }
+  }
   fc.appendChild(fcGrp);
   // Use DES_ROW_ORDER for designer row sequence
   const orderedDesigners=DES_ROW_ORDER.length
@@ -4570,7 +4579,7 @@ function initDrag(){
   if(DRAG_INIT)return; DRAG_INIT=true;
   const iw=document.getElementById('iw');
   iw.addEventListener('pointerdown',e=>{
-    if(e.target.closest('[data-open-status-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-remove-timeoff],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-jump-btn],[data-open-cal],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta]'))return;
+    if(e.target.closest('[data-open-status-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-remove-timeoff],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-jump-btn],[data-open-cal],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta]'))return;
 
     const toEl=e.target.closest('.timeoff-block[data-editable]');
     if(toEl){
@@ -4745,7 +4754,7 @@ function initDrag(){
 
   iw.addEventListener('click',e=>{
     const ob=e.target.closest('[data-open-status-menu]'); if(ob){openStatusMenu(ob.closest('.status-badge'));return;}
-    const hb=e.target.closest('[data-delta]'); if(hb){updateHours(hb.dataset.phaseId,parseInt(hb.dataset.delta));return;}
+    const hb=e.target.closest('[data-delta]'); if(hb){ if(!canEdit()) return; updateHours(hb.dataset.phaseId,parseInt(hb.dataset.delta));return;}
     const tb=e.target.closest('[data-target-person]'); if(tb){updateTarget(tb.dataset.targetPerson,parseInt(tb.dataset.targetDelta));return;}
     const cb=e.target.closest('[data-toggle-collapse]'); if(cb){toggleCollapse(cb.dataset.toggleCollapse);return;}
     const atb=e.target.closest('[data-add-timeoff]'); if(atb){addTimeoff(atb.dataset.addTimeoff,atb.dataset.addSection);return;}
@@ -4808,6 +4817,7 @@ function initDrag(){
     const pmColBtn=e.target.closest('[data-toggle-pm-collapse]');
     if(pmColBtn){ const pmId=pmColBtn.dataset.togglePmCollapse; if(PROD_PM_COLLAPSED.has(pmId)) PROD_PM_COLLAPSED.delete(pmId); else PROD_PM_COLLAPSED.add(pmId); rebuildSection('production'); triggerSave(); return; }
     if(e.target.closest('[data-toggle-unassigned-collapse]')){ PROD_UNASSIGNED_COLLAPSED=!PROD_UNASSIGNED_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
+    if(e.target.closest('[data-toggle-design-unassigned-collapse]')){ DESIGN_UNASSIGNED_COLLAPSED=!DESIGN_UNASSIGNED_COLLAPSED; rebuildSection('design'); triggerSave(); return; }
     const desColBtn=e.target.closest('[data-toggle-design-collapse]');
     if(desColBtn){ const dId=desColBtn.dataset.toggleDesignCollapse; if(DESIGN_COLLAPSED.has(dId)) DESIGN_COLLAPSED.delete(dId); else DESIGN_COLLAPSED.add(dId); rebuildSection('design'); triggerSave(); return; }
     if(e.target.closest('[data-add-prod-project]')){addProdProject();return;}
@@ -5668,7 +5678,7 @@ function globalStatePayload(){
     USED_SLOTS:[...USED_SLOTS],
     PROD_ROW_ORDER,DES_ROW_ORDER,PERSON_TARGETS,
     PROD_PM_COLLAPSED:[...PROD_PM_COLLAPSED],
-    PROD_UNASSIGNED_COLLAPSED,
+    PROD_UNASSIGNED_COLLAPSED, DESIGN_UNASSIGNED_COLLAPSED,
     DESIGN_COLLAPSED:[...DESIGN_COLLAPSED],
     CAL_VIEW:{
       production:{from:CAL_VIEW.production.from.toISOString(),to:CAL_VIEW.production.to.toISOString()},
@@ -6842,6 +6852,7 @@ function restoreSavedState(saved){
   if(saved.USED_SLOTS&&Array.isArray(saved.USED_SLOTS)) USED_SLOTS=new Set(saved.USED_SLOTS);
   if(saved.PROD_PM_COLLAPSED&&Array.isArray(saved.PROD_PM_COLLAPSED)) PROD_PM_COLLAPSED=new Set(saved.PROD_PM_COLLAPSED);
   if(typeof saved.PROD_UNASSIGNED_COLLAPSED==='boolean') PROD_UNASSIGNED_COLLAPSED=saved.PROD_UNASSIGNED_COLLAPSED;
+  if(typeof saved.DESIGN_UNASSIGNED_COLLAPSED==='boolean') DESIGN_UNASSIGNED_COLLAPSED=saved.DESIGN_UNASSIGNED_COLLAPSED;
   if(saved.DESIGN_COLLAPSED&&Array.isArray(saved.DESIGN_COLLAPSED)) DESIGN_COLLAPSED=new Set(saved.DESIGN_COLLAPSED);
   if(typeof saved.SLOT_DEFAULT_BUDGET==='number') SLOT_DEFAULT_BUDGET=saved.SLOT_DEFAULT_BUDGET;
   if(Array.isArray(saved.SLOT_COL_ORDER)) SLOT_COL_ORDER=saved.SLOT_COL_ORDER;
