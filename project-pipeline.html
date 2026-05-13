@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v418</title>
+<title>BW Project Pipeline — v420</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -331,6 +331,9 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .ms-tall{position:absolute;width:28px;cursor:grab;user-select:none;pointer-events:auto;border-radius:6px;}
 .lanes-wrap.proj-collapsed .ms-tall{cursor:default;pointer-events:none;}
 .ms-tall.dragging{cursor:grabbing;z-index:50;}
+.admin-mode .tl-ms-row{cursor:grab;}
+.admin-mode .tl-ms-row:active{cursor:grabbing;}
+.admin-mode .tl-ms-row .ms-tall{cursor:grab;}
 .ms-tall.projected{background:#c9a84c;}
 .ms-tall.signed{background:#2152a1;}
 .ms-tall.da-signed{background:#2152a1;}
@@ -1149,6 +1152,43 @@ body.is-panning *{cursor:grabbing!important;}
 .t-ok{background:rgba(59,127,168,.10);color:#3b7fa8;}
 .t-new{background:rgba(58,138,96,.10);color:#3a8a60;}
 .brief-empty{padding:14px 0;font-size:12px;color:var(--tm);font-style:italic;}
+
+/* ── Brief project cards ── */
+.brief-proj-card{
+  border:1px solid var(--bdr);border-left:4px solid var(--bdr);
+  border-radius:6px;margin-bottom:14px;background:#fff;overflow:hidden;
+}
+.brief-proj-card.bpc-urgent{border-left-color:#ac2828;}
+.brief-proj-card.bpc-warn{border-left-color:#d07820;}
+.brief-proj-card.bpc-active{border-left-color:#3b7fa8;}
+.brief-proj-card.bpc-quiet{border-left-color:var(--sep);opacity:.7;}
+.brief-card-hd{
+  padding:10px 14px 8px;border-bottom:1px solid var(--bdr);
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+}
+.brief-card-name{
+  font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:var(--navy);flex-shrink:0;
+}
+.brief-card-people{
+  font-size:9px;color:#a3a3a3;font-weight:500;letter-spacing:.02em;
+  margin-left:auto;white-space:nowrap;
+}
+.brief-card-body{padding:2px 14px 6px;}
+.brief-card-row{
+  display:flex;gap:10px;align-items:baseline;
+  padding:5px 0;border-bottom:1px solid rgba(228,218,196,.35);
+  font-size:11.5px;line-height:1.5;color:var(--navy);
+}
+.brief-card-row:last-child{border-bottom:none;}
+.bcr-lbl{
+  font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  white-space:nowrap;flex-shrink:0;min-width:54px;padding-top:2px;
+}
+.bcr-lbl.l-urgent{color:#ac2828;} .bcr-lbl.l-warn{color:#b06010;}
+.bcr-lbl.l-change{color:#3b7fa8;} .bcr-lbl.l-note{color:#7a5c2e;}
+.bcr-lbl.l-due{color:#5c3a8a;}    .bcr-lbl.l-quiet{color:#b0b0b0;}
+.bcr-text{flex:1;}
+.bcr-text.quiet{color:#b0b0b0;font-style:italic;}
 
 @media print{
   .brief-topbar,.app-header{display:none!important;}
@@ -2143,7 +2183,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v418</div>
+    <div class="auth-version" id="authVersionBadge">v420</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2168,7 +2208,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v418</div>
+  <div class="proto-badge" id="versionBadge">v420</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4565,20 +4605,13 @@ function initDrag(){
       const sibling=proj.milestones.find(m=>m.id!==id), isDA=ms.name==='DA';
       let minWeek, maxWeek;
       if(isDA){
-        // DA must be before CA
+        // DA must stay before CA
         minWeek=0;
         maxWeek=sibling?sibling.week-1:C.numWeeks-1;
       } else {
-        // CA: must be after Plan Detailing ends, before pre-construction starts
-        const _phases=proj.designLane.phases;
-        const _pdIdx=_phases.findIndex(ph=>/plan detailing/i.test(ph.name));
-        let _pdEnd=proj.designLane.startWeek;
-        for(let _i=0;_i<=_pdIdx;_i++) _pdEnd+=_phases[_i].durWeeks;
-        // pdEnd is first week after Plan Detailing — CA must be >= pdEnd
-        const _preConStart=proj.productionLane.phases[0]?.startWeek??_pdEnd+1;
-        // CA must be < preConStart
-        minWeek=Math.max(sibling?sibling.week+1:0, _pdEnd);
-        maxWeek=_preConStart-1;
+        // CA must stay after DA; no hard upper bound — user controls placement
+        minWeek=sibling?sibling.week+1:0;
+        maxWeek=C.numWeeks-1;
       }
       DRAG={type:'ms',msId:id,startX:e.clientX,origWeek:ms.week,minWeek,maxWeek};
       document.querySelectorAll(`.ms-tall[data-ms-id="${id}"]`).forEach(m=>m.classList.add('dragging'));
@@ -4639,6 +4672,21 @@ function initDrag(){
 
     const lRow=e.target.closest('.lane-row,.tl-ms-row');
     if(lRow&&!e.target.closest('.phase-bar,.ms-tall,.resize-hdl,.resize-hdl-left')){
+      // In admin mode, dragging the timeline ms row moves the whole project collectively
+      const isMsRow=lRow.classList.contains('tl-ms-row');
+      if(isMsRow&&canEdit()){
+        e.preventDefault();
+        const projId=lRow.dataset.projId;
+        const proj=PROJECTS.find(p=>p.id===projId);
+        if(proj&&!proj.collapsed){
+          const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,proj.permitting];
+          const origStarts=allPhs.map(p=>p.startWeek);
+          const origMsWeeks=proj.milestones.map(m=>m.week);
+          DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts,origMsWeeks,
+                milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane};
+          capture(lRow,e.pointerId); return;
+        }
+      }
       e.preventDefault();
       const scroller=lRow.closest('.split-pane')||lRow.closest('.section-scroll')||document.querySelector('.outer-scroll');
       document.body.classList.add('is-panning');
@@ -5351,34 +5399,38 @@ function onMove(e){
 
   if(DRAG.type==='projMove'){
     const minOrig=Math.min(...DRAG.origStarts), clampedDw=Math.max(-minOrig,dw);
-    DRAG.allPhs.forEach((ph,i)=>ph.startWeek=DRAG.origStarts[i]+clampedDw);
+    DRAG.allPhs.forEach((ph,i)=>{ ph.startWeek=DRAG.origStarts[i]+clampedDw; });
     DRAG.designLane.startWeek=DRAG.designLane.phases[0].startWeek;
     DRAG.prodLane.startWeek=DRAG.prodLane.phases[0].startWeek;
     if(DRAG.milestones){ DRAG.milestones.forEach((ms,i)=>{ ms.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origMsWeeks[i]+clampedDw)); refreshMs(ms.id); }); }
-    refreshLane(DRAG.projId,'design'); refreshLane(DRAG.projId,'permitting'); refreshLane(DRAG.projId,'production');
-    renderTally('design'); renderTally('production'); refreshWkNums(DRAG.projId); refreshMsOpacity(DRAG.projId); refreshRevenueRow(); _updateProjCA(DRAG.projId);
+    // Update bars in-place
+    DRAG.allPhs.forEach(ph=>{
+      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; });
+    });
+    renderTally('design'); renderTally('production'); refreshWkNums(DRAG.projId); refreshMsOpacity(DRAG.projId); refreshRevenueRow();
     syncDesignProdPhase(DRAG.projId);
   }
 
   if(DRAG.type==='laneMove'){
     const minOrig=Math.min(...DRAG.origStarts), clampedDw=Math.max(-minOrig,dw);
-    DRAG.phases.forEach((ph,i)=>ph.startWeek=DRAG.origStarts[i]+clampedDw);
+    DRAG.phases.forEach((ph,i)=>{ ph.startWeek=DRAG.origStarts[i]+clampedDw; });
     const proj=PROJECTS.find(p=>p.id===DRAG.projId);
     getLane(proj,DRAG.laneId).startWeek=DRAG.phases[0].startWeek;
-    refreshLane(DRAG.projId,DRAG.laneId); renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId);
+    DRAG.phases.forEach(ph=>{
+      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; });
+    });
+    renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId);
     refreshRevenueRow(); _updateProjCA(DRAG.projId);
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
   }
 
   if(DRAG.type==='phaseMove'){
     const minOrig=Math.min(...DRAG.origStarts);
-    // Clamp: can't go before 0, and can't overlap the phase before the chain
     let minDw=-minOrig;
     if(DRAG.chainStart>0){
       const prevPh=DRAG.allPhs[DRAG.chainStart-1];
       minDw=Math.max(minDw, (prevPh.startWeek+prevPh.durWeeks)-DRAG.origStarts[0]);
     }
-    // Clamp: can't overlap the phase after the chain
     let maxDw=C.numWeeks;
     if(DRAG.chainEnd<DRAG.allPhs.length-1){
       const nextPh=DRAG.allPhs[DRAG.chainEnd+1];
@@ -5386,10 +5438,14 @@ function onMove(e){
       maxDw=nextPh.startWeek-chainOrigEnd;
     }
     const clampedDw=Math.max(minDw,Math.min(maxDw,dw));
-    DRAG.chain.forEach((ph,i)=>ph.startWeek=DRAG.origStarts[i]+clampedDw);
+    DRAG.chain.forEach((ph,i)=>{ ph.startWeek=DRAG.origStarts[i]+clampedDw; });
     const proj=PROJECTS.find(p=>p.id===DRAG.projId);
     if(DRAG.chainStart===0) getLane(proj,DRAG.laneId).startWeek=DRAG.chain[0].startWeek;
-    refreshLane(DRAG.projId,DRAG.laneId); renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId);
+    // Update bar positions in-place — never call refreshLane during drag as it destroys the captured element
+    DRAG.chain.forEach(ph=>{
+      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; });
+    });
+    renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId);
     refreshRevenueRow(); _updateProjCA(DRAG.projId);
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
   }
@@ -5425,6 +5481,7 @@ function onMove(e){
     ms.week=Math.max(DRAG.minWeek??0,Math.min(DRAG.maxWeek??C.numWeeks-1,DRAG.origWeek+dw));
     refreshMs(DRAG.msId);
     const r=findMs(DRAG.msId); if(r) refreshMsOpacity(r.proj.id);
+    // Don't call _updateProjCA here — user is explicitly setting this milestone's position
   }
 }
 
@@ -5469,6 +5526,14 @@ function onUp(){
 
   document.body.style.cursor='';
   document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp);
+  // Final lane rebuild for all drag types that moved phase bars in-place during the drag
+  if(DRAG.type==='phaseMove'||DRAG.type==='laneMove'){
+    refreshLane(DRAG.projId,DRAG.laneId);
+    if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
+  } else if(DRAG.type==='projMove'){
+    refreshLane(DRAG.projId,'design'); refreshLane(DRAG.projId,'permitting'); refreshLane(DRAG.projId,'production');
+    syncDesignProdPhase(DRAG.projId);
+  }
   if(DRAG.projId){
     const _dp=PROJECTS.find(p=>p.id===DRAG.projId); if(_dp) markDirty(_dp);
     refreshMsOpacity(DRAG.projId);
@@ -8074,135 +8139,152 @@ function generateBriefHTML(){
   const missing=briefMissingAssignment();
   const daNoCa=briefDaNoCA();
   const flags={upcoming,overdue,stalls,missing};
+  const base=WEEKLY_BASELINE?.projects||{};
   let html='';
 
   if(!WEEKLY_BASELINE){
-    html+=`<div class="brief-no-baseline">No baseline has been set. The sections below show <em>current pipeline state</em> only — set a baseline after this meeting to begin tracking week-over-week changes.</div>`;
+    html+=`<div class="brief-no-baseline">No baseline has been set. The cards below show <em>current pipeline state</em> only — set a baseline after this meeting to begin tracking week-over-week changes.</div>`;
   }
 
-  // Health
   html+=`<div class="brief-health"><div class="brief-health-label">Pipeline Health</div>${briefHealthSummary(diff,flags)}</div>`;
 
-  // ── Needs Attention ──
-  const attnItems=[];
-  overdue.forEach(({proj,ms,weeksLate})=>{
-    attnItems.push(briefItem('bi-urgent',briefProjName(proj),
-      `${ms.name} milestone is ${weeksLate} week${weeksLate!==1?'s':''} past its scheduled date (${briefFmtDate(wkToDate(ms.week))}).`,
-      [{cls:'t-alert',lbl:'Overdue'},{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)}]
-    ));
-  });
-  stalls.forEach(({proj,daysSince})=>{
-    attnItems.push(briefItem('bi-warn',briefProjName(proj),
-      `No status or milestone movement in ${daysSince} days — worth a check-in.`,
-      [{cls:'t-warn',lbl:'No movement'},{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)}]
-    ));
-  });
-  daNoCa.forEach(proj=>{
-    attnItems.push(briefItem('bi-warn',briefProjName(proj),
-      'DA is signed but CA has not been scheduled yet.',
-      [{cls:'t-warn',lbl:'CA not set'},{cls:'t-da',lbl:'DA Signed'}]
-    ));
-  });
-  missing.forEach(proj=>{
-    const lacks=[]; if(!proj.designer) lacks.push('designer'); if(!proj.productionPM) lacks.push('PM');
-    attnItems.push(briefItem('bi-warn',briefProjName(proj),
-      `Missing ${lacks.join(' and ')} assignment.`,
-      [{cls:'t-warn',lbl:'Unassigned'},{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)}]
-    ));
-  });
-  html+=briefSection('Needs Attention',attnItems,'brief-cnt-warn');
-
-  // ── Changes This Week ──
-  const changeItems=[];
+  // Build a lookup of diffs keyed by project id for fast access
+  const diffByProj={};
   if(WEEKLY_BASELINE){
-    diff.statusChanges.forEach(({proj,from,to})=>{
-      changeItems.push(briefItem('bi-ok',briefProjName(proj),
-        `Status: ${briefStatusLabel(from)} → ${briefStatusLabel(to)}.`,
-        [{cls:briefTagClass(to),lbl:briefStatusLabel(to)},{cls:'t-ok',lbl:'Status change'}]
-      ));
+    diff.statusChanges.forEach(x=>{ (diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).statusChange=x; });
+    diff.msChanges.forEach(x=>{ (diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).msChanges=((diffByProj[x.proj.id]||{}).msChanges||[]).concat(x); });
+    diff.assignmentChanges.forEach(x=>{ (diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).assignmentChanges=((diffByProj[x.proj.id]||{}).assignmentChanges||[]).concat(x); });
+    diff.newProjs.forEach(p=>{ (diffByProj[p.id]=diffByProj[p.id]||{}).isNew=true; });
+  }
+  const overdueByProj={}, stallsByProj={}, missingSet=new Set(), daNoCaSet=new Set();
+  overdue.forEach(x=>{ (overdueByProj[x.proj.id]=overdueByProj[x.proj.id]||[]).push(x); });
+  stalls.forEach(x=>{ stallsByProj[x.proj.id]=x; });
+  missing.forEach(p=>missingSet.add(p.id));
+  daNoCa.forEach(p=>daNoCaSet.add(p.id));
+  const upcomingByProj={};
+  upcoming.forEach(x=>{ (upcomingByProj[x.proj.id]=upcomingByProj[x.proj.id]||[]).push(x); });
+
+  // Determine priority for each project (lower = more urgent)
+  const statusOrder={'ca-signed':0,'da-signed':1,'projected':2,'paused':3};
+  function projPriority(p){
+    if(overdueByProj[p.id]) return 0;
+    if(stallsByProj[p.id]||missingSet.has(p.id)||daNoCaSet.has(p.id)) return 1;
+    if(diffByProj[p.id]) return 2;
+    if(p.notes&&p.notes.trim()) return 2;
+    if(upcomingByProj[p.id]) return 3;
+    return 4;
+  }
+
+  const active=PROJECTS
+    .filter(p=>!['archived','cancelled'].includes(p.status))
+    .sort((a,b)=>{
+      const pa=projPriority(a), pb=projPriority(b);
+      if(pa!==pb) return pa-pb;
+      const sa=statusOrder[a.status]??5, sb=statusOrder[b.status]??5;
+      if(sa!==sb) return sa-sb;
+      return briefProjName(a).localeCompare(briefProjName(b));
     });
-    diff.msChanges.forEach(({proj,ms,fromStatus,fromWeek})=>{
-      const parts=[];
-      if(fromStatus!==ms.status) parts.push(`${ms.name} status: ${fromStatus} → ${ms.status}`);
-      if(fromWeek!==ms.week) parts.push(`date moved from ${briefFmtDate(wkToDate(fromWeek))} to ${briefFmtDate(wkToDate(ms.week))}`);
-      changeItems.push(briefItem('bi-ok',briefProjName(proj),
-        (parts.join('; ')||`${ms.name} milestone updated`)+'.', 
-        [{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)},{cls:'t-ok',lbl:`${ms.name} update`}]
-      ));
-    });
-    diff.newProjs.forEach(proj=>{
-      changeItems.push(briefItem('bi-info',briefProjName(proj),
-        'Added to pipeline since last baseline.',
-        [{cls:'t-new',lbl:'New'},{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)}]
-      ));
-    });
-    diff.assignmentChanges.forEach(({proj,field,from,to})=>{
-      changeItems.push(briefItem('bi-info',briefProjName(proj),
-        `${field}: ${from} → ${to}.`,
-        [{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)}]
-      ));
-    });
+
+  // Render removed projects first (if any)
+  if(WEEKLY_BASELINE && diff.removedProjs.length){
     diff.removedProjs.forEach(({name})=>{
-      changeItems.push(briefItem('bi-muted',name,
-        'Removed from active pipeline (archived or cancelled).',
-        [{cls:'t-warn',lbl:'Removed'}]
-      ));
+      html+=`<div class="brief-proj-card bpc-quiet">
+        <div class="brief-card-hd">
+          <span class="brief-tag t-warn">Removed</span>
+          <span class="brief-card-name">${name}</span>
+        </div>
+        <div class="brief-card-body">
+          <div class="brief-card-row"><span class="bcr-lbl l-warn">Change</span><span class="bcr-text">Removed from active pipeline — archived or cancelled.</span></div>
+        </div>
+      </div>`;
     });
   }
-  html+=briefSection('Changes This Week',changeItems,'brief-cnt-ok');
 
-  // ── Coming Up (next 2 weeks) ──
-  const upcomingItems=upcoming.map(({proj,ms,weeksOut})=>{
-    const urgency=weeksOut<=1?'bi-urgent':weeksOut<=2?'bi-warn':'bi-info';
-    const timeLabel=weeksOut===0?'This week':weeksOut===1?'Next week':`${weeksOut} weeks out`;
-    const tagCls=weeksOut<=1?'t-alert':weeksOut<=2?'t-warn':'t-ok';
-    return briefItem(urgency,briefProjName(proj),
-      `${ms.name} milestone scheduled for ${briefFmtDate(wkToDate(ms.week))} — ${timeLabel}.`,
-      [{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)},{cls:tagCls,lbl:timeLabel}]
-    );
-  });
-  html+=briefSection('Coming Up — Next 2 Weeks',upcomingItems);
+  // Render one card per active project
+  active.forEach(proj=>{
+    const id=proj.id;
+    const priority=projPriority(proj);
+    const cardCls=priority===0?'bpc-urgent':priority===1?'bpc-warn':priority<=3?'bpc-active':'bpc-quiet';
 
-  // ── No Changes (stable, not already surfaced) ──
-  const surfacedIds=new Set([
-    ...overdue.map(x=>x.proj.id),
-    ...stalls.map(x=>x.proj.id),
-    ...missing.map(x=>x.id),
-    ...daNoCa.map(x=>x.id),
-    ...upcoming.map(x=>x.proj.id),
-    ...(WEEKLY_BASELINE?[...diff.statusChanges,...diff.msChanges,...diff.assignmentChanges].map(x=>x.proj.id):[]),
-    ...(WEEKLY_BASELINE?diff.newProjs.map(x=>x.id):[])
-  ]);
-  const stable=PROJECTS.filter(p=>
-    !['archived','cancelled'].includes(p.status) && !surfacedIds.has(p.id)
-  );
-  const stableItems=stable.map(proj=>{
+    const snap=base[id];
     const des=proj.designer?briefPersonLabel(proj.designer)||'?':'—';
     const pm=proj.productionPM?briefPersonLabel(proj.productionPM)||'?':'—';
-    return briefItem('bi-muted',briefProjName(proj),
-      `Designer: ${des} · PM: ${pm}`,
-      [{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)}]
-    );
-  });
-  html+=briefSection('No Changes',stableItems);
+    const sales=proj.salesPerson||'—';
 
-  // ── Project Notes ──
-  const base=WEEKLY_BASELINE?.projects||{};
-  const noteItems=PROJECTS
-    .filter(p=>!['archived','cancelled'].includes(p.status) && p.notes && p.notes.trim())
-    .sort((a,b)=>briefProjName(a).localeCompare(briefProjName(b)))
-    .map(proj=>{
-      const snap=base[proj.id];
+    const rows=[];
+
+    // ── Flags ──────────────────────────────────────────────────────
+    if(overdueByProj[id]){
+      overdueByProj[id].forEach(({ms,weeksLate})=>{
+        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-urgent">Overdue</span><span class="bcr-text">${ms.name} milestone is ${weeksLate} week${weeksLate!==1?'s':''} past its scheduled date (${briefFmtDate(wkToDate(ms.week))}).</span></div>`);
+      });
+    }
+    if(stallsByProj[id]){
+      rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-warn">No movement</span><span class="bcr-text">No status or milestone changes in ${stallsByProj[id].daysSince} days — worth a check-in.</span></div>`);
+    }
+    if(daNoCaSet.has(id)){
+      rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-warn">CA not set</span><span class="bcr-text">DA is signed but CA has not been scheduled yet.</span></div>`);
+    }
+    if(missingSet.has(id)){
+      const lacks=[]; if(!proj.designer) lacks.push('designer'); if(!proj.productionPM) lacks.push('PM');
+      rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-warn">Unassigned</span><span class="bcr-text">Missing ${lacks.join(' and ')} assignment.</span></div>`);
+    }
+
+    // ── Changes ────────────────────────────────────────────────────
+    const pd=diffByProj[id];
+    if(pd){
+      if(pd.isNew){
+        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-change">New</span><span class="bcr-text">Added to pipeline since last baseline.</span></div>`);
+      }
+      if(pd.statusChange){
+        const {from,to}=pd.statusChange;
+        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-change">Status</span><span class="bcr-text">${briefStatusLabel(from)} → ${briefStatusLabel(to)}.</span></div>`);
+      }
+      (pd.msChanges||[]).forEach(({ms,fromStatus,fromWeek})=>{
+        const parts=[];
+        if(fromStatus!==ms.status) parts.push(`${ms.name} status: ${fromStatus} → ${ms.status}`);
+        if(fromWeek!==ms.week) parts.push(`date moved from ${briefFmtDate(wkToDate(fromWeek))} to ${briefFmtDate(wkToDate(ms.week))}`);
+        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-change">Milestone</span><span class="bcr-text">${parts.join('; ')||ms.name+' milestone updated'}.</span></div>`);
+      });
+      (pd.assignmentChanges||[]).forEach(({field,from,to})=>{
+        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-change">${field}</span><span class="bcr-text">${from} → ${to}.</span></div>`);
+      });
+    }
+
+    // ── Notes ──────────────────────────────────────────────────────
+    if(proj.notes&&proj.notes.trim()){
       const prevNote=snap?.notes||'';
-      const isNew=!prevNote && proj.notes;
-      const isChanged=prevNote && prevNote!==proj.notes;
-      const tags=[{cls:briefTagClass(proj.status),lbl:briefStatusLabel(proj.status)}];
-      if(isNew) tags.push({cls:'t-new',lbl:'New note'});
-      else if(isChanged) tags.push({cls:'t-ok',lbl:'Updated'});
-      return briefItem('bi-info',briefProjName(proj),
-        proj.notes.trim(), tags);
-    });
-  html+=briefSection('Project Notes',noteItems);
+      const noteLbl=(!prevNote&&proj.notes)?'New note':(prevNote&&prevNote!==proj.notes)?'Updated':'Note';
+      const noteCls=noteLbl==='Note'?'l-note':'l-change';
+      rows.push(`<div class="brief-card-row"><span class="bcr-lbl ${noteCls}">${noteLbl}</span><span class="bcr-text">${proj.notes.trim()}</span></div>`);
+    }
+
+    // ── Upcoming milestones ────────────────────────────────────────
+    if(upcomingByProj[id]){
+      upcomingByProj[id].forEach(({ms,weeksOut})=>{
+        const timeLabel=weeksOut===0?'This week':weeksOut===1?'Next week':`${weeksOut} weeks out`;
+        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-due">Due soon</span><span class="bcr-text">${ms.name} milestone — ${briefFmtDate(wkToDate(ms.week))} (${timeLabel}).</span></div>`);
+      });
+    }
+
+    // ── Quiet ──────────────────────────────────────────────────────
+    if(rows.length===0){
+      rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-quiet">Quiet</span><span class="bcr-text quiet">No changes, notes, or upcoming milestones.</span></div>`);
+    }
+
+    html+=`<div class="brief-proj-card ${cardCls}">
+      <div class="brief-card-hd">
+        <span class="brief-tag ${briefTagClass(proj.status)}">${briefStatusLabel(proj.status)}</span>
+        <span class="brief-card-name">${briefProjName(proj)}</span>
+        <span class="brief-card-people">${sales} · ${des} · ${pm}</span>
+      </div>
+      <div class="brief-card-body">${rows.join('')}</div>
+    </div>`;
+  });
+
+  if(!active.length && !diff.removedProjs.length){
+    html+=`<div class="brief-empty">No active projects in the pipeline.</div>`;
+  }
 
   return html;
 }
