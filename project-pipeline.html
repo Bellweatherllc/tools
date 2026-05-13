@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v429</title>
+<title>BW Project Pipeline — v431</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -194,7 +194,11 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .note-pop-cancel:hover{background:rgba(0,0,0,.06);}
 .note-pop-save{font-size:11px;font-weight:600;color:#fff;background:var(--navy);border:none;cursor:pointer;padding:4px 12px;border-radius:4px;}
 .note-pop-save:hover{background:#2e4560;}
-/* ── Inline slot budget control ── */
+/* ── Ghost lanes (design phases shown in production view) ── */
+.lane-row.ghost{ pointer-events:all; }
+.lane-row.ghost .phase-bar{ opacity:0.28; }
+.lane-row.ghost .resize-hdl,.lane-row.ghost .resize-hdl-left{ display:none; }
+.fc-proj-row.ghost .fc-proj-sub{ opacity:0.35; font-style:italic; }
 .fc-slot-budget{display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:4px;}
 .fc-slot-budget-val{font-size:10px;font-weight:700;color:var(--ts);min-width:34px;text-align:center;user-select:none;}
 .fc-slot-budget-btn{width:17px;height:17px;border-radius:3px;border:1px solid var(--bdr);background:var(--bg);color:var(--ts);font-size:13px;font-weight:700;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1;flex-shrink:0;padding:0;}
@@ -2169,7 +2173,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v429</div>
+    <div class="auth-version" id="authVersionBadge">v431</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2194,7 +2198,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v429</div>
+  <div class="proto-badge" id="versionBadge">v431</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3447,10 +3451,18 @@ function buildFcMsRow(proj, capacitySection){
   }
   return row;
 }
-function buildFcLanesBlock(proj,laneLabels){
+function buildFcLanesBlock(proj,laneLabels,ghostLabels){
+  ghostLabels=ghostLabels||[];
   const wrapper=el('div','');
   const block=el('div','proj-lanes-fc'); block.dataset.projId=proj.id;
   if(proj.collapsed)block.style.display='none';
+  // Ghost label rows first (design phases in production context)
+  ghostLabels.forEach(sub=>{
+    const row=el('div','fc-proj-row ghost'); row.style.height=C.laneH+'px';
+    const stCol=el('div','fc-st-col'); stCol.style.width=C.statusW+'px';
+    const nameCol=el('div','fc-name-col'); nameCol.innerHTML=`<div class="fc-proj-sub">${sub}</div>`;
+    row.appendChild(stCol); row.appendChild(nameCol); block.appendChild(row);
+  });
   laneLabels.forEach(sub=>{
     const row=el('div','fc-proj-row'); row.style.height=C.laneH+'px';
     const stCol=el('div','fc-st-col'); stCol.style.width=C.statusW+'px';
@@ -3654,13 +3666,19 @@ function populateBars(row,proj,laneId,includeControls,showJunctions){
   else{ proj.productionLane.phases.forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,includeControls,showJunctions))); }
 }
 
-function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,grpNudgeY,skipMsNames){
-  ovTimeoff=ovTimeoff||[];
+function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,grpNudgeY,skipMsNames,ghostLaneIds){
+  ovTimeoff=ovTimeoff||[]; ghostLaneIds=ghostLaneIds||[];
   grpNudgeY=grpNudgeY||0;
   const msRow=buildTlMsRow(proj);
   const lanesBlock=el('div','proj-lanes-tl'); lanesBlock.dataset.projId=proj.id;
   if(proj.collapsed)lanesBlock.style.display='none';
   let laneH=0; const laneRowMap={};
+  // Ghost lanes first (design phases shown in production context)
+  ghostLaneIds.forEach(lid=>{
+    const r=buildLaneRow(proj,lid,includeControls,showJunctions);
+    r.classList.add('ghost');
+    lanesBlock.appendChild(r); laneH+=C.laneH; laneRowMap['ghost-'+lid]=r;
+  });
   laneIds.forEach(lid=>{
     const r=buildLaneRow(proj,lid,includeControls,showJunctions);
     lanesBlock.appendChild(r); laneH+=C.laneH; laneRowMap[lid]=r;
@@ -4027,9 +4045,9 @@ function buildProdSection(){
         if(key!==firstPmKey) return {fc_els,tl_els};
         const[fcSep,tlSep]=buildPersonSep(); fc_els.push(fcSep); tl_els.push(tlSep);
         const allProjs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.productionPM),'production');
-        allProjs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'])); });
+        allProjs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'],proj.designLane.phases.filter(ph=>!ph.isDesignProd&&!/construction design/i.test(ph.name)).map(ph=>ph.name))); });
         const flatGrp=el('div','person-group-tl'); flatGrp.dataset.section='production';
-        allProjs.forEach(proj=>flatGrp.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,-9,['DA'])));
+        allProjs.forEach(proj=>flatGrp.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,-9,null,['design'])));
         tl_els.push(flatGrp);
         return {fc_els,tl_els};
       }
@@ -4044,12 +4062,12 @@ function buildProdSection(){
       fc_els.push(hdr);
       const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.productionPM===pmId),'production');
       if(!collapsed){
-        projs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'])); });
+        projs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'],proj.designLane.phases.filter(ph=>!ph.isDesignProd&&!/construction design/i.test(ph.name)).map(ph=>ph.name))); });
       }
       tl_els.push(buildTlProdPersonHeader());
       if(!collapsed){
         const grp=el('div','person-group-tl'); grp.dataset.personId=pmId; grp.dataset.section='production';
-        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,-9,['DA'])));
+        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,-9,null,['design'])));
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=pmId; ov.dataset.section='production';
         const ovH=calcPersonGroupH(person,'production');
         ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:${ovH}px;pointer-events:none;z-index:10;`;
@@ -4078,7 +4096,7 @@ function buildProdSection(){
       fc_els.push(fcUnHdr);
       if(!PROD_UNASSIGNED_COLLAPSED){
         const fcGrp=el('div','unassigned-group-fc'); fcGrp.classList.toggle('has-projects',unassigned.length>0);
-        if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'production')); fcGrp.appendChild(buildFcLanesBlock(proj,['Production'])); }); }
+        if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'production')); fcGrp.appendChild(buildFcLanesBlock(proj,['Production'],proj.designLane.phases.filter(ph=>!ph.isDesignProd&&!/construction design/i.test(ph.name)).map(ph=>ph.name))); }); }
         else { fcGrp.appendChild(el('div','unassigned-placeholder-fc')); }
         fc_els.push(fcGrp);
       }
@@ -4086,7 +4104,7 @@ function buildProdSection(){
       const tlUnHdr=el('div',''); tlUnHdr.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;background:#c5cdd4;border-bottom:1px solid rgba(40,40,40,.12);`; tl_els.push(tlUnHdr);
       if(!PROD_UNASSIGNED_COLLAPSED){
         const tlGrp=el('div','unassigned-group-tl'); tlGrp.classList.toggle('has-projects',unassigned.length>0); tlGrp.style.width=w2px(C.numWeeks)+'px';
-        if(unassigned.length>0){ unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,0,['DA'])); tlGrp.appendChild(sg); }); }
+        if(unassigned.length>0){ unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,0,null,['design'])); tlGrp.appendChild(sg); }); }
         else { const s=el('div','unassigned-placeholder-tl'); s.style.width=w2px(C.numWeeks)+'px'; tlGrp.appendChild(s); }
         tl_els.push(tlGrp);
       }
@@ -4570,22 +4588,24 @@ function initDrag(){
       const sibling=proj.milestones.find(m=>m.id!==id), isDA=ms.name==='DA';
       let minWeek, maxWeek;
       if(isDA){
+        // DA must stay before CA and before the first design phase bar
+        const initDesignPh=proj.designLane.phases.find(ph=>!ph.isDesignProd);
+        const barBound=initDesignPh!=null?initDesignPh.startWeek-1:C.numWeeks-1;
         minWeek=0;
-        maxWeek=sibling?sibling.week-1:C.numWeeks-1;
+        maxWeek=Math.min(sibling?sibling.week-1:C.numWeeks-1, barBound);
       } else {
-        minWeek=sibling?sibling.week+1:0;
-        maxWeek=C.numWeeks-1;
-      }
-      // Cascade: when CA + Pre-con + Construction are all touching, dragging CA right pushes the chain
-      let cascadeRight=null;
-      if(!isDA){
+        // CA must stay after DA; hard upper bound at Pre-con start (unless cascade will push it)
         const preConPh=proj.productionLane.phases[0];
         const conPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim()));
         const caTouches=preConPh&&(ms.week+1===preConPh.startWeek);
         const chainTouches=preConPh&&conPh&&(preConPh.startWeek+preConPh.durWeeks===conPh.startWeek);
-        if(caTouches&&chainTouches) cascadeRight=[{ph:preConPh,origStart:preConPh.startWeek},{ph:conPh,origStart:conPh.startWeek}];
+        const willCascade=caTouches&&chainTouches;
+        minWeek=sibling?sibling.week+1:0;
+        maxWeek=(!willCascade&&preConPh)?preConPh.startWeek-1:C.numWeeks-1;
+        // rebuild cascade (same logic as before)
+        var cascadeRight=willCascade?[{ph:preConPh,origStart:preConPh.startWeek},{ph:conPh,origStart:conPh.startWeek}]:null;
       }
-      DRAG={type:'ms',msId:id,startX:e.clientX,origWeek:ms.week,minWeek,maxWeek,cascadeRight};
+      DRAG={type:'ms',msId:id,startX:e.clientX,origWeek:ms.week,minWeek,maxWeek,cascadeRight:typeof cascadeRight!=='undefined'?cascadeRight:null};
       document.querySelectorAll(`.ms-tall[data-ms-id="${id}"]`).forEach(m=>m.classList.add('dragging'));
       capture(msEl,e.pointerId); return;
     }
@@ -5241,7 +5261,8 @@ function _computeProdStart(proj){
 function _updateProjCA(projId){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
   const caMs=proj.milestones.find(m=>m.name==='CA');
-  if(!caMs||caMs.status!=='projected') return;
+  // Only auto-position if CA week has never been set (null/undefined) — never override user placement
+  if(!caMs||caMs.status!=='projected'||caMs.week!=null) return;
   const prodStart=_computeProdStart(proj);
   caMs.week=Math.max(0,prodStart-1);
   refreshMs(caMs.id);
@@ -5385,6 +5406,12 @@ function onMove(e){
     if(DRAG.chainStart>0){
       const prevPh=DRAG.allPhs[DRAG.chainStart-1];
       minDw=Math.max(minDw, (prevPh.startWeek+prevPh.durWeeks)-DRAG.origStarts[0]);
+    }
+    // Production first phase (Pre-con): can't slide left past CA milestone
+    if(DRAG.laneId==='production'&&DRAG.chainStart===0&&!DRAG.cascadeLeft){
+      const proj=PROJECTS.find(p=>p.id===DRAG.projId);
+      const caMs=proj?.milestones?.find(m=>m.name==='CA');
+      if(caMs&&caMs.week!=null) minDw=Math.max(minDw, caMs.week+1-DRAG.origStarts[0]);
     }
     let maxDw=C.numWeeks;
     if(DRAG.chainEnd<DRAG.allPhs.length-1){
