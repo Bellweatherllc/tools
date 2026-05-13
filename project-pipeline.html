@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v420</title>
+<title>BW Project Pipeline — v421</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2183,7 +2183,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v420</div>
+    <div class="auth-version" id="authVersionBadge">v421</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2208,7 +2208,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v420</div>
+  <div class="proto-badge" id="versionBadge">v421</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3048,31 +3048,32 @@ function initPhaseStartWeeks(proj){
   const phases=proj.designLane.phases;
   // Ensure Design Production phase exists
   if(!phases.find(ph=>ph.isDesignProd)){
-    phases.push({id:proj.id+'-dp',name:'Design Production',durWeeks:18,hours:4,color:'#3d7a58',isDesignProd:true,linkedRight:null,startWeek:0});
+    phases.push({id:proj.id+'-dp',name:'Design Production',durWeeks:18,hours:4,color:'#3d7a58',isDesignProd:true,linkedRight:null,startWeek:undefined});
   }
   let pos=proj.designLane.startWeek;
   const pdIdx=phases.findIndex(ph=>/plan detailing/i.test(ph.name));
   const cdIdx=phases.findIndex(ph=>/construction design/i.test(ph.name));
-  for(let i=0;i<=pdIdx;i++){ phases[i].startWeek=pos; pos+=phases[i].durWeeks; }
+  // Use ?? so user-adjusted positions are never overwritten — only unset phases get calculated values
+  for(let i=0;i<=pdIdx;i++){ phases[i].startWeek=phases[i].startWeek??pos; pos=phases[i].startWeek+phases[i].durWeeks; }
   const pdEnd=pos;
-  proj.permitting.startWeek=pdEnd-proj.permitting.durWeeks;
+  proj.permitting.startWeek=proj.permitting.startWeek??(pdEnd-proj.permitting.durWeeks);
   const constrDesignStart=pdEnd+1;
-  if(cdIdx>=0){ phases[cdIdx].startWeek=constrDesignStart; }
+  if(cdIdx>=0){ phases[cdIdx].startWeek=phases[cdIdx].startWeek??constrDesignStart; }
   pos=constrDesignStart;
   for(let i=cdIdx;i<phases.length;i++){
-    if(phases[i].isDesignProd) continue; // set separately from production window
-    phases[i].startWeek=pos; pos+=phases[i].durWeeks;
+    if(phases[i].isDesignProd) continue;
+    phases[i].startWeek=phases[i].startWeek??pos; pos=phases[i].startWeek+phases[i].durWeeks;
   }
-  proj.productionLane.startWeek=pdEnd+1;
+  proj.productionLane.startWeek=proj.productionLane.startWeek??(pdEnd+1);
   pos=proj.productionLane.startWeek;
-  proj.productionLane.phases.forEach(ph=>{ ph.startWeek=pos; pos+=ph.durWeeks; });
+  proj.productionLane.phases.forEach(ph=>{ ph.startWeek=ph.startWeek??pos; pos=ph.startWeek+ph.durWeeks; });
   // Sync Design Production to production window
   const dpPh=phases.find(ph=>ph.isDesignProd);
   const pw=prodWindow(proj);
   if(dpPh&&pw){ dpPh.startWeek=pw.start; dpPh.durWeeks=Math.max(1,pw.end-pw.start); }
-  // CA milestone: 1 week before production starts (pre-construction), never during production
+  // CA milestone: auto-position only when not yet placed (week is undefined/null)
   const caMs=proj.milestones.find(m=>m.name==='CA');
-  if(caMs && caMs.status==='projected'){
+  if(caMs && caMs.status==='projected' && (caMs.week==null)){
     caMs.week=Math.max(0, proj.productionLane.startWeek-1);
   }
 }
@@ -5453,18 +5454,20 @@ function onMove(e){
   if(DRAG.type==='permMove'){
     const proj=PROJECTS.find(p=>p.id===DRAG.projId);
     proj.permitting.startWeek=Math.max(0,DRAG.origStart+dw);
-    refreshLane(DRAG.projId,'permitting'); renderTally('design');
+    document.querySelectorAll(`.phase-bar[data-phase-id="${proj.permitting.id}"]`).forEach(b=>{ b.style.left=w2px(proj.permitting.startWeek)+'px'; });
+    renderTally('design');
   }
 
   if(DRAG.type==='resizeLeft'){
     const ph=phaseById(DRAG.phaseId);
     const origRight=DRAG.origStartWeek+DRAG.origDur;
     const newStart=Math.min(origRight-1,Math.max(DRAG.minStart,DRAG.origStartWeek+dw));
-    const actualDelta=newStart-DRAG.origStartWeek;
     ph.startWeek=newStart; ph.durWeeks=origRight-newStart;
     const proj=PROJECTS.find(p=>p.id===DRAG.projId), phs=getLanePhases(proj,DRAG.laneId);
     if(phs[0]&&phs[0].id===ph.id) getLane(proj,DRAG.laneId).startWeek=newStart;
-    refreshLane(DRAG.projId,DRAG.laneId); renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId); _updateProjCA(DRAG.projId); refreshRevenueRow();
+    // Update bar in-place
+    document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; b.style.width=w2px(ph.durWeeks)+'px'; });
+    renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId); _updateProjCA(DRAG.projId); refreshRevenueRow();
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
   }
 
@@ -5472,7 +5475,9 @@ function onMove(e){
     const ph=phaseById(DRAG.phaseId);
     const nd=Math.max(1,Math.min(DRAG.maxEnd-ph.startWeek,DRAG.origDur+dw));
     ph.durWeeks=nd;
-    refreshLane(DRAG.projId,DRAG.laneId); renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId); _updateProjCA(DRAG.projId); refreshRevenueRow();
+    // Update bar in-place
+    document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.width=w2px(ph.durWeeks)+'px'; });
+    renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId); _updateProjCA(DRAG.projId); refreshRevenueRow();
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
   }
 
@@ -5533,6 +5538,11 @@ function onUp(){
   } else if(DRAG.type==='projMove'){
     refreshLane(DRAG.projId,'design'); refreshLane(DRAG.projId,'permitting'); refreshLane(DRAG.projId,'production');
     syncDesignProdPhase(DRAG.projId);
+  } else if(DRAG.type==='resizeLeft'||DRAG.type==='resize'){
+    refreshLane(DRAG.projId,DRAG.laneId);
+    if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
+  } else if(DRAG.type==='permMove'){
+    refreshLane(DRAG.projId,'permitting');
   }
   if(DRAG.projId){
     const _dp=PROJECTS.find(p=>p.id===DRAG.projId); if(_dp) markDirty(_dp);
