@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v424</title>
+<title>BW Project Pipeline — v425</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2177,7 +2177,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v424</div>
+    <div class="auth-version" id="authVersionBadge">v425</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2202,7 +2202,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v424</div>
+  <div class="proto-badge" id="versionBadge">v425</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4753,7 +4753,8 @@ function initDrag(){
       _pendingLod=null;
       initPhaseStartWeeks(PROJECTS[0]);
       buildAll();
-      createSlotInSP(PROJECTS[0]); // create SP entry so slot persists across sessions
+      triggerSave(); // immediate localStorage write as fallback
+      createSlotInSP(PROJECTS[0]);
       return;
     }
     // Cap sort buttons
@@ -6619,23 +6620,26 @@ function spStageToStatus(stage){
 
 // ── Create a new open slot in CORE_Projects so it persists across sessions ──
 async function createSlotInSP(proj){
+  console.log('[pipeline] createSlotInSP starting:', proj.name, proj.id);
   try{
-    setSaveState('saving');
-    const data=await graphPost(BWC_SITE+'/CORE_Projects/items',{
-      fields:{
-        Title:proj.name,
-        ClientName:proj.name,
-        GanttData:JSON.stringify(projectGanttPayload(proj))
-      }
-    });
+    const payload={fields:{
+      Title:proj.name,
+      ClientName:proj.name,
+      GanttData:JSON.stringify(projectGanttPayload(proj))
+    }};
+    console.log('[pipeline] POSTing to CORE_Projects, GanttData length:', payload.fields.GanttData.length);
+    const data=await graphPost(BWC_SITE+'/CORE_Projects/items', payload);
+    console.log('[pipeline] SP response:', data);
+    if(!data?.id){ console.error('[pipeline] No id in SP response:', data); return; }
     proj._spItemId=data.id;
-    // Update _configItemId-style tracking — mark dirty and let triggerSave handle GanttData patch
     markDirty(proj);
     triggerSave();
-    setSaveState('saved');
+    console.log('[pipeline] createSlotInSP success, _spItemId:', proj._spItemId);
   }catch(e){
-    console.error('[pipeline] createSlotInSP failed:',e);
+    console.error('[pipeline] createSlotInSP failed:', e.message, e);
     setSaveState('error');
+    const si=document.getElementById('saveStatus');
+    if(si) si.title='Slot create failed — open DevTools console for details';
   }
 }
 
