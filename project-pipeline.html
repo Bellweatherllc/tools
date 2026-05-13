@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v431</title>
+<title>BW Project Pipeline — v432</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2173,7 +2173,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v431</div>
+    <div class="auth-version" id="authVersionBadge">v432</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2198,7 +2198,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v431</div>
+  <div class="proto-badge" id="versionBadge">v432</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3651,17 +3651,21 @@ function syncDesignProdPhase(projId){
   refreshLane(projId,'design');
 }
 
-function buildLaneRow(proj,laneId,includeControls,showJunctions){
+function buildLaneRow(proj,laneId,includeControls,showJunctions,isGhost){
   const row=el('div','lane-row'); row.dataset.lane=laneId; row.dataset.projId=proj.id;
   row.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.laneH}px;`;
   const tw=todayWeek();
   if(tw>=0&&tw<C.numWeeks){ const s=el('div','today-stripe'); s.style.cssText=`left:${w2px(tw)}px;width:${C.weekW}px;`; row.appendChild(s); }
-  populateBars(row,proj,laneId,includeControls,showJunctions);
+  populateBars(row,proj,laneId,includeControls,showJunctions,isGhost);
   return row;
 }
-function populateBars(row,proj,laneId,includeControls,showJunctions){
+function populateBars(row,proj,laneId,includeControls,showJunctions,isGhost){
   row.querySelectorAll('.phase-bar').forEach(b=>b.remove());
-  if(laneId==='design'){ proj.designLane.phases.filter(ph=>!/construction design/i.test(ph.name)).forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,includeControls,showJunctions))); }
+  if(laneId==='design'){
+    proj.designLane.phases
+      .filter(ph=>!/construction design/i.test(ph.name)&&(!isGhost||!ph.isDesignProd))
+      .forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,includeControls,showJunctions)));
+  }
   else if(laneId==='permitting'){ row.appendChild(buildBar(proj,proj.permitting,laneId,includeControls,showJunctions)); }
   else{ proj.productionLane.phases.forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,includeControls,showJunctions))); }
 }
@@ -3675,7 +3679,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   let laneH=0; const laneRowMap={};
   // Ghost lanes first (design phases shown in production context)
   ghostLaneIds.forEach(lid=>{
-    const r=buildLaneRow(proj,lid,includeControls,showJunctions);
+    const r=buildLaneRow(proj,lid,includeControls,showJunctions,true);
     r.classList.add('ghost');
     lanesBlock.appendChild(r); laneH+=C.laneH; laneRowMap['ghost-'+lid]=r;
   });
@@ -4045,7 +4049,7 @@ function buildProdSection(){
         if(key!==firstPmKey) return {fc_els,tl_els};
         const[fcSep,tlSep]=buildPersonSep(); fc_els.push(fcSep); tl_els.push(tlSep);
         const allProjs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.productionPM),'production');
-        allProjs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'],proj.designLane.phases.filter(ph=>!ph.isDesignProd&&!/construction design/i.test(ph.name)).map(ph=>ph.name))); });
+        allProjs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'],['Design'])); });
         const flatGrp=el('div','person-group-tl'); flatGrp.dataset.section='production';
         allProjs.forEach(proj=>flatGrp.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,-9,null,['design'])));
         tl_els.push(flatGrp);
@@ -4062,7 +4066,7 @@ function buildProdSection(){
       fc_els.push(hdr);
       const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.productionPM===pmId),'production');
       if(!collapsed){
-        projs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'],proj.designLane.phases.filter(ph=>!ph.isDesignProd&&!/construction design/i.test(ph.name)).map(ph=>ph.name))); });
+        projs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'],['Design'])); });
       }
       tl_els.push(buildTlProdPersonHeader());
       if(!collapsed){
@@ -4096,7 +4100,7 @@ function buildProdSection(){
       fc_els.push(fcUnHdr);
       if(!PROD_UNASSIGNED_COLLAPSED){
         const fcGrp=el('div','unassigned-group-fc'); fcGrp.classList.toggle('has-projects',unassigned.length>0);
-        if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'production')); fcGrp.appendChild(buildFcLanesBlock(proj,['Production'],proj.designLane.phases.filter(ph=>!ph.isDesignProd&&!/construction design/i.test(ph.name)).map(ph=>ph.name))); }); }
+        if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'production')); fcGrp.appendChild(buildFcLanesBlock(proj,['Production'],['Design'])); }); }
         else { fcGrp.appendChild(el('div','unassigned-placeholder-fc')); }
         fc_els.push(fcGrp);
       }
@@ -4715,7 +4719,26 @@ function initDrag(){
         const caTouchesPreCon=preConPh&&caMs&&(caMs.week+1===preConPh.startWeek);
         if(phTouchesPreCon&&caTouchesPreCon) cascadeLeft={preConPh,preConOrigStart:preConPh.startWeek,caMs,caOrigWeek:caMs.week};
       }
-      DRAG={type:'phaseMove',laneId,projId,bar,startX:e.clientX,chain,origStarts,allPhs:phs,chainStart,chainEnd,cascadeLeft};
+      // Design cascade: when adjacent design phases are touching, push them along
+      let designCascadeRight=null, designCascadeLeft=null;
+      if(laneId==='design'){
+        // Cascade right: dragged phase is touching the next phase(s)
+        if(chainEnd<phs.length-1&&ph.startWeek+ph.durWeeks===phs[chainEnd+1].startWeek){
+          const chain=[]; let i=chainEnd;
+          while(i<phs.length-1&&phs[i].startWeek+phs[i].durWeeks===phs[i+1].startWeek){chain.push({ph:phs[i+1],origStart:phs[i+1].startWeek});i++;}
+          const last=chain[chain.length-1];
+          designCascadeRight={chain,maxDw:C.numWeeks-(last.origStart+last.ph.durWeeks)};
+        }
+        // Cascade left: dragged phase is touching the previous phase(s)
+        if(chainStart>0&&phs[chainStart-1].startWeek+phs[chainStart-1].durWeeks===ph.startWeek){
+          const chain=[]; let i=chainStart;
+          while(i>0&&phs[i-1].startWeek+phs[i-1].durWeeks===phs[i].startWeek){chain.unshift({ph:phs[i-1],origStart:phs[i-1].startWeek});i--;}
+          const daMs=proj.milestones?.find(m=>m.name==='DA');
+          const hardMin=daMs?.week!=null?daMs.week+1:0;
+          designCascadeLeft={chain,minDw:hardMin-chain[0].origStart};
+        }
+      }
+      DRAG={type:'phaseMove',laneId,projId,bar,startX:e.clientX,chain,origStarts,allPhs:phs,chainStart,chainEnd,cascadeLeft,designCascadeRight,designCascadeLeft};
       bar.classList.add('dragging'); capture(bar,e.pointerId); return;
     }
   });
@@ -5419,6 +5442,9 @@ function onMove(e){
       const chainOrigEnd=DRAG.origStarts[DRAG.origStarts.length-1]+DRAG.chain[DRAG.chain.length-1].durWeeks;
       maxDw=nextPh.startWeek-chainOrigEnd;
     }
+    // Design cascade: when adjacent phases are touching, allow push-through
+    if(DRAG.designCascadeRight&&dw>0) maxDw=DRAG.designCascadeRight.maxDw;
+    if(DRAG.designCascadeLeft&&dw<0)  minDw=DRAG.designCascadeLeft.minDw;
     const clampedDw=Math.max(minDw,Math.min(maxDw,dw));
     DRAG.chain.forEach((ph,i)=>{ ph.startWeek=DRAG.origStarts[i]+clampedDw; });
     const proj=PROJECTS.find(p=>p.id===DRAG.projId);
@@ -5430,6 +5456,19 @@ function onMove(e){
       cl.caMs.week=cl.preConPh.startWeek-1;
       document.querySelectorAll(`.phase-bar[data-phase-id="${cl.preConPh.id}"]`).forEach(b=>{b.style.left=w2px(cl.preConPh.startWeek)+'px';});
       refreshMs(cl.caMs.id);
+    }
+    // Design cascade: push touching adjacent phases along with the dragged phase
+    if(DRAG.designCascadeRight&&clampedDw>0){
+      DRAG.designCascadeRight.chain.forEach(item=>{
+        item.ph.startWeek=item.origStart+clampedDw;
+        document.querySelectorAll(`.phase-bar[data-phase-id="${item.ph.id}"]`).forEach(b=>{b.style.left=w2px(item.ph.startWeek)+'px';});
+      });
+    }
+    if(DRAG.designCascadeLeft&&clampedDw<0){
+      DRAG.designCascadeLeft.chain.forEach(item=>{
+        item.ph.startWeek=item.origStart+clampedDw;
+        document.querySelectorAll(`.phase-bar[data-phase-id="${item.ph.id}"]`).forEach(b=>{b.style.left=w2px(item.ph.startWeek)+'px';});
+      });
     }
     // Update bar positions in-place — never call refreshLane during drag as it destroys the captured element
     DRAG.chain.forEach(ph=>{
@@ -5532,8 +5571,8 @@ function onUp(){
   if(DRAG.type==='phaseMove'||DRAG.type==='laneMove'){
     refreshLane(DRAG.projId,DRAG.laneId);
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
-    // Cascade left: also rebuild production lane to refresh Pre-con bar
-    if(DRAG.cascadeLeft) refreshLane(DRAG.projId,'production');
+    // Design cascade: also rebuild to flush all cascaded phases
+    if(DRAG.laneId==='design'&&(DRAG.designCascadeRight||DRAG.designCascadeLeft)) refreshLane(DRAG.projId,'design');
   } else if(DRAG.type==='projMove'){
     refreshLane(DRAG.projId,'design'); refreshLane(DRAG.projId,'permitting'); refreshLane(DRAG.projId,'production');
     syncDesignProdPhase(DRAG.projId);
