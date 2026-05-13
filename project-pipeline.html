@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v435</title>
+<title>BW Project Pipeline — v438</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -1182,6 +1182,22 @@ body.is-panning *{cursor:grabbing!important;}
 .bcr-text{flex:1;}
 .bcr-text.quiet{color:#b0b0b0;font-style:italic;}
 
+.brief-sub-hdr{
+  font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ts);padding:9px 0 5px;margin-top:4px;
+  border-bottom:1px solid rgba(228,218,196,.5);
+}
+.brief-sub-hdr:first-child{margin-top:0;}
+.brief-ack-btns{display:flex;gap:4px;flex-shrink:0;margin-left:auto;}
+.brief-ack-btn{
+  font-size:8px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  padding:2px 8px;border-radius:3px;cursor:pointer;border:1px solid transparent;white-space:nowrap;
+}
+.brief-ack-archive{background:rgba(0,0,0,.05);color:#888;border-color:rgba(0,0,0,.12);}
+.brief-ack-archive:hover{background:rgba(0,0,0,.12);color:#555;}
+.brief-ack-keep{background:rgba(59,127,168,.10);color:#3b7fa8;border-color:rgba(59,127,168,.25);}
+.brief-ack-keep:hover{background:rgba(59,127,168,.22);}
+.brief-row-kept{background:rgba(59,127,168,.05);border-left:2px solid rgba(59,127,168,.35);padding-left:8px;}
 @media print{
   .brief-topbar,.app-header{display:none!important;}
   .brief-overlay,.brief-overlay.open{position:static!important;opacity:1!important;overflow:visible!important;pointer-events:none;}
@@ -2175,7 +2191,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v435</div>
+    <div class="auth-version" id="authVersionBadge">v438</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2200,7 +2216,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v435</div>
+  <div class="proto-badge" id="versionBadge">v438</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4983,7 +4999,7 @@ function initDrag(){
         // Migrate planning card info into existing slot project
         slotProj.name=pp.name;
         slotProj.projType=pp.projType||'';
-        slotProj.projBudget=pp.projBudget||'';
+        slotProj.projBudget=pp.projBudget||slotProj.projBudget||'';
         slotProj.salesPerson=pp.salesPerson||'';
         slotProj.lod=lod;
         slotProj.lodReason=pp.lodReason||'';
@@ -6933,8 +6949,10 @@ async function initFromSharePoint(){
     hideAuthOverlay();
     applyCalRange();
     buildAll();
-    // Load brief baseline from SP (async, non-blocking — localStorage already applied)
+    // Load brief data from SP (async, non-blocking — in-memory state used when brief opens)
     loadBriefBaselineFromSP().catch(()=>{});
+    loadBriefBugsFromSP().catch(()=>{});
+    loadBriefAcksFromSP().catch(()=>{});
     // Restore Key Dates panel state
 if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('prodPanel'); if(pp){ pp.classList.add('is-open'); document.querySelectorAll('[data-toggle-prod-panel]').forEach(b=>b.classList.toggle('is-open',b.dataset.toggleProdPanel===PANEL_ACTIVE_SECTION)); const _th=PANEL_THRESHOLDS[PANEL_ACTIVE_SECTION]; const _ua=document.getElementById('ppThreshValUA'); if(_ua) _ua.textContent=_th.unassigned+' wk'; const _w=document.getElementById('ppThreshValWarn'); if(_w) _w.textContent=_th.warn+' wk'; const _c=document.getElementById('ppThreshValCrit'); if(_c) _c.textContent=_th.crit+' wk'; if(typeof renderProdPanel==='function') renderProdPanel(); } }
     document.querySelectorAll('.section[data-s-type]').forEach(sec=>{ const sc=getScroller(sec); if(sc) sc._rangeAttached=false; });
@@ -7959,9 +7977,94 @@ document.addEventListener('click',e=>{
 // Baseline stored in localStorage (fast) and CORE_Config (persisted across browsers).
 // Key: pipeline_weekly_baseline — separate row from pipeline_state.
 
-const BRIEF_LS_KEY = 'bw-pipeline-brief-baseline-v1';
-let WEEKLY_BASELINE = null;       // { ts: ISO string, projects: { id: snap } }
-let _briefBaselineItemId = null;  // CORE_Config item ID for pipeline_weekly_baseline
+const BRIEF_LS_KEY      = 'bw-pipeline-brief-baseline-v1';
+const BRIEF_ACKS_LS_KEY = 'bw-pipeline-brief-acks-v1';
+const BRIEF_BUGS_LS_KEY = 'bw-pipeline-brief-bugs-v1';
+let WEEKLY_BASELINE = null;
+let BRIEF_ACKS = {};
+let BRIEF_BUGS = [];
+let _briefBaselineItemId = null;
+let _briefBugsItemId     = null;
+let _briefAcksItemId     = null;
+
+// ── Ack persistence (SP primary, localStorage cache) ─────────────────────────
+function _briefSaveLSCache(key,val){ try{ localStorage.setItem(key,JSON.stringify(val)); }catch(e){} }
+function _briefReadLSCache(key){ try{ const r=localStorage.getItem(key); return r?JSON.parse(r):null; }catch(e){ return null; } }
+
+function saveBriefAcks(){
+  _briefSaveLSCache(BRIEF_ACKS_LS_KEY, BRIEF_ACKS);
+  _saveBriefAcksToSP();
+}
+async function _saveBriefAcksToSP(){
+  try{
+    const token=await getToken().catch(()=>null); if(!token) return;
+    const val=JSON.stringify(BRIEF_ACKS);
+    if(_briefAcksItemId){
+      await graphPatch(BWC_SITE+'/CORE_Config/items/'+_briefAcksItemId+'/fields',{Value:val});
+    } else {
+      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_brief_acks');
+      if(row){ _briefAcksItemId=row.id; await graphPatch(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{Value:val}); }
+      else {
+        const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_brief_acks',Key:'pipeline_brief_acks',Value:val}})}).then(r=>r.json());
+        _briefAcksItemId=r.id;
+      }
+    }
+  }catch(e){ console.warn('[brief] acks SP save failed:',e); }
+}
+async function loadBriefAcksFromSP(){
+  try{
+    const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+    const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_brief_acks');
+    if(row){
+      _briefAcksItemId=row.id;
+      const parsed=JSON.parse(row.fields?.Value||'{}');
+      if(parsed&&typeof parsed==='object'){ BRIEF_ACKS=parsed; _briefSaveLSCache(BRIEF_ACKS_LS_KEY,parsed); }
+    } else {
+      // Fall back to localStorage cache if SP has no entry yet
+      const cached=_briefReadLSCache(BRIEF_ACKS_LS_KEY);
+      if(cached&&typeof cached==='object') BRIEF_ACKS=cached;
+    }
+  }catch(e){ console.warn('[brief] acks SP load failed:',e); const cached=_briefReadLSCache(BRIEF_ACKS_LS_KEY); if(cached) BRIEF_ACKS=cached; }
+}
+function clearBriefAcks(){ BRIEF_ACKS={}; saveBriefAcks(); }
+
+// ── Bug/Feature persistence (SP primary, localStorage cache) ──────────────────
+function saveBriefBugs(){
+  _briefSaveLSCache(BRIEF_BUGS_LS_KEY, BRIEF_BUGS);
+  _saveBriefBugsToSP();
+}
+async function _saveBriefBugsToSP(){
+  try{
+    const token=await getToken().catch(()=>null); if(!token) return;
+    const val=JSON.stringify(BRIEF_BUGS);
+    if(_briefBugsItemId){
+      await graphPatch(BWC_SITE+'/CORE_Config/items/'+_briefBugsItemId+'/fields',{Value:val});
+    } else {
+      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_bug_log');
+      if(row){ _briefBugsItemId=row.id; await graphPatch(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{Value:val}); }
+      else {
+        const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_bug_log',Key:'pipeline_bug_log',Value:val}})}).then(r=>r.json());
+        _briefBugsItemId=r.id;
+      }
+    }
+  }catch(e){ console.warn('[brief] bug log SP save failed:',e); }
+}
+async function loadBriefBugsFromSP(){
+  try{
+    const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+    const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_bug_log');
+    if(row){
+      _briefBugsItemId=row.id;
+      const parsed=JSON.parse(row.fields?.Value||'[]');
+      if(Array.isArray(parsed)){ BRIEF_BUGS=parsed; _briefSaveLSCache(BRIEF_BUGS_LS_KEY,parsed); }
+    } else {
+      const cached=_briefReadLSCache(BRIEF_BUGS_LS_KEY);
+      if(Array.isArray(cached)) BRIEF_BUGS=cached;
+    }
+  }catch(e){ console.warn('[brief] bug log SP load failed:',e); const cached=_briefReadLSCache(BRIEF_BUGS_LS_KEY); if(Array.isArray(cached)) BRIEF_BUGS=cached; }
+}
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 function briefStatusLabel(st){
@@ -7994,10 +8097,13 @@ function wkToDate(w){
   const d=new Date(C.startDate); d.setDate(d.getDate()+w*7); return d;
 }
 
+function getPipelineVersion(){ return document.title.match(/v\d+/)?.[0]||'v?'; }
+
 // ── Snapshot ─────────────────────────────────────────────────────────────────
 function snapshotPipeline(){
   const projects={};
   PROJECTS.forEach(p=>{
+    const cPh=p.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
     projects[p.id]={
       name:briefProjName(p),
       status:p.status||'projected',
@@ -8006,10 +8112,12 @@ function snapshotPipeline(){
       notes:p.notes||'',
       milestones:(p.milestones||[]).map(m=>({id:m.id,name:m.name,status:m.status,week:m.week})),
       designStart:p.designLane?.phases?.[0]?.startWeek??null,
-      prodStart:p.productionLane?.phases?.[0]?.startWeek??null
+      prodStart:p.productionLane?.phases?.[0]?.startWeek??null,
+      constrStart:cPh?.startWeek??null,
+      constrDur:cPh?.durWeeks??null
     };
   });
-  return {ts:new Date().toISOString(), projects};
+  return {ts:new Date().toISOString(), version:getPipelineVersion(), projects};
 }
 
 // ── Baseline save / load ──────────────────────────────────────────────────────
@@ -8065,36 +8173,37 @@ async function loadBriefBaselineFromSP(){
 
 // ── Diff ──────────────────────────────────────────────────────────────────────
 function diffPipeline(){
-  if(!WEEKLY_BASELINE) return {statusChanges:[],msChanges:[],newProjs:[],removedProjs:[],assignmentChanges:[]};
+  const empty={statusChanges:[],msChanges:[],newProjs:[],removedProjs:[],assignmentChanges:[],scheduleChanges:[],noteChanges:[],versionChange:null};
+  if(!WEEKLY_BASELINE) return empty;
   const base=WEEKLY_BASELINE.projects||{};
-  const statusChanges=[],msChanges=[],newProjs=[],removedProjs=[],assignmentChanges=[];
+  const baseVersion=WEEKLY_BASELINE.version||null;
+  const currentVersion=getPipelineVersion();
+  const versionChange=(baseVersion&&baseVersion!==currentVersion)?{from:baseVersion,to:currentVersion}:null;
+  const statusChanges=[],msChanges=[],newProjs=[],removedProjs=[],assignmentChanges=[],scheduleChanges=[],noteChanges=[];
   PROJECTS.forEach(proj=>{
     const snap=base[proj.id];
     const st=proj.status||'projected';
     if(!snap){ newProjs.push(proj); return; }
     if(snap.status!==st) statusChanges.push({proj,from:snap.status,to:st});
     const snapDes=snap.designer||null, curDes=proj.designer||null;
-    if(snapDes!==curDes){
-      assignmentChanges.push({proj,field:'Designer',
-        from:snapDes?briefPersonLabel(snapDes)||snapDes:'Unassigned',
-        to:curDes?briefPersonLabel(curDes)||curDes:'Unassigned'});
-    }
+    if(snapDes!==curDes) assignmentChanges.push({proj,field:'Designer',from:snapDes?briefPersonLabel(snapDes)||snapDes:'Unassigned',to:curDes?briefPersonLabel(curDes)||curDes:'Unassigned'});
     const snapPM=snap.pm||null, curPM=proj.productionPM||null;
-    if(snapPM!==curPM){
-      assignmentChanges.push({proj,field:'PM',
-        from:snapPM?briefPersonLabel(snapPM)||snapPM:'Unassigned',
-        to:curPM?briefPersonLabel(curPM)||curPM:'Unassigned'});
-    }
+    if(snapPM!==curPM) assignmentChanges.push({proj,field:'PM',from:snapPM?briefPersonLabel(snapPM)||snapPM:'Unassigned',to:curPM?briefPersonLabel(curPM)||curPM:'Unassigned'});
     (proj.milestones||[]).forEach(ms=>{
       const bm=(snap.milestones||[]).find(m=>m.id===ms.id);
       if(!bm) return;
       if(bm.status!==ms.status||bm.week!==ms.week) msChanges.push({proj,ms,fromStatus:bm.status,fromWeek:bm.week});
     });
+    // Construction schedule changes
+    const cPh=proj.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
+    if(cPh&&snap.constrStart!=null&&(snap.constrStart!==cPh.startWeek||snap.constrDur!==cPh.durWeeks))
+      scheduleChanges.push({proj,field:'Construction',fromWeek:snap.constrStart,toWeek:cPh.startWeek,fromDur:snap.constrDur,toDur:cPh.durWeeks});
+    // Note changes
+    const curNote=proj.notes||'', snapNote=snap.notes||'';
+    if(curNote!==snapNote&&curNote) noteChanges.push({proj,isNew:!snapNote,note:curNote});
   });
-  Object.keys(base).forEach(id=>{
-    if(!PROJECTS.find(p=>p.id===id)) removedProjs.push({id,name:base[id].name});
-  });
-  return {statusChanges,msChanges,newProjs,removedProjs,assignmentChanges};
+  Object.keys(base).forEach(id=>{ if(!PROJECTS.find(p=>p.id===id)) removedProjs.push({id,name:base[id].name}); });
+  return {statusChanges,msChanges,newProjs,removedProjs,assignmentChanges,scheduleChanges,noteChanges,versionChange};
 }
 
 // ── Interpretive flags ────────────────────────────────────────────────────────
@@ -8155,26 +8264,32 @@ function briefDaNoCA(){
 }
 
 // ── Render helpers ────────────────────────────────────────────────────────────
-function briefItem(barCls,name,sub,tags){
-  const tagHtml=(tags||[]).map(t=>`<span class="brief-tag ${t.cls}">${t.lbl}</span>`).join('');
-  return `<div class="brief-item">
-    <div class="brief-item-bar ${barCls}"></div>
-    <div>
-      <div class="brief-item-name">${name}</div>
-      ${tagHtml?`<div class="brief-item-tags">${tagHtml}</div>`:''}
-      <div class="brief-item-sub">${sub}</div>
-    </div>
-  </div>`;
+function briefRow(lblCls,label,text){
+  return `<div class="brief-card-row"><span class="bcr-lbl ${lblCls}">${label}</span><span class="bcr-text">${text}</span></div>`;
 }
-function briefSection(title,items,cntCls){
-  if(!items.length) return '';
-  return `<div class="brief-section">
-    <div class="brief-section-hd">
-      <span class="brief-section-title">${title}</span>
-      <span class="brief-section-count ${cntCls||''}">${items.length}</span>
-    </div>
-    ${items.join('')}
-  </div>`;
+function briefAckRow(ackId,lblCls,label,text){
+  const st=BRIEF_ACKS[ackId];
+  if(st==='archived') return '';
+  const keptCls=st==='kept'?' brief-row-kept':'';
+  const btns=`<button class="brief-ack-btn brief-ack-archive" data-ack-id="${ackId}" data-ack-action="archived">Archive</button>`+
+              `<button class="brief-ack-btn brief-ack-keep" data-ack-id="${ackId}" data-ack-action="kept">Keep</button>`;
+  return `<div class="brief-card-row${keptCls}"><span class="bcr-lbl ${lblCls}">${label}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${btns}</span></div>`;
+}
+function briefSubHdr(label){
+  return `<div class="brief-sub-hdr">${label}</div>`;
+}
+function briefCapacityWarnings(weeksAhead=8){
+  const tw=todayWeek(), warnings=[];
+  [{people:DESIGNERS,section:'Design'},{people:PROD_PMS,section:'Production'}].forEach(({people,section})=>{
+    (people||[]).forEach(person=>{
+      const target=getTarget(person.id); if(target<=0) return;
+      const tally=calcTally(section.toLowerCase(),person.id);
+      let peakLoad=0,peakWeek=tw,weeksOver=0;
+      for(let w=tw;w<Math.min(tw+weeksAhead,C.numWeeks);w++){ if(tally[w]>target){ weeksOver++; if(tally[w]>peakLoad){peakLoad=tally[w];peakWeek=w;} } }
+      if(weeksOver>0) warnings.push({person,section,peakWeek,peakLoad,target,weeksOver});
+    });
+  });
+  return warnings.sort((a,b)=>b.peakLoad-a.peakLoad);
 }
 
 // ── Health summary prose ──────────────────────────────────────────────────────
@@ -8188,17 +8303,19 @@ function briefHealthSummary(diff,flags){
   if(!WEEKLY_BASELINE){
     parts.push('No baseline set — week-over-week changes cannot be tracked yet. Set a baseline to begin.');
   } else {
-    const {statusChanges,msChanges,newProjs,assignmentChanges,removedProjs}=diff;
-    const total=statusChanges.length+msChanges.length+newProjs.length+assignmentChanges.length+removedProjs.length;
+    const {statusChanges,msChanges,newProjs,assignmentChanges,removedProjs,scheduleChanges,noteChanges,versionChange}=diff;
+    const total=statusChanges.length+msChanges.length+newProjs.length+assignmentChanges.length+removedProjs.length+(scheduleChanges||[]).length+(noteChanges||[]).length+(versionChange?1:0);
     if(total===0){
       parts.push('No tracked changes since the last baseline.');
     } else {
       const cp=[];
       if(statusChanges.length) cp.push(`${statusChanges.length} status change${statusChanges.length!==1?'s':''}`);
       if(msChanges.length) cp.push(`${msChanges.length} milestone update${msChanges.length!==1?'s':''}`);
+      if((scheduleChanges||[]).length) cp.push(`${scheduleChanges.length} schedule change${scheduleChanges.length!==1?'s':''}`);
       if(newProjs.length) cp.push(`${newProjs.length} new project${newProjs.length!==1?'s':''}`);
       if(assignmentChanges.length) cp.push(`${assignmentChanges.length} assignment change${assignmentChanges.length!==1?'s':''}`);
-      parts.push('Changes this week: '+cp.join(', ')+'.');
+      if(versionChange) cp.push('tool update');
+      parts.push('Changes since baseline: '+cp.join(', ')+'.');
     }
   }
   const attnCount=overdue.length+stalls.length;
@@ -8219,158 +8336,162 @@ function briefHealthSummary(diff,flags){
 // ── Main brief generator ──────────────────────────────────────────────────────
 function generateBriefHTML(){
   const diff=diffPipeline();
-  const upcoming=briefUpcomingMilestones(14);
   const overdue=briefOverdueFlags();
   const stalls=briefStallFlags();
   const missing=briefMissingAssignment();
   const daNoCa=briefDaNoCA();
-  const flags={upcoming,overdue,stalls,missing};
-  const base=WEEKLY_BASELINE?.projects||{};
+  const flags={upcoming:briefUpcomingMilestones(14),overdue,stalls,missing};
+  const {statusChanges,msChanges,newProjs,removedProjs,assignmentChanges,scheduleChanges,noteChanges,versionChange}=diff;
+  const tw=todayWeek();
   let html='';
 
-  if(!WEEKLY_BASELINE){
-    html+=`<div class="brief-no-baseline">No baseline has been set. The cards below show <em>current pipeline state</em> only — set a baseline after this meeting to begin tracking week-over-week changes.</div>`;
-  }
-
+  // ── Health summary ──────────────────────────────────────────────────
   html+=`<div class="brief-health"><div class="brief-health-label">Pipeline Health</div>${briefHealthSummary(diff,flags)}</div>`;
+  if(!WEEKLY_BASELINE) html+=`<div class="brief-no-baseline">No baseline set — click <strong>Set Baseline</strong> after this review to begin tracking week-over-week changes.</div>`;
 
-  // Build a lookup of diffs keyed by project id for fast access
+  // ══════════════════════════════════════════════════════════════════
+  // PART 1 — PROJECT CARDS (per-project narrative)
+  // ══════════════════════════════════════════════════════════════════
+  const base=WEEKLY_BASELINE?.projects||{};
   const diffByProj={};
   if(WEEKLY_BASELINE){
-    diff.statusChanges.forEach(x=>{ (diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).statusChange=x; });
-    diff.msChanges.forEach(x=>{ (diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).msChanges=((diffByProj[x.proj.id]||{}).msChanges||[]).concat(x); });
-    diff.assignmentChanges.forEach(x=>{ (diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).assignmentChanges=((diffByProj[x.proj.id]||{}).assignmentChanges||[]).concat(x); });
-    diff.newProjs.forEach(p=>{ (diffByProj[p.id]=diffByProj[p.id]||{}).isNew=true; });
+    statusChanges.forEach(x=>{(diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).statusChange=x;});
+    msChanges.forEach(x=>{const d=diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}; d.msChanges=(d.msChanges||[]).concat(x);});
+    (scheduleChanges||[]).forEach(x=>{const d=diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}; d.scheduleChanges=(d.scheduleChanges||[]).concat(x);});
+    assignmentChanges.forEach(x=>{const d=diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}; d.assignmentChanges=(d.assignmentChanges||[]).concat(x);});
+    (noteChanges||[]).forEach(x=>{(diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).noteChange=x;});
+    newProjs.forEach(p=>{(diffByProj[p.id]=diffByProj[p.id]||{}).isNew=true;});
   }
-  const overdueByProj={}, stallsByProj={}, missingSet=new Set(), daNoCaSet=new Set();
-  overdue.forEach(x=>{ (overdueByProj[x.proj.id]=overdueByProj[x.proj.id]||[]).push(x); });
-  stalls.forEach(x=>{ stallsByProj[x.proj.id]=x; });
+  const overdueByProj={},stallsByProj={},missingSet=new Set(),daNoCaSet=new Set(),upcomingByProj={};
+  overdue.forEach(x=>{(overdueByProj[x.proj.id]=overdueByProj[x.proj.id]||[]).push(x);});
+  stalls.forEach(x=>{stallsByProj[x.proj.id]=x;});
   missing.forEach(p=>missingSet.add(p.id));
   daNoCa.forEach(p=>daNoCaSet.add(p.id));
-  const upcomingByProj={};
-  upcoming.forEach(x=>{ (upcomingByProj[x.proj.id]=upcomingByProj[x.proj.id]||[]).push(x); });
+  flags.upcoming.forEach(x=>{(upcomingByProj[x.proj.id]=upcomingByProj[x.proj.id]||[]).push(x);});
 
-  // Determine priority for each project (lower = more urgent)
-  const statusOrder={'ca-signed':0,'da-signed':1,'projected':2,'paused':3};
   function projPriority(p){
     if(overdueByProj[p.id]) return 0;
     if(stallsByProj[p.id]||missingSet.has(p.id)||daNoCaSet.has(p.id)) return 1;
     if(diffByProj[p.id]) return 2;
-    if(p.notes&&p.notes.trim()) return 2;
     if(upcomingByProj[p.id]) return 3;
     return 4;
   }
-
+  const statusOrder={'ca-signed':0,'da-signed':1,'projected':2,'paused':3};
   const active=PROJECTS
     .filter(p=>!['archived','cancelled'].includes(p.status))
-    .sort((a,b)=>{
-      const pa=projPriority(a), pb=projPriority(b);
-      if(pa!==pb) return pa-pb;
-      const sa=statusOrder[a.status]??5, sb=statusOrder[b.status]??5;
-      if(sa!==sb) return sa-sb;
-      return briefProjName(a).localeCompare(briefProjName(b));
-    });
+    .filter(p=>projPriority(p)<4)  // skip projects with no flags, no changes, no upcoming
+    .sort((a,b)=>{ const pa=projPriority(a),pb=projPriority(b); if(pa!==pb)return pa-pb; const sa=statusOrder[a.status]??5,sb=statusOrder[b.status]??5; if(sa!==sb)return sa-sb; return briefProjName(a).localeCompare(briefProjName(b)); });
 
-  // Render removed projects first (if any)
-  if(WEEKLY_BASELINE && diff.removedProjs.length){
-    diff.removedProjs.forEach(({name})=>{
-      html+=`<div class="brief-proj-card bpc-quiet">
-        <div class="brief-card-hd">
-          <span class="brief-tag t-warn">Removed</span>
-          <span class="brief-card-name">${name}</span>
-        </div>
-        <div class="brief-card-body">
-          <div class="brief-card-row"><span class="bcr-lbl l-warn">Change</span><span class="bcr-text">Removed from active pipeline — archived or cancelled.</span></div>
-        </div>
-      </div>`;
+  if(active.length||removedProjs.length){
+    html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Projects</span></div>`;
+    removedProjs.forEach(({id,name})=>{
+      html+=`<div class="brief-proj-card bpc-warn"><div class="brief-card-hd"><span class="brief-tag t-warn">Removed</span><span class="brief-card-name">${name}</span></div><div class="brief-card-body">${briefAckRow(id+'-removed','l-warn','Removed','Removed from active pipeline.')}</div></div>`;
     });
+    active.forEach(proj=>{
+      const id=proj.id;
+      const priority=projPriority(proj);
+      const cardCls=priority===0?'bpc-urgent':priority===1?'bpc-warn':priority<=3?'bpc-active':'bpc-quiet';
+      const des=proj.designer?briefPersonLabel(proj.designer)||'?':'—';
+      const pm=proj.productionPM?briefPersonLabel(proj.productionPM)||'?':'—';
+      const rows=[];
+      // Flags (not ackable — current state)
+      if(overdueByProj[id]) overdueByProj[id].forEach(({ms,weeksLate})=>rows.push(briefRow('l-urgent','Overdue',`${ms.name} is ${weeksLate} week${weeksLate!==1?'s':''} past due (was ${briefFmtDate(wkToDate(ms.week))}).`)));
+      if(stallsByProj[id]) rows.push(briefRow('l-warn','No movement',`No changes in ${stallsByProj[id].daysSince} days.`));
+      if(daNoCaSet.has(id)) rows.push(briefRow('l-warn','CA not set','DA signed but CA not yet scheduled.'));
+      if(missingSet.has(id)){ const lk=[]; if(!proj.designer)lk.push('designer'); if(!proj.productionPM)lk.push('PM'); rows.push(briefRow('l-warn','Unassigned',`Missing ${lk.join(' and ')} assignment.`)); }
+      // Tracked changes (ackable)
+      const pd=diffByProj[id];
+      if(pd){
+        if(pd.isNew) rows.push(briefAckRow(id+'-new','l-change','New','Added to pipeline since last baseline.'));
+        if(pd.statusChange){ const {from,to}=pd.statusChange; rows.push(briefAckRow(id+'-status','l-change','Status',`${briefStatusLabel(from)} → ${briefStatusLabel(to)}.`)); }
+        (pd.msChanges||[]).forEach(({ms,fromStatus,fromWeek})=>{
+          const parts=[];
+          if(fromStatus!==ms.status) parts.push(`status ${fromStatus} → ${ms.status}`);
+          if(fromWeek!==ms.week&&fromWeek!=null&&ms.week!=null) parts.push(`date moved ${briefFmtDate(wkToDate(fromWeek))} → ${briefFmtDate(wkToDate(ms.week))}`);
+          rows.push(briefAckRow(id+'-ms-'+ms.name.toLowerCase().replace(/\s+/g,'-'),'l-change',ms.name,`${parts.join('; ')||ms.name+' updated'}.`));
+        });
+        (pd.scheduleChanges||[]).forEach(({field,fromWeek,toWeek,fromDur,toDur})=>{
+          const parts=[];
+          if(fromWeek!=null&&toWeek!=null&&fromWeek!==toWeek) parts.push(`start ${briefFmtDate(wkToDate(fromWeek))} → ${briefFmtDate(wkToDate(toWeek))}`);
+          if(fromDur!=null&&toDur!=null&&fromDur!==toDur) parts.push(`duration ${fromDur}w → ${toDur}w`);
+          rows.push(briefAckRow(id+'-schedule','l-change',field,`${parts.join('; ')}.`));
+        });
+        (pd.assignmentChanges||[]).forEach(({field,from,to})=>rows.push(briefAckRow(id+'-assign-'+field.toLowerCase(),'l-change',field,`${from} → ${to}.`)));
+        if(pd.noteChange){ const {isNew,note}=pd.noteChange; rows.push(briefAckRow(id+'-note','l-note',isNew?'New note':'Note updated',note)); }
+      }
+      // Upcoming (not ackable)
+      if(upcomingByProj[id]) upcomingByProj[id].forEach(({ms,weeksOut})=>{ const tl=weeksOut===0?'This week':weeksOut===1?'Next week':`${weeksOut} weeks`; rows.push(briefRow('l-due','Due soon',`${ms.name} — ${briefFmtDate(wkToDate(ms.week))} (${tl}).`)); });
+      if(!rows.length) rows.push(briefRow('l-note','Note','No tracked changes since baseline — flags or upcoming milestone only.'));
+      html+=`<div class="brief-proj-card ${cardCls}"><div class="brief-card-hd"><span class="brief-tag ${briefTagClass(proj.status)}">${briefStatusLabel(proj.status)}</span><span class="brief-card-name">${briefProjName(proj)}</span><span class="brief-card-people">${proj.salesPerson||'—'} · ${des} · ${pm}</span></div><div class="brief-card-body">${rows.join('')}</div></div>`;
+    });
+    if(!active.length&&!removedProjs.length) html+=`<div class="brief-empty">No active projects in the pipeline.</div>`;
+    html+='</div>';
   }
 
-  // Render one card per active project
-  active.forEach(proj=>{
-    const id=proj.id;
-    const priority=projPriority(proj);
-    const cardCls=priority===0?'bpc-urgent':priority===1?'bpc-warn':priority<=3?'bpc-active':'bpc-quiet';
+  // ══════════════════════════════════════════════════════════════════
+  // PART 2 — CATEGORY VIEWS (grouped by type)
+  // ══════════════════════════════════════════════════════════════════
 
-    const snap=base[id];
-    const des=proj.designer?briefPersonLabel(proj.designer)||'?':'—';
-    const pm=proj.productionPM?briefPersonLabel(proj.productionPM)||'?':'—';
-    const sales=proj.salesPerson||'—';
-
-    const rows=[];
-
-    // ── Flags ──────────────────────────────────────────────────────
-    if(overdueByProj[id]){
-      overdueByProj[id].forEach(({ms,weeksLate})=>{
-        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-urgent">Overdue</span><span class="bcr-text">${ms.name} milestone is ${weeksLate} week${weeksLate!==1?'s':''} past its scheduled date (${briefFmtDate(wkToDate(ms.week))}).</span></div>`);
-      });
-    }
-    if(stallsByProj[id]){
-      rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-warn">No movement</span><span class="bcr-text">No status or milestone changes in ${stallsByProj[id].daysSince} days — worth a check-in.</span></div>`);
-    }
-    if(daNoCaSet.has(id)){
-      rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-warn">CA not set</span><span class="bcr-text">DA is signed but CA has not been scheduled yet.</span></div>`);
-    }
-    if(missingSet.has(id)){
-      const lacks=[]; if(!proj.designer) lacks.push('designer'); if(!proj.productionPM) lacks.push('PM');
-      rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-warn">Unassigned</span><span class="bcr-text">Missing ${lacks.join(' and ')} assignment.</span></div>`);
-    }
-
-    // ── Changes ────────────────────────────────────────────────────
-    const pd=diffByProj[id];
-    if(pd){
-      if(pd.isNew){
-        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-change">New</span><span class="bcr-text">Added to pipeline since last baseline.</span></div>`);
-      }
-      if(pd.statusChange){
-        const {from,to}=pd.statusChange;
-        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-change">Status</span><span class="bcr-text">${briefStatusLabel(from)} → ${briefStatusLabel(to)}.</span></div>`);
-      }
-      (pd.msChanges||[]).forEach(({ms,fromStatus,fromWeek})=>{
-        const parts=[];
-        if(fromStatus!==ms.status) parts.push(`${ms.name} status: ${fromStatus} → ${ms.status}`);
-        if(fromWeek!==ms.week) parts.push(`date moved from ${briefFmtDate(wkToDate(fromWeek))} to ${briefFmtDate(wkToDate(ms.week))}`);
-        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-change">Milestone</span><span class="bcr-text">${parts.join('; ')||ms.name+' milestone updated'}.</span></div>`);
-      });
-      (pd.assignmentChanges||[]).forEach(({field,from,to})=>{
-        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-change">${field}</span><span class="bcr-text">${from} → ${to}.</span></div>`);
-      });
-    }
-
-    // ── Notes ──────────────────────────────────────────────────────
-    if(proj.notes&&proj.notes.trim()){
-      const prevNote=snap?.notes||'';
-      const noteLbl=(!prevNote&&proj.notes)?'New note':(prevNote&&prevNote!==proj.notes)?'Updated':'Note';
-      const noteCls=noteLbl==='Note'?'l-note':'l-change';
-      rows.push(`<div class="brief-card-row"><span class="bcr-lbl ${noteCls}">${noteLbl}</span><span class="bcr-text">${proj.notes.trim()}</span></div>`);
-    }
-
-    // ── Upcoming milestones ────────────────────────────────────────
-    if(upcomingByProj[id]){
-      upcomingByProj[id].forEach(({ms,weeksOut})=>{
-        const timeLabel=weeksOut===0?'This week':weeksOut===1?'Next week':`${weeksOut} weeks out`;
-        rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-due">Due soon</span><span class="bcr-text">${ms.name} milestone — ${briefFmtDate(wkToDate(ms.week))} (${timeLabel}).</span></div>`);
-      });
-    }
-
-    // ── Quiet ──────────────────────────────────────────────────────
-    if(rows.length===0){
-      rows.push(`<div class="brief-card-row"><span class="bcr-lbl l-quiet">Quiet</span><span class="bcr-text quiet">No changes, notes, or upcoming milestones.</span></div>`);
-    }
-
-    html+=`<div class="brief-proj-card ${cardCls}">
-      <div class="brief-card-hd">
-        <span class="brief-tag ${briefTagClass(proj.status)}">${briefStatusLabel(proj.status)}</span>
-        <span class="brief-card-name">${briefProjName(proj)}</span>
-        <span class="brief-card-people">${sales} · ${des} · ${pm}</span>
-      </div>
-      <div class="brief-card-body">${rows.join('')}</div>
-    </div>`;
+  // ── Upcoming dates (grouped by milestone type) ──
+  const LOOK_AHEAD=6;
+  const upDA=[],upCA=[],upOther=[],upConstr=[];
+  PROJECTS.forEach(proj=>{
+    if(['archived','cancelled'].includes(proj.status)) return;
+    (proj.milestones||[]).forEach(ms=>{
+      if(ms.status==='da-signed'||ms.status==='ca-signed') return;
+      const d=ms.week-tw; if(d<0||d>LOOK_AHEAD) return;
+      if(ms.name==='DA') upDA.push({proj,ms,d}); else if(ms.name==='CA') upCA.push({proj,ms,d}); else upOther.push({proj,ms,d});
+    });
+    const cPh=proj.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
+    if(cPh&&cPh.startWeek!=null){ const d=cPh.startWeek-tw; if(d>=0&&d<=LOOK_AHEAD) upConstr.push({proj,cPh,d}); }
   });
+  [upDA,upCA,upOther,upConstr].forEach(a=>a.sort((x,y)=>x.d-y.d));
 
-  if(!active.length && !diff.removedProjs.length){
-    html+=`<div class="brief-empty">No active projects in the pipeline.</div>`;
+  if(upDA.length||upCA.length||upConstr.length||upOther.length){
+    html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Upcoming — Next ${LOOK_AHEAD} Weeks</span></div>`;
+    const milRow=({proj,ms,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`${ms.name} — ${briefFmtDate(wkToDate(ms.week))} (${tl}).`); };
+    if(upDA.length){ html+=briefSubHdr('DA Signings'); html+=upDA.map(milRow).join(''); }
+    if(upCA.length){ html+=briefSubHdr('CA Signings'); html+=upCA.map(milRow).join(''); }
+    if(upConstr.length){ html+=briefSubHdr('Construction Starts'); html+=upConstr.map(({proj,cPh,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`Construction starts ${briefFmtDate(wkToDate(cPh.startWeek))} (${tl}).`); }).join(''); }
+    if(upOther.length){ html+=briefSubHdr('Other Milestones'); html+=upOther.map(milRow).join(''); }
+    html+='</div>';
   }
+
+  // ── Attention Needed ──
+  const attnRows=[];
+  overdue.forEach(({proj,ms,weeksLate})=>attnRows.push(briefRow('l-urgent',briefProjName(proj),`${ms.name} ${weeksLate} week${weeksLate!==1?'s':''} overdue (was ${briefFmtDate(wkToDate(ms.week))}).`)));
+  daNoCa.forEach(proj=>attnRows.push(briefRow('l-warn',briefProjName(proj),'DA signed but CA not yet scheduled.')));
+  missing.forEach(proj=>{ const lk=[]; if(!proj.designer)lk.push('designer'); if(!proj.productionPM)lk.push('PM'); attnRows.push(briefRow('l-warn',briefProjName(proj),`Missing ${lk.join(' and ')} assignment.`)); });
+  stalls.forEach(({proj,daysSince})=>attnRows.push(briefRow('l-note',briefProjName(proj),`No changes in ${daysSince} days — worth a check-in.`)));
+  if(attnRows.length) html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Attention Needed</span></div>${attnRows.join('')}</div>`;
+
+  // ── Capacity ──
+  const capWarnings=briefCapacityWarnings(8);
+  if(capWarnings.length) html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Capacity</span></div>${capWarnings.map(({person,section,peakWeek,peakLoad,target,weeksOver})=>briefRow('l-warn',person.label,`${section} — peak ${Math.round(peakLoad)}h vs ${target}h target, week of ${briefFmtDate(wkToDate(peakWeek))} (${weeksOver} week${weeksOver!==1?'s':''} over).`)).join('')}</div>`;
+
+  // ── Tool Changes ──
+  if(versionChange) html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Tool Changes</span></div>${briefAckRow('version-change','l-change','Updated',`Pipeline updated ${versionChange.from} → ${versionChange.to}.`)}</div>`;
+
+  // ── Bugs & Features ──
+  const openItems=BRIEF_BUGS.filter(b=>b.status==='open');
+  html+=`<div class="brief-section" id="briefBugsSection">
+    <div class="brief-section-hd">
+      <span class="brief-section-title">Bugs &amp; Features</span>
+      <span class="brief-section-count" style="margin-left:8px;background:${openItems.length?'#d07820':'#a3a3a3'}">${openItems.length}</span>
+    </div>
+    <div id="briefBugForm" style="display:none;padding:8px 0 12px;border-bottom:1px solid var(--bdr);margin-bottom:4px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <select id="briefBugType" style="font-size:11px;padding:5px 8px;border:1px solid var(--bdr);border-radius:4px;background:#fff;color:var(--navy);">
+          <option value="bug">Bug</option>
+          <option value="feature">Feature Request</option>
+        </select>
+        <input id="briefBugTitle" type="text" placeholder="Short description…" style="flex:1;min-width:200px;font-size:11px;padding:5px 9px;border:1px solid var(--bdr);border-radius:4px;">
+        <button id="briefBugSave" class="brief-topbar-btn brief-btn-baseline" style="font-size:9px;padding:4px 12px;">Save</button>
+        <button id="briefBugCancel" class="brief-topbar-btn brief-btn-back" style="font-size:9px;padding:4px 10px;">Cancel</button>
+      </div>
+    </div>
+    ${openItems.length ? openItems.map(b=>`<div class="brief-card-row" data-bug-id="${b.id}"><span class="bcr-lbl ${b.type==='bug'?'l-urgent':'l-change'}">${b.type==='bug'?'Bug':'Feature'}</span><span class="bcr-text">${b.title}</span><button class="brief-ack-btn brief-ack-archive" data-close-bug="${b.id}">Resolve</button></div>`).join('') : `<div class="brief-card-row"><span class="bcr-lbl l-quiet">—</span><span class="bcr-text quiet">No open items.</span></div>`}
+  </div>`;
 
   return html;
 }
@@ -8388,6 +8509,7 @@ function openBrief(){
   const body=document.getElementById('briefBody');
   const meta=document.getElementById('briefGenMeta');
   if(!panel||!body) return;
+  // SP data already loaded during init — just render with current in-memory state
   body.innerHTML=generateBriefHTML();
   if(meta) meta.textContent='Generated '+briefFmtFull(new Date());
   updateBriefBaselineLbl();
@@ -8400,18 +8522,75 @@ function closeBrief(){
   document.body.style.overflow='';
 }
 
-// Brief button handlers via delegation — panel HTML is outside the script block so getElementById returns null at parse time
+// Brief button handlers via delegation
 document.addEventListener('click',e=>{
   if(e.target.closest('#openBriefBtn')){ openBrief(); return; }
   if(e.target.closest('#briefCloseBtn')){ closeBrief(); return; }
+
+  // Set baseline — clears acks (new baseline = fresh diff)
   if(e.target.closest('#briefSetBaselineBtn')){
     (async()=>{
       const snap=snapshotPipeline();
       await saveBriefBaseline(snap);
+      clearBriefAcks();
       const body=document.getElementById('briefBody');
       if(body) body.innerHTML=generateBriefHTML();
       updateBriefBaselineLbl();
     })();
+    return;
+  }
+
+  // Ack: Archive or Keep Active
+  const ackBtn=e.target.closest('[data-ack-id][data-ack-action]');
+  if(ackBtn){
+    const ackId=ackBtn.dataset.ackId, action=ackBtn.dataset.ackAction;
+    BRIEF_ACKS[ackId]=action;
+    saveBriefAcks();
+    const row=ackBtn.closest('.brief-card-row');
+    if(action==='archived'&&row) row.remove();
+    else if(action==='kept'&&row){ row.classList.add('brief-row-kept'); ackBtn.closest('.brief-ack-btns')?.remove(); }
+    return;
+  }
+
+  // Bug/feature form toggle (button is in topbar, form is in body)
+  if(e.target.closest('#briefAddBugBtn')){
+    const f=document.getElementById('briefBugForm');
+    if(f){
+      const wasHidden=f.style.display==='none';
+      f.style.display=wasHidden?'block':'none';
+      if(wasHidden){
+        f.scrollIntoView({behavior:'smooth',block:'nearest'});
+        const inp=document.getElementById('briefBugTitle'); if(inp) setTimeout(()=>inp.focus(),300);
+      }
+    }
+    return;
+  }
+  if(e.target.closest('#briefBugCancel')){
+    const f=document.getElementById('briefBugForm'); if(f) f.style.display='none';
+    return;
+  }
+
+  // Save bug/feature
+  if(e.target.closest('#briefBugSave')){
+    const typeEl=document.getElementById('briefBugType');
+    const titleEl=document.getElementById('briefBugTitle');
+    const title=(titleEl?.value||'').trim();
+    if(!title) return;
+    const type=typeEl?.value||'bug';
+    BRIEF_BUGS.push({id:'bug-'+Date.now(),type,title,status:'open',createdAt:new Date().toISOString()});
+    saveBriefBugs();
+    const body=document.getElementById('briefBody');
+    if(body) body.innerHTML=generateBriefHTML();
+    return;
+  }
+
+  // Close/resolve bug
+  const closeBtn=e.target.closest('[data-close-bug]');
+  if(closeBtn){
+    const bugId=closeBtn.dataset.closeBug;
+    const bug=BRIEF_BUGS.find(b=>b.id===bugId);
+    if(bug){ bug.status='closed'; bug.closedAt=new Date().toISOString(); saveBriefBugs(); }
+    const row=closeBtn.closest('.brief-card-row'); if(row) row.remove();
     return;
   }
 });
@@ -8421,7 +8600,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&document.getElementById('briefPanel')?.classList.contains('open')) closeBrief();
 },{capture:true});
 
-// Load baseline from localStorage immediately; SP version checked after auth in loadProjectsAndConfig
+// Load on boot from localStorage cache only — SP versions loaded after auth completes
 loadBriefBaseline();
 
 </script>
@@ -8469,6 +8648,7 @@ loadBriefBaseline();
     <div class="brief-topbar-actions">
       <span class="brief-baseline-lbl" id="briefBaselineLbl"></span>
       <button class="brief-topbar-btn brief-btn-baseline" id="briefSetBaselineBtn">Set Baseline</button>
+      <button class="brief-topbar-btn" style="background:rgba(172,40,40,.14);color:#c44;border-color:rgba(172,40,40,.28);" id="briefAddBugBtn">+ Log Bug / Feature</button>
       <button class="brief-topbar-btn brief-btn-print" onclick="window.print()">Print</button>
       <button class="brief-topbar-btn brief-btn-back" id="briefCloseBtn">← Pipeline</button>
     </div>
