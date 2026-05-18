@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v457</title>
+<title>BW Project Pipeline — v458</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2256,7 +2256,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v457</div>
+    <div class="auth-version" id="authVersionBadge">v458</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2281,7 +2281,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v457</div>
+  <div class="proto-badge" id="versionBadge">v458</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4121,7 +4121,7 @@ function _doRefreshRevenueRow(){
   const activeByWeek=new Array(C.numWeeks).fill(0);
   PROJECTS.forEach(proj=>{
     if(!isVisible(proj)) return;
-    const budget=parseBudget(proj.projBudget); if(!budget) return;
+    const budget=parseBudget(proj.projBudget||proj.estimatedValue); if(!budget) return;
     const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
     const cs=cPh.startWeek, dur=cPh.durWeeks; if(dur<=0) return;
     const perWk=budget/dur;
@@ -4136,7 +4136,7 @@ function _doRefreshRevenueRow(){
   }
   PROJECTS.forEach(proj=>{
     if(!isVisible(proj)) return;
-    const budget=parseBudget(proj.projBudget); if(!budget) return;
+    const budget=parseBudget(proj.projBudget||proj.estimatedValue); if(!budget) return;
     const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
     const cs=cPh.startWeek, end=cs+cPh.durWeeks;
     const overlap=Math.max(0,Math.min(end,yearEndWk)-Math.max(cs,yearStartWk));
@@ -4279,7 +4279,7 @@ function buildProdSection(){
       const activeByWeek=new Array(C.numWeeks).fill(0);
       PROJECTS.forEach(proj=>{
         if(!isVisible(proj)) return;
-        const budget=parseBudget(proj.projBudget); if(!budget) return;
+        const budget=parseBudget(proj.projBudget||proj.estimatedValue); if(!budget) return;
         const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
         const cs=cPh.startWeek, dur=cPh.durWeeks; if(dur<=0) return;
         const perWk=budget/dur;
@@ -4289,7 +4289,7 @@ function buildProdSection(){
       const totalRevenue=nonZero.reduce((a,b)=>a+b,0);
       const totalProjConstrWks=PROJECTS.reduce((sum,proj)=>{
         if(!isVisible(proj)) return sum;
-        const budget=parseBudget(proj.projBudget); if(!budget) return sum;
+        const budget=parseBudget(proj.projBudget||proj.estimatedValue); if(!budget) return sum;
         const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return sum;
         return sum+Math.min(cPh.durWeeks,C.numWeeks);
       },0);
@@ -5803,23 +5803,23 @@ function hideTT(){TT.classList.remove('show');}
       const projWk=w-projStartW+1;
       if(projWk>=1){
         let extra='';
-        const barEl=e.target.closest('.phase-bar');
-        if(barEl){
-          const laneRow=barEl.closest('.lane-row');
-          const laneId=laneRow&&laneRow.dataset.lane;
-          const phId=barEl.dataset.phaseId;
-          if(laneId==='design'){
-            const ph=proj.designLane&&proj.designLane.phases.find(p=>p.id===phId);
-            if(ph&&ph.durWeeks>0&&!ph.isDesignProd) extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">${ph.hours}h/wk avg</div>`;
-          } else if(laneId==='permitting'){
-            const pm=proj.permitting&&proj.permitting.id===phId?proj.permitting:null;
-            if(pm&&pm.durWeeks>0) extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">${pm.hours}h/wk avg</div>`;
-          } else if(laneId==='production'){
-            const ph=proj.productionLane&&proj.productionLane.phases.find(p=>p.id===phId);
-            if(ph&&/^construction$/i.test(ph.name.trim())&&ph.durWeeks>0){
-              const budget=parseBudget(proj.projBudget);
-              if(budget){ const perWk=Math.round(budget/ph.durWeeks); extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">$${perWk.toLocaleString()}/wk avg revenue</div>`; }
-            }
+        const secEl=ss.closest('.section');
+        const sType=secEl&&secEl.dataset.sType;
+        if(sType==='design'){
+          const dph=proj.designLane&&proj.designLane.phases.find(p=>!p.isDesignProd&&p.durWeeks>0&&w>=p.startWeek&&w<p.startWeek+p.durWeeks);
+          if(dph) extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">${dph.hours}h/wk avg</div>`;
+          else{
+            const pm=proj.permitting;
+            if(pm&&pm.durWeeks>0&&w>=pm.startWeek&&w<pm.startWeek+pm.durWeeks) extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">${pm.hours}h/wk avg</div>`;
+          }
+        } else if(sType==='production'){
+          const cph=proj.productionLane&&proj.productionLane.phases.find(p=>/^construction$/i.test(p.name.trim())&&p.durWeeks>0&&w>=p.startWeek&&w<p.startWeek+p.durWeeks);
+          if(cph){
+            const budget=parseBudget(proj.projBudget||proj.estimatedValue);
+            if(budget) extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">$${Math.round(budget/cph.durWeeks).toLocaleString()}/wk avg revenue</div>`;
+          } else {
+            const pm=proj.permitting;
+            if(pm&&pm.durWeeks>0&&w>=pm.startWeek&&w<pm.startWeek+pm.durWeeks) extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">${pm.hours}h/wk avg</div>`;
           }
         }
         showTTraw(`<div class="tt-d" style="color:rgba(255,255,255,.85);font-size:11px;font-weight:600;">Wk ${projWk} of project</div><div class="tt-d">${ds}</div>${extra}`,e);
@@ -8094,7 +8094,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v457', date: '2026-05-13',
+    version: 'v458', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
