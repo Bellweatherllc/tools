@@ -1052,7 +1052,7 @@ body.is-panning *{cursor:grabbing!important;}
   padding:5px 10px;border-radius:4px;white-space:nowrap;pointer-events:none;z-index:200;
 }
 .focus-btn-dev:hover::after{display:block;}
-
+.utility-nav{display:flex;align-items:center;gap:2px;margin-left:4px;}
   font-family:'TT Norms Pro',sans-serif;font-size:10px;font-weight:700;
   letter-spacing:.05em;text-transform:uppercase;
   background:rgba(216,182,79,.13);color:var(--gold);
@@ -2256,6 +2256,20 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     <button type="button" class="focus-btn focus-btn-dev" aria-disabled="true" tabindex="-1" data-dev-tooltip="In development">Revenue</button>
   </nav>
   <div class="hd"></div>
+  <div class="utility-nav">
+    <button type="button" class="brief-hdr-btn" id="keyDatesBtn" title="Key Dates">
+      <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M1 5.5h12" stroke="currentColor" stroke-width="1.3"/><path d="M4 1v2M10 1v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="4.5" cy="9" r="1" fill="currentColor"/><circle cx="7" cy="9" r="1" fill="currentColor"/><circle cx="9.5" cy="9" r="1" fill="currentColor"/></svg>
+      Key Dates
+    </button>
+    <button type="button" class="brief-hdr-btn" id="openBriefBtn" title="Weekly Review">
+      <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Weekly Review
+    </button>
+    <button type="button" class="brief-hdr-btn" data-open-archive title="Archive">
+      <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><rect x="1" y="3.5" width="12" height="9.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M1 6h12" stroke="currentColor" stroke-width="1.3"/><path d="M1 3.5l1.5-2h9l1.5 2" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5.5 9h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Archive
+    </button>
+  </div>
 </div>
 <div class="outer-scroll"><div id="iw"></div></div>
 <div id="tt"></div>
@@ -2548,10 +2562,6 @@ function buildCapCmdBar(section){
   right.appendChild(el('div','nav-sep'));
   const jumpBtn=el('button','nav-btn'); jumpBtn.textContent='Jump To'; jumpBtn.dataset.jumpBtn='1'; right.appendChild(jumpBtn);
   const capSpacer=el('span',''); capSpacer.style.flex='1'; right.appendChild(capSpacer);
-  right.appendChild(el('div','nav-sep'));
-  const briefBtnCap=el('button','pp-hist-btn'); briefBtnCap.id='openBriefBtn';
-  briefBtnCap.innerHTML=`<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Weekly Review`;
-  right.appendChild(briefBtnCap);
   right.appendChild(el('div','nav-sep'));
   const arcBtnCap=el('button','pp-hist-btn'); arcBtnCap.dataset.openArchive='1';
   arcBtnCap.innerHTML=`<svg width="12" height="12" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="3.5" rx="1" fill="currentColor" opacity=".6"/><path d="M3.5 6.5v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V6.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 10.5h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Archive`;
@@ -4007,13 +4017,11 @@ function _doRefreshRevenueRow(){
   const activeByWeek=new Array(C.numWeeks).fill(0);
   PROJECTS.forEach(proj=>{
     if(!isVisible(proj)) return;
-    const budget=parseBudget(proj.estimatedValue); if(!budget) return;
-    const preConPh=proj.productionLane.phases.find(ph=>/pre.?con/i.test(ph.name.trim()));
-    const cPh=proj.productionLane.phases.find(ph=>/^construction/i.test(ph.name.trim())&&!/design/i.test(ph.name)); if(!cPh) return;
-    const startW=preConPh?.startWeek??cPh.startWeek;
-    const totalDur=(preConPh?.durWeeks??0)+cPh.durWeeks; if(totalDur<=0) return;
-    const perWk=budget/totalDur;
-    for(let w=startW;w<cPh.startWeek+cPh.durWeeks&&w<C.numWeeks;w++){ revenueByWeek[w]+=perWk; activeByWeek[w]++; }
+    const budget=parseBudget(proj.projBudget); if(!budget) return;
+    const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
+    const cs=cPh.startWeek, dur=cPh.durWeeks; if(dur<=0) return;
+    const perWk=budget/dur;
+    for(let w=cs;w<cs+dur&&w<C.numWeeks;w++){ revenueByWeek[w]+=perWk; activeByWeek[w]++; }
   });
 
   // Year-specific totals
@@ -4024,12 +4032,10 @@ function _doRefreshRevenueRow(){
   }
   PROJECTS.forEach(proj=>{
     if(!isVisible(proj)) return;
-    const budget=parseBudget(proj.estimatedValue); if(!budget) return;
-    const preConPh2=proj.productionLane.phases.find(ph=>/pre.?con/i.test(ph.name.trim()));
-    const cPh=proj.productionLane.phases.find(ph=>/^construction/i.test(ph.name.trim())&&!/design/i.test(ph.name)); if(!cPh) return;
-    const startW=preConPh2?.startWeek??cPh.startWeek;
-    const end=cPh.startWeek+cPh.durWeeks;
-    const overlap=Math.max(0,Math.min(end,yearEndWk)-Math.max(startW,yearStartWk));
+    const budget=parseBudget(proj.projBudget); if(!budget) return;
+    const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
+    const cs=cPh.startWeek, end=cs+cPh.durWeeks;
+    const overlap=Math.max(0,Math.min(end,yearEndWk)-Math.max(cs,yearStartWk));
     yearConstrWks+=overlap;
   });
   const avgPerWk=yearConstrWks>0?yearRevenue/yearConstrWks:0;
@@ -4079,7 +4085,15 @@ function buildProdSection(){
     const fc_els=[], tl_els=[];
 
     if(key==='total'){
-      // Total hours row removed — not tracked on production
+      const[fcSep0,tlSep0]=buildPersonSep(); fc_els.push(fcSep0); tl_els.push(tlSep0);
+      // FC: total tally
+      const tallyFc=buildFcTallyTotal();
+      tallyFc.classList.add('prod-draggable');
+      tallyFc.insertBefore(prodHdl('total'), tallyFc.firstChild);
+      tallyFc.style.height=C.tallyH+'px';
+      fc_els.push(tallyFc);
+      // TL: tally
+      tl_els.push(buildTlTallyTotal());
     }
 
     else if(key.startsWith('pm:')){
@@ -4091,7 +4105,7 @@ function buildProdSection(){
         const allProjs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.productionPM),'production');
         allProjs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,['Production'],['Design'])); });
         const flatGrp=el('div','person-group-tl'); flatGrp.dataset.section='production';
-        allProjs.forEach(proj=>flatGrp.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,-9,null,['design'])));
+        allProjs.forEach(proj=>flatGrp.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,-9,null,['design'])));
         tl_els.push(flatGrp);
         return {fc_els,tl_els};
       }
@@ -4111,7 +4125,7 @@ function buildProdSection(){
       tl_els.push(buildTlProdPersonHeader());
       if(!collapsed){
         const grp=el('div','person-group-tl'); grp.dataset.personId=pmId; grp.dataset.section='production';
-        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,-9,null,['design'])));
+        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,-9,null,['design'])));
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=pmId; ov.dataset.section='production';
         const ovH=calcPersonGroupH(person,'production');
         ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:${ovH}px;pointer-events:none;z-index:10;`;
@@ -4148,7 +4162,7 @@ function buildProdSection(){
       const tlUnHdr=el('div',''); tlUnHdr.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;background:#c5cdd4;border-bottom:1px solid rgba(40,40,40,.12);`; tl_els.push(tlUnHdr);
       if(!PROD_UNASSIGNED_COLLAPSED){
         const tlGrp=el('div','unassigned-group-tl'); tlGrp.classList.toggle('has-projects',unassigned.length>0); tlGrp.style.width=w2px(C.numWeeks)+'px';
-        if(unassigned.length>0){ unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,0,null,['design'])); tlGrp.appendChild(sg); }); }
+        if(unassigned.length>0){ unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['production'],true,true,undefined,0,null,['design'])); tlGrp.appendChild(sg); }); }
         else { const s=el('div','unassigned-placeholder-tl'); s.style.width=w2px(C.numWeeks)+'px'; tlGrp.appendChild(s); }
         tl_els.push(tlGrp);
       }
@@ -4161,24 +4175,19 @@ function buildProdSection(){
       const activeByWeek=new Array(C.numWeeks).fill(0);
       PROJECTS.forEach(proj=>{
         if(!isVisible(proj)) return;
-        const budget=parseBudget(proj.estimatedValue); if(!budget) return;
-        const preConPh=proj.productionLane.phases.find(ph=>/pre.?con/i.test(ph.name.trim()));
-        const cPh=proj.productionLane.phases.find(ph=>/^construction/i.test(ph.name.trim())&&!/design/i.test(ph.name)); if(!cPh) return;
-        const startW=preConPh?.startWeek??cPh.startWeek;
-        const totalDur=(preConPh?.durWeeks??0)+cPh.durWeeks; if(totalDur<=0) return;
-        const perWk=budget/totalDur;
-        for(let w=startW;w<cPh.startWeek+cPh.durWeeks&&w<C.numWeeks;w++){ revenueByWeek[w]+=perWk; activeByWeek[w]++; }
+        const budget=parseBudget(proj.projBudget); if(!budget) return;
+        const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
+        const cs=cPh.startWeek, dur=cPh.durWeeks; if(dur<=0) return;
+        const perWk=budget/dur;
+        for(let w=cs;w<cs+dur&&w<C.numWeeks;w++){ revenueByWeek[w]+=perWk; activeByWeek[w]++; }
       });
       const nonZero=revenueByWeek.filter(v=>v>0);
       const totalRevenue=nonZero.reduce((a,b)=>a+b,0);
       const totalProjConstrWks=PROJECTS.reduce((sum,proj)=>{
         if(!isVisible(proj)) return sum;
-        const budget=parseBudget(proj.estimatedValue); if(!budget) return sum;
-        const preConPh=proj.productionLane.phases.find(ph=>/pre.?con/i.test(ph.name.trim()));
-        const cPh=proj.productionLane.phases.find(ph=>/^construction/i.test(ph.name.trim())&&!/design/i.test(ph.name)); if(!cPh) return sum;
-        const startW=preConPh?.startWeek??cPh.startWeek;
-        const totalDur=(preConPh?.durWeeks??0)+cPh.durWeeks;
-        return sum+Math.min(totalDur,C.numWeeks);
+        const budget=parseBudget(proj.projBudget); if(!budget) return sum;
+        const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return sum;
+        return sum+Math.min(cPh.durWeeks,C.numWeeks);
       },0);
       const avgPerWk=totalProjConstrWks>0?totalRevenue/totalProjConstrWks:0;
       const fmtK=v=>v>=1000?'$'+(v/1000).toFixed(1).replace(/\.0$/,'')+'k':'$'+Math.round(v);
@@ -4186,7 +4195,7 @@ function buildProdSection(){
       const tw=todayWeek(); const rowH=68;
 
       // Annual revenue = sum of all project budgets (one full construction cycle each)
-      const annualRevenue=PROJECTS.reduce((s,p)=>{ if(!isVisible(p)) return s; const b=parseBudget(p.estimatedValue); return s+b; },0);
+      const annualRevenue=PROJECTS.reduce((s,p)=>{ if(!isVisible(p)) return s; const b=parseBudget(p.projBudget); return s+b; },0);
       const revFc=el('div','prod-rev-fc prod-draggable'); revFc.style.cssText=`width:${C.fixedW}px;height:${rowH}px;display:flex;flex-direction:row;align-items:center;padding:0;border-right:none;`;
       const revEye=el('button','person-eye-btn'); revEye.dataset.revEye='1'; revEye.style.cssText='flex-shrink:0;margin:0 2px 0 0;'; revEye.innerHTML=eyeSvg(false); revEye.title='Toggle revenue visibility';
       revFc.insertBefore(prodHdl('revenue'), revFc.firstChild);
@@ -4250,7 +4259,6 @@ function buildProdSection(){
   requestAnimationFrame(()=>{
     const ganttSS=prodGanttScroll.querySelector('.section-scroll')||prodGanttScroll;
     // Revenue row scrolls naturally with gantt-row — no sync needed
-    refreshRevenueRow();
     initProdRowDrag(sec);
   });
   return sec;
@@ -5542,7 +5550,6 @@ function onMove(e){
     if(phs[0]&&phs[0].id===ph.id) getLane(proj,DRAG.laneId).startWeek=newStart;
     // Update bar in-place
     document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; b.style.width=w2px(ph.durWeeks)+'px'; });
-    document.querySelectorAll(`[data-wks-id="${ph.id}"]`).forEach(v=>v.textContent=ph.durWeeks+'w');
     renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId); _updateProjCA(DRAG.projId); refreshRevenueRow();
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
   }
@@ -5553,7 +5560,6 @@ function onMove(e){
     ph.durWeeks=nd;
     // Update bar in-place
     document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.width=w2px(ph.durWeeks)+'px'; });
-    document.querySelectorAll(`[data-wks-id="${ph.id}"]`).forEach(v=>v.textContent=ph.durWeeks+'w');
     renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId); _updateProjCA(DRAG.projId); refreshRevenueRow();
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
   }
@@ -5628,7 +5634,6 @@ function onUp(){
   } else if(DRAG.type==='resizeLeft'||DRAG.type==='resize'){
     refreshLane(DRAG.projId,DRAG.laneId);
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
-    refreshRevenueRow();
   } else if(DRAG.type==='permMove'){
     refreshLane(DRAG.projId,'permitting');
   } else if(DRAG.type==='ms'&&DRAG.cascadeRight){
@@ -5668,7 +5673,7 @@ function hideTT(){TT.classList.remove('show');}
   const MO_N=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const TL_TARGETS='.lane-row,.tl-ms-row,.timeline-col,.person-group-tl,.unassigned-group-tl,.ms-wk-cell,.ms-overlay,.prod-rev-tl,.timeoff-block,.unassigned-placeholder-tl';
   document.addEventListener('mousemove',e=>{
-    if(DRAG){ if(TT.classList.contains('show')) moveTT(e); return; }
+    if(DRAG) return;
     if(e.target.closest('.ms-tall')) return; // ms has own tooltip
     const ss=e.target.closest('.section-scroll');
     if(!ss){hideTT();return;}
@@ -5681,33 +5686,14 @@ function hideTT(){TT.classList.remove('show');}
     if(w<0||w>=C.numWeeks){hideTT();return;}
     const d=wkMon(w);
     const ds=`${DAY_N[d.getDay()]}, ${MO_N[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-    // Show project-relative week and optionally per-project revenue
+    // Show project-relative week only when hovering over a project row
     const projEl=e.target.closest('[data-proj-id]');
     const proj=projEl?PROJECTS.find(p=>p.id===projEl.dataset.projId):null;
     if(proj){
       const projStartW=proj.designLane?proj.designLane.startWeek:0;
       const projWk=w-projStartW+1;
-      // Per-project weekly revenue when hovering a production row
-      const secEl=e.target.closest('.section[data-s-type="production"]');
-      let revLine='';
-      if(secEl&&proj.estimatedValue){
-        const _pb=s=>parseInt((s||'').replace(/[^0-9]/g,''))||0;
-        const budget=_pb(proj.estimatedValue);
-        const preConPh=proj.productionLane?.phases?.find(ph=>/pre.?con/i.test(ph.name.trim()));
-        const cPh=proj.productionLane?.phases?.find(ph=>/^construction/i.test(ph.name.trim())&&!/design/i.test(ph.name));
-        if(budget&&cPh){
-          const rStart=preConPh?.startWeek??cPh.startWeek;
-          const rEnd=cPh.startWeek+cPh.durWeeks;
-          const totalDur=(preConPh?.durWeeks??0)+cPh.durWeeks;
-          if(totalDur>0&&w>=rStart&&w<rEnd){
-            const perWk=budget/totalDur;
-            const fmtK=v=>v>=1000?'$'+(v/1000).toFixed(1).replace(/\.0$/,'')+'k':'$'+Math.round(v);
-            revLine=`<div class="tt-d" style="color:#c9a84c;font-weight:600;">${fmtK(perWk)}/wk revenue</div>`;
-          }
-        }
-      }
       if(projWk>=1){
-        showTTraw(`<div class="tt-d" style="color:rgba(255,255,255,.85);font-size:11px;font-weight:600;">Wk ${projWk} of project</div><div class="tt-d">${ds}</div>${revLine}`,e);
+        showTTraw(`<div class="tt-d" style="color:rgba(255,255,255,.85);font-size:11px;font-weight:600;">Wk ${projWk} of project</div><div class="tt-d">${ds}</div>`,e);
         return;
       }
     }
@@ -6062,8 +6048,7 @@ function buildPlanningSection(){
     // Compute capacity signal for proposed designer when in a slot
     let capText='';
     if(propDes&&inSlot){
-      const lod=pp.lod||2;
-      const offset={1:20,2:22,3:26}[lod]||22;
+      const offset=22;
       // Find slot CA week
       let slotCaWk=null;
       const slotProj=pp.slotId?PROJECTS.find(p=>p.id===pp.slotId):null;
@@ -6226,96 +6211,52 @@ function buildPlanningSection(){
     metaEl.textContent=parts.join(' · ');
     hd.appendChild(metaEl);
 
-    // Key dates: CA + Construction (no dots)
-    const keyDates=el('div','pp-key-dates');
-    const caRow=el('div',''); caRow.style.cssText='display:flex;justify-content:space-between;align-items:baseline;padding:2px 7px;';
-    const caLbl=el('span','pp-key-date-lbl'); caLbl.textContent='CA sign by';
-    const caVal=el('span','pp-key-date-val'+(caWk<tw?' past':caWk<tw+4?' warn':'')); caVal.textContent=caWk>=0?wkDate(caWk):'—';
-    caRow.appendChild(caLbl); caRow.appendChild(caVal);
-    keyDates.appendChild(caRow);
-    const csRow=el('div',''); csRow.style.cssText='display:flex;justify-content:space-between;align-items:baseline;padding:2px 7px;';
-    const csLbl=el('span','pp-key-date-lbl'); csLbl.textContent='Construction Start';
-    const csVal=el('span','pp-key-date-val'); csVal.textContent=wkDate(constrStart);
-    csRow.appendChild(csLbl); csRow.appendChild(csVal);
-    keyDates.appendChild(csRow);
-    hd.appendChild(keyDates);
+    // DA capacity block — single 22-week offset from CA signing
+    const DA_OFFSET=22;
+    const daWk=caWk!==null?caWk-DA_OFFSET:-1;
+    const daIsPast=daWk<tw;
+    const daRemaining=daWk-tw;
 
-    // Divider between key dates and LOD area
-    const lodDiv=el('div',''); lodDiv.style.cssText='border-top:1px solid rgba(255,255,255,.10);margin:8px 0 4px;';
-    hd.appendChild(lodDiv);
+    const capDiv=el('div',''); capDiv.style.cssText='border-top:1px solid rgba(255,255,255,.10);margin:8px 0 4px;';
+    hd.appendChild(capDiv);
 
-    // LOD blocks — merged alerts, hover-to-expand designers, collapsed past-due
-    const lodBlocks=el('div','pp-lod-blocks');
-    const attachedForSlot=PLANNING_PROJECTS.filter(pp=>!pp.parked&&(pp.slotId?pp.slotId===slot.id:pp.slotWeek===constrStart));
-    [{lod:3,offset:26},{lod:2,offset:22},{lod:1,offset:20}].forEach(({lod,offset})=>{
-      const dw=caWk!==null?caWk-offset:-1;
-      const daWk=dw-1;
-      const isPast=dw<tw;
-      const remaining=dw-tw;
+    const desData=DESIGNERS.map(d=>{
+      const tally=designerTally(d.id);
+      const target=getTarget(d.id);
+      const hrs=daWk>=0&&daWk<C.numWeeks?tally[daWk]:0;
+      const free=Math.round(target-hrs);
+      const ratio=target>0?hrs/target:1;
+      const sc=sigClass(ratio);
+      const bg=sc==='sig-green'?'#4fc38a':sc==='sig-yellow'?'#d8a64f':sc==='sig-red'?'#c0434a':'rgba(255,255,255,.2)';
+      return{label:d.label,free,bg};
+    });
 
-      if(isPast){
-        // Collapsed single line for past-due LODs
-        const pastRow=el('div','pp-lod-past'); pastRow.dataset.lod=lod;
-        if(attachedForSlot.some(pp=>(pp.lod||2)===lod)) pastRow.classList.add('lod-match');
-        const ptxt=el('span',''); ptxt.style.cssText='font-size:9px;color:rgba(255,255,255,.30);';
-        ptxt.innerHTML='<b style="font-weight:700;color:#F09595;">LOD '+lod+'</b> — past due ('+Math.abs(remaining)+' wks)';
-        pastRow.appendChild(ptxt);
-        lodBlocks.appendChild(pastRow);
-        return;
-      }
+    if(daIsPast){
+      const pastRow=el('div','pp-lod-past');
+      const ptxt=el('span',''); ptxt.style.cssText='font-size:9px;color:rgba(255,255,255,.30);';
+      ptxt.innerHTML='<b style="font-weight:700;color:#F09595;">DA window</b> — past ('+Math.abs(daRemaining)+' wks)';
+      pastRow.appendChild(ptxt);
+      hd.appendChild(pastRow);
+    } else {
+      const borderColor=daRemaining<=3?'#D85A30':daRemaining<=7?'#EF9F27':'#639922';
+      const deadlineColor=daRemaining<=3?'#F0997B':daRemaining<=7?'#FAC775':'#97C459';
 
-      // Active LOD block with colored left border
-      let borderColor;
-      if(remaining<=3) borderColor='#D85A30';
-      else if(remaining<=7) borderColor='#EF9F27';
-      else borderColor='#639922';
-
-      let deadlineColor;
-      if(remaining<=3) deadlineColor='#F0997B';
-      else if(remaining<=7) deadlineColor='#FAC775';
-      else deadlineColor='#97C459';
-
-      const block=el('div','pp-lod-blk pp-lod-row'); block.dataset.lod=lod;
+      const block=el('div','pp-lod-blk pp-lod-row');
       block.style.borderLeftColor=borderColor;
-      if(attachedForSlot.some(pp=>(pp.lod||2)===lod)) block.classList.add('lod-match');
 
-      // Compute designer signals upfront (used for inline dots + detail rows)
-      const desData=DESIGNERS.map(d=>{
-        const tally=designerTally(d.id);
-        const target=getTarget(d.id);
-        const hrs=dw>=0&&dw<C.numWeeks?tally[dw]:0;
-        const free=Math.round(target-hrs);
-        const ratio=target>0?hrs/target:1;
-        const sc=sigClass(ratio);
-        const bg=sc==='sig-green'?'#4fc38a':sc==='sig-yellow'?'#d8a64f':sc==='sig-red'?'#c0434a':'rgba(255,255,255,.2)';
-        return{label:d.label,free,bg};
-      });
-
-      // Top row: LOD tag + inline capacity dots + countdown
       const topRow=el('div',''); topRow.style.cssText='display:flex;align-items:center;gap:0;';
-      const tag=el('span','pp-lod-tag'); tag.textContent='LOD '+lod; tag.style.minWidth='34px';
-      topRow.appendChild(tag);
+      const daStr=el('span',''); daStr.style.cssText='font-size:8.5px;color:rgba(255,255,255,.50);flex:1;';
+      daStr.innerHTML='DA by <span style="font-weight:700;color:rgba(255,255,255,.80);">'+(daWk>=0&&daWk<C.numWeeks?wkDate(daWk):'—')+'</span>';
       const dotsWrap=el('span',''); dotsWrap.style.cssText='display:flex;gap:3px;margin:0 8px;';
       desData.forEach(dd=>{
         const dot=el('span',''); dot.style.cssText='width:5px;height:5px;border-radius:50%;flex-shrink:0;background:'+dd.bg+';';
         dotsWrap.appendChild(dot);
       });
-      topRow.appendChild(dotsWrap);
-      const deadline=el('span',''); deadline.style.cssText='font-size:9.5px;font-weight:600;color:'+deadlineColor+';margin-left:auto;white-space:nowrap;';
-      deadline.textContent=remaining+' wk'+(remaining!==1?'s':'');
-      topRow.appendChild(deadline);
+      const countdown=el('span',''); countdown.style.cssText='font-size:9.5px;font-weight:600;color:'+deadlineColor+';white-space:nowrap;';
+      countdown.textContent=daRemaining+' wk'+(daRemaining!==1?'s':'');
+      topRow.appendChild(daStr); topRow.appendChild(dotsWrap); topRow.appendChild(countdown);
       block.appendChild(topRow);
 
-      // Dates row: DA + Design starts inline
-      const datesRow=el('div',''); datesRow.style.cssText='display:flex;gap:10px;margin-top:3px;';
-      const daStr=el('span',''); daStr.style.cssText='font-size:8px;color:rgba(255,255,255,.40);';
-      daStr.innerHTML='DA by <span style="font-weight:700;color:rgba(255,255,255,.65);">'+(daWk>=0&&daWk<C.numWeeks?wkDate(daWk):'—')+'</span>';
-      const dsStr=el('span',''); dsStr.style.cssText='font-size:8px;color:rgba(255,255,255,.40);';
-      dsStr.innerHTML='Design starts <span style="font-weight:700;color:rgba(255,255,255,.65);">'+(dw>=0&&dw<C.numWeeks?wkDate(dw):'—')+'</span>';
-      datesRow.appendChild(daStr); datesRow.appendChild(dsStr);
-      block.appendChild(datesRow);
-
-      // Designer rows (hidden by default, expand on hover via CSS)
       const desWrap=el('div','pp-lod-designers');
       desData.forEach(dd=>{
         const drow=el('div',''); drow.style.cssText='display:flex;align-items:center;gap:6px;padding:1px 0;';
@@ -6328,10 +6269,8 @@ function buildPlanningSection(){
         desWrap.appendChild(drow);
       });
       block.appendChild(desWrap);
-
-      lodBlocks.appendChild(block);
-    });
-    hd.appendChild(lodBlocks);
+      hd.appendChild(block);
+    }
 
     col.appendChild(hd);
     const slotBody=el('div','pp-slot-body');
