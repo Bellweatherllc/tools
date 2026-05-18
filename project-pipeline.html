@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v464</title>
+<title>BW Project Pipeline — v465</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2264,7 +2264,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v464</div>
+    <div class="auth-version" id="authVersionBadge">v465</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2283,7 +2283,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v464</div>
+  <div class="proto-badge" id="versionBadge">v465</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2511,16 +2511,85 @@ function _histUser(){
   try{ const a=typeof msalApp!=='undefined'&&msalApp.getActiveAccount&&msalApp.getActiveAccount(); return (a&&(a.name||a.username))||'Unknown'; }
   catch(e){ return 'Unknown'; }
 }
+function _histSnap(){
+  return{
+    projects:JSON.parse(JSON.stringify(PROJECTS)),
+    planning:JSON.parse(JSON.stringify(PLANNING_PROJECTS))
+  };
+}
+function _histPush(desc,snap){
+  if(!desc||!snap) return;
+  HISTORY_STACK.push({ts:Date.now(),desc,user:_histUser(),snap});
+  if(HISTORY_STACK.length>HISTORY_MAX) HISTORY_STACK.shift();
+}
 function pushHistory(desc){
   if(!desc) return;
-  try{
-    const snap={
-      projects:JSON.parse(JSON.stringify(PROJECTS)),
-      planning:JSON.parse(JSON.stringify(PLANNING_PROJECTS))
-    };
-    HISTORY_STACK.push({ts:Date.now(),desc,user:_histUser(),snap});
-    if(HISTORY_STACK.length>HISTORY_MAX) HISTORY_STACK.shift();
-  }catch(e){ console.warn('[history] snapshot failed',e); }
+  try{ _histPush(desc,_histSnap()); }catch(e){ console.warn('[history] snapshot failed',e); }
+}
+function _personLabel(id){
+  const d=DESIGNERS.find(p=>p.id===id)||PROD_PMS.find(p=>p.id===id);
+  return d?d.label:id||'?';
+}
+function _projShortName(proj){
+  if(!proj) return '?';
+  return (proj.clientName||proj.name||proj.id).split(/[,\u2013\u2014-]/)[0].trim()||proj.id;
+}
+function _captureDragPre(drag){
+  if(!drag) return null;
+  const proj=PROJECTS.find(p=>p.id===drag.projId)||null;
+  const nm=_projShortName(proj);
+  let phInfo=null;
+  if(drag.phaseId){
+    const r=findPhase(drag.phaseId);
+    if(r) phInfo={name:r.ph.name,startWeek:r.ph.startWeek,durWeeks:r.ph.durWeeks};
+  }
+  let msInfo=null;
+  if(drag.msId&&proj){
+    const ms=proj.milestones&&proj.milestones.find(m=>m.id===drag.msId);
+    if(ms) msInfo={id:drag.msId,name:ms.name,week:ms.week};
+  }
+  return{
+    type:drag.type,nm,projId:drag.projId,
+    phaseId:drag.phaseId,phInfo,
+    msInfo,
+    oldPerson:drag.personId||null,
+    newPerson:drag.targetPerson||null,
+  };
+}
+function _buildDragDesc(pre){
+  if(!pre) return 'Changed';
+  const{type,nm,phInfo,msInfo,oldPerson,newPerson,projId,phaseId,msInfo:ms2}=pre;
+  const d=s=>wkDate(s);
+  if((type==='phaseMove'||type==='laneMove')&&phInfo&&phaseId){
+    const r=findPhase(phaseId);
+    const newStart=r?r.ph.startWeek:null;
+    if(newStart!=null&&newStart!==phInfo.startWeek)
+      return `${nm}: "${phInfo.name}" ${d(phInfo.startWeek)}–${d(phInfo.startWeek+phInfo.durWeeks-1)} → ${d(newStart)}–${d(newStart+phInfo.durWeeks-1)}`;
+    return `${nm}: "${phInfo.name}" moved`;
+  }
+  if((type==='resize'||type==='resizeLeft')&&phInfo&&phaseId){
+    const r=findPhase(phaseId);
+    const newDur=r?r.ph.durWeeks:null;
+    const newStart=r?r.ph.startWeek:phInfo.startWeek;
+    if(newDur!=null&&newDur!==phInfo.durWeeks)
+      return `${nm}: "${phInfo.name}" ${phInfo.durWeeks}w (${d(phInfo.startWeek)}–${d(phInfo.startWeek+phInfo.durWeeks-1)}) → ${newDur}w (${d(newStart)}–${d(newStart+newDur-1)})`;
+    return `${nm}: "${phInfo.name}" resized`;
+  }
+  if((type==='ms'||type==='msProjMove')&&msInfo){
+    const proj=PROJECTS.find(p=>p.id===projId);
+    const ms=proj&&proj.milestones&&proj.milestones.find(m=>m.id===msInfo.id);
+    if(ms&&ms.week!==msInfo.week)
+      return `${nm}: "${msInfo.name}" ${d(msInfo.week)} → ${d(ms.week)}`;
+    return `${nm}: "${msInfo.name}" milestone moved`;
+  }
+  if(type==='projMove') return `${nm}: moved to new position`;
+  if(type==='personMove'){
+    const from=oldPerson?_personLabel(oldPerson):'?';
+    const to=newPerson?_personLabel(newPerson):'?';
+    return `${nm}: ${from} → ${to}`;
+  }
+  if(type==='timeoffMove') return `${oldPerson?_personLabel(oldPerson):'?'}: time off moved`;
+  return `${nm}: changed`;
 }
 function undoLast(){
   const entry=HISTORY_STACK.pop();
@@ -2532,18 +2601,6 @@ function undoLast(){
     showToast&&showToast('Undone: '+entry.desc);
     renderSessionHistory();
   }catch(e){ console.error('[undo]',e); showToast&&showToast('Undo failed.'); }
-}
-function _dragDesc(drag){
-  if(!drag) return null;
-  const proj=PROJECTS.find(p=>p.id===drag.projId);
-  const nm=proj?(proj.clientName||proj.name).split(/[,\u2013\u2014-]/)[0].trim():'project';
-  if(drag.type==='phaseMove'||drag.type==='laneMove') return `Moved phase — ${nm}`;
-  if(drag.type==='resize'||drag.type==='resizeLeft') return `Resized phase — ${nm}`;
-  if(drag.type==='projMove') return `Moved project — ${nm}`;
-  if(drag.type==='ms'||drag.type==='msProjMove') return `Moved milestone — ${nm}`;
-  if(drag.type==='personMove') return `Reassigned — ${nm}`;
-  if(drag.type==='timeoffMove') return 'Moved time off';
-  return 'Dragged element';
 }
 function openSessionHistory(){
   renderSessionHistory();
@@ -4576,8 +4633,11 @@ function refreshWkNums(projId){
 }
 function updateHours(phId,delta){
   const r=findPhase(phId); if(!r)return;
-  pushHistory(`Changed hours — ${(r.proj.clientName||r.proj.name||'project').split(/[,\u2013\u2014-]/)[0].trim()}`);
-  r.ph.hours=Math.max(0,r.ph.hours+delta);
+  const oldH=r.ph.hours;
+  const newH=Math.max(0,r.ph.hours+delta);
+  const snap=_histSnap();
+  r.ph.hours=newH;
+  _histPush(`${_projShortName(r.proj)}: "${r.ph.name}" ${oldH}h/wk → ${newH}h/wk`,snap);
   document.querySelectorAll(`[data-hrs-id="${phId}"]`).forEach(v=>v.textContent=r.ph.hours+'h/w');
   renderTally(tallySection(laneOf(phId)));
 }
@@ -5938,7 +5998,16 @@ function triggerSave(dirtyProj){
   },900);
 }
 function patchSaveHooks(){
-  const _ou=onUp; onUp=function(){ const wd=!!DRAG; const _dd=wd&&DRAG?_dragDesc(DRAG):null; if(_dd) pushHistory(_dd); _ou(); if(wd) triggerSave(); };
+  const _ou=onUp; onUp=function(){
+    const wd=!!DRAG;
+    let snap=null, pre=null;
+    if(wd&&DRAG){ try{ snap=_histSnap(); pre=_captureDragPre(DRAG); }catch(e){} }
+    _ou();
+    if(wd){
+      try{ if(snap&&pre) _histPush(_buildDragDesc(pre),snap); }catch(e){}
+      triggerSave();
+    }
+  };
   document.removeEventListener('pointerup',onUp);
 }
 
@@ -8161,7 +8230,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v464', date: '2026-05-13',
+    version: 'v465', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
