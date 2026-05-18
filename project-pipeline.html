@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v450</title>
+<title>BW Project Pipeline — v451</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -1823,6 +1823,41 @@ body.is-panning *{cursor:grabbing!important;}
   padding:24px;
 }
 .archive-overlay.open{display:flex;}
+/* ── Session History Panel ── */
+.sh-panel{
+  position:fixed;top:54px;right:16px;width:340px;
+  background:var(--navy,#1f2e3e);border:1px solid rgba(255,255,255,.12);
+  border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.45);
+  display:none;flex-direction:column;overflow:hidden;z-index:9100;
+  max-height:calc(100vh - 80px);
+}
+.sh-panel.open{display:flex;}
+.sh-hd{
+  display:flex;align-items:center;gap:8px;padding:10px 12px;
+  border-bottom:1px solid rgba(255,255,255,.10);flex-shrink:0;
+}
+.sh-title{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.60);flex:1;}
+.sh-undo-btn{
+  font-size:10px;font-weight:700;padding:3px 9px;border-radius:4px;
+  background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);
+  color:rgba(255,255,255,.75);cursor:pointer;transition:background .12s,color .12s;
+}
+.sh-undo-btn:hover{background:rgba(255,255,255,.20);color:#fff;}
+.sh-close-btn{
+  width:22px;height:22px;border:none;background:rgba(255,255,255,.08);
+  color:rgba(255,255,255,.50);border-radius:4px;cursor:pointer;
+  font-size:11px;display:flex;align-items:center;justify-content:center;
+  transition:background .12s,color .12s;flex-shrink:0;
+}
+.sh-close-btn:hover{background:rgba(255,255,255,.18);color:#fff;}
+.sh-body{overflow-y:auto;flex:1;padding:6px 0;}
+.sh-empty{font-size:10px;color:rgba(255,255,255,.35);padding:14px 14px;font-style:italic;}
+.sh-row{padding:7px 14px;border-bottom:1px solid rgba(255,255,255,.06);}
+.sh-row.sh-top{background:rgba(255,255,255,.06);}
+.sh-desc{font-size:11px;font-weight:600;color:rgba(255,255,255,.80);margin-bottom:3px;}
+.sh-meta{display:flex;align-items:center;gap:8px;}
+.sh-user{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.35);}
+.sh-time{font-size:9px;color:rgba(255,255,255,.28);margin-left:auto;}
 .archive-modal{
   background:#fff;border:1px solid #d0d0d0;
   border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.22);
@@ -2221,7 +2256,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v450</div>
+    <div class="auth-version" id="authVersionBadge">v451</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2246,7 +2281,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v450</div>
+  <div class="proto-badge" id="versionBadge">v451</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2261,6 +2296,14 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 <div class="outer-scroll"><div id="iw"></div></div>
 <div id="tt"></div>
 <div class="proj-drop-indicator" id="dropInd"></div>
+<div id="sessionHistoryPanel" class="sh-panel">
+  <div class="sh-hd">
+    <span class="sh-title">Session History</span>
+    <button class="sh-undo-btn" id="shUndoBtn" title="Undo last change (⌘Z)">↩ Undo Last</button>
+    <button class="sh-close-btn" id="shCloseBtn">✕</button>
+  </div>
+  <div class="sh-body" id="shList"></div>
+</div>
 <div class="status-menu" id="statusMenu">
   <div class="sm-item" data-set-status="lead"><span class="sm-dot projected"></span>Lead</div>
   <div style="height:1px;background:rgba(255,255,255,.1);margin:4px 5px;"></div>
@@ -2441,6 +2484,68 @@ let PLANNING_PROJECTS=[];
 const PLANNING_RESERVE=[];
 function newPlanningId(){ return 'pl-'+Date.now(); }
 let APPROVED_HISTORY=[];
+
+// ════════════════════════════════════════════════  SESSION HISTORY
+let HISTORY_STACK=[];
+const HISTORY_MAX=30;
+function _histUser(){
+  try{ const a=typeof msalApp!=='undefined'&&msalApp.getActiveAccount&&msalApp.getActiveAccount(); return (a&&(a.name||a.username))||'Unknown'; }
+  catch(e){ return 'Unknown'; }
+}
+function pushHistory(desc){
+  if(!desc) return;
+  try{
+    const snap={
+      projects:JSON.parse(JSON.stringify(PROJECTS)),
+      planning:JSON.parse(JSON.stringify(PLANNING_PROJECTS))
+    };
+    HISTORY_STACK.push({ts:Date.now(),desc,user:_histUser(),snap});
+    if(HISTORY_STACK.length>HISTORY_MAX) HISTORY_STACK.shift();
+  }catch(e){ console.warn('[history] snapshot failed',e); }
+}
+function undoLast(){
+  const entry=HISTORY_STACK.pop();
+  if(!entry){ showToast&&showToast('Nothing to undo.'); return; }
+  try{
+    PROJECTS.length=0; entry.snap.projects.forEach(p=>PROJECTS.push(p));
+    PLANNING_PROJECTS.length=0; entry.snap.planning.forEach(p=>PLANNING_PROJECTS.push(p));
+    buildAll(); triggerSave();
+    showToast&&showToast('Undone: '+entry.desc);
+    renderSessionHistory();
+  }catch(e){ console.error('[undo]',e); showToast&&showToast('Undo failed.'); }
+}
+function _dragDesc(drag){
+  if(!drag) return null;
+  const proj=PROJECTS.find(p=>p.id===drag.projId);
+  const nm=proj?(proj.clientName||proj.name).split(/[,\u2013\u2014-]/)[0].trim():'project';
+  if(drag.type==='phaseMove'||drag.type==='laneMove') return `Moved phase — ${nm}`;
+  if(drag.type==='resize'||drag.type==='resizeLeft') return `Resized phase — ${nm}`;
+  if(drag.type==='projMove') return `Moved project — ${nm}`;
+  if(drag.type==='ms'||drag.type==='msProjMove') return `Moved milestone — ${nm}`;
+  if(drag.type==='personMove') return `Reassigned — ${nm}`;
+  if(drag.type==='timeoffMove') return 'Moved time off';
+  return 'Dragged element';
+}
+function openSessionHistory(){
+  renderSessionHistory();
+  document.getElementById('sessionHistoryPanel').classList.add('open');
+}
+function closeSessionHistory(){
+  document.getElementById('sessionHistoryPanel').classList.remove('open');
+}
+function renderSessionHistory(){
+  const list=document.getElementById('shList'); if(!list) return;
+  if(!HISTORY_STACK.length){ list.innerHTML='<div class="sh-empty">No changes recorded this session.</div>'; return; }
+  const fmt=ts=>{
+    const d=new Date(ts);
+    return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+  };
+  list.innerHTML=[...HISTORY_STACK].reverse().map((e,i)=>`
+    <div class="sh-row${i===0?' sh-top':''}">
+      <div class="sh-desc">${e.desc}</div>
+      <div class="sh-meta"><span class="sh-user">${e.user}</span><span class="sh-time">${fmt(e.ts)}</span></div>
+    </div>`).join('');
+}
 let PROD_PM_COLLAPSED=new Set(); // set of pmId strings
 let PROD_UNASSIGNED_COLLAPSED=false;
 let DESIGN_UNASSIGNED_COLLAPSED=false;
@@ -2549,6 +2654,10 @@ function buildCapCmdBar(section){
   right.appendChild(el('div','nav-sep'));
   const jumpBtn=el('button','nav-btn'); jumpBtn.textContent='Jump To'; jumpBtn.dataset.jumpBtn='1'; right.appendChild(jumpBtn);
   const capSpacer=el('span',''); capSpacer.style.flex='1'; right.appendChild(capSpacer);
+  right.appendChild(el('div','nav-sep'));
+  const histBtnCap=el('button','pp-hist-btn'); histBtnCap.dataset.openSessionHistory='1';
+  histBtnCap.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5V8l2.5 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Session History`;
+  right.appendChild(histBtnCap);
   right.appendChild(el('div','nav-sep'));
   const briefBtnCap=el('button','pp-hist-btn'); briefBtnCap.dataset.openBrief='1';
   briefBtnCap.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Weekly Review`;
@@ -2907,7 +3016,7 @@ function addProdProject(){
     addedAt:Date.now(), isOpenSlot:true, projType:'', projBudget:'$'+SLOT_DEFAULT_BUDGET.toLocaleString(), salesPerson:'',
     designer:null, productionPM:null, scheduled:true, lod:2, lodReason:'',
     designLane:{startWeek:sw,phases:[
-      {id:newId+'-d1',name:'Initial Design',durWeeks:6,hours:10,color:'#8EC5E0',linkedRight:true},
+      {id:newId+'-d1',name:'Phase One',durWeeks:6,hours:10,color:'#8EC5E0',linkedRight:true},
       {id:newId+'-d2',name:'Plan Detailing',durWeeks:16,hours:10,color:'#4A8AB5',linkedRight:true},
       {id:newId+'-d3',name:'Construction Design',durWeeks:4,hours:10,color:'#1E5580',linkedRight:null},
     ]},
@@ -3468,9 +3577,12 @@ function buildFcMsRow(proj, capacitySection){
     info.style.flex='none';
     // Replace status col with trash icon
     stCol.innerHTML='';
-    const trashBtn=el('button','fc-slot-delete'); trashBtn.dataset.deleteProdSlot=proj.id; trashBtn.title='Remove slot';
-    trashBtn.innerHTML=`<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M11 4l-.8 7.2A1 1 0 0 1 9.2 12H4.8a1 1 0 0 1-1-.8L3 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    stCol.appendChild(trashBtn); stCol.style.cssText=`width:${C.statusW}px;display:flex;align-items:center;justify-content:center;`;
+    if(ADMIN_MODE){
+      const trashBtn=el('button','fc-slot-delete'); trashBtn.dataset.deleteProdSlot=proj.id; trashBtn.title='Remove slot';
+      trashBtn.innerHTML=`<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M11 4l-.8 7.2A1 1 0 0 1 9.2 12H4.8a1 1 0 0 1-1-.8L3 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      stCol.appendChild(trashBtn);
+    }
+    stCol.style.cssText=`width:${C.statusW}px;display:flex;align-items:center;justify-content:center;`;
     const budgetK=Math.round(parseInt((proj.projBudget||'').replace(/[^0-9]/g,''))/1000)||Math.round(SLOT_DEFAULT_BUDGET/1000);
     const budWrap=el('div','fc-slot-budget');
     const budMn=el('button','fc-slot-budget-btn'); budMn.textContent='−'; budMn.dataset.slotBudgetDelta='-1'; budMn.dataset.slotBudgetProj=proj.id;
@@ -4443,6 +4555,7 @@ function refreshWkNums(projId){
 }
 function updateHours(phId,delta){
   const r=findPhase(phId); if(!r)return;
+  pushHistory(`Changed hours — ${(r.proj.clientName||r.proj.name||'project').split(/[,\u2013\u2014-]/)[0].trim()}`);
   r.ph.hours=Math.max(0,r.ph.hours+delta);
   document.querySelectorAll(`[data-hrs-id="${phId}"]`).forEach(v=>v.textContent=r.ph.hours+'h/w');
   renderTally(tallySection(laneOf(phId)));
@@ -4863,6 +4976,7 @@ function initDrag(){
       const idx=PROJECTS.findIndex(p=>p.id===pid);
       if(idx>=0){
         const proj=PROJECTS[idx];
+        pushHistory(`Deleted slot — ${proj.clientName||proj.name}`);
         const spId=proj._spItemId;
         PROJECTS.splice(idx,1);
         rebuildSection('production'); rebuildSection('planning'); refreshRevenueRow(); triggerSave();
@@ -4947,7 +5061,7 @@ function initDrag(){
     if(delBtn&&!canEdit()) return;
     if(delBtn){
       const idx=PLANNING_PROJECTS.findIndex(p=>p.id===delBtn.dataset.deletePlanningProj);
-      if(idx>=0){ PLANNING_PROJECTS.splice(idx,1); rebuildSection('planning'); triggerSave(); } return;
+      if(idx>=0){ pushHistory(`Removed planning project — ${PLANNING_PROJECTS[idx].name||'project'}`); PLANNING_PROJECTS.splice(idx,1); rebuildSection('planning'); triggerSave(); } return;
     }
     // Planning project — park/un-park
     const parkBtn=e.target.closest('[data-park-planning-proj]');
@@ -5058,7 +5172,7 @@ function initDrag(){
           proposedDesigner:pp.proposedDesigner||null,
           lod, lodReason:pp.lodReason||'', notes:pp.notes||'',
           designLane:{startWeek:sw,phases:[
-            {id:newId+'-d1',name:'Initial Design',durWeeks:6,hours:10,color:'#8EC5E0',linkedRight:true},
+            {id:newId+'-d1',name:'Phase One',durWeeks:6,hours:10,color:'#8EC5E0',linkedRight:true},
             {id:newId+'-d2',name:'Plan Detailing',durWeeks:pdDur,hours:10,color:'#4A8AB5',linkedRight:true},
             {id:newId+'-d3',name:'Construction Design',durWeeks:cdDur,hours:10,color:'#1E5580',linkedRight:null},
           ]},
@@ -5684,7 +5798,24 @@ function hideTT(){TT.classList.remove('show');}
       const projStartW=proj.designLane?proj.designLane.startWeek:0;
       const projWk=w-projStartW+1;
       if(projWk>=1){
-        showTTraw(`<div class="tt-d" style="color:rgba(255,255,255,.85);font-size:11px;font-weight:600;">Wk ${projWk} of project</div><div class="tt-d">${ds}</div>`,e);
+        let extra='';
+        const barEl=e.target.closest('.phase-bar');
+        if(barEl){
+          const laneRow=barEl.closest('.lane-row');
+          const laneId=laneRow&&laneRow.dataset.lane;
+          const phId=barEl.dataset.phaseId;
+          if(laneId==='design'){
+            const ph=proj.designLane&&proj.designLane.phases.find(p=>p.id===phId);
+            if(ph&&ph.durWeeks>0) extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">${ph.hours}h/wk avg</div>`;
+          } else if(laneId==='production'){
+            const ph=proj.productionLane&&proj.productionLane.phases.find(p=>p.id===phId);
+            if(ph&&/^construction$/i.test(ph.name.trim())&&ph.durWeeks>0){
+              const budget=parseBudget(proj.projBudget);
+              if(budget){ const perWk=Math.round(budget/ph.durWeeks); extra=`<div class="tt-d" style="color:rgba(255,255,255,.55);">$${perWk.toLocaleString()}/wk avg revenue</div>`; }
+            }
+          }
+        }
+        showTTraw(`<div class="tt-d" style="color:rgba(255,255,255,.85);font-size:11px;font-weight:600;">Wk ${projWk} of project</div><div class="tt-d">${ds}</div>${extra}`,e);
         return;
       }
     }
@@ -5777,7 +5908,7 @@ function triggerSave(dirtyProj){
   },900);
 }
 function patchSaveHooks(){
-  const _ou=onUp; onUp=function(){const wd=!!DRAG;_ou();if(wd)triggerSave();};
+  const _ou=onUp; onUp=function(){ const wd=!!DRAG; const _dd=wd&&DRAG?_dragDesc(DRAG):null; if(_dd) pushHistory(_dd); _ou(); if(wd) triggerSave(); };
   document.removeEventListener('pointerup',onUp);
 }
 
@@ -5930,6 +6061,10 @@ function buildPlanningSection(){
   addRow.appendChild(el('div','nav-sep'));
   const ppSpacer=el('span',''); ppSpacer.style.flex='1'; addRow.appendChild(ppSpacer);
   const ppSep2=el('div','nav-sep'); addRow.appendChild(ppSep2);
+  const ppHistBtn=el('button','pp-hist-btn'); ppHistBtn.dataset.openSessionHistory='1';
+  ppHistBtn.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5V8l2.5 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Session History`;
+  addRow.appendChild(ppHistBtn);
+  addRow.appendChild(el('div','nav-sep'));
   const ppBriefBtn=el('button','pp-hist-btn'); ppBriefBtn.dataset.openBrief='1';
   ppBriefBtn.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Weekly Review`;
   addRow.appendChild(ppBriefBtn);
@@ -6720,7 +6855,7 @@ function makeDefaultSchedule(spId,name,address,status,fields){
     designer:null, productionPM:null,
     scheduled: status==='ca-signed'||status==='da-signed',
     designLane:{startWeek:sw, phases:[
-      {id:projId+'-d1',name:'Initial Design',durWeeks:6,hours:8,color:'#8EC5E0',linkedRight:true},
+      {id:projId+'-d1',name:'Phase One',durWeeks:6,hours:8,color:'#8EC5E0',linkedRight:true},
       {id:projId+'-d2',name:'Plan Detailing',durWeeks:16,hours:8,color:'#4A8AB5',linkedRight:true},
       {id:projId+'-d3',name:'Construction Design',durWeeks:12,hours:8,color:'#1E5580',linkedRight:null},
     ]},
@@ -7952,7 +8087,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v450', date: '2026-05-13',
+    version: 'v451', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
@@ -8585,6 +8720,7 @@ document.addEventListener('click',e=>{
   if(e.target.closest('.focus-btn-dev')){ e.preventDefault(); return; }
   if(e.target.closest('#keyDatesBtn')){ if(window.toggleProdPanel) window.toggleProdPanel('production'); return; }
   if(e.target.closest('[data-open-brief]')){ openBrief(); return; }
+  if(e.target.closest('[data-open-session-history]')){ openSessionHistory(); return; }
   if(e.target.closest('#briefCloseBtn')){ closeBrief(); return; }
 
   // Set baseline — clears acks (new baseline = fresh diff)
@@ -8678,7 +8814,13 @@ document.addEventListener('click',e=>{
 // Keyboard: Escape closes brief if open
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&document.getElementById('briefPanel')?.classList.contains('open')) closeBrief();
+  if(e.key==='Escape'&&document.getElementById('sessionHistoryPanel')?.classList.contains('open')) closeSessionHistory();
 },{capture:true});
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='z'&&!e.shiftKey){ e.preventDefault(); undoLast(); }
+});
+document.getElementById('shUndoBtn').addEventListener('click',undoLast);
+document.getElementById('shCloseBtn').addEventListener('click',closeSessionHistory);
 
 // Load on boot from localStorage cache only — SP versions loaded after auth completes
 loadBriefBaseline();
