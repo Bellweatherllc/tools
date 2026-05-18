@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v466</title>
+<title>BW Project Pipeline — v469</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2264,7 +2264,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v466</div>
+    <div class="auth-version" id="authVersionBadge">v469</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2283,7 +2283,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v466</div>
+  <div class="proto-badge" id="versionBadge">v469</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3073,8 +3073,13 @@ function addProdPM(){
   PERSON_TARGETS[id]=20;
   buildAll(); triggerSave();
 }
-let _slotCtr=0;
-const _slotLetters=()=>{ const n=_slotCtr++; const letters=[]; let v=n; do{ letters.unshift(String.fromCharCode(65+v%26)); v=Math.floor(v/26)-1; }while(v>=0); return letters.join(''); };
+function _numToLetters(n){ const letters=[]; let v=n; do{ letters.unshift(String.fromCharCode(65+v%26)); v=Math.floor(v/26)-1; }while(v>=0); return letters.join(''); }
+function _lettersToNum(s){ let n=0; for(let i=0;i<s.length;i++) n=n*26+(s.toUpperCase().charCodeAt(i)-64); return n-1; }
+function _nextSlotLetter(){
+  let maxN=-1;
+  PROJECTS.forEach(p=>{ const m=p.name&&p.name.match(/^Slot\s+([A-Z]+)$/i); if(m){ const n=_lettersToNum(m[1]); if(n>maxN) maxN=n; } });
+  return _numToLetters(maxN+1);
+}
 function addProdProject(){
   const newId='proj-'+Date.now();
   const tw=todayWeek();
@@ -3088,7 +3093,7 @@ function addProdProject(){
   const pdEnd=prodStart-1;
   const sw=Math.max(0,pdEnd-22);
   PROJECTS.unshift({
-    id:newId, name:'Slot '+_slotLetters(), status:'projected', collapsed:true,
+    id:newId, name:'Slot '+_nextSlotLetter(), status:'projected', collapsed:true,
     addedAt:Date.now(), isOpenSlot:true, projType:'', projBudget:'$'+SLOT_DEFAULT_BUDGET.toLocaleString(), salesPerson:'',
     designer:null, productionPM:null, scheduled:true, lod:2, lodReason:'',
     designLane:{startWeek:sw,phases:[
@@ -3839,25 +3844,26 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     const dn=el('button','bar-caret'); dn.textContent='▼'; dn.dataset.phaseId=ph.id; dn.dataset.delta=String(-C.hrsStep); dn.style.color=metaC;
     stack.appendChild(up); stack.appendChild(dn); bar.appendChild(stack);
     const hv=el('span','bar-meta'); hv.dataset.hrsId=ph.id; hv.textContent=ph.hours+'h/w';
-    hv.style.cssText=`position:absolute;left:51px;top:50%;transform:translateY(-50%);font-size:13px;color:${metaC};`; bar.appendChild(hv);
+    hv.style.cssText=`position:absolute;left:51px;top:50%;transform:translateY(-50%);font-size:13px;color:${metaC};`;
+    bar.appendChild(hv);
   }
+  const leftOff=includeControls?113:35;
+  // Left: [wk count] [name] — week count comes first at left margin
   const ng=el('div','bar-name-group');
-  ng.style.cssText=`position:absolute;left:${includeControls?113:35}px;top:50%;transform:translateY(-50%);display:flex;align-items:baseline;gap:10px;overflow:visible;`;
+  ng.style.cssText=`position:absolute;left:${leftOff}px;top:50%;transform:translateY(-50%);display:flex;align-items:baseline;gap:6px;overflow:visible;pointer-events:none;`;
+  const wkcL=el('span','bar-meta'); wkcL.dataset.wksId=ph.id; wkcL.textContent=ph.durWeeks+'w';
+  wkcL.style.cssText=`font-size:13px;font-weight:600;color:${metaC};flex-shrink:0;white-space:nowrap;`;
   const nm=el('span','bar-name'); nm.textContent=ph.name;
   nm.style.cssText=`font-size:13px;white-space:nowrap;color:${txtC};flex-shrink:0;`;
-  ng.appendChild(nm);
-  const wkc=el('span','bar-meta'); wkc.dataset.wksId=ph.id; wkc.textContent=ph.durWeeks+'w';
-  wkc.style.cssText=`font-size:13px;color:${metaC};flex-shrink:0;white-space:nowrap;`;
-  ng.appendChild(wkc); bar.appendChild(ng);
-  // Right-edge week count — Construction phase only, sits just left of grab handle
-  if(/^construction$/i.test(ph.name.trim())){
-    const wkcR=el('span','bar-meta'); wkcR.dataset.wksId=ph.id; wkcR.textContent=ph.durWeeks+'w';
-    wkcR.style.cssText=`position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:12px;color:${metaC};pointer-events:none;white-space:nowrap;`;
-    bar.appendChild(wkcR);
-  }
+  ng.appendChild(wkcL); ng.appendChild(nm);
+  bar.appendChild(ng);
+  // Right: mirrored wk count at same distance from right edge as left count from left edge
+  const wkcR=el('span','bar-meta'); wkcR.dataset.wksId=ph.id; wkcR.textContent=ph.durWeeks+'w';
+  wkcR.style.cssText=`position:absolute;right:${leftOff}px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:600;color:${metaC};pointer-events:none;white-space:nowrap;`;
+  bar.appendChild(wkcR);
   const hdlL=el('div','resize-hdl-left'); hdlL.dataset.resizeLeftId=ph.id; bar.appendChild(hdlL);
   const hdl=el('div','resize-hdl'); hdl.dataset.resizeId=ph.id; bar.appendChild(hdl);
-  if(ph.isDesignProd){ bar.classList.add('is-design-prod'); bar.removeChild(hdlL); bar.removeChild(hdl); }
+  if(ph.isDesignProd){ bar.classList.add('is-design-prod'); }
   return bar;
 }
 // ════════════════════════════════════════════════  DESIGN PRODUCTION PHASE SYNC
@@ -4854,6 +4860,7 @@ function initDrag(){
     }
 
     const hdlL=e.target.closest('.resize-hdl-left');
+    if(hdlL&&!canEdit()) return;
     if(hdlL){
       e.preventDefault();
       const phId=hdlL.dataset.resizeLeftId, ph=phaseById(phId), bar=hdlL.closest('.phase-bar');
@@ -8231,7 +8238,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v466', date: '2026-05-13',
+    version: 'v469', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
