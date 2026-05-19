@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v475</title>
+<title>BW Project Pipeline — v477</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -198,8 +198,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .admin-mode .bar-caret-stack{display:flex;}
 .lane-row.ghost{ pointer-events:all; border-bottom:none; }
 .fc-proj-row.ghost{ border-bottom:none; }
-.lane-row.ghost .phase-bar{ opacity:0.28; }
-.lane-row.ghost .resize-hdl,.lane-row.ghost .resize-hdl-left{ display:none; }
+.lane-row.ghost .phase-bar{ opacity:1; }
 .fc-proj-row.ghost .fc-proj-sub{ opacity:0.35; font-style:italic; }
 .fc-slot-budget{display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:4px;}
 .fc-slot-budget-val{font-size:10px;font-weight:700;color:var(--ts);min-width:34px;text-align:center;user-select:none;}
@@ -2280,7 +2279,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v475</div>
+    <div class="auth-version" id="authVersionBadge">v477</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2299,7 +2298,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v475</div>
+  <div class="proto-badge" id="versionBadge">v477</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3340,7 +3339,7 @@ function isUnsignedStatus(st){return st==='projected'||st==='paused'||st==='canc
 function hexRgb(h){ return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]; }
 function barBg(proj,ph){
   if(ph.id===proj.permitting.id&&ph.trackStatus){ const tc={'on-track':'#4a8a60','at-risk':'#d07820','off-track':'#ac2828'}; const base=tc[ph.trackStatus]||'#afa79d'; if(isUnsignedStatus(proj.status)){const[r,g,b]=hexRgb(base);return`rgba(${r},${g},${b},.30)`;}return base; }
-  if(ph.isDesignProd){ return isUnsignedStatus(proj.status)?'rgba(74,138,181,.28)':'rgba(74,138,181,.68)'; }
+  if(ph.isDesignProd){ return '#4A8AB5'; }
   const isDesign=proj.designLane.phases.some(p=>p.id===ph.id);
   const isProd=proj.productionLane.phases.some(p=>p.id===ph.id);
   const useUnsigned=isUnsignedStatus(proj.status);
@@ -4966,10 +4965,10 @@ function initDrag(){
 
     // Collapsed-band drag — replaces the tl-ms-row path when band has pointer-events
     const colBand=e.target.closest('.collapsed-band');
-    if(colBand&&canEdit()){
+    if(colBand){
       const projId=colBand.dataset.projId;
       const proj=PROJECTS.find(p=>p.id===projId);
-      if(proj&&proj.collapsed){
+      if(proj&&proj.collapsed&&canEdit()){
         const isSel=SELECTED_PROJ_ID===projId;
         if(!isSel&&!e.altKey){ e.preventDefault(); selectElem(projId,projId); return; }
         e.preventDefault();
@@ -4980,6 +4979,10 @@ function initDrag(){
               milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane};
         capture(colBand,e.pointerId); return;
       }
+      // Not admin or no project match — pan scroll
+      e.preventDefault();
+      const scroller=colBand.closest('.split-pane')||colBand.closest('.section-scroll')||document.querySelector('.outer-scroll');
+      if(scroller){ document.body.classList.add('is-panning'); DRAG={type:'panScroll',startX:e.clientX,origScrollLeft:scroller.scrollLeft,scroller}; capture(colBand,e.pointerId); } return;
     }
 
     const bar=e.target.closest('.phase-bar');
@@ -5061,11 +5064,11 @@ function initDrag(){
     const arcBtn=e.target.closest('[data-open-archive]'); if(arcBtn){openArchiveModal();return;}
     const shBtn=e.target.closest('[data-open-session-history]'); if(shBtn){openSessionHistory();return;}
     const grpBtn=e.target.closest('[data-toggle-grouped]'); if(grpBtn){toggleGrouped(grpBtn.dataset.toggleGrouped);return;}
-    // Click selected bar → deselect
+    // Click selected bar → deselect (but not if this click was the one that just selected it)
     const clickedBar=e.target.closest('.phase-bar');
-    if(clickedBar&&SELECTED_PROJ_ID===clickedBar.dataset.projId){ clearSelection(); return; }
+    if(clickedBar&&!_justSelected&&SELECTED_PROJ_ID===clickedBar.dataset.projId){ clearSelection(); return; }
     const clickedMs=e.target.closest('.ms-tall');
-    if(clickedMs&&SELECTED_PROJ_ID===clickedMs.dataset.projId){ clearSelection(); return; }
+    if(clickedMs&&!_justSelected&&SELECTED_PROJ_ID===clickedMs.dataset.projId){ clearSelection(); return; }
     // Click empty space → deselect (exclude interactive elements but NOT generic data-proj-id)
     if(SELECTED_PROJ_ID&&!e.target.closest('.phase-bar,.ms-tall,.fc-ms-row,.fc-note-btn,button,.timeoff-block,.resize-hdl,.resize-hdl-left')){
       clearSelection();
@@ -6082,6 +6085,8 @@ function patchSaveHooks(){
     if(wd){
       try{ if(snap&&pre) _histPush(_buildDragDesc(pre),snap); }catch(e){}
       triggerSave();
+      // Re-apply glow in case drag refreshed DOM elements
+      if(SELECTED_PROJ_ID) requestAnimationFrame(()=>selectElem(SELECTED_PROJ_ID,SELECTED_ELEM_ID));
     }
   };
   document.removeEventListener('pointerup',onUp);
@@ -7299,11 +7304,13 @@ msalApp.handleRedirectPromise().then(resp=>{
 });
 
 // ════════════════════════════════════════════════  SELECTION
-let SELECTED_PROJ_ID=null, SELECTED_ELEM_ID=null, _altHintShown=false;
-function _chainSvg(){ return 'Linked'; }
-function _brokenChainSvg(){ return 'Unlinked'; }
+let SELECTED_PROJ_ID=null, SELECTED_ELEM_ID=null, _altHintShown=false, _justSelected=false;
+function _chainSvg(){ return 'Phases Linked'; }
+function _brokenChainSvg(){ return 'Phases Unlinked'; }
 function selectElem(projId, elemId){
   clearSelection();
+  _justSelected=true;
+  requestAnimationFrame(()=>{ _justSelected=false; });
   const proj=PROJECTS.find(p=>p.id===projId);
   SELECTED_PROJ_ID=projId; SELECTED_ELEM_ID=elemId;
   const grouped=!proj||proj.grouped!==false;
@@ -8382,7 +8389,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v475', date: '2026-05-13',
+    version: 'v477', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
