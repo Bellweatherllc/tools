@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v470</title>
+<title>BW Project Pipeline — v471</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2264,7 +2264,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v470</div>
+    <div class="auth-version" id="authVersionBadge">v471</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2283,7 +2283,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v470</div>
+  <div class="proto-badge" id="versionBadge">v471</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7005,6 +7005,29 @@ async function loadTeamMembers(saved){
     // Leadership / Project Coordinator don't appear in the Gantt rows
   });
   PERSON_TARGETS['prod-total']=PROD_PMS.reduce((s,p)=>s+getTarget(p.id),0);
+
+  // ── Resolve PipelineRole for signed-in user ──
+  CURRENT_USER_ROLE='readonly'; // reset to safe default each load
+  try{
+    const acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
+    if(acct){
+      const signedInEmail=(acct.username||'').trim().toLowerCase();
+      const signedInName=(acct.name||'').trim().toLowerCase();
+      const match=items.find(item=>{
+        const f=item.fields||{};
+        const email=(f.WorkEmail||f.Email||f.UserEmail||f.EMail||'').trim().toLowerCase();
+        const name=(f.EmployeeName||f.Title||'').trim().toLowerCase();
+        return (email&&signedInEmail&&email===signedInEmail)||(name&&signedInName&&name===signedInName);
+      });
+      if(match){
+        const raw=((match.fields||{}).PipelineRole||'').trim().toLowerCase();
+        CURRENT_USER_ROLE=raw==='admin'?'admin':'readonly';
+        console.log('[auth] PipelineRole resolved:',CURRENT_USER_ROLE,'for',acct.name);
+      } else {
+        console.warn('[auth] No CORE_TeamMembers match for signed-in user — defaulting to readonly. username:',acct.username,'name:',acct.name);
+      }
+    }
+  }catch(e){ console.warn('[auth] PipelineRole resolution failed:',e); }
 }
 
 // ── Name-match helper: find person by first name against team arrays ──
@@ -7168,6 +7191,7 @@ async function initFromSharePoint(){
     hideAuthOverlay();
     applyCalRange();
     buildAll();
+    applyAdminEligibility();
     // Load brief data from SP (async, non-blocking — in-memory state used when brief opens)
     loadBriefBaselineFromSP().catch(()=>{});
     loadBriefBugsFromSP().catch(()=>{});
@@ -7207,8 +7231,16 @@ msalApp.handleRedirectPromise().then(resp=>{
 
 // ════════════════════════════════════════════════  ADMIN MODE
 let IS_ADMIN_MODE=false;
+let CURRENT_USER_ROLE='readonly'; // safe default — overwritten after SP auth
 function canEdit(){ return IS_ADMIN_MODE; }
+function applyAdminEligibility(){
+  const eligible=CURRENT_USER_ROLE==='admin';
+  const ctrl=document.getElementById('adminControl');
+  if(ctrl) ctrl.style.display=eligible?'':'none';
+  if(!eligible&&IS_ADMIN_MODE){ IS_ADMIN_MODE=false; document.body.classList.remove('admin-mode'); }
+}
 function toggleAdminMode(){
+  if(CURRENT_USER_ROLE!=='admin'){ showToast&&showToast('Admin access required.'); return; }
   IS_ADMIN_MODE=!IS_ADMIN_MODE;
   document.body.classList.toggle('admin-mode',IS_ADMIN_MODE);
   const cb=document.getElementById('adminCheckbox');
@@ -8239,7 +8271,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v470', date: '2026-05-13',
+    version: 'v471', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
