@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v479</title>
+<title>BW Project Pipeline — v480</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -396,17 +396,18 @@ body.is-panning *{cursor:grabbing!important;}
 }
 .phase-bar:hover .resize-hdl,.phase-bar:hover .resize-hdl-left{opacity:1;background:rgba(0,0,0,.2);}
 /* ── Selection glow ── */
-.sel-glow{outline:2px solid #ff3b30;outline-offset:1px;animation:sel-pulse 1.5s ease-in-out infinite;}
+.sel-glow{outline:2px solid #ff3b30;outline-offset:1px;filter:drop-shadow(0 0 4px rgba(255,59,48,.55));animation:sel-pulse 1.5s ease-in-out infinite;}
 @keyframes sel-pulse{
   0%,100%{outline-color:#ff3b30;outline-offset:1px;}
   50%{outline-color:#ff7b73;outline-offset:2px;}
 }
-.ms-tall.sel-glow{filter:drop-shadow(0 0 3px #ff3b30);outline:2px solid #ff3b30;outline-offset:1px;}
+.ms-tall.sel-glow{filter:drop-shadow(0 0 5px rgba(255,59,48,.7));outline:2px solid #ff3b30;outline-offset:2px;}
 .group-toggle.sel-glow-toggle{outline:1.5px solid rgba(255,59,48,.55);outline-offset:2px;animation:sel-pulse-soft 2s ease-in-out infinite;}
 @keyframes sel-pulse-soft{
   0%,100%{outline-color:rgba(255,59,48,.55);}
   50%{outline-color:rgba(255,59,48,.18);}
 }
+.lane-row.ghost .resize-hdl,.lane-row.ghost .resize-hdl-left{display:none;}
 /* ── Group toggle button ── */
 .group-toggle{display:none;height:22px;border:none;border-radius:4px;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;padding:0 8px;font-size:10px;font-weight:700;letter-spacing:.04em;transition:background .12s,color .12s;white-space:nowrap;}
 body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{display:flex;}
@@ -2284,7 +2285,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v479</div>
+    <div class="auth-version" id="authVersionBadge">v480</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2303,7 +2304,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v479</div>
+  <div class="proto-badge" id="versionBadge">v480</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4876,13 +4877,24 @@ function initDrag(){
     if(msEl){
       const _msId=msEl.dataset.msId, _msProjId=msEl.dataset.projId;
       const _msProj=PROJECTS.find(p=>p.id===_msProjId);
+      // Collapsed mode: no editing at all
+      if(_msProj&&_msProj.collapsed) return;
       const _msGrouped=!_msProj||_msProj.grouped!==false;
       const _msSel=_msGrouped?SELECTED_PROJ_ID===_msProjId:SELECTED_ELEM_ID===_msId;
       if(!_msSel&&!e.altKey) selectElem(_msProjId,_msId); // select on first touch; fall through to arm drag
       e.preventDefault();
       const id=msEl.dataset.msId, projId=msEl.dataset.projId;
       const proj=PROJECTS.find(p=>p.id===projId), ms=msById(id);
-      if(proj&&proj.collapsed)return;
+      // Linked mode: milestone drag moves everything together via projMove
+      if(_msGrouped){
+        const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
+        const origStarts=allPhs.map(p=>p.startWeek);
+        const origMsWeeks=proj.milestones.map(m=>m.week);
+        DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts,origMsWeeks,
+              milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane};
+        document.querySelectorAll(`.ms-tall[data-ms-id="${id}"]`).forEach(m=>m.classList.add('dragging'));
+        capture(msEl,e.pointerId); return;
+      }
       const sibling=proj.milestones.find(m=>m.id!==id), isDA=ms.name==='DA';
       let minWeek, maxWeek;
       if(isDA){
@@ -4988,20 +5000,7 @@ function initDrag(){
     // Collapsed-band drag — replaces the tl-ms-row path when band has pointer-events
     const colBand=e.target.closest('.collapsed-band');
     if(colBand){
-      const projId=colBand.dataset.projId;
-      const proj=PROJECTS.find(p=>p.id===projId);
-      if(proj&&proj.collapsed&&canEdit()){
-        const isSel=SELECTED_PROJ_ID===projId;
-        if(!isSel&&!e.altKey) selectElem(projId,projId); // select on first touch; fall through
-        e.preventDefault();
-        const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
-        const origStarts=allPhs.map(p=>p.startWeek);
-        const origMsWeeks=proj.milestones.map(m=>m.week);
-        DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts,origMsWeeks,
-              milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane};
-        capture(colBand,e.pointerId); return;
-      }
-      // Not admin or no project match — pan scroll
+      // Collapsed mode = navigation only; never edit regardless of admin state
       e.preventDefault();
       const scroller=colBand.closest('.split-pane')||colBand.closest('.section-scroll')||document.querySelector('.outer-scroll');
       if(scroller){ document.body.classList.add('is-panning'); DRAG={type:'panScroll',startX:e.clientX,origScrollLeft:scroller.scrollLeft,scroller}; capture(colBand,e.pointerId); } return;
@@ -5973,7 +5972,7 @@ function hideTT(){TT.classList.remove('show');}
     if(DRAG) return;
     if(e.target.closest('.ms-tall')) return; // ms has own tooltip
     // Only show tooltip when over an interactive element, not empty lane space
-    if(!e.target.closest('.phase-bar,.timeoff-block,.collapsed-band')){hideTT();return;}
+    if(!e.target.closest('.phase-bar,.timeoff-block')){hideTT();return;}
     const ss=e.target.closest('.section-scroll');
     if(!ss){hideTT();return;}
     if(e.target.closest('.fixed-col')){hideTT();return;}
@@ -7344,8 +7343,8 @@ function selectElem(projId, elemId){
   SELECTED_PROJ_ID=projId; SELECTED_ELEM_ID=elemId;
   const grouped=!proj||proj.grouped!==false;
   if(grouped){
-    // Grouped: glow all phase bars (not milestones — they're "time arrows")
-    document.querySelectorAll(`[data-proj-id="${projId}"].phase-bar`).forEach(el=>el.classList.add('sel-glow'));
+    // Grouped: glow all phase bars and milestones
+    document.querySelectorAll(`[data-proj-id="${projId}"].phase-bar,[data-proj-id="${projId}"].ms-tall`).forEach(el=>el.classList.add('sel-glow'));
     // Subtle glow on the group toggle button
     document.querySelectorAll(`[data-toggle-grouped="${projId}"]`).forEach(btn=>btn.classList.add('sel-glow-toggle'));
   } else {
@@ -8420,7 +8419,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v479', date: '2026-05-13',
+    version: 'v480', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
