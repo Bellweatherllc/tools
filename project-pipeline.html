@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v477</title>
+<title>BW Project Pipeline — v478</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2279,7 +2279,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v477</div>
+    <div class="auth-version" id="authVersionBadge">v478</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2298,7 +2298,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v477</div>
+  <div class="proto-badge" id="versionBadge">v478</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2552,8 +2552,14 @@ function _projShortName(proj){
 }
 function _captureDragPre(drag){
   if(!drag) return null;
+  if(drag.type==='panScroll'||drag.type==='projCapacityReorder') return null;
   const proj=PROJECTS.find(p=>p.id===drag.projId)||null;
   const nm=_projShortName(proj);
+  // For projMove, capture the current design start position for shift description
+  if(drag.type==='projMove'){
+    const firstPh=proj?.designLane?.phases.find(p=>!p.isDesignProd&&p.durWeeks>0);
+    return{type:'projMove',nm,projId:drag.projId,oldFirstPhStart:firstPh?.startWeek??null,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
+  }
   let phInfo=null;
   if(drag.phaseId){
     const r=findPhase(drag.phaseId);
@@ -2598,7 +2604,16 @@ function _buildDragDesc(pre){
       return `${nm}: "${msInfo.name}" ${d(msInfo.week)} → ${d(ms.week)}`;
     return `${nm}: "${msInfo.name}" milestone moved`;
   }
-  if(type==='projMove') return `${nm}: moved to new position`;
+  if(type==='projMove'){
+    const proj=PROJECTS.find(p=>p.id===projId);
+    const firstPh=proj?.designLane?.phases.find(p=>!p.isDesignProd&&p.durWeeks>0);
+    const newStart=firstPh?.startWeek;
+    if(newStart!=null&&pre.oldFirstPhStart!=null&&newStart!==pre.oldFirstPhStart){
+      const shift=newStart-pre.oldFirstPhStart;
+      return `${nm}: ${d(pre.oldFirstPhStart)} → ${d(newStart)} (${shift>0?'+':''}${shift}w)`;
+    }
+    return `${nm}: moved`;
+  }
   if(type==='personMove'){
     const from=oldPerson?_personLabel(oldPerson):'?';
     const to=newPerson?_personLabel(newPerson):'?';
@@ -4856,7 +4871,7 @@ function initDrag(){
       const _msProj=PROJECTS.find(p=>p.id===_msProjId);
       const _msGrouped=!_msProj||_msProj.grouped!==false;
       const _msSel=_msGrouped?SELECTED_PROJ_ID===_msProjId:SELECTED_ELEM_ID===_msId;
-      if(!_msSel&&!e.altKey){ e.preventDefault(); selectElem(_msProjId,_msId); return; }
+      if(!_msSel&&!e.altKey) selectElem(_msProjId,_msId); // select on first touch; fall through to arm drag
       e.preventDefault();
       const id=msEl.dataset.msId, projId=msEl.dataset.projId;
       const proj=PROJECTS.find(p=>p.id===projId), ms=msById(id);
@@ -4970,7 +4985,7 @@ function initDrag(){
       const proj=PROJECTS.find(p=>p.id===projId);
       if(proj&&proj.collapsed&&canEdit()){
         const isSel=SELECTED_PROJ_ID===projId;
-        if(!isSel&&!e.altKey){ e.preventDefault(); selectElem(projId,projId); return; }
+        if(!isSel&&!e.altKey) selectElem(projId,projId); // select on first touch; fall through
         e.preventDefault();
         const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,proj.permitting];
         const origStarts=allPhs.map(p=>p.startWeek);
@@ -4994,7 +5009,7 @@ function initDrag(){
       const _barProj=PROJECTS.find(p=>p.id===_barProjId);
       const _barGrouped=!_barProj||_barProj.grouped!==false;
       const _barSel=_barGrouped?SELECTED_PROJ_ID===_barProjId:SELECTED_ELEM_ID===_barPhId;
-      if(!_barSel&&!e.altKey){ e.preventDefault(); selectElem(_barProjId,_barPhId); return; }
+      if(!_barSel&&!e.altKey) selectElem(_barProjId,_barPhId); // select on first touch; fall through to arm drag
       e.preventDefault();
       const laneId=bar.dataset.lane, projId=bar.dataset.projId;
       const proj=PROJECTS.find(p=>p.id===projId);
@@ -5716,6 +5731,7 @@ function onMove(e){
 
   if(DRAG.type==='projMove'){
     const minOrig=Math.min(...DRAG.origStarts), clampedDw=Math.max(-minOrig,dw);
+    if(clampedDw!==0) _dragMoved=true;
     DRAG.allPhs.forEach((ph,i)=>{ ph.startWeek=DRAG.origStarts[i]+clampedDw; });
     DRAG.designLane.startWeek=DRAG.designLane.phases[0].startWeek;
     DRAG.prodLane.startWeek=DRAG.prodLane.phases[0].startWeek;
@@ -5764,6 +5780,7 @@ function onMove(e){
     if(DRAG.designCascadeRight&&dw>0) maxDw=DRAG.designCascadeRight.maxDw;
     if(DRAG.designCascadeLeft&&dw<0)  minDw=DRAG.designCascadeLeft.minDw;
     const clampedDw=Math.max(minDw,Math.min(maxDw,dw));
+    if(clampedDw!==0) _dragMoved=true;
     DRAG.chain.forEach((ph,i)=>{ ph.startWeek=DRAG.origStarts[i]+clampedDw; });
     const proj=PROJECTS.find(p=>p.id===DRAG.projId);
     if(DRAG.chainStart===0) getLane(proj,DRAG.laneId).startWeek=DRAG.chain[0].startWeek;
@@ -6083,7 +6100,8 @@ function patchSaveHooks(){
     if(wd&&DRAG){ try{ snap=_histSnap(); pre=_captureDragPre(DRAG); }catch(e){} }
     _ou();
     if(wd){
-      try{ if(snap&&pre) _histPush(_buildDragDesc(pre),snap); }catch(e){}
+      try{ if(_dragMoved&&snap&&pre) _histPush(_buildDragDesc(pre),snap); }catch(e){}
+      _dragMoved=false;
       triggerSave();
       // Re-apply glow in case drag refreshed DOM elements
       if(SELECTED_PROJ_ID) requestAnimationFrame(()=>selectElem(SELECTED_PROJ_ID,SELECTED_ELEM_ID));
@@ -7304,7 +7322,7 @@ msalApp.handleRedirectPromise().then(resp=>{
 });
 
 // ════════════════════════════════════════════════  SELECTION
-let SELECTED_PROJ_ID=null, SELECTED_ELEM_ID=null, _altHintShown=false, _justSelected=false;
+let SELECTED_PROJ_ID=null, SELECTED_ELEM_ID=null, _altHintShown=false, _justSelected=false, _dragMoved=false;
 function _chainSvg(){ return 'Phases Linked'; }
 function _brokenChainSvg(){ return 'Phases Unlinked'; }
 function selectElem(projId, elemId){
@@ -8389,7 +8407,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v477', date: '2026-05-13',
+    version: 'v478', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
