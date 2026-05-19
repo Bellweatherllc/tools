@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v478</title>
+<title>BW Project Pipeline — v479</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -396,12 +396,17 @@ body.is-panning *{cursor:grabbing!important;}
 }
 .phase-bar:hover .resize-hdl,.phase-bar:hover .resize-hdl-left{opacity:1;background:rgba(0,0,0,.2);}
 /* ── Selection glow ── */
-.sel-glow{animation:sel-pulse 1.5s ease-in-out infinite;}
+.sel-glow{outline:2px solid #ff3b30;outline-offset:1px;animation:sel-pulse 1.5s ease-in-out infinite;}
 @keyframes sel-pulse{
-  0%,100%{box-shadow:0 0 0 2px #ff3b30,0 0 10px 3px rgba(255,59,48,.45);}
-  50%{box-shadow:0 0 0 2px #ff3b30,0 0 18px 7px rgba(255,59,48,.25);}
+  0%,100%{outline-color:#ff3b30;outline-offset:1px;}
+  50%{outline-color:#ff7b73;outline-offset:2px;}
 }
-.ms-tall.sel-glow{filter:drop-shadow(0 0 4px #ff3b30);outline:2px solid #ff3b30;outline-offset:1px;}
+.ms-tall.sel-glow{filter:drop-shadow(0 0 3px #ff3b30);outline:2px solid #ff3b30;outline-offset:1px;}
+.group-toggle.sel-glow-toggle{outline:1.5px solid rgba(255,59,48,.55);outline-offset:2px;animation:sel-pulse-soft 2s ease-in-out infinite;}
+@keyframes sel-pulse-soft{
+  0%,100%{outline-color:rgba(255,59,48,.55);}
+  50%{outline-color:rgba(255,59,48,.18);}
+}
 /* ── Group toggle button ── */
 .group-toggle{display:none;height:22px;border:none;border-radius:4px;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;padding:0 8px;font-size:10px;font-weight:700;letter-spacing:.04em;transition:background .12s,color .12s;white-space:nowrap;}
 body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{display:flex;}
@@ -2279,7 +2284,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v478</div>
+    <div class="auth-version" id="authVersionBadge">v479</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2298,7 +2303,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v478</div>
+  <div class="proto-badge" id="versionBadge">v479</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3931,13 +3936,15 @@ function buildLaneRow(proj,laneId,includeControls,showJunctions,isGhost){
 }
 function populateBars(row,proj,laneId,includeControls,showJunctions,isGhost){
   row.querySelectorAll('.phase-bar').forEach(b=>b.remove());
+  // Hour controls only apply to design/permitting lanes
+  const ic=includeControls&&(laneId==='design'||laneId==='permitting');
   if(laneId==='design'){
     proj.designLane.phases
       .filter(ph=>!/construction design/i.test(ph.name))
-      .forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,includeControls,showJunctions)));
+      .forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,ic,showJunctions)));
   }
-  else if(laneId==='permitting'){ row.appendChild(buildBar(proj,proj.permitting,laneId,includeControls,showJunctions)); }
-  else{ proj.productionLane.phases.forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,includeControls,showJunctions))); }
+  else if(laneId==='permitting'){ row.appendChild(buildBar(proj,proj.permitting,laneId,ic,showJunctions)); }
+  else{ proj.productionLane.phases.forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,false,showJunctions))); }
 }
 
 function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,grpNudgeY,skipMsNames,ghostLaneIds){
@@ -4137,7 +4144,7 @@ function buildDesignSection(){
     tlGrp.style.width=w2px(C.numWeeks)+'px';
     if(!DESIGN_UNASSIGNED_COLLAPSED){
       if(unassigned.length>0){
-        unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['design','permitting'],true,true)); tlGrp.appendChild(sg); });
+        unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['design','permitting'],true,true,undefined,0,null,['production'])); tlGrp.appendChild(sg); });
       } else { const s=el('div','unassigned-placeholder-tl'); s.style.width=w2px(C.numWeeks)+'px'; tlGrp.appendChild(s); }
     }
     tc.appendChild(tlGrp);
@@ -4151,7 +4158,7 @@ function buildDesignSection(){
       if(!collapsed){
         const grp=el('div','person-group-tl'); grp.dataset.personId=person.id; grp.dataset.section='design';
         const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer===person.id),'design');
-        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['design','permitting'],true,true,undefined,-8)));
+        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['design','permitting'],true,true,undefined,-8,null,['production'])));
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=person.id; ov.dataset.section='design';
         const ovH=calcPersonGroupH(person,'design');
         ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:${ovH}px;pointer-events:none;z-index:10;`;
@@ -4172,7 +4179,7 @@ function buildDesignSection(){
   fc.appendChild(fcUnSep);
   const fcGrp=el('div','unassigned-group-fc'); fcGrp.classList.toggle('has-projects',unassigned.length>0);
   if(!DESIGN_UNASSIGNED_COLLAPSED){
-    if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'design')); fcGrp.appendChild(buildFcLanesBlock(proj,['Design','Permits/Zoning'])); }); }
+    if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'design')); fcGrp.appendChild(buildFcLanesBlock(proj,['Design','Permits/Zoning'],['Production'])); }); }
     else { fcGrp.appendChild(el('div','unassigned-placeholder-fc')); }
   }
   fc.appendChild(fcGrp);
@@ -4191,7 +4198,7 @@ function buildDesignSection(){
     fc.appendChild(hdr);
     if(!DESIGN_COLLAPSED.has(person.id)){
       const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer===person.id),'design');
-      projs.forEach(proj=>{ fc.appendChild(buildFcMsRow(proj,'design')); fc.appendChild(buildFcLanesBlock(proj,['Design','Permits/Zoning'])); });
+      projs.forEach(proj=>{ fc.appendChild(buildFcMsRow(proj,'design')); fc.appendChild(buildFcLanesBlock(proj,['Design','Permits/Zoning'],['Production'])); });
     }
   });
 
@@ -4963,7 +4970,7 @@ function initDrag(){
         const projId=lRow.dataset.projId;
         const proj=PROJECTS.find(p=>p.id===projId);
         if(proj&&!proj.collapsed){
-          const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,proj.permitting];
+          const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
           const origStarts=allPhs.map(p=>p.startWeek);
           const origMsWeeks=proj.milestones.map(m=>m.week);
           DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts,origMsWeeks,
@@ -4987,7 +4994,7 @@ function initDrag(){
         const isSel=SELECTED_PROJ_ID===projId;
         if(!isSel&&!e.altKey) selectElem(projId,projId); // select on first touch; fall through
         e.preventDefault();
-        const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,proj.permitting];
+        const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
         const origStarts=allPhs.map(p=>p.startWeek);
         const origMsWeeks=proj.milestones.map(m=>m.week);
         DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts,origMsWeeks,
@@ -5004,7 +5011,11 @@ function initDrag(){
     if(bar&&!canEdit()) return;
     if(bar){
       const _dpPh=phaseById(bar.dataset.phaseId);
-      if(_dpPh&&_dpPh.isDesignProd) return;
+      // isDesignProd: block only ungrouped individual drag; grouped projMove is fine
+      if(_dpPh&&_dpPh.isDesignProd){
+        const _p=PROJECTS.find(p=>p.id===bar.dataset.projId);
+        if(!_p||_p.grouped===false){ if(!SELECTED_PROJ_ID) selectElem(bar.dataset.projId,bar.dataset.phaseId); return; }
+      }
       const _barProjId=bar.dataset.projId, _barPhId=bar.dataset.phaseId;
       const _barProj=PROJECTS.find(p=>p.id===_barProjId);
       const _barGrouped=!_barProj||_barProj.grouped!==false;
@@ -5051,7 +5062,7 @@ function initDrag(){
       if(proj&&proj.grouped===false){ cascadeLeft=null; designCascadeRight=null; designCascadeLeft=null; }
       // Grouped: use projMove so all phases + milestones move as a unit
       if(proj&&proj.grouped!==false){
-        const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,proj.permitting];
+        const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
         const origAllStarts=allPhs.map(p=>p.startWeek);
         const origMsWeeks=proj.milestones.map(m=>m.week);
         DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts:origAllStarts,origMsWeeks,
@@ -7333,9 +7344,10 @@ function selectElem(projId, elemId){
   SELECTED_PROJ_ID=projId; SELECTED_ELEM_ID=elemId;
   const grouped=!proj||proj.grouped!==false;
   if(grouped){
-    document.querySelectorAll(`[data-proj-id="${projId}"]`).forEach(el=>{
-      if(el.classList.contains('phase-bar')||el.classList.contains('ms-tall')) el.classList.add('sel-glow');
-    });
+    // Grouped: glow all phase bars (not milestones — they're "time arrows")
+    document.querySelectorAll(`[data-proj-id="${projId}"].phase-bar`).forEach(el=>el.classList.add('sel-glow'));
+    // Subtle glow on the group toggle button
+    document.querySelectorAll(`[data-toggle-grouped="${projId}"]`).forEach(btn=>btn.classList.add('sel-glow-toggle'));
   } else {
     document.querySelectorAll(`[data-phase-id="${elemId}"],[data-ms-id="${elemId}"]`).forEach(el=>el.classList.add('sel-glow'));
   }
@@ -7344,6 +7356,7 @@ function selectElem(projId, elemId){
 function clearSelection(){
   SELECTED_PROJ_ID=null; SELECTED_ELEM_ID=null;
   document.querySelectorAll('.sel-glow').forEach(el=>el.classList.remove('sel-glow'));
+  document.querySelectorAll('.sel-glow-toggle').forEach(el=>el.classList.remove('sel-glow-toggle'));
 }
 function _showAltHint(){
   if(_altHintShown) return;
@@ -8407,7 +8420,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v478', date: '2026-05-13',
+    version: 'v479', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
