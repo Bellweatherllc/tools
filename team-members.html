@@ -1,4 +1,9 @@
 <!DOCTYPE html>
+<!-- ═══════════════════════════════════════════════════════════════
+     team-members.html — CORE Team Members Manager
+     Version: v2  (bump version badge in .header-right on every revision)
+     Hosted at: bellweatherllc.github.io/tools/team-members.html
+     ═══════════════════════════════════════════════════════════════ -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -75,8 +80,8 @@ body { font-family: 'DM Sans', sans-serif; background: var(--snow); color: var(-
 
 /* Table */
 .members-table { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
-.table-header { display: grid; grid-template-columns: 1fr 140px 80px 100px; gap: 0; padding: 10px 16px; background: var(--cloud); font-size: 11px; font-weight: 600; color: var(--steel); text-transform: uppercase; letter-spacing: 0.06em; }
-.member-row { display: grid; grid-template-columns: 1fr 140px 80px 100px; gap: 0; padding: 12px 16px; border-bottom: 1px solid var(--snow); align-items: center; transition: background 0.1s; }
+.table-header { display: grid; grid-template-columns: 1fr 130px 120px 80px 100px; gap: 0; padding: 10px 16px; background: var(--cloud); font-size: 11px; font-weight: 600; color: var(--steel); text-transform: uppercase; letter-spacing: 0.06em; }
+.member-row { display: grid; grid-template-columns: 1fr 130px 120px 80px 100px; gap: 0; padding: 12px 16px; border-bottom: 1px solid var(--snow); align-items: center; transition: background 0.1s; }
 .member-row:last-child { border-bottom: none; }
 .member-row:hover { background: var(--snow); }
 .member-row.editing { background: var(--gold-dim); }
@@ -85,6 +90,9 @@ body { font-family: 'DM Sans', sans-serif; background: var(--snow); color: var(-
 .active-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 12px; }
 .active-badge.yes { background: var(--green-bg); color: var(--green); }
 .active-badge.no { background: var(--cloud); color: var(--steel); }
+.role-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 12px; }
+.role-badge.admin { background: #fef3e2; color: var(--amber); border: 1px solid rgba(200,149,62,.25); }
+.role-badge.readonly { background: var(--cloud); color: var(--steel); }
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
 /* Inline edit */
@@ -100,6 +108,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--snow); color: var(-
 
 /* Loading */
 .loading { padding: 48px; text-align: center; color: var(--steel); font-size: 14px; }
+.version-badge { font-size: 10px; font-weight: 700; color: var(--gold); letter-spacing: .06em; opacity: .75; }
 .sort-bar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
 .sort-label { font-size: 12px; color: var(--steel); }
 </style>
@@ -112,6 +121,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--snow); color: var(-
     <span class="header-title">Team Members</span>
   </div>
   <div class="header-right">
+    <span class="version-badge">v2</span>
     <div class="conn-indicator">
       <div class="conn-dot" id="connDot"></div>
       <span class="conn-label" id="connLabel">Connecting…</span>
@@ -124,6 +134,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--snow); color: var(-
     <div class="login-title">Team Members</div>
     <div class="login-subtitle">Sign in with your Bellweather Microsoft account to manage the team roster.</div>
     <button class="btn-login" onclick="login()">Sign in with Microsoft</button>
+    <div style="margin-top:20px;font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--silver);opacity:.6;">v2</div>
     <div class="login-error" id="loginError"></div>
   </div>
 </div>
@@ -141,6 +152,10 @@ body { font-family: 'DM Sans', sans-serif; background: var(--snow); color: var(-
       <option value="Design">Design</option>
       <option value="Production">Production</option>
     </select>
+    <select id="newPipelineRole" style="width:140px;">
+      <option value="">Pipeline: Read-only</option>
+      <option value="Admin">Pipeline: Admin</option>
+    </select>
     <button class="btn btn-primary" onclick="addMember()">Add</button>
   </div>
 
@@ -155,6 +170,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--snow); color: var(-
     <div class="table-header">
       <div>Name</div>
       <div>Department</div>
+      <div>Pipeline Role</div>
       <div>Active</div>
       <div></div>
     </div>
@@ -264,14 +280,15 @@ async function spFetch(url, options = {}) {
 
 async function loadMembers() {
   try {
-    const resp = await spFetch(`${listApiUrl()}/items?$select=Id,EmployeeName,Department,Active,SortOrder&$orderby=SortOrder asc&$top=500`);
+    const resp = await spFetch(`${listApiUrl()}/items?$select=Id,EmployeeName,Department,Active,SortOrder,PipelineRole&$orderby=SortOrder asc&$top=500`);
     const data = await resp.json();
     members = (data.value || []).map(item => ({
       id: String(item.Id),
       name: item.EmployeeName || '',
       department: item.Department || '',
       active: item.Active !== false,
-      sortOrder: item.SortOrder || 0
+      sortOrder: item.SortOrder || 0,
+      pipelineRole: item.PipelineRole || ''
     }));
     renderList();
   } catch (err) {
@@ -311,6 +328,12 @@ function renderList() {
           </select>
         </div>
         <div>
+          <select class="edit-select" id="editRole_${m.id}">
+            <option value="" ${!m.pipelineRole || m.pipelineRole === '' ? 'selected' : ''}>Read-only</option>
+            <option value="Admin" ${m.pipelineRole === 'Admin' || m.pipelineRole === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+        </div>
+        <div>
           <select class="edit-select" id="editActive_${m.id}">
             <option value="true" ${m.active ? 'selected' : ''}>Active</option>
             <option value="false" ${!m.active ? 'selected' : ''}>Inactive</option>
@@ -325,6 +348,9 @@ function renderList() {
     return `<div class="member-row" data-id="${m.id}">
       <div class="member-name">${escHtml(m.name)}</div>
       <div class="member-dept">${escHtml(m.department)}</div>
+      <div>${m.pipelineRole && m.pipelineRole.toLowerCase() === 'admin'
+        ? '<span class="role-badge admin">⚙ Admin</span>'
+        : '<span class="role-badge readonly">Read-only</span>'}</div>
       <div><span class="active-badge ${m.active ? 'yes' : 'no'}">${m.active ? '● Active' : '○ Inactive'}</span></div>
       <div class="row-actions">
         <button class="btn btn-ghost btn-sm" onclick="startEdit('${m.id}')">Edit</button>
@@ -354,15 +380,16 @@ async function saveEdit(id) {
   const name = document.getElementById(`editName_${id}`).value.trim();
   const dept = document.getElementById(`editDept_${id}`).value;
   const active = document.getElementById(`editActive_${id}`).value === 'true';
+  const pipelineRole = document.getElementById(`editRole_${id}`).value;
   if (!name) { showToast('Name is required.'); return; }
   try {
     await spFetch(`${listApiUrl()}/items(${parseInt(id)})`, {
       method: 'POST',
       headers: { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
-      body: JSON.stringify({ EmployeeName: name, Department: dept, Active: active })
+      body: JSON.stringify({ EmployeeName: name, Department: dept, Active: active, PipelineRole: pipelineRole })
     });
     const m = members.find(x => x.id === id);
-    if (m) { m.name = name; m.department = dept; m.active = active; }
+    if (m) { m.name = name; m.department = dept; m.active = active; m.pipelineRole = pipelineRole; }
     editingId = null;
     renderList();
     showToast('Saved.');
@@ -375,17 +402,19 @@ async function saveEdit(id) {
 async function addMember() {
   const name = document.getElementById('newName').value.trim();
   const dept = document.getElementById('newDept').value;
+  const pipelineRole = document.getElementById('newPipelineRole').value;
   if (!name) { showToast('Enter a name first.'); return; }
   try {
     const maxSort = members.length ? Math.max(...members.map(m => m.sortOrder || 0)) : 0;
     const resp = await spFetch(`${listApiUrl()}/items`, {
       method: 'POST',
-      body: JSON.stringify({ EmployeeName: name, Department: dept, Active: true, SortOrder: maxSort + 10 })
+      body: JSON.stringify({ EmployeeName: name, Department: dept, Active: true, SortOrder: maxSort + 10, PipelineRole: pipelineRole })
     });
     const item = await resp.json();
-    members.push({ id: String(item.Id), name: item.EmployeeName, department: item.Department || '', active: true, sortOrder: item.SortOrder || 0 });
+    members.push({ id: String(item.Id), name: item.EmployeeName, department: item.Department || '', active: true, sortOrder: item.SortOrder || 0, pipelineRole: item.PipelineRole || '' });
     document.getElementById('newName').value = '';
     document.getElementById('newDept').value = '';
+    document.getElementById('newPipelineRole').value = '';
     renderList();
     showToast(`${name} added.`);
   } catch (err) {
