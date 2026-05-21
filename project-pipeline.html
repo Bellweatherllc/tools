@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v484</title>
+<title>BW Project Pipeline — v485</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2011,6 +2011,7 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
   box-shadow:-4px 0 16px rgba(0,0,0,.10);
   transform:translateX(100%);transition:transform .18s ease;
   font-family:'TT Norms Pro',sans-serif;
+  overscroll-behavior:contain;
 }
 .prod-panel.is-open{transform:translateX(0);}
 .prod-panel-hd{
@@ -2027,7 +2028,7 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 }
 .prod-panel-close:hover{color:rgba(255,255,255,.7);}
 .prod-panel-zone{padding:8px 10px;border-bottom:1px solid #e4dac4;}
-.prod-panel-zone:last-child{border-bottom:none;flex:1;overflow-y:auto;}
+.prod-panel-zone:last-child{border-bottom:none;flex:1;overflow-y:auto;overscroll-behavior:contain;}
 .prod-panel-zone-hdr{
   font-size:8.5px;font-weight:700;letter-spacing:.06em;
   text-transform:uppercase;color:#7a7a7a;margin-bottom:6px;
@@ -2287,7 +2288,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v484</div>
+    <div class="auth-version" id="authVersionBadge">v485</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2306,7 +2307,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v484</div>
+  <div class="proto-badge" id="versionBadge">v485</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2326,6 +2327,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     <button class="admin-strip-btn" onclick="expandAllProjects()">Expand All</button>
     <button class="admin-strip-btn" onclick="collapseAllProjects()">Collapse All</button>
     <button class="admin-strip-btn" onclick="openRevenueDiag()">Revenue Diag</button>
+    <button class="admin-strip-btn" onclick="openArchiveModal()">Archive</button>
   </div>
   <button class="admin-strip-exit" onclick="toggleAdminMode()">Exit Admin Mode</button>
 </div>
@@ -2478,10 +2480,9 @@ function calToScrollLeft(){
   return Math.max(0,(C.numWeeks-1))*C.weekW;
 }
 function clampScroll(ss){
-  const sec=ss.closest('.section');
-  const lens=sec?sec.dataset.sType:'production';
-  const minL=calFromScrollLeft(lens), maxL=calToScrollLeft();
-  if(ss.scrollLeft<minL) ss.scrollLeft=minL;
+  // Only clamp the right edge — left edge is always 0, no per-lens minimum to fight Today/sync
+  const maxL=calToScrollLeft();
+  if(ss.scrollLeft<0) ss.scrollLeft=0;
   else if(ss.scrollLeft>maxL) ss.scrollLeft=maxL;
 }
 function scrollToPastOffset(){
@@ -2489,7 +2490,7 @@ function scrollToPastOffset(){
     const lens=sec.dataset.sType;
     const scroller=getScroller(sec);
     if(!scroller) return;
-    scroller.scrollLeft=Math.max(calFromScrollLeft(lens), Math.max(0, todayWeek()-4)*C.weekW);
+    scroller.scrollLeft=Math.max(0, todayWeek())*C.weekW;
     // In split mode also position the right pane to the future window
     if(splitState[lens]){
       const rp=sec.querySelector('.split-right');
@@ -2782,12 +2783,8 @@ function buildCapCmdBar(section){
   right.appendChild(histBtnCap);
   right.appendChild(el('div','nav-sep'));
   const briefBtnCap=el('button','pp-hist-btn'); briefBtnCap.dataset.openBrief='1';
-  briefBtnCap.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Weekly Review / <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="9.5" r="3.5" stroke="currentColor" stroke-width="1.35"/><path d="M6 7a2 2 0 0 1 4 0" stroke="currentColor" stroke-width="1.35"/><path d="M4.5 8.5H2M11.5 8.5H14M4.5 11H2M11.5 11H14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6.5 13.5L5.5 15M9.5 13.5L10.5 15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M5.5 5.5L4.5 3.5M10.5 5.5L11.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> BUG`;
+  briefBtnCap.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Weekly Review / <svg width="13" height="13" viewBox="-6 -8 92 100" xmlns="http://www.w3.org/2000/svg"><path d="M 37,12 C 32,6 27,2 21,-1" stroke="rgba(180,60,60,.85)" stroke-width="1.8" stroke-linecap="round" fill="none"/><circle cx="20" cy="-1" r="2.4" fill="rgba(180,60,60,.85)"/><path d="M 43,12 C 48,6 53,2 59,-1" stroke="rgba(180,60,60,.85)" stroke-width="1.8" stroke-linecap="round" fill="none"/><circle cx="60" cy="-1" r="2.4" fill="rgba(180,60,60,.85)"/><path d="M 18,49 L 8,44 L 2,40" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 17,58 L 5,57 L 0,54" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 19,67 L 8,71 L 3,77" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 62,49 L 72,44 L 78,40" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 63,58 L 75,57 L 80,54" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 61,67 L 72,71 L 77,77" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><defs><clipPath id="bbtn"><ellipse cx="40" cy="55" rx="24" ry="23"/></clipPath></defs><ellipse cx="40" cy="55" rx="24" ry="23" fill="#d42020"/><line x1="40" y1="32" x2="40" y2="78" stroke="rgba(0,0,0,.35)" stroke-width="1.4"/><g clip-path="url(#bbtn)"><circle cx="30" cy="47" r="5.2" fill="rgba(0,0,0,.40)"/><circle cx="50" cy="47" r="5.2" fill="rgba(0,0,0,.40)"/><circle cx="28" cy="59" r="4.6" fill="rgba(0,0,0,.40)"/><circle cx="52" cy="59" r="4.6" fill="rgba(0,0,0,.40)"/><circle cx="31" cy="69" r="3.8" fill="rgba(0,0,0,.40)"/><circle cx="49" cy="69" r="3.8" fill="rgba(0,0,0,.40)"/></g><ellipse cx="32" cy="44" rx="7" ry="4" fill="rgba(255,255,255,.16)" transform="rotate(-25,32,44)"/><ellipse cx="40" cy="55" rx="24" ry="23" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="1.2"/><circle cx="40" cy="22" r="12" fill="#921515"/><circle cx="35" cy="18" r="3.2" fill="rgba(255,255,255,.60)"/><circle cx="45" cy="18" r="3.2" fill="rgba(255,255,255,.60)"/><circle cx="35.8" cy="17" r="1.3" fill="rgba(255,255,255,.90)"/><circle cx="45.8" cy="17" r="1.3" fill="rgba(255,255,255,.90)"/></svg> BUG`;
   right.appendChild(briefBtnCap);
-  right.appendChild(el('div','nav-sep'));
-  const arcBtnCap=el('button','pp-hist-btn'); arcBtnCap.dataset.openArchive='1';
-  arcBtnCap.innerHTML=`<svg width="12" height="12" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="3.5" rx="1" fill="currentColor" opacity=".6"/><path d="M3.5 6.5v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V6.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 10.5h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Archive`;
-  right.appendChild(arcBtnCap);
   right.appendChild(el('div','nav-sep'));
   const panelBtn=el('button','prod-panel-btn'); panelBtn.dataset.toggleProdPanel=section;
   panelBtn.innerHTML='<span class="pp-chev">▼</span> Key Dates';
@@ -5760,20 +5757,22 @@ function onMove(e){
   }
 
   if(DRAG.type==='phaseMove'){
+    const proj=PROJECTS.find(p=>p.id===DRAG.projId);
+    // In ungrouped mode, design phases move freely — adjacency constraints don't apply
+    const isUngroupedDesign=DRAG.laneId==='design'&&proj&&proj.grouped===false;
     const minOrig=Math.min(...DRAG.origStarts);
     let minDw=-minOrig;
-    if(DRAG.chainStart>0&&!DRAG.chain[0].isDesignProd){
+    if(DRAG.chainStart>0&&!DRAG.chain[0].isDesignProd&&!isUngroupedDesign){
       const prevPh=DRAG.allPhs[DRAG.chainStart-1];
       minDw=Math.max(minDw, (prevPh.startWeek+prevPh.durWeeks)-DRAG.origStarts[0]);
     }
     // Production first phase (Pre-con): can't slide left past CA milestone
     if(DRAG.laneId==='production'&&DRAG.chainStart===0&&!DRAG.cascadeLeft){
-      const proj=PROJECTS.find(p=>p.id===DRAG.projId);
       const caMs=proj?.milestones?.find(m=>m.name==='CA');
       if(caMs&&caMs.week!=null) minDw=Math.max(minDw, caMs.week+1-DRAG.origStarts[0]);
     }
     let maxDw=C.numWeeks;
-    if(DRAG.chainEnd<DRAG.allPhs.length-1){
+    if(DRAG.chainEnd<DRAG.allPhs.length-1&&!isUngroupedDesign){
       const nextPh=DRAG.allPhs[DRAG.chainEnd+1];
       const chainOrigEnd=DRAG.origStarts[DRAG.origStarts.length-1]+DRAG.chain[DRAG.chain.length-1].durWeeks;
       maxDw=nextPh.startWeek-chainOrigEnd;
@@ -5784,7 +5783,6 @@ function onMove(e){
     const clampedDw=Math.max(minDw,Math.min(maxDw,dw));
     if(clampedDw!==0) _dragMoved=true;
     DRAG.chain.forEach((ph,i)=>{ ph.startWeek=DRAG.origStarts[i]+clampedDw; });
-    const proj=PROJECTS.find(p=>p.id===DRAG.projId);
     if(DRAG.chainStart===0) getLane(proj,DRAG.laneId).startWeek=DRAG.chain[0].startWeek;
     // Cascade left: Construction drags Pre-con and CA milestone left with it when all touching
     if(DRAG.cascadeLeft&&clampedDw<0){
@@ -6266,12 +6264,8 @@ function buildPlanningSection(){
   addRow.appendChild(ppHistBtn);
   addRow.appendChild(el('div','nav-sep'));
   const ppBriefBtn=el('button','pp-hist-btn'); ppBriefBtn.dataset.openBrief='1';
-  ppBriefBtn.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Weekly Review / <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="9.5" r="3.5" stroke="currentColor" stroke-width="1.35"/><path d="M6 7a2 2 0 0 1 4 0" stroke="currentColor" stroke-width="1.35"/><path d="M4.5 8.5H2M11.5 8.5H14M4.5 11H2M11.5 11H14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6.5 13.5L5.5 15M9.5 13.5L10.5 15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M5.5 5.5L4.5 3.5M10.5 5.5L11.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg> BUG`;
+  ppBriefBtn.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Weekly Review / <svg width="13" height="13" viewBox="-6 -8 92 100" xmlns="http://www.w3.org/2000/svg"><path d="M 37,12 C 32,6 27,2 21,-1" stroke="rgba(180,60,60,.85)" stroke-width="1.8" stroke-linecap="round" fill="none"/><circle cx="20" cy="-1" r="2.4" fill="rgba(180,60,60,.85)"/><path d="M 43,12 C 48,6 53,2 59,-1" stroke="rgba(180,60,60,.85)" stroke-width="1.8" stroke-linecap="round" fill="none"/><circle cx="60" cy="-1" r="2.4" fill="rgba(180,60,60,.85)"/><path d="M 18,49 L 8,44 L 2,40" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 17,58 L 5,57 L 0,54" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 19,67 L 8,71 L 3,77" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 62,49 L 72,44 L 78,40" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 63,58 L 75,57 L 80,54" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M 61,67 L 72,71 L 77,77" stroke="rgba(180,60,60,.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><defs><clipPath id="bbtn"><ellipse cx="40" cy="55" rx="24" ry="23"/></clipPath></defs><ellipse cx="40" cy="55" rx="24" ry="23" fill="#d42020"/><line x1="40" y1="32" x2="40" y2="78" stroke="rgba(0,0,0,.35)" stroke-width="1.4"/><g clip-path="url(#bbtn)"><circle cx="30" cy="47" r="5.2" fill="rgba(0,0,0,.40)"/><circle cx="50" cy="47" r="5.2" fill="rgba(0,0,0,.40)"/><circle cx="28" cy="59" r="4.6" fill="rgba(0,0,0,.40)"/><circle cx="52" cy="59" r="4.6" fill="rgba(0,0,0,.40)"/><circle cx="31" cy="69" r="3.8" fill="rgba(0,0,0,.40)"/><circle cx="49" cy="69" r="3.8" fill="rgba(0,0,0,.40)"/></g><ellipse cx="32" cy="44" rx="7" ry="4" fill="rgba(255,255,255,.16)" transform="rotate(-25,32,44)"/><ellipse cx="40" cy="55" rx="24" ry="23" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="1.2"/><circle cx="40" cy="22" r="12" fill="#921515"/><circle cx="35" cy="18" r="3.2" fill="rgba(255,255,255,.60)"/><circle cx="45" cy="18" r="3.2" fill="rgba(255,255,255,.60)"/><circle cx="35.8" cy="17" r="1.3" fill="rgba(255,255,255,.90)"/><circle cx="45.8" cy="17" r="1.3" fill="rgba(255,255,255,.90)"/></svg> BUG`;
   addRow.appendChild(ppBriefBtn);
-  addRow.appendChild(el('div','nav-sep'));
-  const ppArcBtn=el('button','pp-hist-btn'); ppArcBtn.dataset.openArchive='1';
-  ppArcBtn.innerHTML=`<svg width="12" height="12" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="3.5" rx="1" fill="currentColor" opacity=".6"/><path d="M3.5 6.5v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V6.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 10.5h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Archive`;
-  addRow.appendChild(ppArcBtn);
   const ppPanelSep=el('div','nav-sep'); addRow.appendChild(ppPanelSep);
   const ppPanelBtn=el('button','prod-panel-btn'); ppPanelBtn.dataset.toggleProdPanel='planning';
   ppPanelBtn.innerHTML='<span class="pp-chev">▼</span> Key Dates';
@@ -8431,7 +8425,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v484', date: '2026-05-13',
+    version: 'v485', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
