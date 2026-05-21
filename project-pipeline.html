@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v492</title>
+<title>BW Project Pipeline — v493</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2298,7 +2298,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v492</div>
+    <div class="auth-version" id="authVersionBadge">v493</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2317,7 +2317,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v492</div>
+  <div class="proto-badge" id="versionBadge">v493</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2594,7 +2594,15 @@ function _projShortName(proj){
 }
 function _captureDragPre(drag){
   if(!drag) return null;
-  if(drag.type==='panScroll'||drag.type==='projCapacityReorder') return null;
+  if(drag.type==='panScroll') return null;
+
+  if(drag.type==='projCapacityReorder'){
+    // Capture the project's current person assignment so we can show before→after in the description
+    const proj2=PROJECTS.find(p=>p.id===drag.projId);
+    const personField=drag.capacitySection==='design'?'designer':'productionPM';
+    const oldPersonId=proj2?proj2[personField]:null;
+    return {type:'projCapacityReorder',nm,projId:drag.projId,capacitySection:drag.capacitySection,oldPersonId,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
+  }
   const proj=PROJECTS.find(p=>p.id===drag.projId)||null;
   const nm=_projShortName(proj);
 
@@ -2671,6 +2679,15 @@ function _buildDragDesc(pre){
       return `${nm}: ${d(pre.oldFirstPhStart)} → ${d(newStart)} (${shift>0?'+':''}${shift}w)${tail}`;
     }
     return `${nm}: moved${msDates?' · '+msDates:''}`;
+  }
+  if(type==='projCapacityReorder'){
+    const proj2=PROJECTS.find(p=>p.id===projId);
+    const personField=pre.capacitySection==='design'?'designer':'productionPM';
+    const newPersonId=proj2?proj2[personField]:null;
+    const oldLabel=pre.oldPersonId?_personLabel(pre.oldPersonId):'Unassigned';
+    const newLabel=newPersonId?_personLabel(newPersonId):'Unassigned';
+    const role=pre.capacitySection==='design'?'Designer':'PM';
+    return `${nm}: ${role} ${oldLabel} → ${newLabel}`;
   }
   if(type==='personMove'){
     const from=oldPerson?_personLabel(oldPerson):'?';
@@ -4232,10 +4249,10 @@ function buildDesignSection(){
   // Unassigned separator bar
   const fcUnSep=el('div','unassigned-hdr-fc'); fcUnSep.style.cssText='height:22px;background:var(--sep);display:flex;align-items:center;padding-left:6px;gap:4px;';
   const unChev=el('div','fc-chevron'+(DESIGN_UNASSIGNED_COLLAPSED?' collapsed':''));
-  unChev.style.cssText='width:18px;height:18px;flex-shrink:0;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.5);';
+  unChev.style.cssText='width:18px;height:18px;flex-shrink:0;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.5);margin-left:auto;';
   unChev.textContent='▾'; unChev.dataset.toggleDesignUnassignedCollapse='1';
   const fcUnLbl=el('span',''); fcUnLbl.textContent='Unassigned'; fcUnLbl.style.cssText='font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(40,40,40,.45);';
-  fcUnSep.appendChild(unChev); fcUnSep.appendChild(fcUnLbl);
+  fcUnSep.appendChild(fcUnLbl); fcUnSep.appendChild(unChev);
   fc.appendChild(fcUnSep);
   const fcGrp=el('div','unassigned-group-fc'); fcGrp.classList.toggle('has-projects',unassigned.length>0);
   if(!DESIGN_UNASSIGNED_COLLAPSED){
@@ -4434,20 +4451,19 @@ function buildProdSection(){
     else if(key==='unassigned'){
       const[fcSep,tlSep]=buildPersonSep(); fc_els.push(fcSep); tl_els.push(tlSep);
       // FC: grab handle | collapse chevron | +Open Slot | spacer | Unassigned centered | spacer
-      const fcUnHdr=el('div','unassigned-hdr-fc'); fcUnHdr.style.cssText=`height:${C.tallyH}px;background:#c5cdd4;display:flex;align-items:center;padding:0 8px 0 0;gap:0;`;
+      const fcUnHdr=el('div','unassigned-hdr-fc'); fcUnHdr.style.cssText=`height:${C.tallyH}px;background:#c5cdd4;display:flex;align-items:center;padding:0 6px 0 0;gap:0;`;
       fcUnHdr.appendChild(prodHdl('unassigned'));
-      // Collapse chevron
-      const unChev=el('div','fc-chevron'+(PROD_UNASSIGNED_COLLAPSED?' collapsed':''));
-      unChev.style.cssText='width:20px;height:20px;flex-shrink:0;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.45);margin-right:4px;';
-      unChev.textContent='▾'; unChev.dataset.toggleUnassignedCollapse='1';
-      fcUnHdr.appendChild(unChev);
       const addProjBtn=el('button','sort-btn sort-btn-add-pm'); addProjBtn.dataset.addProdProject='1';
       addProjBtn.textContent='+ Open Slot'; addProjBtn.classList.add('admin-only');
       fcUnHdr.appendChild(addProjBtn);
       const sp1=el('span',''); sp1.style.flex='1'; fcUnHdr.appendChild(sp1);
       const unLbl=el('span',''); unLbl.textContent='Unassigned'; unLbl.style.cssText='font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(40,40,40,.45);';
       fcUnHdr.appendChild(unLbl);
-      const sp2=el('span',''); sp2.style.flex='1'; fcUnHdr.appendChild(sp2);
+      // Collapse chevron — on right margin to match all other project rows
+      const unChev=el('div','fc-chevron'+(PROD_UNASSIGNED_COLLAPSED?' collapsed':''));
+      unChev.style.cssText='width:20px;height:20px;flex-shrink:0;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.45);margin-left:auto;';
+      unChev.textContent='▾'; unChev.dataset.toggleUnassignedCollapse='1';
+      fcUnHdr.appendChild(unChev);
       fc_els.push(fcUnHdr);
       if(!PROD_UNASSIGNED_COLLAPSED){
         const fcGrp=el('div','unassigned-group-fc'); fcGrp.classList.toggle('has-projects',unassigned.length>0);
@@ -5941,6 +5957,7 @@ function onUp(){
     const _dropLabel=DRAG.targetPerson?personById(DRAG.targetPerson)?.label:'(null/unassigned)';
     if(proj&&DRAG.targetPerson!==undefined){
       const personField=DRAG.capacitySection==='design'?'designer':'productionPM';
+      if(proj[personField]!==DRAG.targetPerson) _dragMoved=true; // person actually changed
       proj[personField]=DRAG.targetPerson; // null = unassign
       const fromIdx=PROJECTS.indexOf(proj); PROJECTS.splice(fromIdx,1);
       if(DRAG.targetPerson){
@@ -8516,7 +8533,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v492', date: '2026-05-13',
+    version: 'v493', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
