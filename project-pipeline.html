@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v489</title>
+<title>BW Project Pipeline — v491</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2296,7 +2296,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v489</div>
+    <div class="auth-version" id="authVersionBadge">v491</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2315,7 +2315,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v489</div>
+  <div class="proto-badge" id="versionBadge">v491</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2493,38 +2493,57 @@ function clampScroll(ss){
   if(ss.scrollLeft<0) ss.scrollLeft=0;
   else if(ss.scrollLeft>maxL) ss.scrollLeft=maxL;
 }
+// Canonical scroll position shared between Design and Production.
+// display:none sections can't accept scrollLeft, so we store it here
+// and apply it the moment setFocus makes a section visible.
+let _sharedScrollLeft=0;
+
+function _sectionScrollers(lens){
+  const sec=document.querySelector(`.section[data-s-type="${lens}"]`);
+  if(!sec) return [];
+  return [sec.querySelector('.section-scroll'),sec.querySelector('.split-left')].filter(Boolean);
+}
+function _isSectionVisible(lens){
+  const sec=document.querySelector(`.section[data-s-type="${lens}"]`);
+  return sec?getComputedStyle(sec).display!=='none':false;
+}
+
 function scrollToPastOffset(){
-  const target=Math.max(0, todayWeek())*C.weekW;
-  // Attach scroll listeners and set initial position
+  _sharedScrollLeft=Math.max(0,todayWeek())*C.weekW;
   document.querySelectorAll('.section[data-s-type]').forEach(sec=>{
     const lens=sec.dataset.sType;
-    // Always scroll both section-scroll and split-left so both modes are covered
-    const candidates=[sec.querySelector('.section-scroll'), sec.querySelector('.split-left')].filter(Boolean);
-    candidates.forEach(scroller=>{
+    const scrollers=[sec.querySelector('.section-scroll'),sec.querySelector('.split-left')].filter(Boolean);
+    // Attach scroll listeners (works even on hidden elements)
+    scrollers.forEach(scroller=>{
       if(!scroller._rangeAttached){
         scroller._rangeAttached=true;
         scroller.addEventListener('scroll',()=>{
           requestAnimationFrame(()=>{
+            // Keep shared position in sync when user scrolls
+            if(lens==='design'||lens==='production') _sharedScrollLeft=scroller.scrollLeft;
             clampScroll(scroller);
             updateSlbYear(scroller);
             if(lens==='production') refreshRevenueRow();
           });
         },{passive:true});
       }
-      scroller.scrollLeft=target;
     });
-    // In split mode, also set the right pane to the future window
+    // Only set scrollLeft on visible sections — display:none discards it
+    if(getComputedStyle(sec).display!=='none'){
+      scrollers.forEach(sc=>{ sc.scrollLeft=_sharedScrollLeft; });
+    }
     if(splitState[lens]){
       const rp=sec.querySelector('.split-right');
       if(rp) rp.scrollLeft=C.weekW*findFutureWindow();
     }
   });
-  // Double-RAF: guarantee scrollLeft is committed after layout settles
+  // Double-RAF to guarantee position sticks after layout
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       document.querySelectorAll('.section[data-s-type]').forEach(sec=>{
-        const candidates=[sec.querySelector('.section-scroll'), sec.querySelector('.split-left')].filter(Boolean);
-        candidates.forEach(sc=>{ sc.scrollLeft=target; updateSlbYear(sc); });
+        if(getComputedStyle(sec).display==='none') return;
+        [sec.querySelector('.section-scroll'),sec.querySelector('.split-left')].filter(Boolean)
+          .forEach(sc=>{ sc.scrollLeft=_sharedScrollLeft; updateSlbYear(sc); });
       });
     });
   });
@@ -3198,12 +3217,12 @@ function getScroller(sectionEl){
 }
 function scrollToWeekInSection(w, sectionEl){
   const target=C.weekW*Math.max(0,Math.min(C.numWeeks-1,w));
-  // Sync Design and Production together — when one jumps, the other follows
-  const syncTypes=['design','production'];
-  document.querySelectorAll('.section[data-s-type]').forEach(sec=>{
-    if(!syncTypes.includes(sec.dataset.sType)) return;
-    const sc=getScroller(sec); if(!sc) return;
-    sc.scrollTo({left:target,behavior:'smooth'});
+  _sharedScrollLeft=target;
+  // Only scroll currently-visible Design and Production sections
+  // The hidden section will get this position when setFocus makes it visible
+  ['design','production'].forEach(lens=>{
+    if(!_isSectionVisible(lens)) return;
+    _sectionScrollers(lens).forEach(sc=>sc.scrollTo({left:target,behavior:'smooth'}));
   });
 }
 function scrollToWeek(w){ scrollToWeekInSection(w, null); }
@@ -7513,6 +7532,12 @@ function setFocus(name,opts){
   // Initial load: no current section to wipe over — snap to final state without animation
   if(!current){
     body.setAttribute('data-focus',name);
+    // If a shared scroll position exists, apply it now that the section is visible
+    if((name==='design'||name==='production')&&_sharedScrollLeft>0){
+      requestAnimationFrame(()=>{
+        _sectionScrollers(name).forEach(sc=>{ sc.scrollLeft=_sharedScrollLeft; });
+      });
+    }
     _scheduleStickyBands();
     return;
   }
@@ -7525,6 +7550,13 @@ function setFocus(name,opts){
   if(incoming) incoming.classList.add('is-clip-anim');
   // Swap data-focus — incoming section becomes in-flow, visible behind outgoing during the wipe
   body.setAttribute('data-focus',name);
+  // Apply shared scroll position to the incoming section now that it's no longer display:none.
+  // RAF ensures the browser has processed the display change before we set scrollLeft.
+  if(name==='design'||name==='production'){
+    requestAnimationFrame(()=>{
+      _sectionScrollers(name).forEach(sc=>{ sc.scrollLeft=_sharedScrollLeft; });
+    });
+  }
   // After the wipe finishes, clean up and re-evaluate sticky
   _focusSwitchTimer=setTimeout(()=>{
     _focusSwitchTimer=null;
@@ -8114,7 +8146,7 @@ document.addEventListener('click',e=>{
   function fmtDate(wk){
     if(wk==null) return '\u2014';
     const d=new Date(C.startDate.getTime()+wk*7*24*3600*1000);
-    return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0');
+    return String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+'/'+String(d.getFullYear()).slice(2);
   }
   function fmtDateFull(wk){
     if(wk==null) return '';
@@ -8480,7 +8512,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v489', date: '2026-05-13',
+    version: 'v491', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
