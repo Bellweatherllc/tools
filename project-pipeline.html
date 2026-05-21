@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v486</title>
+<title>BW Project Pipeline — v487</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2288,7 +2288,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v486</div>
+    <div class="auth-version" id="authVersionBadge">v487</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2307,7 +2307,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v486</div>
+  <div class="proto-badge" id="versionBadge">v487</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2458,9 +2458,9 @@ const C = {
 const CAL_ABS_EARLIEST = new Date('2025-01-05'); // fixed epoch
 const CAL_ABS_LATEST   = new Date('2028-01-04');
 const CAL_VIEW = {
-  production: { from: new Date('2025-10-01'), to: new Date('2027-12-31') },
-  design:     { from: new Date('2025-10-01'), to: new Date('2027-12-31') },
-  planning:   { from: new Date('2025-10-01'), to: new Date('2027-12-31') }
+  production: { from: new Date(CAL_ABS_EARLIEST), to: new Date('2027-12-31') },
+  design:     { from: new Date(CAL_ABS_EARLIEST), to: new Date('2027-12-31') },
+  planning:   { from: new Date(CAL_ABS_EARLIEST), to: new Date('2027-12-31') }
 };
 
 function applyCalRange(){
@@ -2564,28 +2564,37 @@ function _captureDragPre(drag){
   if(drag.type==='panScroll'||drag.type==='projCapacityReorder') return null;
   const proj=PROJECTS.find(p=>p.id===drag.projId)||null;
   const nm=_projShortName(proj);
-  // For projMove, capture the current design start position for shift description
+
   if(drag.type==='projMove'){
-    const firstPh=proj?.designLane?.phases.find(p=>!p.isDesignProd&&p.durWeeks>0);
-    return{type:'projMove',nm,projId:drag.projId,oldFirstPhStart:firstPh?.startWeek??null,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
+    // origStarts is captured at pointerdown — use it for the true pre-move position
+    const firstPhIdx=drag.allPhs?.findIndex(p=>!p.isDesignProd&&p.durWeeks>0)??-1;
+    const oldStart=firstPhIdx>=0&&drag.origStarts?drag.origStarts[firstPhIdx]:null;
+    return{type:'projMove',nm,projId:drag.projId,oldFirstPhStart:oldStart,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
   }
-  let phInfo=null;
-  if(drag.phaseId){
+
+  let phInfo=null, phaseId=drag.phaseId||null;
+
+  if(drag.type==='phaseMove'||drag.type==='laneMove'){
+    // chain[0] has id and name (unchanged); origStarts[0] has the pre-drag startWeek
+    const ph=drag.chain?.[0];
+    if(ph){
+      phaseId=ph.id;
+      phInfo={name:ph.name, startWeek:drag.origStarts?.[0]??ph.startWeek, durWeeks:ph.durWeeks};
+    }
+  } else if(drag.phaseId){
+    // resize / resizeLeft: origDur and origStartWeek are captured at pointerdown
     const r=findPhase(drag.phaseId);
-    if(r) phInfo={name:r.ph.name,startWeek:r.ph.startWeek,durWeeks:r.ph.durWeeks};
+    if(r) phInfo={name:r.ph.name, startWeek:drag.origStartWeek??r.ph.startWeek, durWeeks:drag.origDur??r.ph.durWeeks};
   }
+
   let msInfo=null;
   if(drag.msId&&proj){
     const ms=proj.milestones&&proj.milestones.find(m=>m.id===drag.msId);
-    if(ms) msInfo={id:drag.msId,name:ms.name,week:ms.week};
+    // origWeek is captured at pointerdown — use it for the pre-drag week
+    if(ms) msInfo={id:drag.msId,name:ms.name,week:drag.origWeek??ms.week};
   }
-  return{
-    type:drag.type,nm,projId:drag.projId,
-    phaseId:drag.phaseId,phInfo,
-    msInfo,
-    oldPerson:drag.personId||null,
-    newPerson:drag.targetPerson||null,
-  };
+
+  return{type:drag.type,nm,projId:drag.projId,phaseId,phInfo,msInfo,oldPerson:drag.personId||null,newPerson:drag.targetPerson||null};
 }
 function _buildDragDesc(pre){
   if(!pre) return 'Changed';
@@ -7311,7 +7320,7 @@ async function initFromSharePoint(){
     // Restore Key Dates panel state
 if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('prodPanel'); if(pp){ pp.classList.add('is-open'); document.querySelectorAll('[data-toggle-prod-panel]').forEach(b=>b.classList.toggle('is-open',b.dataset.toggleProdPanel===PANEL_ACTIVE_SECTION)); const _th=PANEL_THRESHOLDS[PANEL_ACTIVE_SECTION]; const _ua=document.getElementById('ppThreshValUA'); if(_ua) _ua.textContent=_th.unassigned+' wk'; const _w=document.getElementById('ppThreshValWarn'); if(_w) _w.textContent=_th.warn+' wk'; const _c=document.getElementById('ppThreshValCrit'); if(_c) _c.textContent=_th.crit+' wk'; if(typeof renderProdPanel==='function') renderProdPanel(); } }
     document.querySelectorAll('.section[data-s-type]').forEach(sec=>{ const sc=getScroller(sec); if(sc) sc._rangeAttached=false; });
-    scrollToPastOffset();
+    requestAnimationFrame(()=>scrollToPastOffset());
     (()=>{ const m=document.title.match(/v(\d+)/); if(m){ document.getElementById('versionBadge').textContent='v'+m[1]; const ab=document.getElementById('authVersionBadge'); if(ab) ab.textContent='v'+m[1]; } })();
     patchSaveHooks();
     setSaveState('saved');
@@ -7594,6 +7603,10 @@ function applyCalAndRebuild(){
   if(toVal){ const d=new Date(toVal+'T12:00:00'); if(!isNaN(d)) cv.to=d; }
   // Ensure from < to
   if(cv.from>=cv.to) cv.to=new Date(cv.from.getTime()+8*7*24*3600*1000);
+  // Sync all lenses — sections should always show the same date range
+  ['production','design','planning'].forEach(l=>{
+    if(l!==lens){ CAL_VIEW[l].from=new Date(cv.from); CAL_VIEW[l].to=new Date(cv.to); }
+  });
   applyCalRange();
   buildAll();
   // Re-attach range listeners so each section scrolls to its own from
@@ -8454,7 +8467,7 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
-    version: 'v486', date: '2026-05-13',
+    version: 'v487', date: '2026-05-13',
     entries: [
       'Reviewed items now filed in a collapsed "Reviewed & Filed" section at the bottom.',
       'Missing assignment warnings removed from Attention Needed — unassigned is an intentional state.',
@@ -8628,6 +8641,11 @@ function snapshotPipeline(){
   const projects={};
   PROJECTS.forEach(p=>{
     const cPh=p.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
+    const designPhases=(p.designLane?.phases||[])
+      .filter(ph=>!ph.isDesignProd)
+      .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
+    const prodPhases=(p.productionLane?.phases||[])
+      .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
     projects[p.id]={
       name:briefProjName(p),
       status:p.status||'projected',
@@ -8638,7 +8656,9 @@ function snapshotPipeline(){
       designStart:p.designLane?.phases?.[0]?.startWeek??null,
       prodStart:p.productionLane?.phases?.[0]?.startWeek??null,
       constrStart:cPh?.startWeek??null,
-      constrDur:cPh?.durWeeks??null
+      constrDur:cPh?.durWeeks??null,
+      designPhases,
+      prodPhases
     };
   });
   return {ts:new Date().toISOString(), version:getPipelineVersion(), projects};
@@ -8718,10 +8738,26 @@ function diffPipeline(){
       if(!bm) return;
       if(bm.status!==ms.status||bm.week!==ms.week) msChanges.push({proj,ms,fromStatus:bm.status,fromWeek:bm.week});
     });
-    // Construction schedule changes
+    // Construction schedule changes (kept for backward compat with old baselines)
     const cPh=proj.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
     if(cPh&&snap.constrStart!=null&&(snap.constrStart!==cPh.startWeek||snap.constrDur!==cPh.durWeeks))
       scheduleChanges.push({proj,field:'Construction',fromWeek:snap.constrStart,toWeek:cPh.startWeek,fromDur:snap.constrDur,toDur:cPh.durWeeks});
+    // Design phase changes (using new per-phase snapshot; falls back gracefully for old baselines)
+    (snap.designPhases||[]).forEach(snapPh=>{
+      const curPh=(proj.designLane?.phases||[]).find(ph=>ph.id===snapPh.id&&!ph.isDesignProd);
+      if(!curPh) return;
+      if(snapPh.startWeek!==curPh.startWeek||snapPh.durWeeks!==curPh.durWeeks)
+        scheduleChanges.push({proj,field:snapPh.name,fromWeek:snapPh.startWeek,toWeek:curPh.startWeek,fromDur:snapPh.durWeeks,toDur:curPh.durWeeks});
+    });
+    // Production phase changes (skips construction — already covered above for old baselines)
+    (snap.prodPhases||[]).forEach(snapPh=>{
+      const isCon=/^construction$/i.test(snapPh.name?.trim());
+      if(isCon&&snap.constrStart!=null) return; // already tracked above for backward compat
+      const curPh=(proj.productionLane?.phases||[]).find(ph=>ph.id===snapPh.id);
+      if(!curPh) return;
+      if(snapPh.startWeek!==curPh.startWeek||snapPh.durWeeks!==curPh.durWeeks)
+        scheduleChanges.push({proj,field:snapPh.name,fromWeek:snapPh.startWeek,toWeek:curPh.startWeek,fromDur:snapPh.durWeeks,toDur:curPh.durWeeks});
+    });
     // Note changes
     const curNote=proj.notes||'', snapNote=snap.notes||'';
     if(curNote!==snapNote&&curNote) noteChanges.push({proj,isNew:!snapNote,note:curNote});
