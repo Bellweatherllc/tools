@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v500</title>
+<title>BW Project Pipeline — v501</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2338,7 +2338,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v500</div>
+    <div class="auth-version" id="authVersionBadge">v501</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2357,7 +2357,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v500</div>
+  <div class="proto-badge" id="versionBadge">v501</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -8855,7 +8855,21 @@ function snapshotPipeline(){
       prodPhases
     };
   });
-  return {ts:new Date().toISOString(), version:getPipelineVersion(), projects};
+  return {ts:new Date().toISOString(), version:getPipelineVersion(), projects, planning:snapshotPlanning()};
+}
+function snapshotPlanning(){
+  const planning={};
+  PLANNING_PROJECTS.forEach(pp=>{
+    planning[pp.id]={
+      name:pp.name,
+      slotId:pp.slotId||null,
+      slotWeek:pp.slotWeek??null,
+      salesPerson:pp.salesPerson||'',
+      proposedDesigner:pp.proposedDesigner||null,
+      parked:!!pp.parked,
+    };
+  });
+  return planning;
 }
 
 // ── Baseline save / load ──────────────────────────────────────────────────────
@@ -8958,6 +8972,50 @@ function diffPipeline(){
   });
   Object.keys(base).forEach(id=>{ if(!PROJECTS.find(p=>p.id===id)) removedProjs.push({id,name:base[id].name}); });
   return {statusChanges,msChanges,newProjs,removedProjs,assignmentChanges,scheduleChanges,noteChanges,versionChange};
+}
+
+function diffPlanning(){
+  if(!WEEKLY_BASELINE) return [];
+  const base=WEEKLY_BASELINE.planning||{};
+  const changes=[];
+  PLANNING_PROJECTS.forEach(pp=>{
+    const snap=base[pp.id];
+    if(!snap){
+      changes.push({type:'added',name:pp.name,detail:'Added to planning board'});
+      return;
+    }
+    // Slot change
+    const curSlotId=pp.slotId||null, snapSlotId=snap.slotId||null;
+    const curSlotWk=pp.slotWeek??null, snapSlotWk=snap.slotWeek??null;
+    if(curSlotId!==snapSlotId||curSlotWk!==snapSlotWk){
+      const fromProj=snapSlotId?PROJECTS.find(p=>p.id===snapSlotId):null;
+      const fromName=fromProj?fromProj.name:snapSlotWk!=null?'week of '+wkDate(snapSlotWk):'Unattached';
+      const toProj=curSlotId?PROJECTS.find(p=>p.id===curSlotId):null;
+      const toName=toProj?toProj.name:curSlotWk!=null?'week of '+wkDate(curSlotWk):'Unattached';
+      changes.push({type:'moved',name:pp.name,detail:`Moved: ${fromName} → ${toName}`});
+    }
+    // Sales person
+    if((snap.salesPerson||'')!==(pp.salesPerson||'')){
+      changes.push({type:'updated',name:pp.name,detail:`Sales: ${snap.salesPerson||'—'} → ${pp.salesPerson||'—'}`});
+    }
+    // Proposed designer
+    const curDes=pp.proposedDesigner||null, snapDes=snap.proposedDesigner||null;
+    if(snapDes!==curDes){
+      const fl=snapDes==='any'?'Any':snapDes?personById(snapDes)?.label||snapDes:'—';
+      const tl=curDes==='any'?'Any':curDes?personById(curDes)?.label||curDes:'—';
+      changes.push({type:'updated',name:pp.name,detail:`Proposed designer: ${fl} → ${tl}`});
+    }
+    // Parked
+    if(!!snap.parked!==!!pp.parked){
+      changes.push({type:'updated',name:pp.name,detail:pp.parked?'Parked':'Un-parked'});
+    }
+  });
+  // Removed from board
+  Object.keys(base).forEach(id=>{
+    if(!PLANNING_PROJECTS.find(pp=>pp.id===id))
+      changes.push({type:'removed',name:base[id].name,detail:'Removed from planning board'});
+  });
+  return changes;
 }
 
 // ── Interpretive flags ────────────────────────────────────────────────────────
@@ -9194,6 +9252,20 @@ function generateBriefHTML(){
       html+=`<div class="brief-proj-card ${cardCls}${reviewedClass}"><div class="brief-card-hd">${newBadge}<span class="brief-tag ${briefTagClass(proj.status)}">${briefStatusLabel(proj.status)}</span><span class="brief-card-name">${briefProjName(proj)}</span><span class="brief-card-people">${proj.salesPerson||'—'} · ${des} · ${pm}</span>${reviewBtn}</div><div class="brief-card-body">${rows.join('')}</div></div>`;
     });
     if(!active.length&&!removedProjs.length) html+=`<div class="brief-empty">${WEEKLY_BASELINE?'No project changes since the last baseline.':'Set a baseline to begin tracking project changes.'}</div>`;
+    html+='</div>';
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // PART 1B — SALES PLANNING CHANGES
+  // ══════════════════════════════════════════════════════════════════
+  const planningChanges=diffPlanning();
+  if(planningChanges.length){
+    html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Sales Planning</span></div>`;
+    planningChanges.forEach(c=>{
+      const lbl=c.type==='added'?'Added':c.type==='removed'?'Removed':c.type==='moved'?'Moved':'Updated';
+      const cls=c.type==='removed'?'l-warn':c.type==='added'?'l-note':c.type==='moved'?'l-change':'l-quiet';
+      html+=briefRow(cls,lbl,`${c.name} — ${c.detail}`);
+    });
     html+='</div>';
   }
 
