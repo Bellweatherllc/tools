@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v497</title>
+<title>BW Project Pipeline — v499</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -1754,6 +1754,11 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
   padding:5px;box-shadow:0 8px 24px rgba(0,0,0,.4);
   min-width:170px;display:none;}
 #proposedDesignerPicker.open{display:block;}
+#salesPersonPicker{position:fixed;z-index:700;background:var(--navy);
+  border:1px solid rgba(255,255,255,.15);border-radius:8px;
+  padding:5px;box-shadow:0 8px 24px rgba(0,0,0,.4);
+  min-width:160px;display:none;}
+#salesPersonPicker.open{display:block;}
 .pp-des-row-btn{
   display:inline-flex;align-items:center;gap:5px;
   font-size:9px;font-weight:700;letter-spacing:.03em;
@@ -1784,6 +1789,20 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
   color:rgba(40,40,40,.50);font-style:italic;
 }
 .pp-des-name{font-weight:700;}
+.pp-proj-short-desc{font-size:9.5px;color:rgba(40,40,40,.45);font-style:italic;line-height:1.35;margin-top:3px;}
+.pp-sales-row-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:9px;font-weight:700;letter-spacing:.03em;
+  color:rgba(40,40,40,.55);cursor:pointer;
+  padding:3px 8px 3px 6px;
+  border:1px solid rgba(40,40,40,.20);
+  border-radius:4px;
+  background:rgba(255,255,255,.55);
+  text-align:left;transition:all .12s;white-space:nowrap;
+}
+.pp-sales-row-btn:hover{background:rgba(255,255,255,.85);border-color:rgba(40,40,40,.35);color:var(--navy);}
+.pp-sales-row-btn.has-sales{background:rgba(122,110,98,.10);border-color:rgba(122,110,98,.30);color:#4a3f30;}
+.pp-sales-row-btn.has-sales:hover{background:rgba(122,110,98,.20);border-color:rgba(122,110,98,.50);}
 .pm-picker-section{font-size:7.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.28);padding:6px 10px 3px;}
 .pm-picker-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 10px;border-radius:5px;
   cursor:pointer;font-size:11px;font-weight:500;color:rgba(255,255,255,.75);transition:background .12s;}
@@ -2319,7 +2338,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v497</div>
+    <div class="auth-version" id="authVersionBadge">v499</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2338,7 +2357,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v497</div>
+  <div class="proto-badge" id="versionBadge">v499</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2404,6 +2423,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 <div id="pmAddPicker"></div>
 <div id="designerAddPicker"></div>
 <div id="proposedDesignerPicker"></div>
+<div id="salesPersonPicker"></div>
 <div class="note-popover" id="notePopover">
   <div class="note-popover-title" id="notePopTitle"></div>
   <textarea id="notePopTA" placeholder="Add a note…"></textarea>
@@ -2775,7 +2795,7 @@ const DESIGNERS=[];
 const PROD_PMS=[];
 const DESIGNER_NAMES=[];
 const PM_NAMES=[];
-const SALES_NAMES=['Emily','Joe','Will'];
+const SALES_PEOPLE=[];
 let _toIdCtr=1;
 function newToId(){ return 'to-'+(_toIdCtr++); }
 function personById(id){ return DESIGNERS.find(d=>d.id===id)||PROD_PMS.find(p=>p.id===id)||null; }
@@ -3086,6 +3106,57 @@ function openProposedDesignerPicker(ppId, anchor){
 function closeProposedDesignerPicker(){ document.getElementById('proposedDesignerPicker').classList.remove('open'); _propDesPicker=null; }
 document.addEventListener('pointerdown',e=>{
   if(_propDesPicker&&!document.getElementById('proposedDesignerPicker').contains(e.target)&&!e.target.closest('[data-proposed-des-btn]')) closeProposedDesignerPicker();
+});
+
+// ════════════════════════════════════════  SALES PERSON PICKER
+let _salesPicker=null; // {ppId}
+function openSalesPersonPicker(ppId, anchor){
+  const picker=document.getElementById('salesPersonPicker');
+  const pp=PLANNING_PROJECTS.find(p=>p.id===ppId); if(!pp) return;
+  picker.innerHTML='';
+  const title=el('div','pm-picker-section'); title.textContent='Sales Person'; picker.appendChild(title);
+  const noneRow=el('div','pm-picker-item'); noneRow.textContent='— Not specified —';
+  if(!pp.salesPerson) noneRow.style.color='rgba(255,255,255,.9)';
+  noneRow.dataset.salesPickerNone='1'; picker.appendChild(noneRow);
+  if(SALES_PEOPLE.length===0){
+    const em=el('div','pm-picker-item'); em.textContent='Sign in to load team'; em.style.fontStyle='italic'; em.style.opacity='.5'; em.style.cursor='default'; picker.appendChild(em);
+  } else {
+    SALES_PEOPLE.forEach(sp=>{
+      const row=el('div','pm-picker-item');
+      if(pp.salesPerson===sp.fullLabel){ row.style.color='rgba(255,255,255,.95)'; row.style.background='rgba(201,168,76,.15)'; }
+      row.textContent=sp.label; row.dataset.salesPickerName=sp.fullLabel;
+      picker.appendChild(row);
+    });
+  }
+  const r=anchor.getBoundingClientRect();
+  let left=r.left, top=r.bottom+4;
+  if(left+170>window.innerWidth) left=window.innerWidth-178;
+  picker.style.left=Math.max(4,left)+'px'; picker.style.top=top+'px';
+  picker.classList.add('open'); _salesPicker={ppId};
+}
+function closeSalesPersonPicker(){ document.getElementById('salesPersonPicker').classList.remove('open'); _salesPicker=null; }
+document.addEventListener('pointerdown',e=>{
+  if(_salesPicker&&!document.getElementById('salesPersonPicker').contains(e.target)&&!e.target.closest('[data-sales-picker-btn]')) closeSalesPersonPicker();
+});
+document.getElementById('salesPersonPicker').addEventListener('click',e=>{
+  if(!_salesPicker) return;
+  const noneBtn=e.target.closest('[data-sales-picker-none]');
+  if(noneBtn){
+    const pp=PLANNING_PROJECTS.find(p=>p.id===_salesPicker.ppId); if(!pp) return;
+    pp.salesPerson='';
+    const src=PROJECTS.find(p=>p.id===pp._fromLeadId);
+    if(src){ src.salesPerson=''; if(src._spItemId) graphPatch(BWC_SITE+'/CORE_Projects/items/'+src._spItemId+'/fields',{SalesPerson:''}).catch(e=>console.warn('[sales picker] SP patch failed',e)); }
+    closeSalesPersonPicker(); rebuildSection('planning'); triggerSave(); return;
+  }
+  const btn=e.target.closest('[data-sales-picker-name]');
+  if(btn){
+    const pp=PLANNING_PROJECTS.find(p=>p.id===_salesPicker.ppId); if(!pp) return;
+    const name=btn.dataset.salesPickerName;
+    pp.salesPerson=name;
+    const src=PROJECTS.find(p=>p.id===pp._fromLeadId);
+    if(src){ src.salesPerson=name; if(src._spItemId) graphPatch(BWC_SITE+'/CORE_Projects/items/'+src._spItemId+'/fields',{SalesPerson:name}).catch(e=>console.warn('[sales picker] SP patch failed',e)); }
+    closeSalesPersonPicker(); rebuildSection('planning'); triggerSave(); return;
+  }
 });
 document.getElementById('proposedDesignerPicker').addEventListener('click',e=>{
   if(!_propDesPicker) return;
@@ -5629,9 +5700,7 @@ function _buildReserveList(){
   }
 
   function makeItem(proj, opts={}){
-    const isIn=alreadyIn.has(proj.id);
     const cls=['pp-reserve-item'];
-    if(isIn) cls.push('already-in-plan');
     if(opts.skipped) cls.push('is-skipped');
     const item=document.createElement('div'); item.className=cls.join(' ');
     if(!opts.skipped) item.dataset.reserveLeadId=proj.id;
@@ -5644,17 +5713,7 @@ function _buildReserveList(){
     info.appendChild(nm); info.appendChild(sub);
     item.appendChild(lodEl); item.appendChild(info);
 
-    if(isIn){
-      const rmBtn=document.createElement('button'); rmBtn.className='pp-reserve-item-remove';
-      rmBtn.textContent='Remove'; rmBtn.title='Remove from Sales Planning board';
-      rmBtn.addEventListener('click',ev=>{
-        ev.stopPropagation();
-        const idx=PLANNING_PROJECTS.findIndex(pp=>pp._fromLeadId===proj.id);
-        if(idx>-1){ PLANNING_PROJECTS.splice(idx,1); rebuildSection('planning'); triggerSave(); }
-        document.getElementById('ppReservePopup').classList.remove('open');
-      });
-      item.appendChild(rmBtn);
-    } else if(opts.skipped){
+    if(opts.skipped){
       const incBtn=document.createElement('button'); incBtn.className='pp-reserve-item-include';
       incBtn.textContent='Include'; incBtn.title='Include in planning picker';
       incBtn.addEventListener('click',ev=>{
@@ -5682,8 +5741,15 @@ function _buildReserveList(){
     return;
   }
 
-  const active=leads.filter(p=>!p.planningSkipped);
-  const skipped=leads.filter(p=>p.planningSkipped);
+  const available=leads.filter(p=>!alreadyIn.has(p.id));
+  const active=available.filter(p=>!p.planningSkipped);
+  const skipped=available.filter(p=>p.planningSkipped);
+
+  if(available.length===0){
+    const em=document.createElement('div'); em.className='pp-reserve-empty';
+    em.textContent='All leads are on the planning board.'; list.appendChild(em);
+    return;
+  }
 
   if(active.length===0 && skipped.length===0){
     const em=document.createElement('div'); em.className='pp-reserve-empty';
@@ -5693,7 +5759,7 @@ function _buildReserveList(){
 
   if(active.length===0){
     const em=document.createElement('div'); em.className='pp-reserve-empty';
-    em.textContent='All leads are deferred. Use Include below to restore them.'; list.appendChild(em);
+    em.textContent='All remaining leads are deferred. Use Include below to restore them.'; list.appendChild(em);
   } else {
     active.forEach(proj=>list.appendChild(makeItem(proj)));
   }
@@ -6460,6 +6526,10 @@ function buildPlanningSection(){
     const desc=el('div','pp-proj-desc');
     desc.textContent=(pp.lodReason?pp.lodReason.replace(/^LOD \d — /,''):pp.projType)||'';
     body.appendChild(desc);
+    // Short description — brief project summary from Manager
+    if(pp.shortDescription){
+      const sd=el('div','pp-proj-short-desc'); sd.textContent=pp.shortDescription; body.appendChild(sd);
+    }
     // Sale price — right after description
     if(pp.projBudget){
       const priceInline=el('div',''); priceInline.style.cssText='font-size:11px;font-weight:700;color:var(--navy);margin-top:2px;';
@@ -6467,11 +6537,19 @@ function buildPlanningSection(){
     }
     // People row: sales / designer / pm
     const peopleRow=el('div',''); peopleRow.style.cssText='display:flex;flex-direction:column;gap:2px;margin-top:5px;';
-    if(pp.salesPerson){
-      const spRow=el('div',''); spRow.style.cssText='font-size:9px;color:rgba(40,40,40,.55);';
-      spRow.innerHTML=`<span style="font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:7.5px;color:rgba(40,40,40,.35);">Sales</span> ${pp.salesPerson}`;
-      peopleRow.appendChild(spRow);
-    }
+    // Sales person — picker button
+    const spRow=el('div',''); spRow.style.cssText='display:flex;flex-direction:column;gap:2px;margin-top:0;';
+    const spLbl=el('span',''); spLbl.style.cssText='font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:7.5px;color:rgba(40,40,40,.30);';
+    spLbl.textContent='Sales';
+    const salesBtn=el('button','pp-sales-row-btn'+(pp.salesPerson?' has-sales':''));
+    salesBtn.title='Choose sales person'; salesBtn.dataset.salesPickerBtn=pp.id;
+    const chevSvg=`<svg width="8" height="8" viewBox="0 0 8 8" fill="none" style="margin-left:2px;opacity:.5"><path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    salesBtn.innerHTML=pp.salesPerson
+      ? `<span style="font-weight:700;">${pp.salesPerson.split(' ')[0]}</span>${chevSvg}`
+      : `<span>Choose…</span>${chevSvg}`;
+    salesBtn.addEventListener('click',ev=>{ ev.stopPropagation(); openSalesPersonPicker(pp.id,salesBtn); });
+    spRow.appendChild(spLbl); spRow.appendChild(salesBtn);
+    peopleRow.appendChild(spRow);
     const desRow=el('div',''); desRow.style.cssText='display:flex;flex-direction:column;gap:2px;margin-top:3px;';
     const desLbl=el('span',''); desLbl.style.cssText='font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:7.5px;color:rgba(40,40,40,.30);';
     desLbl.textContent='Proposed Designer';
@@ -6507,7 +6585,6 @@ function buildPlanningSection(){
     }
     const desBtn=el('button',btnClass);
     desBtn.title='Choose a proposed designer';
-    const chevSvg=`<svg width="8" height="8" viewBox="0 0 8 8" fill="none" style="margin-left:2px;opacity:.5"><path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     desBtn.innerHTML=propDes
       ? `<span class="pp-des-name">${propDes.label}</span>${capText?'<span class="pp-des-cap">'+capText+'</span>':''}${chevSvg}`
       : isAny
@@ -6564,9 +6641,9 @@ function buildPlanningSection(){
     const emp=el('div','pp-leads-popup-empty'); emp.textContent='No leads in pipeline'; leadsPopup.appendChild(emp);
   } else {
     const alreadyIn=new Set(PLANNING_PROJECTS.filter(pp=>pp._fromLeadId).map(pp=>pp._fromLeadId));
-    leads.forEach((proj,i)=>{
+    leads.filter(proj=>!alreadyIn.has(proj.id)).forEach((proj,i)=>{
       if(i>0){ const sep=el('div','pp-lead-sep'); leadsPopup.appendChild(sep); }
-      const row=el('div','pp-lead-row'); if(alreadyIn.has(proj.id)) row.classList.add('already-added');
+      const row=el('div','pp-lead-row');
       const info=el('div','pp-lead-row-info');
       const nm=el('div','pp-lead-row-name'); nm.textContent=proj.name; nm.title=proj.name; info.appendChild(nm);
       const parts=[];
@@ -7182,7 +7259,7 @@ function makeDefaultSchedule(spId,name,address,status,fields){
 async function loadTeamMembers(saved){
   setAuthStatus('Loading team — team members…');
   const items=await graphGetAll(BWC_SITE+'/CORE_TeamMembers/items?$expand=fields&$select=id,fields');
-  DESIGNERS.length=0; PROD_PMS.length=0;
+  DESIGNERS.length=0; PROD_PMS.length=0; SALES_PEOPLE.length=0;
   // Restore saved targets first so existing overrides survive
   if(saved&&saved.PERSON_TARGETS) Object.assign(PERSON_TARGETS,saved.PERSON_TARGETS);
   items.forEach(item=>{
@@ -7198,6 +7275,9 @@ async function loadTeamMembers(saved){
       PROD_PMS.push(entry);
       if(!(personId in PERSON_TARGETS)) PERSON_TARGETS[personId]=20;
     }
+    // Sales: keyed by Department field starting with 'sale'
+    const dept=(f.Department||'').trim().toLowerCase();
+    if(dept.startsWith('sale')) SALES_PEOPLE.push({label:fullName.split(' ')[0], fullLabel:fullName});
     // Leadership / Project Coordinator don't appear in the Gantt rows
   });
   PERSON_TARGETS['prod-total']=PROD_PMS.reduce((s,p)=>s+getTarget(p.id),0);
@@ -8030,6 +8110,7 @@ document.addEventListener('click',e=>{
     name:proj.name, lod:proj.lod||2, lodReason:proj.lodReason||'',
     address:proj.address||'', projType:proj.projType||'',
     projBudget:proj.estimatedValue||'', salesPerson:proj.salesPerson||'',
+    shortDescription:proj.shortDescription||'',
     proposedDesigner:proj.designer||null,
     slotWeek:null, slotId:null, notes:'', scheduled:false, parked:false,
     addedAt:Date.now(), _fromLeadId:proj.id
@@ -8068,6 +8149,7 @@ document.addEventListener('click',e=>{
     name:proj.name, lod:proj.lod||2, lodReason:proj.lodReason||'',
     address:proj.address||'', projType:proj.projType||'',
     projBudget:proj.estimatedValue||'', salesPerson:proj.salesPerson||'',
+    shortDescription:proj.shortDescription||'',
     proposedDesigner:proj.designer||null,
     slotWeek:null, slotId:null, notes:'', scheduled:false, parked:false,
     addedAt:Date.now(), _fromLeadId:proj.id
