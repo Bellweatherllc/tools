@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v504</title>
+<title>BW Project Pipeline — v505</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2338,7 +2338,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v504</div>
+    <div class="auth-version" id="authVersionBadge">v505</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2357,7 +2357,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v504</div>
+  <div class="proto-badge" id="versionBadge">v505</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -9170,6 +9170,32 @@ function generateBriefHTML(){
   const tw=todayWeek();
   let html='';
 
+  // ══════════════════════════════════════════════════════════════════
+  // PART 0 — SALES PLANNING (first section)
+  // ══════════════════════════════════════════════════════════════════
+  const planningChanges=diffPlanning();
+  const baselineTs=WEEKLY_BASELINE?new Date(WEEKLY_BASELINE.ts).getTime():0;
+  const planningActivity=HISTORY_STACK.filter(e=>e.ts>baselineTs&&e.planning);
+  const hasPlanningContent=planningChanges.length||planningActivity.length;
+  if(hasPlanningContent){
+    html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Sales Planning</span></div>`;
+    planningChanges.forEach(c=>{
+      const ackId='plan-'+c.type+'-'+c.name.replace(/\s+/g,'-').toLowerCase().slice(0,24);
+      const lbl=c.type==='added'?'Added':c.type==='removed'?'Removed':c.type==='moved'?'Moved':'Updated';
+      const cls=c.type==='removed'?'l-warn':c.type==='added'?'l-note':c.type==='moved'?'l-change':'l-quiet';
+      html+=briefAckRow(ackId,cls,lbl,`${c.name} — ${c.detail}`);
+    });
+    if(planningActivity.length){
+      if(planningChanges.length) html+=`<div style="height:6px;"></div>`;
+      planningActivity.forEach(e=>{
+        const ackId='plan-act-'+e.ts;
+        const t=new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+        html+=briefAckRow(ackId,'l-change','Action',`${e.desc} <span style="opacity:.45;font-size:9px;margin-left:4px;">${t}</span>`);
+      });
+    }
+    html+='</div>';
+  }
+
   // ── Health summary — collapsible, less prominent ─────────────────────────
   html+=`<details class="brief-health"><summary>Pipeline Health</summary><div class="brief-health-body">${briefHealthSummary(diff,flags)}</div></details>`;
   if(!WEEKLY_BASELINE) html+=`<div class="brief-no-baseline">No baseline set — click <strong>Clear Report</strong> to snapshot the current pipeline state and begin tracking week-over-week changes.</div>`;
@@ -9256,31 +9282,6 @@ function generateBriefHTML(){
       html+=`<div class="brief-proj-card ${cardCls}${reviewedClass}"><div class="brief-card-hd">${newBadge}<span class="brief-tag ${briefTagClass(proj.status)}">${briefStatusLabel(proj.status)}</span><span class="brief-card-name">${briefProjName(proj)}</span><span class="brief-card-people">${proj.salesPerson||'—'} · ${des} · ${pm}</span>${reviewBtn}</div><div class="brief-card-body">${rows.join('')}</div></div>`;
     });
     if(!active.length&&!removedProjs.length) html+=`<div class="brief-empty">${WEEKLY_BASELINE?'No project changes since the last baseline.':'Set a baseline to begin tracking project changes.'}</div>`;
-    html+='</div>';
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // PART 1B — SALES PLANNING
-  // ══════════════════════════════════════════════════════════════════
-  const planningChanges=diffPlanning();
-  // Planning activity from session history — entries since the baseline (or all if no baseline)
-  const baselineTs=WEEKLY_BASELINE?new Date(WEEKLY_BASELINE.ts).getTime():0;
-  const planningActivity=HISTORY_STACK.filter(e=>e.ts>baselineTs&&e.planning);
-  const hasPlanningContent=planningChanges.length||planningActivity.length;
-  if(hasPlanningContent){
-    html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Sales Planning</span></div>`;
-    planningChanges.forEach(c=>{
-      const lbl=c.type==='added'?'Added':c.type==='removed'?'Removed':c.type==='moved'?'Moved':'Updated';
-      const cls=c.type==='removed'?'l-warn':c.type==='added'?'l-note':c.type==='moved'?'l-change':'l-quiet';
-      html+=briefRow(cls,lbl,`${c.name} — ${c.detail}`);
-    });
-    if(planningActivity.length){
-      if(planningChanges.length) html+=`<div style="height:6px;"></div>`;
-      planningActivity.forEach(e=>{
-        const t=new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-        html+=briefRow('l-change','Action',`${e.desc} <span style="opacity:.45;font-size:9px;margin-left:4px;">${t}</span>`);
-      });
-    }
     html+='</div>';
   }
 
