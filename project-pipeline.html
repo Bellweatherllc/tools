@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v538</title>
+<title>BW Project Pipeline — v541</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2395,7 +2395,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v538</div>
+    <div class="auth-version" id="authVersionBadge">v541</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2414,7 +2414,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v538</div>
+  <div class="proto-badge" id="versionBadge">v541</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2861,7 +2861,7 @@ const SALES_PEOPLE=[];
 let _toIdCtr=1;
 function newToId(){ return 'to-'+(_toIdCtr++); }
 function personById(id){ return DESIGNERS.find(d=>d.id===id)||PROD_PMS.find(p=>p.id===id)||null; }
-function isVisible(p){ return p.status!=='archived'&&p.status!=='cancelled'&&!p.isLead; }
+function isVisible(p){ return p.status!=='archived'&&p.status!=='cancelled'&&p.status!=='lost'&&!p.isLead; }
 
 // ════════════════════════════════════════════════  PER-PERSON TARGETS
 const PERSON_TARGETS={};
@@ -2898,20 +2898,13 @@ const CAP_SORT={design:{field:null,dir:1},production:{field:null,dir:1}};
 let PROD_SHOW_PMS=true;
 let DESIGN_SHOW_DESIGNERS=true;
 let PROD_HIDE_DESIGN=true; // Design rows hidden by default in Production
-let PROD_ZOOM=1.0; // 1.0 = 100%, 0.25 = 25% — production timeline horizontal zoom
+let PROD_ZOOM=0.85; // 0.85=wide, 0.55=mid, 0.25=narrow — production timeline zoom
 function applyProdZoom(){
-  const prodSec=document.querySelector('.section[data-s-type="production"]');
-  if(!prodSec) return;
-  // Scale the timeline content only — NOT section-scroll (which includes fixed-col)
-  const timelineCol=prodSec.querySelector('.timeline-col');
-  if(timelineCol){ timelineCol.style.transform=PROD_ZOOM<1?`scaleX(${PROD_ZOOM})`:''; timelineCol.style.transformOrigin='left center'; }
-  // Scale the calendar date header clip to match (not the stub — that covers the fixed col)
-  const clip=prodSec.querySelector('.sticky-cal-clip');
-  if(clip){ clip.style.transform=PROD_ZOOM<1?`scaleX(${PROD_ZOOM})`:''; clip.style.transformOrigin='left center'; }
-  const lbl=document.getElementById('prodZoomLbl');
-  if(lbl) lbl.textContent=Math.round(PROD_ZOOM*100)+'%';
-  const sl=document.getElementById('prodZoomSlider');
-  if(sl) sl.value=Math.round(PROD_ZOOM*100);
+  rebuildSection('production');
+  // Update button active states
+  document.querySelectorAll('[data-prod-zoom]').forEach(btn=>{
+    btn.classList.toggle('active', parseFloat(btn.dataset.prodZoom)===PROD_ZOOM);
+  });
 }
 function sortCapProjects(section,field){
   const st=CAP_SORT[section];
@@ -2962,18 +2955,14 @@ function buildCapCmdBar(section){
   const jumpBtn=el('button','nav-btn'); jumpBtn.textContent='Jump To'; jumpBtn.dataset.jumpBtn='1'; right.appendChild(jumpBtn);
   if(section==='production'){
     right.appendChild(el('div','nav-sep'));
-    const zoomWrap=el('div',''); zoomWrap.style.cssText='display:flex;align-items:center;gap:5px;flex-shrink:0;';
-    const zoomIco=el('span',''); zoomIco.style.cssText='color:rgba(255,255,255,.40);display:flex;align-items:center;';
-    zoomIco.innerHTML=`<svg width="11" height="11" viewBox="0 0 14 14" fill="none"><circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.4"/><line x1="8.5" y1="8.5" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="3" y1="5.5" x2="8" y2="5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
-    const zoomSlider=el('input',''); zoomSlider.type='range'; zoomSlider.id='prodZoomSlider';
-    zoomSlider.min='25'; zoomSlider.max='100'; zoomSlider.step='5';
-    zoomSlider.value=Math.round(PROD_ZOOM*100);
-    zoomSlider.style.cssText='width:72px;cursor:pointer;accent-color:var(--gold);';
-    zoomSlider.addEventListener('input',()=>{ PROD_ZOOM=parseInt(zoomSlider.value)/100; applyProdZoom(); });
-    const zoomLbl=el('span',''); zoomLbl.id='prodZoomLbl';
-    zoomLbl.textContent=Math.round(PROD_ZOOM*100)+'%';
-    zoomLbl.style.cssText='font-size:9.5px;font-weight:700;color:rgba(255,255,255,.45);min-width:30px;';
-    zoomWrap.appendChild(zoomIco); zoomWrap.appendChild(zoomSlider); zoomWrap.appendChild(zoomLbl);
+    const zoomWrap=el('div',''); zoomWrap.style.cssText='display:flex;align-items:center;gap:2px;flex-shrink:0;';
+    [{label:'Wide',val:0.85},{label:'Mid',val:0.55},{label:'Narrow',val:0.25}].forEach(({label,val})=>{
+      const btn=el('button','sort-btn'+(PROD_ZOOM===val?' active':''));
+      btn.textContent=label; btn.dataset.prodZoom=val;
+      btn.style.cssText='padding:2px 7px;font-size:9px;';
+      btn.addEventListener('click',()=>{ PROD_ZOOM=val; applyProdZoom(); });
+      zoomWrap.appendChild(btn);
+    });
     right.appendChild(zoomWrap);
   }
   const capSpacer=el('span',''); capSpacer.style.flex='1'; right.appendChild(capSpacer);
@@ -3710,7 +3699,7 @@ function isTouching(ph,next){ return next&&ph.startWeek+ph.durWeeks===next.start
 // ════════════════════════════════════════════════  COLLAPSED BAND
 const BAND_COLORS={design:'#457ed9',permitting:'#a39a8f',production:'#3c9a5b'};
 // BAND_H is the colored strip height; BAND_TOP=0 since week labels were removed.
-const BAND_H=32, BAND_TOP=0;
+const BAND_H=29, BAND_TOP=0;
 // Lane display order (top to bottom within the band)
 const LANE_ORDER=['design','permitting','production'];
 
@@ -4683,6 +4672,8 @@ function _doRefreshRevenueRow(){
 }
 
 function buildProdSection(){
+  const _origWeekW=C.weekW; C.weekW=Math.round(_origWeekW*PROD_ZOOM);
+  try{
   const sec=sectionShell('production','Production Planning');
   if(splitState.production) sec.classList.add('split-mode');
   const prodCmdBar=buildCapCmdBar('production'); // appended into sticky band below
@@ -4887,6 +4878,7 @@ function buildProdSection(){
     initProdRowDrag(sec);
   });
   return sec;
+  }finally{ C.weekW=_origWeekW; }
 }
 
 
@@ -7124,7 +7116,7 @@ function rebuildSection(sType){
   });
   const newSec=SECTION_BUILDERS[sType]();
   iw.replaceChild(newSec,oldSec);
-  if(sType==='production') requestAnimationFrame(applyProdZoom);
+
   // Restore scroll position
   // Restore scroll position to the real scroller, and re-attach scroll listener
   const _newScroller=getScroller(newSec);
@@ -7298,7 +7290,7 @@ function buildAll(){
   updateSortBtns();
   updateEndBtns();
   // Re-apply production zoom after full rebuild
-  if(PROD_ZOOM<1) requestAnimationFrame(applyProdZoom);
+
   // Restore per-person eyeball state
   personEyeState.forEach(({pid,sec})=>{
     document.querySelectorAll(`.person-eye-btn[data-person-eye="${pid}"][data-eye-section="${sec}"]`).forEach(btn=>{
