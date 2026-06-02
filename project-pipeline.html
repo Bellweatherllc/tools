@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v551</title>
+<title>BW Project Pipeline — v552</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -170,7 +170,8 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 /* note dot on name row */
 .fc-proj-name-wrap{display:flex;align-items:center;gap:4px;min-width:0;}
 .fc-proj-name-wrap .proj-name-input{width:100%;font:inherit;border:none;outline:none;background:rgba(255,255,255,.15);color:#fff;border-radius:3px;padding:0 3px;box-sizing:border-box;}
-.fc-proj-name{flex:1;}
+.fc-proj-name{flex:1;pointer-events:none;}
+.proj-name-text{display:inline;pointer-events:auto;cursor:default;}
 .fc-note-dot{display:none !important;}
 
 /* note popover */
@@ -321,7 +322,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 }
 
 /* ── MILESTONE ROW (timeline) ── */
-.tl-ms-row{position:relative;overflow:visible;background:var(--proj-row);display:flex;border-top:1px solid rgba(0,0,0,.09);}
+.tl-ms-row{position:relative;overflow:visible;background:var(--proj-row);display:flex;border-top:0.5px solid rgba(0,0,0,.12);}
 .ms-wk-cell{flex-shrink:0;display:flex;align-items:center;justify-content:center;}
 .ms-wk-n{font-size:7px;font-weight:600;letter-spacing:.04em;color:rgba(40,40,40,.48);pointer-events:none;}
 .ms-wk-cell.today-wk .ms-wk-n{color:rgba(204,150,0,1);}
@@ -2399,7 +2400,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v551</div>
+    <div class="auth-version" id="authVersionBadge">v552</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2418,7 +2419,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v551</div>
+  <div class="proto-badge" id="versionBadge">v552</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2907,8 +2908,18 @@ let DESIGN_SHOW_DESIGNERS=true;
 let PROD_HIDE_DESIGN=true; // Design rows hidden by default in Production
 let PROD_ZOOM=0.85; // default: medium (15% narrower than full) // 0.85=wide, 0.55=mid, 0.25=narrow — production timeline zoom
 function applyProdZoom(){
+  // Capture which week is at the left edge before rebuild
+  const _oldSec=document.querySelector('.section[data-s-type="production"]');
+  const _oldSS=_oldSec?_oldSec.querySelector('.section-scroll'):null;
+  const _oldCell=_oldSec?_oldSec.querySelector('.wk-cell'):null;
+  const _oldWW=_oldCell?_oldCell.offsetWidth:C.weekW;
+  const _anchorWeek=_oldSS?_oldSS.scrollLeft/_oldWW:todayWeek();
   rebuildSection('production');
-  // Update button active states
+  // Restore scroll so the same week stays at the left edge
+  requestAnimationFrame(()=>{
+    const newSS=document.querySelector('.section[data-s-type="production"] .section-scroll');
+    if(newSS){ newSS.scrollLeft=Math.round(_anchorWeek*Math.round(C.weekW*PROD_ZOOM)); }
+  });
   document.querySelectorAll('[data-prod-zoom]').forEach(btn=>{
     btn.classList.toggle('active', parseFloat(btn.dataset.prodZoom)===PROD_ZOOM);
   });
@@ -3711,7 +3722,7 @@ function isTouching(ph,next){ return next&&ph.startWeek+ph.durWeeks===next.start
 // ════════════════════════════════════════════════  COLLAPSED BAND
 const BAND_COLORS={design:'#457ed9',permitting:'#a39a8f',production:'#3c9a5b'};
 // BAND_H is the colored strip height; BAND_TOP=0 since week labels were removed.
-const BAND_H=26, BAND_TOP=0;
+const BAND_H=28, BAND_TOP=0;
 // Lane display order (top to bottom within the band)
 const LANE_ORDER=['design','permitting','production'];
 
@@ -3889,7 +3900,7 @@ function buildFcMsRow(proj, capacitySection){
   const info=el('div','fc-proj-info');
   const nameWrap=el('div','fc-proj-name-wrap');
   const name=el('div','fc-proj-name admin-only-edit');
-  name.textContent=proj.name;
+  const _nt=el('span','proj-name-text'); _nt.textContent=proj.name; name.appendChild(_nt);
   name.title='Click to edit project name (admin mode)';
   name.addEventListener('dblclick',e=>{
     if(!canEdit()) return;
@@ -3906,7 +3917,8 @@ function buildFcMsRow(proj, capacitySection){
       const val=inp.value.trim();
       proj.projectName=val;
       proj.name=val||proj.clientName;
-      name.textContent=proj.name;
+      name.innerHTML='';
+      const nt=el('span','proj-name-text'); nt.textContent=proj.name; name.appendChild(nt);
       markDirty(proj);
       // Also patch ProjectName in SP directly
       if(proj._spItemId){
@@ -4317,7 +4329,7 @@ function buildMonthLineOverlay(){
     prevMonth=m;
   }
   if(positions.length){
-    const col='rgba(0,0,0,.42)';
+    const col='rgba(0,0,0,.15)';
     const stops=positions.flatMap(px=>[`transparent ${px-.5}px`,`${col} ${px-.5}px`,`${col} ${px+.5}px`,`transparent ${px+.5}px`]);
     overlay.style.backgroundImage=`linear-gradient(90deg,${stops.join(',')})`;
   }
@@ -7964,15 +7976,15 @@ function _hideTipSoon(){
 document.addEventListener('mouseenter',e=>{
   if(!e.target||!e.target.closest)return;
   if(e.target.closest('.fc-proj-tooltip')){ clearTimeout(_tipHideTimer); return; }
-  const name=e.target.closest('.fc-proj-name');
-  if(!name)return;
-  const info=name.closest('.fc-proj-info');
+  const nameText=e.target.closest('.proj-name-text');
+  if(!nameText)return;
+  const info=nameText.closest('.fc-proj-info');
   if(!info)return;
   _showTip(info,e);
 },true);
 document.addEventListener('mouseleave',e=>{
   if(!e.target||!e.target.closest)return;
-  if(e.target.closest('.fc-proj-name')||e.target.closest('.fc-proj-tooltip')) _hideTipSoon();
+  if(e.target.closest('.proj-name-text')||e.target.closest('.fc-proj-tooltip')) _hideTipSoon();
 },true);
 
 // ════════════════════════════════════════════════  CALENDAR RANGE POPUP
