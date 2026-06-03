@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v570</title>
+<title>BW Project Pipeline — v572</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -57,20 +57,14 @@ body[data-focus="design"]     .section:not([data-s-type="design"]):not(.is-focus
 body[data-focus="production"] .section:not([data-s-type="production"]):not(.is-focus-outgoing){
   display:none;
 }
-/* All sections that are animating use clip-path for the wipe — NOT steady state (clip-path breaks position:sticky) */
-.section.is-clip-anim{
-  transition: clip-path .46s cubic-bezier(.4,.0,.2,1), -webkit-clip-path .46s cubic-bezier(.4,.0,.2,1);
-  clip-path: inset(0);
-  -webkit-clip-path: inset(0);
-}
-/* Outgoing — pinned absolute over the incoming section, clip-path grows from top down to reveal incoming behind */
-.section.is-focus-outgoing.is-clip-anim{
+/* Outgoing section fades out — no clip-path, everything dissolves together */
+.section.is-focus-outgoing{
   display:block;
   position:absolute;top:0;left:0;right:0;
   pointer-events:none;
   z-index:2;
-  clip-path: inset(100% 0 0 0);
-  -webkit-clip-path: inset(100% 0 0 0);
+  opacity:0;
+  transition:opacity 180ms ease;
 }
 
 /* ── SCROLL CONTAINER ── */
@@ -302,7 +296,10 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .section-sticky-band{position:fixed;top:calc(var(--app-h,44px) + var(--slb-h,22px) - 1px);left:0;right:0;z-index:150;background:var(--navy);box-shadow:0 2px 8px rgba(0,0,0,.28);}
 
 /* Hide outgoing section fixed headers during transition */
-.section.is-focus-outgoing>.slb,.section.is-focus-outgoing>.section-sticky-band{display:none!important;}
+/* Outgoing headers covered by section fade — hide so they don't render above incoming */
+.section.is-focus-outgoing>.slb,.section.is-focus-outgoing>.section-sticky-band{opacity:0;pointer-events:none;transition:opacity 180ms ease;}
+@keyframes hdrFadeIn{from{opacity:0;}to{opacity:1;}}
+body.is-transitioning .section:not(.is-focus-outgoing){animation:hdrFadeIn 200ms ease forwards;}
 .sticky-cal-stub{flex-shrink:0;background:var(--navy);border-right:1px solid rgba(0,0,0,.12);box-shadow:3px 0 8px rgba(0,0,0,.08);position:relative;z-index:1;}
 .sticky-cal-clip{overflow:hidden;flex:1;}
 .sticky-cal-clip .tl-hdr{will-change:transform;border-bottom:none;}
@@ -2406,7 +2403,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v570</div>
+    <div class="auth-version" id="authVersionBadge">v572</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2425,7 +2422,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v570</div>
+  <div class="proto-badge" id="versionBadge">v572</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7828,7 +7825,7 @@ document.getElementById('revDiagClose').addEventListener('click',()=>{
 // ── FOCUS LENS — show one section at a time (Sales / Design / Production) ──
 const FOCUS_VALID=['planning','design','production'];
 const FOCUS_LABEL={planning:'Sales',design:'Design',production:'Production'};
-const FOCUS_FADE_MS=460;
+const FOCUS_FADE_MS=200;
 let _focusSwitchTimer=null;
 function resolveInitialFocus(){
   try{
@@ -7865,8 +7862,8 @@ function setFocus(name,opts){
   }
   // Cancel any in-flight transition + clear lingering outgoing-class from any prior interrupted switch
   if(_focusSwitchTimer){ clearTimeout(_focusSwitchTimer); _focusSwitchTimer=null; }
-  document.querySelectorAll('.section.is-focus-outgoing,.section.is-clip-anim').forEach(s=>{
-    s.classList.remove('is-focus-outgoing'); s.classList.remove('is-clip-anim');
+  document.querySelectorAll('.section.is-focus-outgoing').forEach(s=>{
+    s.classList.remove('is-focus-outgoing');
   });
   // Initial load: no current section to wipe over — snap to final state without animation
   if(!current){
@@ -7883,8 +7880,8 @@ function setFocus(name,opts){
   // Tag both sections with clip-anim for the duration of the wipe
   const outgoing=document.querySelector(`.section[data-s-type="${current}"]`);
   const incoming=document.querySelector(`.section[data-s-type="${name}"]`);
-  if(outgoing){ outgoing.classList.add('is-clip-anim'); outgoing.classList.add('is-focus-outgoing'); }
-  if(incoming) incoming.classList.add('is-clip-anim');
+  if(outgoing){ outgoing.classList.add('is-focus-outgoing'); }
+  body.classList.add('is-transitioning');
   // Swap data-focus — incoming section becomes in-flow, visible behind outgoing during the wipe
   body.setAttribute('data-focus',name);
   // Apply shared scroll position to the incoming section now that it's no longer display:none.
@@ -7897,8 +7894,8 @@ function setFocus(name,opts){
   // After the wipe finishes, clean up and re-evaluate sticky
   _focusSwitchTimer=setTimeout(()=>{
     _focusSwitchTimer=null;
-    if(outgoing){ outgoing.classList.remove('is-focus-outgoing'); outgoing.classList.remove('is-clip-anim'); }
-    if(incoming) incoming.classList.remove('is-clip-anim');
+    if(outgoing) outgoing.classList.remove('is-focus-outgoing');
+    body.classList.remove('is-transitioning');
   
   },FOCUS_FADE_MS+60);
 }
