@@ -124,6 +124,25 @@
   .month-btn.active{background:var(--primary);color:white;border-color:var(--primary);}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#333;color:white;padding:10px 20px;border-radius:6px;font-size:13px;transition:transform .3s;z-index:999;pointer-events:none;}
   .toast.show{transform:translateX(-50%) translateY(0);}
+  /* Project Phase Panel */
+  .proj-phase-panel{padding:16px 18px 20px;border-top:1px solid var(--border);}
+  .proj-phase-panel:empty{display:none;}
+  .proj-phase-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .proj-phase-table th{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);padding:5px 10px;text-align:right;border-bottom:2px solid var(--border);white-space:nowrap;}
+  .proj-phase-table th:first-child{text-align:left;}
+  .proj-phase-table th.ph-hd{border-bottom-color:var(--primary);}
+  .proj-phase-table td{padding:6px 10px;text-align:right;border-bottom:1px solid #f0ede8;vertical-align:middle;}
+  .proj-phase-table td:first-child{text-align:left;}
+  .proj-phase-table tr:last-child td{border-bottom:none;}
+  .proj-phase-table tr:hover td{background:var(--hover-bg);}
+  .ppt-name{font-weight:600;color:var(--text);display:flex;align-items:center;gap:7px;}
+  .ppt-swatch{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
+  .ppt-code{font-size:9px;color:var(--text-muted);font-family:var(--font-mono);}
+  .ppt-value{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);}
+  .ppt-hrs{font-family:var(--font-mono);font-weight:600;color:var(--primary);}
+  .ppt-hrs.dim{color:var(--text-muted);font-weight:400;}
+  .ppt-no-phase{color:var(--text-muted);font-style:italic;font-size:10px;}
+  .ppt-panel-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:12px;}
   /* Sankey */
   .sankey-wrap{padding:18px 18px 24px;border-top:1px solid var(--border);}
   .sankey-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:12px;}
@@ -159,7 +178,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v12</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v13</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -171,7 +190,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v12</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v13</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -606,6 +625,117 @@ function buildDesignerData(designer) {
   return { weeks, billableJobs, nbLabel, grid, jobTotals, weekTotals };
 }
 
+// --- Project Phase Panel ---
+function parseValue(str) {
+  if (!str) return null;
+  const s = String(str).replace(/[$,\s]/g, '').toUpperCase();
+  if (s.endsWith('K')) return parseFloat(s) * 1000;
+  if (s.endsWith('M')) return parseFloat(s) * 1000000;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+function fmtValue(v) {
+  if (v == null) return '—';
+  if (v >= 1000000) return '$' + (v / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (v >= 1000) return '$' + Math.round(v / 1000) + 'K';
+  return '$' + Math.round(v);
+}
+
+function renderProjectPhasePanel(sn, data) {
+  const el = document.getElementById(`projphase_${sn}`);
+  if (!el) return;
+  const { weeks, billableJobs, grid, jobTotals } = data;
+  if (!billableJobs.length) { el.innerHTML = ''; return; }
+
+  // Collect all phase names across all projects this designer worked on
+  const allPhaseNames = [];
+  for (const job of billableJobs) {
+    const proj = coreProjects[job.toUpperCase()];
+    if (!proj) continue;
+    for (const ph of proj.phases) {
+      if (!allPhaseNames.includes(ph.name)) allPhaseNames.push(ph.name);
+    }
+  }
+
+  // Build rows — one per billable job
+  const rows = [];
+  const colorMap = {};
+  let ci = 0;
+  for (const job of billableJobs) { colorMap[job] = CHART_COLORS[ci % CHART_COLORS.length]; ci++; }
+
+  for (const job of billableJobs) {
+    const proj = coreProjects[job.toUpperCase()];
+    const value = proj ? parseValue(proj.estimatedValue) : null;
+    const displayName = proj ? proj.displayName : null;
+    const phaseAvgs = {};
+
+    if (proj && proj.phases.length) {
+      for (const ph of proj.phases) {
+        const phWeeks = weeks.filter(w => w >= ph.startDate && w < ph.endDate);
+        if (!phWeeks.length) continue;
+        const totalHrs = phWeeks.reduce((s, w) => s + (grid[job][w] || 0), 0);
+        const activeWks = phWeeks.filter(w => (grid[job][w] || 0) > 0).length;
+        if (activeWks > 0) {
+          phaseAvgs[ph.name] = {
+            avg: totalHrs / activeWks,
+            avgAll: totalHrs / phWeeks.length,
+            activeWks,
+            totalWks: phWeeks.length,
+            totalHrs,
+          };
+        }
+      }
+    }
+
+    rows.push({ job, displayName, value, phaseAvgs, color: colorMap[job], total: jobTotals[job] || 0, hasPhases: proj && proj.phases.length > 0 });
+  }
+
+  if (!rows.length) { el.innerHTML = ''; return; }
+
+  // Render table
+  const phCols = allPhaseNames.length > 0 ? allPhaseNames : [];
+  let html = '<div class="ppt-panel-title">Project Hours by Phase</div><table class="proj-phase-table"><thead><tr>';
+  html += '<th>Project</th><th>Value</th><th>Total Hrs</th>';
+  for (const ph of phCols) html += `<th class="ph-hd" title="${ph}">${ph}</th>`;
+  if (!phCols.length) html += '<th>Avg Hrs/Wk</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const row of rows) {
+    html += '<tr>';
+    // Name + code
+    const label = row.displayName || row.job;
+    const showCode = row.displayName && row.displayName !== row.job;
+    html += `<td><div class="ppt-name"><span class="ppt-swatch" style="background:${row.color}"></span>${label}${showCode ? `<span class="ppt-code">${row.job}</span>` : ''}</div></td>`;
+    // Value
+    html += `<td class="ppt-value">${fmtValue(row.value)}</td>`;
+    // Total
+    const tot = row.total;
+    html += `<td class="ppt-hrs">${tot % 1 === 0 ? tot : tot.toFixed(1)}</td>`;
+    // Phase columns
+    if (phCols.length) {
+      for (const ph of phCols) {
+        const ps = row.phaseAvgs[ph];
+        if (!ps) {
+          html += `<td class="ppt-no-phase">—</td>`;
+        } else {
+          const avg = ps.avg % 1 === 0 ? ps.avg : ps.avg.toFixed(1);
+          html += `<td><span class="ppt-hrs">${avg}<span style="font-size:9px;font-weight:400;color:var(--text-muted)"> /wk</span></span><div style="font-size:9px;color:var(--text-muted);margin-top:1px">${ps.activeWks} of ${ps.totalWks} wks</div></td>`;
+        }
+      }
+    } else {
+      // No phase data — show simple avg
+      const allWks = Object.values(data.grid[row.job] || {}).filter(h => h > 0).length;
+      const avg = allWks > 0 ? (row.total / allWks) : 0;
+      html += `<td class="ppt-hrs dim">${avg % 1 === 0 ? avg : avg.toFixed(1)} /wk</td>`;
+    }
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
 // --- Sankey ---
 function renderSankey(sn, data) {
   const el = document.getElementById(`sankey_${sn}`);
@@ -921,9 +1051,10 @@ function render() {
     const data = buildDesignerData(designer); if (data.weeks.length === 0) continue;
     const sn = SHORT_NAMES[designer], dt = Object.values(data.weekTotals).reduce((a,b)=>a+b,0), bid = `body_${sn}`;
     const sec = document.createElement('div'); sec.className = 'section';
-    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div><div class="sankey-wrap" id="sankey_${sn}"></div></div>`;
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div><div class="proj-phase-panel" id="projphase_${sn}"></div><div class="sankey-wrap" id="sankey_${sn}"></div></div>`;
     ctr.appendChild(sec);
     renderGrid(sn, data);
+    renderProjectPhasePanel(sn, data);
     renderSankey(sn, data);
   }
 }
