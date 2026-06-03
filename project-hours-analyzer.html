@@ -87,7 +87,7 @@
   .hours-grid thead th{padding:8px 10px;text-align:center;font-weight:600;font-size:11px;color:var(--text-muted);border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2;white-space:nowrap;}
   .hours-grid thead th:first-child{text-align:left;position:sticky;left:0;z-index:3;min-width:160px;background:var(--surface);}
   .hours-grid thead th.total-col{background:var(--header-bg);font-weight:700;color:var(--text);}
-  .hours-grid tbody td{padding:6px 10px;text-align:center;font-family:var(--font-mono);font-size:11px;border-bottom:1px solid #f0ede8;color:var(--text);position:relative;}
+  .hours-grid tbody td{padding:10px 10px;text-align:center;font-family:var(--font-mono);font-size:11px;border-bottom:1px solid #f0ede8;color:var(--text);position:relative;}
   .hours-grid tbody td:first-child{text-align:left;font-family:var(--font-sans);font-weight:500;font-size:12px;position:sticky;left:0;background:var(--surface);z-index:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
   .hours-grid tbody td.total-col{background:var(--header-bg);font-weight:600;}
   .hours-grid tbody td.zero{color:var(--border);}
@@ -159,7 +159,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v11</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v12</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -171,7 +171,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v11</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v12</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -385,7 +385,7 @@ async function fetchTimecardEntries(cutoff) {
         spId: item.id,
         designer: f.Designer,
         date: f.EntryDate,
-        week: f.WeekOf,
+        week: f.WeekOf ? f.WeekOf.slice(0, 10) : null,
         job: f.JobCode,
         jobUpper: (f.JobCode || '').toUpperCase(),
         hours: parseFloat(f.Hours) || 0,
@@ -619,12 +619,11 @@ function renderSankey(sn, data) {
   if (activeWeeks.length < 2 || activeJobs.length < 1) { el.innerHTML = ''; return; }
 
   // Layout constants
-  const W = 800, nodeW = 12, gap = 6;
-  const leftX = nodeW + 60;  // week nodes x
-  const rightX = W - nodeW - 80; // project nodes x
-  const weekH = 26; // height per week node slot
-  const totalSankeyH = Math.max(activeWeeks.length * weekH, activeJobs.length * 36);
-  const H = totalSankeyH + 20;
+  const W = 900, nodeW = 14, jobGap = 8;
+  const leftX = nodeW + 80;   // week nodes x (room for date + hours label)
+  const rightX = W - nodeW - 140; // project nodes x (room for name label)
+  const minRowH = 32, weekRowH = Math.max(minRowH, Math.floor(420 / Math.max(activeWeeks.length, 1)));
+  const totalH_weeks = activeWeeks.length * weekRowH;
 
   // Color map
   const colorMap = {};
@@ -632,24 +631,31 @@ function renderSankey(sn, data) {
   for (const j of billableJobs) { colorMap[j] = CHART_COLORS[ci % CHART_COLORS.length]; ci++; }
   colorMap[nbLabel] = '#B7A9A3';
 
-  // Week nodes — evenly spaced left side
+  // Right side: project nodes sized by total hours, with fixed minimum height
+  const totalAllHours = activeJobs.reduce((s, j) => s + (jobTotals[j] || 0), 0);
+  const minJobH = 20;
+  // First pass: compute natural heights
+  const naturalJobH = activeJobs.map(j => Math.max((jobTotals[j] || 0) / totalAllHours * totalH_weeks, minJobH));
+  const totalRightH = naturalJobH.reduce((a, b) => a + b, 0) + jobGap * (activeJobs.length - 1);
+  const H = Math.max(totalH_weeks, totalRightH) + 40;
+
+  // Week nodes — evenly spaced, centered in H
   const weekNodes = {};
+  const weekAreaTop = (H - totalH_weeks) / 2;
   activeWeeks.forEach((w, i) => {
-    const cy = 10 + i * (H - 20) / Math.max(activeWeeks.length - 1, 1);
+    const cy = weekAreaTop + i * weekRowH + weekRowH / 2;
     weekNodes[w] = { y: cy, total: weekTotals[w] || 0 };
   });
 
-  // Project nodes — sized by total hours, packed top to bottom right side
-  const maxJobTotal = Math.max(...activeJobs.map(j => jobTotals[j] || 0));
-  const totalAllHours = activeJobs.reduce((s, j) => s + (jobTotals[j] || 0), 0);
-  const rightUsableH = H - 20;
+  // Project nodes — packed and centered
   const jobNodes = {};
-  let rightY = 10;
-  for (const j of activeJobs) {
-    const hrs = jobTotals[j] || 0;
-    const nodeHeight = (hrs / totalAllHours) * rightUsableH;
-    jobNodes[j] = { y: rightY + nodeHeight / 2, height: nodeHeight, total: hrs };
-    rightY += nodeHeight + gap;
+  const jobAreaTop = (H - totalRightH) / 2;
+  let rightY = jobAreaTop;
+  for (let ji = 0; ji < activeJobs.length; ji++) {
+    const j = activeJobs[ji];
+    const nodeHeight = naturalJobH[ji];
+    jobNodes[j] = { y: rightY + nodeHeight / 2, height: nodeHeight, total: jobTotals[j] || 0 };
+    rightY += nodeHeight + jobGap;
   }
 
   // Build flows: week → job
@@ -662,8 +668,8 @@ function renderSankey(sn, data) {
   // Pixel height per hour: map to week node visual band
   // Each week node will be a vertical bar of height proportional to weekTotals
   const maxWeekTotal = Math.max(...activeWeeks.map(w => weekTotals[w] || 0));
-  const weekBarScale = (weekH * 0.85) / (maxWeekTotal || 1);
-  const rightBarScale = (j) => jobNodes[j].height / (jobNodes[j].total || 1);
+  const weekBarScale = (weekRowH * 0.80) / (maxWeekTotal || 1);
+  const rightBarScale = (j) => (jobNodes[j].height * 0.92) / (jobNodes[j].total || 1);
 
   // Reset offsets as pixel positions relative to node center
   for (const w of activeWeeks) {
@@ -733,9 +739,22 @@ function renderSankey(sn, data) {
     txt.setAttribute('font-size', '9');
     txt.setAttribute('fill', '#888');
     txt.setAttribute('font-family', 'monospace');
-    const d = new Date(w + 'T00:00:00');
+    const wp = w.slice(0, 10);
+    const [wy, wmo, wday] = wp.split('-').map(Number);
+    const d = new Date(wy, wmo - 1, wday);
     txt.textContent = d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
     svg.appendChild(txt);
+    // Hour total
+    const htxt = document.createElementNS(ns, 'text');
+    htxt.setAttribute('x', leftX - 6);
+    htxt.setAttribute('y', wn.y + 14);
+    htxt.setAttribute('text-anchor', 'end');
+    htxt.setAttribute('font-size', '8');
+    htxt.setAttribute('fill', '#aaa');
+    htxt.setAttribute('font-family', 'monospace');
+    const wTotal = wn.total;
+    htxt.textContent = `${wTotal % 1 === 0 ? wTotal : wTotal.toFixed(1)}h`;
+    svg.appendChild(htxt);
   }
 
   // Project nodes (right) — vertical bars sized by total
@@ -812,7 +831,7 @@ function drawTrendOverlays(table, numWeeks) {
 
     const rowRect = tr.getBoundingClientRect();
     const naturalH = rowRect.height;
-    const h = naturalH * 3; // 3x row height gives the curve room to breathe
+    const h = naturalH * 2; // 2x row height gives the curve room to breathe
     const pad = 8;
     const ph = h - pad * 2;
     const sm = maxVal;
