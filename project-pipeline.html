@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v574</title>
+<title>BW Project Pipeline — v577</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -448,6 +448,15 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .save-indicator .si-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
 .save-indicator .si-spinner{width:11px;height:11px;border-radius:50%;border:2px solid rgba(255,255,255,.18);border-top-color:rgba(255,255,255,.75);animation:bw-spin .8s linear infinite;flex-shrink:0;}
 .save-indicator .si-txt{color:rgba(255,255,255,.4);}
+#sp-error-banner{display:none;position:fixed;top:calc(var(--app-h,44px) - 1px);left:0;right:0;z-index:500;background:#7f1d1d;border-top:2px solid #ef4444;border-bottom:2px solid rgba(0,0,0,.4);padding:10px 16px;align-items:center;gap:12px;}
+#sp-error-banner.visible{display:flex;}
+#sp-error-banner .seb-icon{font-size:18px;flex-shrink:0;}
+#sp-error-banner .seb-msg{flex:1;font-size:12px;font-weight:600;color:#fecaca;line-height:1.4;}
+#sp-error-banner .seb-msg strong{color:#fff;}
+#sp-error-banner .seb-retry{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:#fff;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap;}
+#sp-error-banner .seb-retry:hover{background:rgba(255,255,255,.28);}
+#sp-error-banner .seb-dismiss{background:transparent;border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.55);padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;white-space:nowrap;}
+#sp-error-banner .seb-dismiss:hover{color:#fff;border-color:rgba(255,255,255,.5);}
 
 
 /* ── COLLAPSED BAND ── */
@@ -2394,14 +2403,19 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 <body>
 
 <!-- ── AUTH OVERLAY ── -->
-<div id="authOverlay" style="display:flex;">
+<div id="sp-error-banner">
+  <span class="seb-icon">⚠</span>
+  <span class="seb-msg" id="sp-error-msg">SharePoint save failed — changes were <strong>NOT written</strong>.</span>
+  <button class="seb-retry" onclick="_retrySave()">Retry Save</button>
+  <button class="seb-dismiss" onclick="_dismissSaveError()">Dismiss (data not saved)</button>
+</div> style="display:flex;">
   <div class="auth-card">
     <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div>
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v574</div>
+    <div class="auth-version" id="authVersionBadge">v577</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2420,7 +2434,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v574</div>
+  <div class="proto-badge" id="versionBadge">v577</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -5132,6 +5146,7 @@ function updateHours(phId,delta){
   _histPush(`${_projShortName(r.proj)}: "${r.ph.name}" ${oldH}h/wk → ${newH}h/wk`,snap);
   document.querySelectorAll(`[data-hrs-id="${phId}"]`).forEach(v=>v.textContent=r.ph.hours+'h/w');
   renderTally(tallySection(laneOf(phId)));
+  markDirty(r.proj); triggerSave(r.proj);
 }
 function updateTarget(personId,delta){
   PERSON_TARGETS[personId]=Math.max(1,PERSON_TARGETS[personId]+delta);
@@ -5172,7 +5187,7 @@ function renderTally(section){
         if(h<0.05)return;
         const fillH=Math.max(3,Math.round((h/peakH)*avail));
         const bar=el('div','tally-bar');
-        bar.style.cssText=`left:${w*C.weekW+2}px;width:${C.weekW-4}px;height:${fillH}px;background:${tallyColor(h,target)};`;
+        const _tw=Math.round(C.weekW*PROD_ZOOM); bar.style.cssText=`left:${w*_tw+2}px;width:${_tw-4}px;height:${fillH}px;background:${tallyColor(h,target)};`;
         if(fillH>=14){const lbl=el('span');lbl.style.cssText=`font-size:7.5px;font-weight:700;color:${tallyTextColor(h,target)};pointer-events:none;`;lbl.textContent=Math.round(h)+'h';bar.appendChild(lbl);}
         container.appendChild(bar);
       });
@@ -5189,7 +5204,7 @@ function renderTally(section){
         if(h<0.05)return;
         const fillH=Math.max(3,Math.round((h/peakH)*avail));
         const bar=el('div','tally-bar');
-        bar.style.cssText=`left:${w*C.weekW+2}px;width:${C.weekW-4}px;height:${fillH}px;background:${tallyColor(h,target)};`;
+        const _tw=Math.round(C.weekW*PROD_ZOOM); bar.style.cssText=`left:${w*_tw+2}px;width:${_tw-4}px;height:${fillH}px;background:${tallyColor(h,target)};`;
         if(fillH>=14){const lbl=el('span');lbl.style.cssText=`font-size:7.5px;font-weight:700;color:${tallyTextColor(h,target)};pointer-events:none;`;lbl.textContent=Math.round(h)+'h';bar.appendChild(lbl);}
         container.appendChild(bar);
       });
@@ -6067,6 +6082,7 @@ function capture(el,pid){ try{el.setPointerCapture(pid);}catch(_){} document.add
 function onMove(e){
   if(!DRAG)return;
   const _dragWW=DRAG.weekW||Math.round(C.weekW*PROD_ZOOM);
+  const _w2px=w=>Math.round(w*_dragWW); // zoom-correct positioning — never use global w2px here
   const dw=Math.round((e.clientX-DRAG.startX)/_dragWW);
 
   if(DRAG.type==='panScroll'){
@@ -6079,8 +6095,8 @@ function onMove(e){
   if(DRAG.type==='timeoffMove'){
     const person=personById(DRAG.personId), to=person?.timeOff.find(t=>t.id===DRAG.toId); if(!to)return;
     to.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origWeek+dw));
-    document.querySelectorAll(`.timeoff-block[data-to-id="${DRAG.toId}"]`).forEach(b=>b.style.left=w2px(to.week)+'px');
-    document.querySelectorAll(`.timeoff-ov-strip[data-to-id="${DRAG.toId}"]`).forEach(s=>s.style.left=w2px(to.week)+'px');
+    document.querySelectorAll(`.timeoff-block[data-to-id="${DRAG.toId}"]`).forEach(b=>b.style.left=_w2px(to.week)+'px');
+    document.querySelectorAll(`.timeoff-ov-strip[data-to-id="${DRAG.toId}"]`).forEach(s=>s.style.left=_w2px(to.week)+'px');
     const field=DESIGNERS.find(d=>d.id===DRAG.personId)?'designer':'productionPM';
     PROJECTS.filter(p=>p[field]===DRAG.personId&&p.collapsed).forEach(p=>renderCollapsedBand(p.id));
     return;
@@ -6178,7 +6194,7 @@ function onMove(e){
     if(DRAG.milestones){ DRAG.milestones.forEach((ms,i)=>{ ms.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origMsWeeks[i]+clampedDw)); refreshMs(ms.id); }); }
     // Update bars in-place
     DRAG.allPhs.forEach(ph=>{
-      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; });
+      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=_w2px(ph.startWeek)+'px'; });
     });
     renderTally('design'); renderTally('production'); refreshWkNums(DRAG.projId); refreshMsOpacity(DRAG.projId); refreshRevenueRow();
     // Note: syncDesignProdPhase intentionally omitted here — projMove already moves isDesignProd
@@ -6192,7 +6208,7 @@ function onMove(e){
     const proj=PROJECTS.find(p=>p.id===DRAG.projId);
     getLane(proj,DRAG.laneId).startWeek=DRAG.phases[0].startWeek;
     DRAG.phases.forEach(ph=>{
-      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; });
+      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=_w2px(ph.startWeek)+'px'; });
     });
     renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId);
     refreshRevenueRow(); _updateProjCA(DRAG.projId);
@@ -6232,25 +6248,25 @@ function onMove(e){
       const cl=DRAG.cascadeLeft;
       cl.preConPh.startWeek=cl.preConOrigStart+clampedDw;
       cl.caMs.week=cl.preConPh.startWeek-1;
-      document.querySelectorAll(`.phase-bar[data-phase-id="${cl.preConPh.id}"]`).forEach(b=>{b.style.left=w2px(cl.preConPh.startWeek)+'px';});
+      document.querySelectorAll(`.phase-bar[data-phase-id="${cl.preConPh.id}"]`).forEach(b=>{b.style.left=_w2px(cl.preConPh.startWeek)+'px';});
       refreshMs(cl.caMs.id);
     }
     // Design cascade: push touching adjacent phases along with the dragged phase
     if(DRAG.designCascadeRight&&clampedDw>0){
       DRAG.designCascadeRight.chain.forEach(item=>{
         item.ph.startWeek=item.origStart+clampedDw;
-        document.querySelectorAll(`.phase-bar[data-phase-id="${item.ph.id}"]`).forEach(b=>{b.style.left=w2px(item.ph.startWeek)+'px';});
+        document.querySelectorAll(`.phase-bar[data-phase-id="${item.ph.id}"]`).forEach(b=>{b.style.left=_w2px(item.ph.startWeek)+'px';});
       });
     }
     if(DRAG.designCascadeLeft&&clampedDw<0){
       DRAG.designCascadeLeft.chain.forEach(item=>{
         item.ph.startWeek=item.origStart+clampedDw;
-        document.querySelectorAll(`.phase-bar[data-phase-id="${item.ph.id}"]`).forEach(b=>{b.style.left=w2px(item.ph.startWeek)+'px';});
+        document.querySelectorAll(`.phase-bar[data-phase-id="${item.ph.id}"]`).forEach(b=>{b.style.left=_w2px(item.ph.startWeek)+'px';});
       });
     }
     // Update bar positions in-place — never call refreshLane during drag as it destroys the captured element
     DRAG.chain.forEach(ph=>{
-      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; });
+      document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=_w2px(ph.startWeek)+'px'; });
     });
     renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId);
     refreshRevenueRow(); _updateProjCA(DRAG.projId);
@@ -6260,7 +6276,7 @@ function onMove(e){
   if(DRAG.type==='permMove'){
     const proj=PROJECTS.find(p=>p.id===DRAG.projId);
     proj.permitting.startWeek=Math.max(0,DRAG.origStart+dw);
-    document.querySelectorAll(`.phase-bar[data-phase-id="${proj.permitting.id}"]`).forEach(b=>{ b.style.left=w2px(proj.permitting.startWeek)+'px'; });
+    document.querySelectorAll(`.phase-bar[data-phase-id="${proj.permitting.id}"]`).forEach(b=>{ b.style.left=_w2px(proj.permitting.startWeek)+'px'; });
     renderTally('design');
   }
 
@@ -6273,7 +6289,7 @@ function onMove(e){
     const proj=PROJECTS.find(p=>p.id===DRAG.projId), phs=getLanePhases(proj,DRAG.laneId);
     if(phs[0]&&phs[0].id===ph.id) getLane(proj,DRAG.laneId).startWeek=newStart;
     // Update bar in-place
-    document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=w2px(ph.startWeek)+'px'; b.style.width=w2px(ph.durWeeks)+'px'; });
+    document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=_w2px(ph.startWeek)+'px'; b.style.width=_w2px(ph.durWeeks)+'px'; });
     document.querySelectorAll(`[data-wks-id="${ph.id}"]`).forEach(v=>v.textContent=ph.durWeeks+'w');
     renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId); _updateProjCA(DRAG.projId); refreshRevenueRow();
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
@@ -6285,7 +6301,7 @@ function onMove(e){
     if(nd!==DRAG.origDur) _dragMoved=true;
     ph.durWeeks=nd;
     // Update bar in-place
-    document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.width=w2px(ph.durWeeks)+'px'; });
+    document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.width=_w2px(ph.durWeeks)+'px'; });
     document.querySelectorAll(`[data-wks-id="${ph.id}"]`).forEach(v=>v.textContent=ph.durWeeks+'w');
     renderTally(tallySection(DRAG.laneId)); refreshWkNums(DRAG.projId); _updateProjCA(DRAG.projId); refreshRevenueRow();
     if(DRAG.laneId==='production') syncDesignProdPhase(DRAG.projId);
@@ -6299,8 +6315,8 @@ function onMove(e){
       const[preConItem,conItem]=DRAG.cascadeRight;
       preConItem.ph.startWeek=ms.week+1;
       conItem.ph.startWeek=preConItem.ph.startWeek+preConItem.ph.durWeeks;
-      document.querySelectorAll(`.phase-bar[data-phase-id="${preConItem.ph.id}"]`).forEach(b=>{b.style.left=w2px(preConItem.ph.startWeek)+'px';});
-      document.querySelectorAll(`.phase-bar[data-phase-id="${conItem.ph.id}"]`).forEach(b=>{b.style.left=w2px(conItem.ph.startWeek)+'px';});
+      document.querySelectorAll(`.phase-bar[data-phase-id="${preConItem.ph.id}"]`).forEach(b=>{b.style.left=_w2px(preConItem.ph.startWeek)+'px';});
+      document.querySelectorAll(`.phase-bar[data-phase-id="${conItem.ph.id}"]`).forEach(b=>{b.style.left=_w2px(conItem.ph.startWeek)+'px';});
     }
     refreshMs(DRAG.msId);
     const r=findMs(DRAG.msId); if(r) refreshMsOpacity(r.proj.id);
@@ -6500,17 +6516,10 @@ function triggerSave(dirtyProj){
   if(dirtyProj) markDirty(dirtyProj);
   setSaveState('saving'); clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
-    // Write localStorage cache — fast and offline-safe fallback
-    localStorage.removeItem('bw-gantt-v390'); // clear previous version
-    try{
-      localStorage.setItem('bw-gantt-v391',JSON.stringify({
-        PROJECTS, ...globalStatePayload()
-      }));
-    }catch(e){ console.warn('[v393] localStorage write failed:',e); }
-    // SP writes
+    // SharePoint is the only data store — no localStorage writes
+    const failures=[];
     try{
       const writes=[];
-      // Per-project GanttData patches
       const dirty=[..._dirtyProjects];
       _dirtyProjects.clear();
       dirty.forEach(spItemId=>{
@@ -6520,24 +6529,56 @@ function triggerSave(dirtyProj){
         writes.push(
           graphPatch(BWC_SITE+'/CORE_Projects/items/'+spItemId+'/fields',
             {GanttData:JSON.stringify(payload)})
-            .catch(e=>{ console.error('[v393] GanttData patch failed for',spItemId,e); _dirtyProjects.add(spItemId); })
+            .catch(e=>{
+              _dirtyProjects.add(spItemId); // re-queue for retry
+              failures.push(proj.name||spItemId);
+              console.error('[save] GanttData patch failed:',spItemId,e);
+            })
         );
       });
-      // Global state patch to CORE_Config
       if(_configItemId){
         writes.push(
           graphPatch(BWC_SITE+'/CORE_Config/items/'+_configItemId+'/fields',
             {Value:JSON.stringify(globalStatePayload())})
-            .catch(e=>console.error('[v393] Config patch failed:',e))
+            .catch(e=>{
+              failures.push('pipeline settings');
+              console.error('[save] Config patch failed:',e);
+            })
         );
       }
       await Promise.all(writes);
-      setSaveState('saved');
+      if(failures.length>0){
+        setSaveState('error');
+        _showSaveError(failures);
+      } else {
+        setSaveState('saved');
+        _clearSaveError();
+      }
     }catch(e){
-      console.error('[v393] SP save error:',e);
+      console.error('[save] Unexpected save error:',e);
       setSaveState('error');
+      _showSaveError(['unexpected error — see console']);
     }
   },900);
+}
+function _showSaveError(items){
+  const banner=document.getElementById('sp-error-banner');
+  const msg=document.getElementById('sp-error-msg');
+  if(!banner||!msg) return;
+  const list=items.map(s=>`<strong>${s}</strong>`).join(', ');
+  msg.innerHTML=`SharePoint save FAILED — the following were <strong>NOT written</strong>: ${list}. Use <em>Retry Save</em> or reload the page.`;
+  banner.classList.add('visible');
+}
+function _clearSaveError(){
+  document.getElementById('sp-error-banner')?.classList.remove('visible');
+}
+function _dismissSaveError(){
+  // User dismisses knowing data is not saved — keep error dot in save indicator
+  document.getElementById('sp-error-banner')?.classList.remove('visible');
+}
+function _retrySave(){
+  _clearSaveError();
+  triggerSave();
 }
 function patchSaveHooks(){
   const _ou=onUp; onUp=function(){
@@ -7305,6 +7346,49 @@ const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
 const SP_SCOPES      = ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/User.Read'];
 const BWC_SITE       = 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  DATA INTEGRITY POLICY — READ BEFORE MODIFYING PERSISTENCE
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+//  SharePoint (Microsoft Graph API) is the ONLY authoritative data store for
+//  this tool. localStorage is PROHIBITED for all business data.
+//
+//  ALLOWED localStorage keys (UI preferences, non-operational):
+//    'bw-gantt-focus'  — last active section tab (Production / Design / Sales)
+//
+//  PROHIBITED in localStorage — must go to SharePoint via graphPatch():
+//    Project data, phase schedules, hours, milestones, designer/PM assignments,
+//    pipeline settings, weekly review baselines, meeting acks, issue log,
+//    session history, revenue data, or any other operational content.
+//
+//  When adding a new save point:
+//    1. Write to SharePoint with graphPatch() or graphPost()
+//    2. Call _showSaveError([label]) on failure — never silently swallow errors
+//    3. Re-queue the item (e.g. _dirtyProjects.add()) so Retry Save works
+//    4. Do NOT use localStorage as a fallback, cache, or backup
+//
+//  The runtime guard below enforces this policy. Any call to
+//  localStorage.setItem() with an unlisted key throws immediately and
+//  surfaces the error banner so violations are caught during development.
+// ═══════════════════════════════════════════════════════════════════════════════
+(function _installLocalStorageGuard(){
+  const ALLOWED = new Set(['bw-gantt-focus']);
+  const _orig = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key, value){
+    if(!ALLOWED.has(key)){
+      const msg = `[DATA INTEGRITY] localStorage.setItem("${key}") is not allowed. `+
+                  `All business data must be written to SharePoint. `+
+                  `See the DATA INTEGRITY POLICY comment in the script.`;
+      console.error(msg);
+      // Surface error in the UI if the banner is available
+      if(typeof _showSaveError==='function') _showSaveError([`localStorage blocked: "${key}"`]);
+      throw new Error(msg);
+    }
+    return _orig(key, value);
+  };
+})();
+// ═══════════════════════════════════════════════════════════════════════════════
+
 const msalApp = new msal.PublicClientApplication({
   auth:{
     clientId: MSAL_CLIENT_ID,
@@ -7633,8 +7717,7 @@ function restoreSavedState(saved){
 // ── Main SharePoint init sequence ──
 async function initFromSharePoint(){
   let saved=null;
-  // localStorage is read-cache only — used as fallback while SP loads
-  try{ const raw=localStorage.getItem('bw-gantt-v391'); if(raw) saved=JSON.parse(raw); }catch(e){}
+  // SharePoint is the only data source — no localStorage fallback
   try{
     // Load global pipeline state from CORE_Config
     const cfgItems=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields');
@@ -8974,12 +9057,9 @@ let _briefBaselineItemId = null;
 let _briefBugsItemId     = null;
 let _briefAcksItemId     = null;
 
-// ── Ack persistence (SP primary, localStorage cache) ─────────────────────────
-function _briefSaveLSCache(key,val){ try{ localStorage.setItem(key,JSON.stringify(val)); }catch(e){} }
-function _briefReadLSCache(key){ try{ const r=localStorage.getItem(key); return r?JSON.parse(r):null; }catch(e){ return null; } }
+// ── Brief persistence (SharePoint only — no localStorage) ──────────────────────
 
 function saveBriefAcks(){
-  _briefSaveLSCache(BRIEF_ACKS_LS_KEY, BRIEF_ACKS);
   _saveBriefAcksToSP();
 }
 async function _saveBriefAcksToSP(){
@@ -9006,19 +9086,14 @@ async function loadBriefAcksFromSP(){
     if(row){
       _briefAcksItemId=row.id;
       const parsed=JSON.parse(row.fields?.Value||'{}');
-      if(parsed&&typeof parsed==='object'){ BRIEF_ACKS=parsed; _briefSaveLSCache(BRIEF_ACKS_LS_KEY,parsed); }
-    } else {
-      // Fall back to localStorage cache if SP has no entry yet
-      const cached=_briefReadLSCache(BRIEF_ACKS_LS_KEY);
-      if(cached&&typeof cached==='object') BRIEF_ACKS=cached;
+      if(parsed&&typeof parsed==='object') BRIEF_ACKS=parsed;
     }
-  }catch(e){ console.warn('[brief] acks SP load failed:',e); const cached=_briefReadLSCache(BRIEF_ACKS_LS_KEY); if(cached) BRIEF_ACKS=cached; }
+  }catch(e){ console.warn('[save] Brief acks SP load failed:',e); }
 }
 function clearBriefAcks(){ BRIEF_ACKS={}; saveBriefAcks(); }
 
 // ── Bug/Feature persistence (SP primary, localStorage cache) ──────────────────
 function saveBriefBugs(){
-  _briefSaveLSCache(BRIEF_BUGS_LS_KEY, BRIEF_BUGS);
   _saveBriefBugsToSP();
 }
 async function _saveBriefBugsToSP(){
@@ -9045,12 +9120,9 @@ async function loadBriefBugsFromSP(){
     if(row){
       _briefBugsItemId=row.id;
       const parsed=JSON.parse(row.fields?.Value||'[]');
-      if(Array.isArray(parsed)){ BRIEF_BUGS=parsed; _briefSaveLSCache(BRIEF_BUGS_LS_KEY,parsed); }
-    } else {
-      const cached=_briefReadLSCache(BRIEF_BUGS_LS_KEY);
-      if(Array.isArray(cached)) BRIEF_BUGS=cached;
+      if(Array.isArray(parsed)) BRIEF_BUGS=parsed;
     }
-  }catch(e){ console.warn('[brief] bug log SP load failed:',e); const cached=_briefReadLSCache(BRIEF_BUGS_LS_KEY); if(Array.isArray(cached)) BRIEF_BUGS=cached; }
+  }catch(e){ console.warn('[save] Brief bug log SP load failed:',e); }
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
@@ -9130,15 +9202,12 @@ function snapshotPlanning(){
 
 // ── Baseline save / load ──────────────────────────────────────────────────────
 function loadBriefBaseline(){
-  try{
-    const raw=localStorage.getItem(BRIEF_LS_KEY);
-    if(raw) WEEKLY_BASELINE=JSON.parse(raw);
-  }catch(e){ WEEKLY_BASELINE=null; }
+  // Baseline loads from SharePoint only — see loadBriefBaselineFromSP()
+  WEEKLY_BASELINE=null;
 }
 async function saveBriefBaseline(snap){
   WEEKLY_BASELINE=snap;
-  try{ localStorage.setItem(BRIEF_LS_KEY,JSON.stringify(snap)); }catch(e){}
-  // Write to CORE_Config if authenticated
+  // Write to CORE_Config (SharePoint is the only store)
   try{
     const token=await getToken().catch(()=>null);
     if(!token) return;
@@ -9173,7 +9242,6 @@ async function loadBriefBaselineFromSP(){
       // Use SP version if it's newer than localStorage
       if(parsed && (!WEEKLY_BASELINE || new Date(parsed.ts)>new Date(WEEKLY_BASELINE.ts))){
         WEEKLY_BASELINE=parsed;
-        try{ localStorage.setItem(BRIEF_LS_KEY,JSON.stringify(parsed)); }catch(e){}
       }
     }
   }catch(e){ console.warn('[brief] SP baseline load failed:',e); }
