@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v580</title>
+<title>BW Project Pipeline — v582</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2416,7 +2416,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v580</div>
+    <div class="auth-version" id="authVersionBadge">v582</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2435,7 +2435,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v580</div>
+  <div class="proto-badge" id="versionBadge">v582</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3632,6 +3632,9 @@ document.addEventListener('pointerdown',e=>{
 // ════════════════════════════════════════════════  PER-PHASE STARTWEEK INIT
 function initPhaseStartWeeks(proj){
   const phases=proj.designLane.phases;
+  // Backfill isDesignProd flag on any "Design Production" phase from older data that lacks it
+  // Without this, the phase passes calcTally's !isDesignProd filter and inflates designer hours
+  phases.forEach(ph=>{ if(!ph.isDesignProd&&/design production/i.test(ph.name)) ph.isDesignProd=true; });
   // Ensure Design Production phase exists
   if(!phases.find(ph=>ph.isDesignProd)){
     phases.push({id:proj.id+'-dp',name:'Design Production',durWeeks:18,hours:4,color:'#4A8AB5',isDesignProd:true,linkedRight:null,startWeek:undefined});
@@ -4349,7 +4352,7 @@ function updateSlbYear(ss){
 }
 function buildMonthLineOverlay(){
   const overlay=el('div',''); const totalW=w2px(C.numWeeks);
-  overlay.style.cssText=`position:absolute;top:0;left:0;width:${totalW}px;height:9999px;pointer-events:none;z-index:20;mix-blend-mode:multiply;`;
+  overlay.style.cssText=`position:absolute;top:0;left:0;width:${totalW}px;height:9999px;pointer-events:none;z-index:20;`;
   // Snap to exact week-cell boundaries — same grid as calendar cells
   const positions=[]; const sd=C.startDate;
   let prevMonth=new Date(sd).getMonth();
@@ -4360,7 +4363,7 @@ function buildMonthLineOverlay(){
     prevMonth=m;
   }
   if(positions.length){
-    const col='rgba(0,0,0,.13)';
+    const col='rgba(0,0,0,.12)';
     const stops=positions.flatMap(px=>[`transparent ${px-.5}px`,`${col} ${px-.5}px`,`${col} ${px+.5}px`,`transparent ${px+.5}px`]);
     overlay.style.backgroundImage=`linear-gradient(90deg,${stops.join(',')})`;
   }
@@ -4491,6 +4494,10 @@ function buildDesignSection(){
   const unassigned=PROJECTS.filter(p=>isVisible(p)&&!p.designer);
 
   function populateDesignTl(tc){
+    // Month line overlay — same as production
+    const desMonthOverlay=buildMonthLineOverlay();
+    tc.style.position='relative';
+    tc.appendChild(desMonthOverlay);
     // Date header lives in sticky-cal-hdr above the scroll area
     // Unassigned separator bar
     const tlUnSep=el('div',''); tlUnSep.style.cssText=`width:${w2px(C.numWeeks)}px;height:22px;background:var(--sep);`;
@@ -5104,16 +5111,24 @@ function toggleCollapse(projId){
 }
 
 // ════════════════════════════════════════════════  REFRESH
+// Reads the effective (zoomed) weekW from the gantt section — use instead of w2px() outside build functions
+function _effWW(){
+  const sec=document.querySelector('.section[data-s-type="production"],.section[data-s-type="design"]');
+  return parseInt(sec?.dataset?.weekW)||Math.round(C.weekW*PROD_ZOOM);
+}
 function refreshLane(projId,laneId){
   const proj=PROJECTS.find(p=>p.id===projId);
   document.querySelectorAll(`.lane-row[data-lane="${laneId}"][data-proj-id="${projId}"]`).forEach(row=>{
     if(laneId==='design'){
-      proj.designLane.phases.forEach(ph=>{ const b=row.querySelector(`.phase-bar[data-phase-id="${ph.id}"]`); if(b){b.style.left=w2px(ph.startWeek)+'px';b.style.width=w2px(ph.durWeeks)+'px';} });
+      const ww=_effWW();
+      proj.designLane.phases.forEach(ph=>{ const b=row.querySelector(`.phase-bar[data-phase-id="${ph.id}"]`); if(b){b.style.left=Math.round(ph.startWeek*ww)+'px';b.style.width=Math.round(ph.durWeeks*ww)+'px';} });
     } else if(laneId==='permitting'){
+      const ww=_effWW();
       const b=row.querySelector(`.phase-bar[data-phase-id="${proj.permitting.id}"]`);
-      if(b){b.style.left=w2px(proj.permitting.startWeek)+'px';b.style.width=w2px(proj.permitting.durWeeks)+'px';}
+      if(b){b.style.left=Math.round(proj.permitting.startWeek*ww)+'px';b.style.width=Math.round(proj.permitting.durWeeks*ww)+'px';}
     } else {
-      proj.productionLane.phases.forEach(ph=>{ const b=row.querySelector(`.phase-bar[data-phase-id="${ph.id}"]`); if(b){b.style.left=w2px(ph.startWeek)+'px';b.style.width=w2px(ph.durWeeks)+'px';} });
+      const ww=_effWW();
+      proj.productionLane.phases.forEach(ph=>{ const b=row.querySelector(`.phase-bar[data-phase-id="${ph.id}"]`); if(b){b.style.left=Math.round(ph.startWeek*ww)+'px';b.style.width=Math.round(ph.durWeeks*ww)+'px';} });
     }
   });
   const phases=laneId==='design'?proj.designLane.phases:laneId==='permitting'?[proj.permitting]:proj.productionLane.phases;
@@ -5122,7 +5137,7 @@ function refreshLane(projId,laneId){
 }
 function refreshMs(msId){
   const ms=msById(msId);
-  const cx=w2px(ms.week)+C.weekW/2;
+  const _ww=_effWW(); const cx=Math.round(ms.week*_ww)+Math.round(_ww/2);
   document.querySelectorAll(`.ms-tall[data-ms-id="${msId}"]`).forEach(m=>{ const hw=Math.round(parseInt(m.dataset.msW||'28')/2); m.style.left=(cx-hw)+'px'; });
 }
 function refreshWkNums(projId){
