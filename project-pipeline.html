@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v577</title>
+<title>BW Project Pipeline — v578</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2415,7 +2415,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v577</div>
+    <div class="auth-version" id="authVersionBadge">v578</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2434,7 +2434,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v577</div>
+  <div class="proto-badge" id="versionBadge">v578</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7355,11 +7355,12 @@ const BWC_SITE       = 'https://graph.microsoft.com/v1.0/sites/bellweather.share
 //
 //  ALLOWED localStorage keys (UI preferences, non-operational):
 //    'bw-gantt-focus'  — last active section tab (Production / Design / Sales)
+//    msal.* / server-telemetry-* — MSAL auth library internals (token cache etc.)
+//    Any key NOT starting with 'bw-' — third-party libraries write freely
 //
-//  PROHIBITED in localStorage — must go to SharePoint via graphPatch():
-//    Project data, phase schedules, hours, milestones, designer/PM assignments,
-//    pipeline settings, weekly review baselines, meeting acks, issue log,
-//    session history, revenue data, or any other operational content.
+//  BLOCKED in localStorage — these key patterns are enforced by the runtime guard:
+//    bw-gantt-v*       — pipeline project/phase data
+//    bw-pipeline-*     — brief baseline, meeting acks, issue log
 //
 //  When adding a new save point:
 //    1. Write to SharePoint with graphPatch() or graphPost()
@@ -7372,15 +7373,21 @@ const BWC_SITE       = 'https://graph.microsoft.com/v1.0/sites/bellweather.share
 //  surfaces the error banner so violations are caught during development.
 // ═══════════════════════════════════════════════════════════════════════════════
 (function _installLocalStorageGuard(){
-  const ALLOWED = new Set(['bw-gantt-focus']);
+  // Block writes to Bellweather business data keys only.
+  // MSAL (token cache, server-telemetry-*, msal.*) and all other
+  // browser/library keys are intentionally left unrestricted.
+  // Only our own 'bw-' prefixed data keys are governed here.
+  const BLOCKED = [
+    /^bw-gantt-(?!focus$)/,  // pipeline data — bw-gantt-v* etc (bw-gantt-focus is UI state, allowed)
+    /^bw-pipeline-/,          // brief baseline, acks, bug log
+  ];
   const _orig = localStorage.setItem.bind(localStorage);
   localStorage.setItem = function(key, value){
-    if(!ALLOWED.has(key)){
-      const msg = `[DATA INTEGRITY] localStorage.setItem("${key}") is not allowed. `+
-                  `All business data must be written to SharePoint. `+
-                  `See the DATA INTEGRITY POLICY comment in the script.`;
+    if(BLOCKED.some(p=>p.test(key))){
+      const msg=`[DATA INTEGRITY] localStorage.setItem("${key}") blocked. `+
+                `Bellweather business data must go to SharePoint only. `+
+                `See DATA INTEGRITY POLICY in the script.`;
       console.error(msg);
-      // Surface error in the UI if the banner is available
       if(typeof _showSaveError==='function') _showSaveError([`localStorage blocked: "${key}"`]);
       throw new Error(msg);
     }
