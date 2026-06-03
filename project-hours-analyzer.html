@@ -155,7 +155,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v7</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v8</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -167,7 +167,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v7</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v8</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -293,20 +293,35 @@ function goOffline() {
 }
 
 async function onAuthenticated(account) {
-  isOnline = true;
   document.getElementById('authOverlay').classList.add('hidden');
   document.getElementById('mainApp').classList.remove('hidden');
   document.getElementById('userName').textContent = account.name || account.username || '';
+  showSaveStatus('saving', 'Connecting…');
   try {
     await fetchFromSharePoint();
-    showSaveStatus('saved');
+    isOnline = true;
+    showSaveStatus('saved', 'Connected');
   } catch (err) {
-    console.error('SP fetch error:', err);
+    console.error('[SP fetch error]', err);
+    isOnline = false;
     allEntries = loadFromCache();
     loadedFiles = loadFilesFromCache();
-    showSaveStatus('error', 'SP error — using cache');
+    showSaveStatus('error', 'SharePoint unavailable — uploads will not save');
+    // Show a persistent banner so the broken state is unmissable
+    showSpError(err.message || 'Unknown error');
   }
   render();
+}
+
+function showSpError(detail) {
+  let el = document.getElementById('spErrorBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'spErrorBanner';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#b91c1c;color:white;font-size:13px;font-weight:600;padding:8px 16px;z-index:9999;display:flex;align-items:center;gap:12px;';
+    document.body.prepend(el);
+  }
+  el.innerHTML = `<span>⚠ Not connected to SharePoint — files uploaded now will only be saved locally. Refresh to retry.</span><span style="margin-left:auto;font-size:11px;opacity:.8">${detail}</span><button onclick="location.reload()" style="background:white;color:#b91c1c;border:none;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px;">Refresh</button>`;
 }
 
 function showAuthStatus(msg) { document.getElementById('authStatus').textContent = msg; }
@@ -341,12 +356,12 @@ function cutoffDate() {
 
 async function fetchFromSharePoint() {
   const cutoff = cutoffDate();
-  await Promise.all([
-    fetchTimecardEntries(cutoff),
-    fetchCoreProjects(),
-  ]);
+  // Timecard fetch is load-bearing — let it throw on failure so onAuthenticated knows
+  await fetchTimecardEntries(cutoff);
   saveToCache();
   saveFilesToCache();
+  // CORE_Projects is additive — failure here must never break the main flow
+  fetchCoreProjects().catch(err => console.warn('[CORE_Projects] Background fetch failed:', err));
 }
 
 async function fetchTimecardEntries(cutoff) {
