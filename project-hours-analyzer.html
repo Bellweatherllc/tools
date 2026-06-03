@@ -178,7 +178,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v13</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v14</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -190,7 +190,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v13</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v14</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -438,7 +438,12 @@ async function fetchCoreProjects() {
           clientName: f.ClientName || '',
           projectName: f.ProjectName || '',
           displayName: f.ProjectName || f.ClientName || f.JobCode,
+          // Value: prefer CaValue (most accurate once signed), fall back through estimates
           estimatedValue: f.EstimatedProjectValue || '',
+          caValue: f.CaValue || null,
+          budgetLow: f.BudgetLow || null,
+          budgetHigh: f.BudgetHigh || null,
+          targetInvestment: f.TargetInvestmentAmount || null,
           stage,
           designerName: f.DesignerName || '',
           ganttData,
@@ -475,6 +480,7 @@ function resolvePhases(ganttData) {
       startDate: start.toISOString().slice(0, 10),
       endDate: end.toISOString().slice(0, 10),
       durWeeks: ph.durWeeks,
+      plannedHrsPerWeek: ph.hoursPerWeek || null, // Pipeline's planned hrs/wk if set
     });
   }
   return phases;
@@ -627,12 +633,26 @@ function buildDesignerData(designer) {
 
 // --- Project Phase Panel ---
 function parseValue(str) {
-  if (!str) return null;
-  const s = String(str).replace(/[$,\s]/g, '').toUpperCase();
+  if (!str && str !== 0) return null;
+  const s = String(str).replace(/[$, ]/g, '').toUpperCase();
   if (s.endsWith('K')) return parseFloat(s) * 1000;
   if (s.endsWith('M')) return parseFloat(s) * 1000000;
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
+}
+
+// Best available value for a project — hierarchy: CA Value > Target Investment > Estimated > Budget midpoint
+function bestValue(proj) {
+  if (!proj) return null;
+  if (proj.caValue) { const v = parseValue(proj.caValue); if (v) return { value: v, source: 'CA' }; }
+  if (proj.targetInvestment) { const v = parseValue(proj.targetInvestment); if (v) return { value: v, source: 'Target' }; }
+  if (proj.estimatedValue) { const v = parseValue(proj.estimatedValue); if (v) return { value: v, source: 'Est.' }; }
+  if (proj.budgetLow && proj.budgetHigh) {
+    const lo = parseValue(proj.budgetLow), hi = parseValue(proj.budgetHigh);
+    if (lo && hi) return { value: (lo + hi) / 2, source: 'Budget avg' };
+  }
+  if (proj.budgetLow) { const v = parseValue(proj.budgetLow); if (v) return { value: v, source: 'Budget low' }; }
+  return null;
 }
 
 function fmtValue(v) {
@@ -666,7 +686,9 @@ function renderProjectPhasePanel(sn, data) {
 
   for (const job of billableJobs) {
     const proj = coreProjects[job.toUpperCase()];
-    const value = proj ? parseValue(proj.estimatedValue) : null;
+    const valueResult = proj ? bestValue(proj) : null;
+    const value = valueResult ? valueResult.value : null;
+    const valueSource = valueResult ? valueResult.source : null;
     const displayName = proj ? proj.displayName : null;
     const phaseAvgs = {};
 
@@ -688,7 +710,7 @@ function renderProjectPhasePanel(sn, data) {
       }
     }
 
-    rows.push({ job, displayName, value, phaseAvgs, color: colorMap[job], total: jobTotals[job] || 0, hasPhases: proj && proj.phases.length > 0 });
+    rows.push({ job, displayName, value, valueSource, phaseAvgs, color: colorMap[job], total: jobTotals[job] || 0, hasPhases: proj && proj.phases.length > 0 });
   }
 
   if (!rows.length) { el.innerHTML = ''; return; }
@@ -697,7 +719,18 @@ function renderProjectPhasePanel(sn, data) {
   const phCols = allPhaseNames.length > 0 ? allPhaseNames : [];
   let html = '<div class="ppt-panel-title">Project Hours by Phase</div><table class="proj-phase-table"><thead><tr>';
   html += '<th>Project</th><th>Value</th><th>Total Hrs</th>';
-  for (const ph of phCols) html += `<th class="ph-hd" title="${ph}">${ph}</th>`;
+  for (const ph of phCols) {
+    // Find durWeeks for this phase across any project that has it
+    let durWks = null;
+    for (const job of billableJobs) {
+      const p = coreProjects[job.toUpperCase()];
+      if (!p) continue;
+      const phObj = p.phases.find(x => x.name === ph);
+      if (phObj) { durWks = phObj.durWeeks; break; }
+    }
+    const durLabel = durWks ? ` · ${durWks}wk plan` : '';
+    html += `<th class="ph-hd" title="${ph}">${ph}<div style="font-size:8px;font-weight:400;opacity:.6;margin-top:1px">${durLabel}</div></th>`;
+  }
   if (!phCols.length) html += '<th>Avg Hrs/Wk</th>';
   html += '</tr></thead><tbody>';
 
@@ -708,7 +741,8 @@ function renderProjectPhasePanel(sn, data) {
     const showCode = row.displayName && row.displayName !== row.job;
     html += `<td><div class="ppt-name"><span class="ppt-swatch" style="background:${row.color}"></span>${label}${showCode ? `<span class="ppt-code">${row.job}</span>` : ''}</div></td>`;
     // Value
-    html += `<td class="ppt-value">${fmtValue(row.value)}</td>`;
+    const vLabel = row.valueSource ? `<div style="font-size:8px;color:var(--text-muted);margin-top:1px">${row.valueSource}</div>` : '';
+    html += `<td class="ppt-value">${fmtValue(row.value)}${vLabel}</td>`;
     // Total
     const tot = row.total;
     html += `<td class="ppt-hrs">${tot % 1 === 0 ? tot : tot.toFixed(1)}</td>`;
