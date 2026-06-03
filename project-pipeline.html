@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v565</title>
+<title>BW Project Pipeline — v566</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -75,7 +75,8 @@ body[data-focus="production"] .section:not([data-s-type="production"]):not(.is-f
 
 /* ── SCROLL CONTAINER ── */
 .outer-scroll{}
-#iw{display:flex;flex-direction:column;position:relative;padding-top:var(--hdr-total,138px);}
+#iw{display:flex;flex-direction:column;position:relative;padding-top:var(--hdr-total,150px);}
+body[data-focus="planning"] #iw{padding-top:calc(var(--app-h,44px) + var(--slb-h,24px) + 40px);}
 
 /* ── SECTION SCROLL — each section scrolls independently ── */
 .section-scroll{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:#737373 transparent;position:relative;z-index:1;}
@@ -2402,7 +2403,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v565</div>
+    <div class="auth-version" id="authVersionBadge">v566</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2421,7 +2422,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v565</div>
+  <div class="proto-badge" id="versionBadge">v566</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4320,7 +4321,8 @@ function updateSlbYear(ss){
   // Use scrollLeft if the scroller has moved; fall back to the configured from-date so
   // the label is always populated even before the first scroll event fires.
   const sl=ss.scrollLeft>0 ? ss.scrollLeft : calFromScrollLeft(sec.dataset.sType||'production');
-  const leftWeek=Math.floor(sl/C.weekW);
+  const secWW=parseInt(sec.dataset.weekW)||C.weekW;
+  const leftWeek=Math.floor(sl/secWW);
   const d=new Date(C.startDate.getTime()+leftWeek*7*24*3600*1000);
   const visYear=d.getFullYear();
   const nowYear=new Date().getFullYear();
@@ -4464,6 +4466,7 @@ function buildDesignSection(){
   try{
   const sec=sectionShell('design','Design Planning');
   sec.style.setProperty('--week-w', C.weekW+'px');
+  sec.dataset.weekW=C.weekW;
   if(splitState.design) sec.classList.add('split-mode');
   const designCmdBar=buildCapCmdBar('design'); // appended into sticky band below
   const fc=el('div','fixed-col'); fc.style.width=C.fixedW+'px';
@@ -4716,7 +4719,8 @@ function buildProdSection(){
   const _origWeekW=C.weekW; C.weekW=Math.round(_origWeekW*PROD_ZOOM);
   try{
   const sec=sectionShell('production','Production Planning');
-  sec.style.setProperty('--week-w', C.weekW+'px'); // hairlines match zoomed columns
+  sec.style.setProperty('--week-w', C.weekW+'px');
+  sec.dataset.weekW=C.weekW; // stored for drag + slbYear calculations
   if(splitState.production) sec.classList.add('split-mode');
   const prodCmdBar=buildCapCmdBar('production'); // appended into sticky band below
   const fc=el('div','fixed-col'); fc.style.width=C.fixedW+'px';
@@ -5306,7 +5310,7 @@ function initDrag(){
       const toId=toEl.dataset.toId, personId=toEl.dataset.personId, section=toEl.dataset.section;
       const person=personById(personId), to=person?.timeOff.find(t=>t.id===toId); if(!to)return;
       toEl.classList.add('dragging');
-      DRAG={type:'timeoffMove',toId,personId,section,origWeek:to.week,startX:e.clientX};
+      DRAG={type:'timeoffMove',toId,personId,section,origWeek:to.week,startX:e.clientX,weekW:_dragWeekW(e.target)};
       capture(toEl,e.pointerId); return;
     }
 
@@ -5328,7 +5332,7 @@ function initDrag(){
         const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
         const origStarts=allPhs.map(p=>p.startWeek);
         const origMsWeeks=proj.milestones.map(m=>m.week);
-        DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts,origMsWeeks,
+        DRAG={type:'projMove',projId,startX:e.clientX,weekW:_dragWeekW(e.target),allPhs,origStarts,origMsWeeks,
               milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane};
         document.querySelectorAll(`.ms-tall[data-ms-id="${id}"]`).forEach(m=>m.classList.add('dragging'));
         capture(msEl,e.pointerId); return;
@@ -5353,7 +5357,7 @@ function initDrag(){
         // rebuild cascade (same logic as before)
         var cascadeRight=willCascade?[{ph:preConPh,origStart:preConPh.startWeek},{ph:conPh,origStart:conPh.startWeek}]:null;
       }
-      DRAG={type:'ms',msId:id,startX:e.clientX,origWeek:ms.week,minWeek,maxWeek,cascadeRight:typeof cascadeRight!=='undefined'?cascadeRight:null};
+      DRAG={type:'ms',msId:id,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:ms.week,minWeek,maxWeek,cascadeRight:typeof cascadeRight!=='undefined'?cascadeRight:null};
       document.querySelectorAll(`.ms-tall[data-ms-id="${id}"]`).forEach(m=>m.classList.add('dragging'));
       capture(msEl,e.pointerId); return;
     }
@@ -5366,12 +5370,12 @@ function initDrag(){
       const projId=bar.dataset.projId, laneId=bar.dataset.lane;
       const proj=PROJECTS.find(p=>p.id===projId);
       if(laneId==='permitting'){
-        DRAG={type:'resizeLeft',phaseId:phId,projId,laneId,bar,startX:e.clientX,origStartWeek:ph.startWeek,origDur:ph.durWeeks,minStart:0};
+        DRAG={type:'resizeLeft',phaseId:phId,projId,laneId,bar,startX:e.clientX,weekW:_dragWeekW(e.target),origStartWeek:ph.startWeek,origDur:ph.durWeeks,minStart:0};
         bar.classList.add('dragging'); document.body.style.cursor='ew-resize'; capture(bar,e.pointerId); return;
       }
       const nb=phaseNeighbours(proj,laneId,phId);
       const hardMin=nb.prev?nb.prev.startWeek+nb.prev.durWeeks:0;
-      DRAG={type:'resizeLeft',phaseId:phId,projId,laneId,bar,startX:e.clientX,origStartWeek:ph.startWeek,origDur:ph.durWeeks,minStart:hardMin};
+      DRAG={type:'resizeLeft',phaseId:phId,projId,laneId,bar,startX:e.clientX,weekW:_dragWeekW(e.target),origStartWeek:ph.startWeek,origDur:ph.durWeeks,minStart:hardMin};
       bar.classList.add('dragging'); document.body.style.cursor='ew-resize'; capture(bar,e.pointerId); return;
     }
 
@@ -5383,12 +5387,12 @@ function initDrag(){
       const projId=bar.dataset.projId, laneId=bar.dataset.lane;
       const proj=PROJECTS.find(p=>p.id===projId);
       if(laneId==='permitting'){
-        DRAG={type:'resize',phaseId:phId,projId,laneId,bar,startX:e.clientX,origDur:ph.durWeeks,origStartWeek:ph.startWeek,maxEnd:C.numWeeks};
+        DRAG={type:'resize',phaseId:phId,projId,laneId,bar,startX:e.clientX,weekW:_dragWeekW(e.target),origDur:ph.durWeeks,origStartWeek:ph.startWeek,maxEnd:C.numWeeks};
         bar.classList.add('dragging'); document.body.style.cursor='ew-resize'; capture(bar,e.pointerId); return;
       }
       const nb=phaseNeighbours(proj,laneId,phId);
       const hardMax=nb.next?nb.next.startWeek:C.numWeeks;
-      DRAG={type:'resize',phaseId:phId,projId,laneId,bar,startX:e.clientX,origDur:ph.durWeeks,origStartWeek:ph.startWeek,maxEnd:hardMax};
+      DRAG={type:'resize',phaseId:phId,projId,laneId,bar,startX:e.clientX,weekW:_dragWeekW(e.target),origDur:ph.durWeeks,origStartWeek:ph.startWeek,maxEnd:hardMax};
       bar.classList.add('dragging'); document.body.style.cursor='ew-resize'; capture(bar,e.pointerId); return;
     }
 
@@ -6054,11 +6058,13 @@ function _updateProjCA(projId){
   caMs.week=Math.max(0,prodStart-1);
   refreshMs(caMs.id);
 }
+function _dragWeekW(el){ const sec=el?el.closest('.section'):null; return parseInt(sec?.dataset?.weekW)||Math.round(C.weekW*PROD_ZOOM); }
 function capture(el,pid){ try{el.setPointerCapture(pid);}catch(_){} document.addEventListener('pointermove',onMove,{passive:false}); document.addEventListener('pointerup',onUp); }
 
 function onMove(e){
   if(!DRAG)return;
-  const dw=Math.round((e.clientX-DRAG.startX)/C.weekW);
+  const _dragWW=DRAG.weekW||Math.round(C.weekW*PROD_ZOOM);
+  const dw=Math.round((e.clientX-DRAG.startX)/_dragWW);
 
   if(DRAG.type==='panScroll'){
     const newLeft=DRAG.origScrollLeft-(e.clientX-DRAG.startX);
@@ -7245,13 +7251,13 @@ function buildAll(){
   requestAnimationFrame(()=>{
     const appEl=document.querySelector('.app-header');
     const slbEl=document.querySelector('.slb');
-    const ssbEl=document.querySelector('.section-sticky-band');
     const appH=appEl?appEl.offsetHeight:44;
     const slbH=slbEl?slbEl.offsetHeight:24;
-    const ssbH=ssbEl?ssbEl.offsetHeight:70;
+    // Compute gantt ssb height from known constants (hidden sections have 0 offsetHeight)
+    const ganttSsbH=C.hdrH+32+3; // cal header + cmd bar min-height + gap
     document.documentElement.style.setProperty('--app-h',appH+'px');
     document.documentElement.style.setProperty('--slb-h',slbH+'px');
-    document.documentElement.style.setProperty('--hdr-total',(appH+slbH+ssbH)+'px');
+    document.documentElement.style.setProperty('--hdr-total',(appH+slbH+ganttSsbH)+'px');
   });
   PROJECTS.forEach(proj=>applyStatusStyles(proj));
   PROJECTS.forEach(proj=>proj.milestones.forEach(ms=>{
