@@ -155,7 +155,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v8</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v10</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -167,7 +167,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v8</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v10</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -227,15 +227,18 @@ let loadedFiles = [];
 let isOnline = false;
 let accessToken = null;
 let msalApp = null;
-let activeFilter = 'all'; // 'all' or 'YYYY-MM'
+let activeMonths = new Set(); // empty = All
 let coreProjects = {}; // keyed by jobCode.toUpperCase()
 
-function setFilter(f) { activeFilter = f; render(); }
+function toggleMonth(m) {
+  if (m === 'all') { activeMonths.clear(); }
+  else { if (activeMonths.has(m)) activeMonths.delete(m); else activeMonths.add(m); }
+  render();
+}
 
 function getFilteredEntries() {
-  if (activeFilter === 'all') return allEntries;
-  // Filter by month: a week belongs to a month if its Monday falls in that month
-  return allEntries.filter(e => e.week && e.week.slice(0, 7) === activeFilter);
+  if (activeMonths.size === 0) return allEntries;
+  return allEntries.filter(e => e.week && activeMonths.has(e.week.slice(0, 7)));
 }
 
 // --- MSAL ---
@@ -369,7 +372,9 @@ async function fetchTimecardEntries(cutoff) {
   allEntries = [];
   const fileSet = new Set();
   while (url) {
-    const data = await graphGet(url);
+    const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json', 'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly' } });
+    if (!resp.ok) throw new Error(`Graph ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
     for (const item of (data.value || [])) {
       const f = item.fields;
       allEntries.push({
@@ -632,8 +637,9 @@ function drawTrendOverlays(table, numWeeks) {
     if (!vals.length || maxVal === 0 || !vals.some(v => v > 0)) return;
 
     const rowRect = tr.getBoundingClientRect();
-    const h = rowRect.height;
-    const pad = 5;
+    const naturalH = rowRect.height;
+    const h = naturalH * 3; // 3x row height gives the curve room to breathe
+    const pad = 8;
     const ph = h - pad * 2;
     const sm = maxVal;
 
@@ -677,7 +683,8 @@ function drawTrendOverlays(table, numWeeks) {
     svg.setAttribute('width', svgWidth);
     svg.setAttribute('height', h);
     svg.setAttribute('viewBox', `0 0 ${svgWidth} ${h}`);
-    svg.style.cssText = `position:absolute;top:0;left:${svgLeft}px;pointer-events:none;z-index:2;overflow:visible;`;
+    const svgTop = -(h - naturalH) / 2; // center the taller SVG on the row
+    svg.style.cssText = `position:absolute;top:${svgTop}px;left:${svgLeft}px;pointer-events:none;z-index:2;overflow:visible;`;
     svg.innerHTML = svgContent;
 
     // Make tr position:relative
@@ -696,11 +703,11 @@ function render() {
   const allWeeksAll = [...new Set(allEntries.map(e => e.week))].sort();
   const months = [...new Set(allWeeksAll.map(w => w.slice(0, 7)))].sort();
   const filterEl = document.getElementById('monthFilter');
-  let filterHtml = `<button class="month-btn ${activeFilter==='all'?'active':''}" onclick="setFilter('all')">All</button>`;
+  let filterHtml = `<button class="month-btn ${activeMonths.size===0?'active':''}" onclick="toggleMonth('all')">All</button>`;
   for (const m of months) {
     const d = new Date(m + '-01T00:00:00');
     const label = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    filterHtml += `<button class="month-btn ${activeFilter===m?'active':''}" onclick="setFilter('${m}')">${label}</button>`;
+    filterHtml += `<button class="month-btn ${activeMonths.has(m)?'active':''}" onclick="toggleMonth('${m}')">${label}</button>`;
   }
   filterEl.innerHTML = filterHtml;
 
@@ -721,7 +728,7 @@ function render() {
     const data = buildDesignerData(designer); if (data.weeks.length === 0) continue;
     const sn = SHORT_NAMES[designer], dt = Object.values(data.weekTotals).reduce((a,b)=>a+b,0), bid = `body_${sn}`;
     const sec = document.createElement('div'); sec.className = 'section';
-    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="legend-wrap" id="legend_${sn}"></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div></div>`;
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div></div>`;
     ctr.appendChild(sec);
     renderGrid(sn, data);
   }
@@ -830,7 +837,7 @@ function renderGrid(sn, data) {
   table.appendChild(tbody);
   // Draw trend overlays after table is in DOM (needs layout)
   requestAnimationFrame(() => drawTrendOverlays(table, weeks.length));
-  document.getElementById(`legend_${sn}`).innerHTML = [...billableJobs, nbLabel].map(j=>`<div class="legend-item"><div class="legend-swatch" style="background:${colorMap[j]}"></div>${j}</div>`).join('');
+
 
   // Phase summary panel
   renderPhaseSummary(sn, data, billableJobs, phaseNames, weekPhaseMap);
