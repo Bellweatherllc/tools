@@ -124,6 +124,10 @@
   .month-btn.active{background:var(--primary);color:white;border-color:var(--primary);}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#333;color:white;padding:10px 20px;border-radius:6px;font-size:13px;transition:transform .3s;z-index:999;pointer-events:none;}
   .toast.show{transform:translateX(-50%) translateY(0);}
+  /* Sankey */
+  .sankey-wrap{padding:18px 18px 24px;border-top:1px solid var(--border);}
+  .sankey-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:12px;}
+  .sankey-wrap svg{display:block;width:100%;overflow:visible;}
   /* Phase bands */
   .hours-grid thead tr.phase-row th{padding:3px 4px;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border-bottom:none;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;}
   .hours-grid thead tr.phase-row th.phase-cell{border-radius:3px 3px 0 0;}
@@ -155,7 +159,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v10</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v11</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -167,7 +171,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v10</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v11</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -602,6 +606,176 @@ function buildDesignerData(designer) {
   return { weeks, billableJobs, nbLabel, grid, jobTotals, weekTotals };
 }
 
+// --- Sankey ---
+function renderSankey(sn, data) {
+  const el = document.getElementById(`sankey_${sn}`);
+  if (!el) return;
+  const { weeks, billableJobs, nbLabel, grid, jobTotals, weekTotals } = data;
+  const allJobs = [...billableJobs, nbLabel];
+
+  // Only show weeks and jobs with any hours
+  const activeWeeks = weeks.filter(w => (weekTotals[w]||0) > 0);
+  const activeJobs = allJobs.filter(j => (jobTotals[j]||0) > 0);
+  if (activeWeeks.length < 2 || activeJobs.length < 1) { el.innerHTML = ''; return; }
+
+  // Layout constants
+  const W = 800, nodeW = 12, gap = 6;
+  const leftX = nodeW + 60;  // week nodes x
+  const rightX = W - nodeW - 80; // project nodes x
+  const weekH = 26; // height per week node slot
+  const totalSankeyH = Math.max(activeWeeks.length * weekH, activeJobs.length * 36);
+  const H = totalSankeyH + 20;
+
+  // Color map
+  const colorMap = {};
+  let ci = 0;
+  for (const j of billableJobs) { colorMap[j] = CHART_COLORS[ci % CHART_COLORS.length]; ci++; }
+  colorMap[nbLabel] = '#B7A9A3';
+
+  // Week nodes — evenly spaced left side
+  const weekNodes = {};
+  activeWeeks.forEach((w, i) => {
+    const cy = 10 + i * (H - 20) / Math.max(activeWeeks.length - 1, 1);
+    weekNodes[w] = { y: cy, total: weekTotals[w] || 0 };
+  });
+
+  // Project nodes — sized by total hours, packed top to bottom right side
+  const maxJobTotal = Math.max(...activeJobs.map(j => jobTotals[j] || 0));
+  const totalAllHours = activeJobs.reduce((s, j) => s + (jobTotals[j] || 0), 0);
+  const rightUsableH = H - 20;
+  const jobNodes = {};
+  let rightY = 10;
+  for (const j of activeJobs) {
+    const hrs = jobTotals[j] || 0;
+    const nodeHeight = (hrs / totalAllHours) * rightUsableH;
+    jobNodes[j] = { y: rightY + nodeHeight / 2, height: nodeHeight, total: hrs };
+    rightY += nodeHeight + gap;
+  }
+
+  // Build flows: week → job
+  // For each week, compute cumulative y offsets on both sides
+  const flows = [];
+  // Track running y offset per week node (top of next band)
+  const weekOffset = {};
+  for (const w of activeWeeks) weekOffset[w] = weekNodes[w].y - weekNodes[w].total * 0.5; // not pixel — use proportional below
+
+  // Pixel height per hour: map to week node visual band
+  // Each week node will be a vertical bar of height proportional to weekTotals
+  const maxWeekTotal = Math.max(...activeWeeks.map(w => weekTotals[w] || 0));
+  const weekBarScale = (weekH * 0.85) / (maxWeekTotal || 1);
+  const rightBarScale = (j) => jobNodes[j].height / (jobNodes[j].total || 1);
+
+  // Reset offsets as pixel positions relative to node center
+  for (const w of activeWeeks) {
+    const bar = weekNodes[w].total * weekBarScale;
+    weekOffset[w] = weekNodes[w].y - bar / 2;
+  }
+  const jobOffset = {};
+  for (const j of activeJobs) jobOffset[j] = jobNodes[j].y - jobNodes[j].height / 2;
+
+  for (const w of activeWeeks) {
+    for (const j of activeJobs) {
+      const h = grid[j] && grid[j][w] ? grid[j][w] : 0;
+      if (h <= 0) continue;
+      const bandW_left = h * weekBarScale;
+      const bandW_right = h * rightBarScale(j);
+      flows.push({
+        w, j,
+        y1_top: weekOffset[w],
+        y1_bot: weekOffset[w] + bandW_left,
+        y2_top: jobOffset[j],
+        y2_bot: jobOffset[j] + bandW_right,
+        color: colorMap[j],
+        hours: h,
+      });
+      weekOffset[w] += bandW_left;
+      jobOffset[j] += bandW_right;
+    }
+  }
+
+  // Render SVG
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+  // Flow bands
+  for (const f of flows) {
+    const cx = (leftX + rightX) / 2;
+    const path = document.createElementNS(ns, 'path');
+    const d = `M ${leftX + nodeW},${f.y1_top} C ${cx},${f.y1_top} ${cx},${f.y2_top} ${rightX},${f.y2_top} L ${rightX},${f.y2_bot} C ${cx},${f.y2_bot} ${cx},${f.y1_bot} ${leftX + nodeW},${f.y1_bot} Z`;
+    path.setAttribute('d', d);
+    path.setAttribute('fill', f.color);
+    path.setAttribute('opacity', '0.35');
+    path.setAttribute('stroke', f.color);
+    path.setAttribute('stroke-width', '0.5');
+    path.setAttribute('stroke-opacity', '0.5');
+    svg.appendChild(path);
+  }
+
+  // Week nodes (left) — vertical bars
+  for (const w of activeWeeks) {
+    const wn = weekNodes[w];
+    const bar = wn.total * weekBarScale;
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', leftX);
+    rect.setAttribute('y', wn.y - bar / 2);
+    rect.setAttribute('width', nodeW);
+    rect.setAttribute('height', Math.max(bar, 1));
+    rect.setAttribute('fill', '#8a9ab0');
+    rect.setAttribute('rx', '2');
+    svg.appendChild(rect);
+    // Label
+    const txt = document.createElementNS(ns, 'text');
+    txt.setAttribute('x', leftX - 6);
+    txt.setAttribute('y', wn.y + 4);
+    txt.setAttribute('text-anchor', 'end');
+    txt.setAttribute('font-size', '9');
+    txt.setAttribute('fill', '#888');
+    txt.setAttribute('font-family', 'monospace');
+    const d = new Date(w + 'T00:00:00');
+    txt.textContent = d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+    svg.appendChild(txt);
+  }
+
+  // Project nodes (right) — vertical bars sized by total
+  for (const j of activeJobs) {
+    const jn = jobNodes[j];
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', rightX);
+    rect.setAttribute('y', jn.y - jn.height / 2);
+    rect.setAttribute('width', nodeW);
+    rect.setAttribute('height', Math.max(jn.height, 2));
+    rect.setAttribute('fill', colorMap[j]);
+    rect.setAttribute('rx', '2');
+    svg.appendChild(rect);
+    // Label
+    const proj = coreProjects[j.toUpperCase()];
+    const label = proj ? proj.displayName : j;
+    const txt = document.createElementNS(ns, 'text');
+    txt.setAttribute('x', rightX + nodeW + 8);
+    txt.setAttribute('y', jn.y + 4);
+    txt.setAttribute('font-size', '10');
+    txt.setAttribute('fill', '#444');
+    txt.setAttribute('font-family', 'sans-serif');
+    txt.setAttribute('font-weight', '500');
+    txt.textContent = label;
+    svg.appendChild(txt);
+    // Hours label
+    const htxt = document.createElementNS(ns, 'text');
+    htxt.setAttribute('x', rightX + nodeW + 8);
+    htxt.setAttribute('y', jn.y + 16);
+    htxt.setAttribute('font-size', '9');
+    htxt.setAttribute('fill', '#aaa');
+    htxt.setAttribute('font-family', 'monospace');
+    htxt.textContent = `${jn.total % 1 === 0 ? jn.total : jn.total.toFixed(1)} hrs`;
+    svg.appendChild(htxt);
+  }
+
+  el.innerHTML = '<div class="sankey-title">Hour Flow — Weeks → Projects</div>';
+  el.appendChild(svg);
+}
+
 // --- Trend overlay ---
 function drawTrendOverlays(table, numWeeks) {
   if (numWeeks < 1) return;
@@ -728,9 +902,10 @@ function render() {
     const data = buildDesignerData(designer); if (data.weeks.length === 0) continue;
     const sn = SHORT_NAMES[designer], dt = Object.values(data.weekTotals).reduce((a,b)=>a+b,0), bid = `body_${sn}`;
     const sec = document.createElement('div'); sec.className = 'section';
-    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div></div>`;
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div><div class="sankey-wrap" id="sankey_${sn}"></div></div>`;
     ctr.appendChild(sec);
     renderGrid(sn, data);
+    renderSankey(sn, data);
   }
 }
 
