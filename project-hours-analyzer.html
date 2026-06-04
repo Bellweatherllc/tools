@@ -96,6 +96,8 @@
   .trend-row-wrap{position:relative;}
   .combined-sparkline-row td{height:72px;background:rgba(59,95,160,.04);}
   .combined-sparkline-row td:first-child{vertical-align:middle;}
+  .proj-sparkline-wrap{padding:0 18px 0;border-bottom:1px solid var(--border);background:#1f2e3e;overflow:hidden;}
+  .proj-sparkline-wrap svg{display:block;}
   .trend-svg-wrap{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2;}
   .hours-grid tbody td .cell-num{position:relative;z-index:3;}
   .hours-grid tbody tr.nonbillable-row td:first-child{color:var(--text-light);font-style:italic;}
@@ -228,7 +230,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v27</span></h1>
+  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v28</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -240,7 +242,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v27</span></h1>
+        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v28</span></h1>
       </div>
       <div class="subtitle">Hours by project, phase, and designer</div>
     </div>
@@ -268,10 +270,10 @@
   <div id="resultsArea" class="hidden">
     <div class="summary-bar" id="summaryBar"></div>
     <div class="month-filter" id="monthFilter"></div>
-    <div id="phaseAlert" class="phase-alert hidden"></div>
-    <div id="designerSections"></div>
     <div id="scatterChart" class="combined-chart-wrap hidden"></div>
     <div id="combinedChart" class="combined-chart-wrap hidden"></div>
+    <div id="phaseAlert" class="phase-alert hidden"></div>
+    <div id="designerSections"></div>
     <div class="actions-bar">
       <button class="btn btn-primary" onclick="copyAllGrids()">Copy All Grids (TSV)</button>
       <button class="btn btn-danger" onclick="clearHistory()">Clear All History</button>
@@ -986,7 +988,6 @@ function drawTrendOverlays(table, numWeeks, globalMax) {
 
 // ── Scatter + Combined chart orchestrator ──────────────────────────────────
 function renderAllScattersAndCombined(jobs) {
-  // Collect per-project data and compute global max for standardized sparkline scale
   const allProjectData = [];
   let globalMaxHrsPerWk = 0;
 
@@ -999,13 +1000,18 @@ function renderAllScattersAndCombined(jobs) {
     allProjectData.push({ jobUpper, data });
   }
 
-  // Pass globalMax back into renderGrid now that we know it
+  // Per-project always-visible sparkline charts
+  for (const { jobUpper, data } of allProjectData) {
+    renderProjectSparklineChart(jobUpper, data, globalMaxHrsPerWk);
+  }
+
+  // Pass globalMax back into grid sparklines
   for (const { jobUpper, data } of allProjectData) {
     const table = document.getElementById(`grid_${jobUpper}`);
     if (table) requestAnimationFrame(() => drawTrendOverlays(table, data.weeks.length, globalMaxHrsPerWk));
   }
 
-  // Shared interactive scatter (all projects, one chart)
+  // Shared interactive scatter
   renderInteractiveScatter(allProjectData);
 
   // Combined stacked streamgraph
@@ -1013,6 +1019,126 @@ function renderAllScattersAndCombined(jobs) {
 }
 
 // ── Per-project scatter ────────────────────────────────────────────────────
+// ── Per-project always-visible sparkline chart ────────────────────────────
+function renderProjectSparklineChart(jobUpper, data, globalMax) {
+  const wrap = document.getElementById(`spark_${jobUpper}`);
+  if (!wrap) return;
+  const { weeks, weekTotals, designers } = data;
+  if (!weeks.length) return;
+
+  const W = Math.max(500, (wrap.parentElement?.offsetWidth || 700) - 36);
+  const H = 90;
+  const PAD_L = 8, PAD_R = 8, PAD_T = 10, PAD_B = 10;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+  const sm = globalMax || 1;
+  const COL_W = plotW / weeks.length;
+
+  // Phase transitions for this project: compute exactly Phase I→II and II→III boundaries
+  // Use the first week of each new phase as the divider column index
+  const phaseTransCols = [];
+  let lastPh = null;
+  weeks.forEach((w, i) => {
+    const ph = getPhaseForWeek(jobUpper, w);
+    if (ph && ph !== lastPh && lastPh !== null) phaseTransCols.push(i);
+    lastPh = ph;
+  });
+  // Cap at 2 dividers (Phase I|II and II|III)
+  const dividers = phaseTransCols.slice(0, 2);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.style.cssText = 'display:block;';
+
+  // Phase region backgrounds
+  const phaseColors = [PHASE_COLORS[0], PHASE_COLORS[1], PHASE_COLORS[2]];
+  const regions = [];
+  let rStart = 0;
+  dividers.forEach((col, di) => {
+    regions.push({ start: rStart, end: col, colorIdx: di });
+    rStart = col;
+  });
+  regions.push({ start: rStart, end: weeks.length, colorIdx: dividers.length });
+  regions.forEach(({ start, end, colorIdx }) => {
+    const x = PAD_L + start * COL_W;
+    const w = (end - start) * COL_W;
+    const bg = document.createElementNS(ns, 'rect');
+    bg.setAttribute('x', x); bg.setAttribute('y', 0);
+    bg.setAttribute('width', w); bg.setAttribute('height', H);
+    bg.setAttribute('fill', phaseColors[colorIdx] || '#888');
+    bg.setAttribute('opacity', '0.12');
+    svg.appendChild(bg);
+    // Phase label centered in region
+    const label = ['Phase I', 'Phase II', 'Phase III'][colorIdx] || '';
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', x + w / 2); lbl.setAttribute('y', PAD_T + 7);
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('font-size', '8');
+    lbl.setAttribute('font-weight', '600'); lbl.setAttribute('fill', 'rgba(255,255,255,.50)');
+    lbl.setAttribute('letter-spacing', '.05em');
+    lbl.textContent = label; svg.appendChild(lbl);
+  });
+
+  // Phase divider lines
+  dividers.forEach(col => {
+    const x = PAD_L + col * COL_W;
+    const dl = document.createElementNS(ns, 'line');
+    dl.setAttribute('x1', x); dl.setAttribute('x2', x);
+    dl.setAttribute('y1', 0); dl.setAttribute('y2', H);
+    dl.setAttribute('stroke', 'rgba(255,255,255,.30)'); dl.setAttribute('stroke-width', '1.5');
+    dl.setAttribute('stroke-dasharray', '3,3'); svg.appendChild(dl);
+  });
+
+  // Combined total curve (sum all designers)
+  const vals = weeks.map(w => weekTotals[w] || 0);
+  const pts = vals.map((v, i) => ({
+    x: PAD_L + i * COL_W + COL_W / 2,
+    y: PAD_T + plotH - (v / sm) * plotH
+  }));
+
+  const t = 0.3;
+  let path = `M ${pts[0].x},${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0=pts[Math.max(i-1,0)], p1=pts[i], p2=pts[i+1], p3=pts[Math.min(i+2,pts.length-1)];
+    path += ` C ${p1.x+(p2.x-p0.x)*t},${p1.y+(p2.y-p0.y)*t} ${p2.x-(p3.x-p1.x)*t},${p2.y-(p3.y-p1.y)*t} ${p2.x},${p2.y}`;
+  }
+
+  const baseline = PAD_T + plotH;
+  const fillPath = path + ` L ${pts[pts.length-1].x},${baseline} L ${pts[0].x},${baseline} Z`;
+  const fill = document.createElementNS(ns, 'path');
+  fill.setAttribute('d', fillPath); fill.setAttribute('fill', CHART_COLORS[0]); fill.setAttribute('opacity', '0.30');
+  svg.appendChild(fill);
+  const stroke = document.createElementNS(ns, 'path');
+  stroke.setAttribute('d', path); stroke.setAttribute('fill', 'none');
+  stroke.setAttribute('stroke', CHART_COLORS[0]); stroke.setAttribute('stroke-width', '2');
+  stroke.setAttribute('stroke-linecap', 'round'); stroke.setAttribute('opacity', '0.85');
+  svg.appendChild(stroke);
+
+  // Per-designer curves (dimmed, different colors)
+  designers.forEach((d, di) => {
+    const dVals = weeks.map(w => data.grid[d][w] || 0);
+    if (!dVals.some(v => v > 0)) return;
+    const dPts = dVals.map((v, i) => ({
+      x: PAD_L + i * COL_W + COL_W / 2,
+      y: PAD_T + plotH - (v / sm) * plotH
+    }));
+    let dPath = `M ${dPts[0].x},${dPts[0].y}`;
+    for (let i = 0; i < dPts.length - 1; i++) {
+      const p0=dPts[Math.max(i-1,0)], p1=dPts[i], p2=dPts[i+1], p3=dPts[Math.min(i+2,dPts.length-1)];
+      dPath += ` C ${p1.x+(p2.x-p0.x)*t},${p1.y+(p2.y-p0.y)*t} ${p2.x-(p3.x-p1.x)*t},${p2.y-(p3.y-p1.y)*t} ${p2.x},${p2.y}`;
+    }
+    const ds = document.createElementNS(ns, 'path');
+    ds.setAttribute('d', dPath); ds.setAttribute('fill', 'none');
+    ds.setAttribute('stroke', CHART_COLORS[(di+1) % CHART_COLORS.length]);
+    ds.setAttribute('stroke-width', '1'); ds.setAttribute('stroke-linecap', 'round');
+    ds.setAttribute('opacity', '0.40'); ds.setAttribute('stroke-dasharray', '3,2');
+    svg.appendChild(ds);
+  });
+
+  wrap.appendChild(svg);
+}
+
 function renderInteractiveScatter(allProjectData) {
   const wrap = document.getElementById('scatterChart');
   if (!wrap) return;
@@ -1238,51 +1364,55 @@ function renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk) {
   });
 
   // Week axis ticks
-  allWeeks.forEach((w, i) => {
-    if (i % 4 !== 0) return;
-    const x = PAD_L + i*COL_W;
-    const tick = document.createElementNS(ns, 'line');
-    tick.setAttribute('x1',x); tick.setAttribute('x2',x);
-    tick.setAttribute('y1',PAD_T+plotH); tick.setAttribute('y2',PAD_T+plotH+4);
-    tick.setAttribute('stroke','rgba(255,255,255,.3)'); tick.setAttribute('stroke-width','1');
-    svg.appendChild(tick);
-    const d = new Date(w+'T00:00:00');
-    const lbl = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    const t = document.createElementNS(ns, 'text');
-    t.setAttribute('x',x); t.setAttribute('y',PAD_T+plotH+14);
-    t.setAttribute('font-size','8'); t.setAttribute('fill','rgba(255,255,255,.40)');
-    t.setAttribute('text-anchor','middle'); t.textContent=lbl; svg.appendChild(t);
-  });
+  // x-axis tick marks only — no date labels
 
   // Phase divider lines — use first project's phase map as reference, draw for all phase transitions
-  const phaseTransWeeks = new Set();
+  // Compute consensus phase transition columns:
+  // For each project collect the week index where Phase I→II and II→III occur,
+  // then take the median across projects for exactly 2 dividers.
+  const trans12 = [], trans23 = [];
   allProjectData.forEach(({ jobUpper }) => {
-    let last = null;
-    allWeeks.forEach(w => {
+    let lastPh = null;
+    allWeeks.forEach((w, i) => {
       const ph = getPhaseForWeek(jobUpper, w);
-      if (ph && ph !== last && last !== null) phaseTransWeeks.add(w);
-      last = ph;
+      if (ph && ph !== lastPh && lastPh !== null) {
+        if (lastPh === 'Phase I' && ph === 'Phase II') trans12.push(i);
+        if (lastPh === 'Phase II' && ph === 'Phase III') trans23.push(i);
+      }
+      lastPh = ph;
     });
   });
-  phaseTransWeeks.forEach(w => {
-    const i = allWeeks.indexOf(w);
-    if (i < 0) return;
-    const x = PAD_L + i*COL_W;
+  const median = arr => arr.length ? arr.sort((a,b)=>a-b)[Math.floor(arr.length/2)] : null;
+  const div12 = median(trans12), div23 = median(trans23);
+  const dividerCols = [div12, div23].filter(d => d !== null);
+
+  // Draw dividers and region labels
+  const regionLabels = ['Phase I', 'Phase II', 'Phase III'];
+  const regionStarts = [0, ...dividerCols, allWeeks.length];
+  for (let ri = 0; ri < regionStarts.length - 1; ri++) {
+    const rStart = regionStarts[ri], rEnd = regionStarts[ri + 1];
+    const x0 = PAD_L + rStart * COL_W, x1 = PAD_L + rEnd * COL_W;
+    // Region background tint
+    const bg = document.createElementNS(ns, 'rect');
+    bg.setAttribute('x', x0); bg.setAttribute('y', PAD_T);
+    bg.setAttribute('width', x1 - x0); bg.setAttribute('height', plotH);
+    bg.setAttribute('fill', PHASE_COLORS[ri] || '#888'); bg.setAttribute('opacity', '0.07');
+    svg.appendChild(bg);
+    // Region label centered
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', (x0 + x1) / 2); lbl.setAttribute('y', PAD_T + 12);
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('font-size', '9');
+    lbl.setAttribute('font-weight', '600'); lbl.setAttribute('fill', 'rgba(255,255,255,.55)');
+    lbl.setAttribute('letter-spacing', '.06em');
+    lbl.textContent = regionLabels[ri] || ''; svg.appendChild(lbl);
+  }
+  dividerCols.forEach(col => {
+    const x = PAD_L + col * COL_W;
     const dl = document.createElementNS(ns, 'line');
     dl.setAttribute('x1',x); dl.setAttribute('x2',x);
     dl.setAttribute('y1',PAD_T); dl.setAttribute('y2',PAD_T+plotH);
-    dl.setAttribute('stroke','rgba(255,255,255,.35)'); dl.setAttribute('stroke-width','1.5');
-    dl.setAttribute('stroke-dasharray','4,3');
-    svg.appendChild(dl);
-    // Phase label at top
-    const proj0 = coreProjects[allProjectData[0]?.jobUpper];
-    const phName = proj0 ? getPhaseForWeek(allProjectData[0].jobUpper, w) : null;
-    if (phName) {
-      const pt = document.createElementNS(ns, 'text');
-      pt.setAttribute('x',x+4); pt.setAttribute('y',PAD_T+10);
-      pt.setAttribute('font-size','8'); pt.setAttribute('fill','rgba(255,255,255,.50)');
-      pt.textContent = phName; svg.appendChild(pt);
-    }
+    dl.setAttribute('stroke','rgba(255,255,255,.40)'); dl.setAttribute('stroke-width','1.5');
+    dl.setAttribute('stroke-dasharray','4,3'); svg.appendChild(dl);
   });
 
   // Tooltip
@@ -1402,13 +1532,13 @@ function render() {
     const gridTogId = `grid-tog-${bid}`;
     const sec = document.createElement('div'); sec.className = 'section';
     const designerPills = data.designers.map(d => `<span class="designer-pill">${shortName(d)}</span>`).join('');
-    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${projLabel}${projSub?`<span class="proj-code-meta">${projSub}</span>`:''}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} wks${data.designers.length>1?' · '+data.designers.length+' designers':''}</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="designer-chips">${designerPills}</div><div class="monthly-summary-panel" id="monthly_${jobUpper}"></div><div style="padding:0 18px"><button class="panel-toggle-btn" onclick="togglePanel('${gridTogId}',this)"><span class="panel-toggle-chev">▼</span> Weekly Hours Grid</button></div><div class="panel-collapsible" id="${gridTogId}" style="max-height:5000px"><div class="grid-wrap"><table class="hours-grid" id="grid_${jobUpper}"></table></div><div class="phase-summary hidden" id="phasesummary_${jobUpper}"></div></div><div class="proj-</div>`;
+    // Section: header always visible; sparkline always visible; details collapsible
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${projLabel}${projSub?`<span class="proj-code-meta">${projSub}</span>`:''}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} wks${data.designers.length>1?' · '+data.designers.length+' designers':''}</span></h2><span class="chevron open">▶</span></div><div class="proj-sparkline-wrap" id="spark_${jobUpper}"></div><div class="section-body collapsed" id="${bid}"><div class="designer-chips">${designerPills}</div><div class="monthly-summary-panel" id="monthly_${jobUpper}"></div><div style="padding:0 18px"><button class="panel-toggle-btn" onclick="togglePanel('${gridTogId}',this)"><span class="panel-toggle-chev">▼</span> Weekly Hours Grid</button></div><div class="panel-collapsible" id="${gridTogId}" style="max-height:5000px"><div class="grid-wrap"><table class="hours-grid" id="grid_${jobUpper}"></table></div><div class="phase-summary hidden" id="phasesummary_${jobUpper}"></div></div></div>`;
     ctr.appendChild(sec);
     renderMonthlySummary(jobUpper, data);
     renderGrid(jobUpper, data);
   }
-  // Render per-project scatters and combined chart after all sections built
-  // (need global max computed across all projects)
+  // After all sections built: compute global max, render sparklines + charts
   renderAllScattersAndCombined(jobs);
 }
 
