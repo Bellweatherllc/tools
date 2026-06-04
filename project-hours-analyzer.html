@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Designer Project Hours</title>
+<title>Project Hours Analyzer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -135,15 +135,14 @@
   .monthly-table tr:last-child td{border-bottom:none;font-weight:700;background:var(--header-bg);}
   .monthly-table tr:hover td{background:var(--hover-bg);}
   .monthly-bar{display:inline-block;height:6px;border-radius:3px;background:var(--primary);opacity:.4;vertical-align:middle;margin-right:6px;}
-  /* Cost Scatter */
-  .cost-scatter-panel{padding:16px 18px 20px;border-top:1px solid var(--border);}
-  .cost-scatter-panel:empty{display:none;}
-  .cost-scatter-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:4px;}
-  .cost-scatter-sub{font-size:10px;color:var(--text-muted);margin-bottom:12px;}
-  .cost-scatter-panel svg{display:block;overflow:visible;}
   /* Project Phase Panel */
   .proj-phase-panel{padding:16px 18px 20px;border-top:1px solid var(--border);}
   .proj-phase-panel:empty{display:none;}
+
+  /* Designer chips + project code meta */
+  .designer-chips{padding:6px 18px 2px;display:flex;flex-wrap:wrap;gap:5px;}
+  .designer-pill{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--header-bg);border:1px solid var(--border);color:var(--text-muted);}
+  .proj-code-meta{font-size:11px;font-weight:400;color:var(--text-muted);margin-left:7px;}
   .proj-phase-table{width:100%;border-collapse:collapse;font-size:11px;}
   .proj-phase-table th{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);padding:5px 10px;text-align:right;border-bottom:2px solid var(--border);white-space:nowrap;}
   .proj-phase-table th:first-child{text-align:left;}
@@ -167,13 +166,6 @@
   .panel-toggle-chev.collapsed{transform:rotate(-90deg);}
   .panel-collapsible{overflow:hidden;transition:max-height .3s ease;}
   .panel-collapsible.collapsed{max-height:0!important;}
-  /* Aggregate scatter */
-  .aggregate-panel{padding:16px 18px 20px;border-top:2px solid var(--border);margin-top:8px;}
-  .aggregate-panel svg{display:block;overflow:visible;}
-  /* Sankey */
-  .sankey-wrap{padding:0 18px 24px;border-top:1px solid var(--border);}
-  .sankey-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:12px;}
-  .sankey-wrap svg{display:block;width:100%;overflow:visible;}
   /* Phase bands */
   .hours-grid thead tr.phase-row th{padding:3px 4px;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border-bottom:none;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;}
   .hours-grid thead tr.phase-row th.phase-cell{border-radius:3px 3px 0 0;}
@@ -216,7 +208,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v24</span></h1>
+  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v25</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -228,9 +220,9 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v24</span></h1>
+        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v25</span></h1>
       </div>
-      <div class="subtitle">Weekly hours per project per designer</div>
+      <div class="subtitle">Hours by project, phase, and designer</div>
     </div>
     <div class="header-controls">
       <div class="save-indicator" id="saveIndicator">
@@ -258,7 +250,6 @@
     <div class="month-filter" id="monthFilter"></div>
     <div id="phaseAlert" class="phase-alert hidden"></div>
     <div id="designerSections"></div>
-    <div id="aggregatePanel" class="aggregate-panel" style="display:none"></div>
     <div class="actions-bar">
       <button class="btn btn-primary" onclick="copyAllGrids()">Copy All Grids (TSV)</button>
       <button class="btn btn-danger" onclick="clearHistory()">Clear All History</button>
@@ -269,8 +260,17 @@
 
 <script>
 // --- Config ---
-const DESIGNERS = ['Stephanie Hoffmeier', 'Sean Farrell', 'Hayley Wynne'];
-const SHORT_NAMES = {'Sean Farrell':'Sean','Hayley Wynne':'Hayley','Stephanie Hoffmeier':'Stephanie'};
+const DESIGNERS = ['Stephanie Hoffmeier', 'Sean Farrell', 'Hayley Wynne', 'Dakota', 'Devon', 'Alex Sciacca'];
+const SHORT_NAMES = {
+  'Sean Farrell':'Sean','Hayley Wynne':'Hayley','Stephanie Hoffmeier':'Stephanie',
+  'Dakota':'Dakota','Devon':'Devon','Alex Sciacca':'Alex',
+};
+// Derive short display name for any designer, including unknown ones from SharePoint
+function shortName(designer) {
+  if (SHORT_NAMES[designer]) return SHORT_NAMES[designer];
+  // Fall back to first name only
+  return designer ? designer.split(' ')[0] : designer;
+}
 const NON_BILLABLE_JOBS = ['BWC','BWC GENERAL','GENERAL'];
 const PTO_TAGS = ['6609','PTO','VACATION','SICK','HOLIDAY','COMP TIME'];
 const STORAGE_KEY = 'bwc_project_hours_v2';
@@ -733,24 +733,39 @@ function dedup(existing, incoming) {
 }
 
 // --- Aggregation ---
-function buildDesignerData(designer) {
+// Build data for a single project: rows = designers, columns = weeks
+function buildProjectData(jobUpper) {
   const filtered = getFilteredEntries();
-  const entries = filtered.filter(e => e.designer === designer);
-  const weeks = [...new Set(entries.map(e => e.week))].sort();
-  const billableJobs = [...new Set(entries.filter(e => !e.nonBillable).map(e => e.job))].sort();
-  const nbLabel = 'Non-Billable (BWC)';
+  const entries = filtered.filter(e => e.jobUpper === jobUpper);
+  const weeks = [...new Set(entries.map(e => e.week).filter(Boolean))].sort();
+  // All unique designers who logged hours to this project
+  const designers = [...new Set(entries.filter(e => !e.nonBillable).map(e => e.designer))].sort();
+  // grid[designer][week] = hours
   const grid = {};
-  for (const job of billableJobs) { grid[job] = {}; for (const w of weeks) grid[job][w] = 0; }
-  grid[nbLabel] = {}; for (const w of weeks) grid[nbLabel][w] = 0;
+  for (const d of designers) { grid[d] = {}; for (const w of weeks) grid[d][w] = 0; }
   for (const e of entries) {
-    const key = e.nonBillable ? nbLabel : e.job;
-    if (!grid[key]) { grid[key] = {}; for (const w of weeks) grid[key][w] = 0; if (!billableJobs.includes(key)) billableJobs.push(key); }
-    grid[key][e.week] = (grid[key][e.week] || 0) + e.hours;
+    if (e.nonBillable) continue;
+    if (!grid[e.designer]) { grid[e.designer] = {}; for (const w of weeks) grid[e.designer][w] = 0; if (!designers.includes(e.designer)) designers.push(e.designer); }
+    grid[e.designer][e.week] = (grid[e.designer][e.week] || 0) + e.hours;
   }
-  const jobTotals = {}; for (const [j, wm] of Object.entries(grid)) jobTotals[j] = Object.values(wm).reduce((a, b) => a + b, 0);
-  billableJobs.sort((a, b) => (jobTotals[b]||0) - (jobTotals[a]||0));
-  const weekTotals = {}; for (const w of weeks) { weekTotals[w] = 0; for (const j of Object.keys(grid)) weekTotals[w] += grid[j][w] || 0; }
-  return { weeks, billableJobs, nbLabel, grid, jobTotals, weekTotals };
+  const designerTotals = {};
+  for (const [d, wm] of Object.entries(grid)) designerTotals[d] = Object.values(wm).reduce((a, b) => a + b, 0);
+  designers.sort((a, b) => (designerTotals[b]||0) - (designerTotals[a]||0));
+  const weekTotals = {};
+  for (const w of weeks) { weekTotals[w] = 0; for (const d of designers) weekTotals[w] += grid[d][w] || 0; }
+  const totalHours = Object.values(weekTotals).reduce((a, b) => a + b, 0);
+  return { weeks, designers, grid, designerTotals, weekTotals, totalHours };
+}
+
+// Collect all billable job codes seen in filtered entries, sorted by total hours desc
+function allBillableJobs() {
+  const filtered = getFilteredEntries();
+  const totals = {};
+  for (const e of filtered) {
+    if (e.nonBillable) continue;
+    totals[e.jobUpper] = (totals[e.jobUpper] || 0) + e.hours;
+  }
+  return Object.entries(totals).sort((a, b) => b[1] - a[1]).map(([j]) => j);
 }
 
 // --- Project Phase Panel ---
@@ -784,120 +799,12 @@ function fmtValue(v) {
   return '$' + Math.round(v);
 }
 
-function renderProjectPhasePanel(sn, data) {
-  const el = document.getElementById(`projphase_${sn}`);
-  if (!el) return;
-  const { weeks, billableJobs, grid, jobTotals } = data;
-  if (!billableJobs.length) { el.innerHTML = ''; return; }
-
-  // Collect all phase names across all projects this designer worked on
-  const allPhaseNames = [];
-  for (const job of billableJobs) {
-    const proj = coreProjects[job.toUpperCase()];
-    if (!proj) continue;
-    for (const ph of proj.phases) {
-      if (!allPhaseNames.includes(ph.name)) allPhaseNames.push(ph.name);
-    }
-  }
-
-  // Build rows — one per billable job
-  const rows = [];
-  const colorMap = {};
-  let ci = 0;
-  for (const job of billableJobs) { colorMap[job] = CHART_COLORS[ci % CHART_COLORS.length]; ci++; }
-
-  for (const job of billableJobs) {
-    const proj = coreProjects[job.toUpperCase()];
-    const valueResult = proj ? bestValue(proj) : null;
-    const value = valueResult ? valueResult.value : null;
-    const valueSource = valueResult ? valueResult.source : null;
-    const displayName = proj ? proj.displayName : null;
-    const phaseAvgs = {};
-
-    if (proj && proj.phases.length) {
-      for (const ph of proj.phases) {
-        const phWeeks = weeks.filter(w => w >= ph.startDate && w < ph.endDate);
-        if (!phWeeks.length) continue;
-        const totalHrs = phWeeks.reduce((s, w) => s + (grid[job][w] || 0), 0);
-        const activeWks = phWeeks.filter(w => (grid[job][w] || 0) > 0).length;
-        if (activeWks > 0) {
-          phaseAvgs[ph.name] = {
-            avg: totalHrs / activeWks,
-            avgAll: totalHrs / phWeeks.length,
-            activeWks,
-            totalWks: phWeeks.length,
-            totalHrs,
-          };
-        }
-      }
-    }
-
-    rows.push({ job, displayName, value, valueSource, phaseAvgs, color: colorMap[job], total: jobTotals[job] || 0, hasPhases: proj && proj.phases.length > 0 });
-  }
-
-  if (!rows.length) { el.innerHTML = ''; return; }
-
-  // Render table
-  const phCols = allPhaseNames.length > 0 ? allPhaseNames : [];
-  let html = '<div class="ppt-panel-title">Project Hours by Phase</div><table class="proj-phase-table"><thead><tr>';
-  html += '<th>Project</th><th>Value</th><th>Total Hrs</th>';
-  for (const ph of phCols) {
-    // Find durWeeks for this phase across any project that has it
-    let durWks = null;
-    for (const job of billableJobs) {
-      const p = coreProjects[job.toUpperCase()];
-      if (!p) continue;
-      const phObj = p.phases.find(x => x.name === ph);
-      if (phObj) { durWks = phObj.durWeeks; break; }
-    }
-    const durLabel = durWks ? ` · ${durWks}wk plan` : '';
-    html += `<th class="ph-hd" title="${ph}">${ph}<div style="font-size:8px;font-weight:400;opacity:.6;margin-top:1px">${durLabel}</div></th>`;
-  }
-  if (!phCols.length) html += '<th>Avg Hrs/Wk</th>';
-  html += '</tr></thead><tbody>';
-
-  for (const row of rows) {
-    html += '<tr>';
-    // Name + code
-    const label = row.displayName || row.job;
-    const showCode = row.displayName && row.displayName !== row.job;
-    html += `<td><div class="ppt-name"><span class="ppt-swatch" style="background:${row.color}"></span>${label}${showCode ? `<span class="ppt-code">${row.job}</span>` : ''}</div></td>`;
-    // Value
-    const vLabel = row.valueSource ? `<div style="font-size:8px;color:var(--text-muted);margin-top:1px">${row.valueSource}</div>` : '';
-    html += `<td class="ppt-value">${fmtValue(row.value)}${vLabel}</td>`;
-    // Total
-    const tot = row.total;
-    html += `<td class="ppt-hrs">${tot % 1 === 0 ? tot : tot.toFixed(1)}</td>`;
-    // Phase columns
-    if (phCols.length) {
-      for (const ph of phCols) {
-        const ps = row.phaseAvgs[ph];
-        if (!ps) {
-          html += `<td class="ppt-no-phase">—</td>`;
-        } else {
-          const avg = ps.avg % 1 === 0 ? ps.avg : ps.avg.toFixed(1);
-          html += `<td><span class="ppt-hrs">${avg}<span style="font-size:9px;font-weight:400;color:var(--text-muted)"> /wk</span></span><div style="font-size:9px;color:var(--text-muted);margin-top:1px">${ps.activeWks} of ${ps.totalWks} wks</div></td>`;
-        }
-      }
-    } else {
-      // No phase data — show simple avg
-      const allWks = Object.values(data.grid[row.job] || {}).filter(h => h > 0).length;
-      const avg = allWks > 0 ? (row.total / allWks) : 0;
-      html += `<td class="ppt-hrs dim">${avg % 1 === 0 ? avg : avg.toFixed(1)} /wk</td>`;
-    }
-    html += '</tr>';
-  }
-
-  html += '</tbody></table>';
-  el.innerHTML = html;
-}
-
 // --- Monthly Summary ---
-function renderMonthlySummary(sn, data) {
-  const el = document.getElementById(`monthly_${sn}`);
+function renderMonthlySummary(jobUpper, data) {
+  const el = document.getElementById(`monthly_${jobUpper}`);
   if (!el) return;
-  // Always use allEntries for monthly view — filtering by month makes no sense here
-  const entries = allEntries.filter(e => e.designer === sn && e.date);
+  // Show all entries for this project across all designers
+  const entries = allEntries.filter(e => e.jobUpper === jobUpper && !e.nonBillable && e.date);
 
   // Group by YYYY-MM
   const monthMap = {};
@@ -936,551 +843,6 @@ function renderMonthlySummary(sn, data) {
   html += `<tr><td>Total / Avg</td><td>${totDays}</td><td>${fmt(totHrs)}</td><td>${fmt(totAvg)}</td><td></td></tr>`;
   html += '</tbody></table>';
   el.innerHTML = html;
-}
-
-// --- Cost vs Hours Scatter ---
-function renderCostScatter(sn, data) {
-  const el = document.getElementById(`costscatter_${sn}`);
-  if (!el) return;
-  const { billableJobs, jobTotals } = data;
-
-  // Build data points — only projects with both hours and a value
-  const points = [];
-  let ci = 0;
-  for (const job of billableJobs) {
-    const color = CHART_COLORS[ci % CHART_COLORS.length]; ci++;
-    const proj = coreProjects[job.toUpperCase()];
-    const hours = jobTotals[job] || 0;
-    if (!hours) continue;
-    const vr = proj ? bestValue(proj) : null;
-    points.push({
-      job,
-      label: proj ? proj.displayName : job,
-      hours,
-      value: vr ? vr.value : null,
-      valueSource: vr ? vr.source : null,
-      color,
-    });
-  }
-
-  const withValue = points.filter(p => p.value);
-  const noValue = points.filter(p => !p.value);
-
-  if (!withValue.length) {
-    el.innerHTML = '<div class="cost-scatter-title">Cost vs Hours</div><div style="font-size:11px;color:var(--text-muted);padding:8px 0">No project values available yet — enter values in Projects Manager.</div>';
-    return;
-  }
-
-  // SVG dimensions
-  const W = 640, H = 320, padL = 60, padR = 160, padT = 20, padB = 50;
-  const plotW = W - padL - padR, plotH = H - padT - padB;
-
-  const maxVal = Math.max(...withValue.map(p => p.value));
-  const maxHrs = Math.max(...withValue.map(p => p.hours));
-
-  // Scale functions
-  const sx = v => padL + (v / maxVal) * plotW;
-  const sy = h => padT + plotH - (h / maxHrs) * plotH;
-
-  // Efficiency ratio: hours per $10K — lower is better
-  const ratio = p => p.value ? (p.hours / (p.value / 10000)) : null;
-  const minRatio = Math.min(...withValue.map(ratio));
-  const maxRatio = Math.max(...withValue.map(ratio));
-
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('width', W);
-  svg.setAttribute('height', H);
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-
-  // Grid lines
-  const gridVals = [0, 0.25, 0.5, 0.75, 1];
-  for (const t of gridVals) {
-    const line = document.createElementNS(ns, 'line');
-    line.setAttribute('x1', padL); line.setAttribute('x2', padL + plotW);
-    line.setAttribute('y1', padT + plotH * (1 - t)); line.setAttribute('y2', padT + plotH * (1 - t));
-    line.setAttribute('stroke', '#e8e4dc'); line.setAttribute('stroke-width', '1');
-    svg.appendChild(line);
-    const vtx = document.createElementNS(ns, 'text');
-    vtx.setAttribute('x', padL - 6); vtx.setAttribute('y', padT + plotH * (1 - t) + 4);
-    vtx.setAttribute('text-anchor', 'end'); vtx.setAttribute('font-size', '9'); vtx.setAttribute('fill', '#aaa');
-    vtx.textContent = Math.round(maxHrs * t) + 'h';
-    svg.appendChild(vtx);
-    const vline = document.createElementNS(ns, 'line');
-    vline.setAttribute('x1', padL + plotW * t); vline.setAttribute('x2', padL + plotW * t);
-    vline.setAttribute('y1', padT); vline.setAttribute('y2', padT + plotH);
-    vline.setAttribute('stroke', '#e8e4dc'); vline.setAttribute('stroke-width', '1');
-    svg.appendChild(vline);
-    const vtx2 = document.createElementNS(ns, 'text');
-    vtx2.setAttribute('x', padL + plotW * t); vtx2.setAttribute('y', padT + plotH + 16);
-    vtx2.setAttribute('text-anchor', 'middle'); vtx2.setAttribute('font-size', '9'); vtx2.setAttribute('fill', '#aaa');
-    vtx2.textContent = '$' + Math.round(maxVal * t / 1000) + 'K';
-    svg.appendChild(vtx2);
-  }
-
-  // Axis labels
-  const xLbl = document.createElementNS(ns, 'text');
-  xLbl.setAttribute('x', padL + plotW / 2); xLbl.setAttribute('y', H - 4);
-  xLbl.setAttribute('text-anchor', 'middle'); xLbl.setAttribute('font-size', '10');
-  xLbl.setAttribute('fill', '#888'); xLbl.setAttribute('font-weight', '600');
-  xLbl.textContent = 'Project Value →';
-  svg.appendChild(xLbl);
-
-  const yLbl = document.createElementNS(ns, 'text');
-  yLbl.setAttribute('x', 12); yLbl.setAttribute('y', padT + plotH / 2);
-  yLbl.setAttribute('text-anchor', 'middle'); yLbl.setAttribute('font-size', '10');
-  yLbl.setAttribute('fill', '#888'); yLbl.setAttribute('font-weight', '600');
-  yLbl.setAttribute('transform', `rotate(-90, 12, ${padT + plotH / 2})`);
-  yLbl.textContent = '↑ Design Hours';
-  svg.appendChild(yLbl);
-
-  // Sweet spot annotation — lower right
-  const annRect = document.createElementNS(ns, 'rect');
-  annRect.setAttribute('x', padL + plotW * 0.6); annRect.setAttribute('y', padT + plotH * 0.6);
-  annRect.setAttribute('width', plotW * 0.38); annRect.setAttribute('height', plotH * 0.38);
-  annRect.setAttribute('fill', '#e8f5ee'); annRect.setAttribute('rx', '4'); annRect.setAttribute('opacity', '0.6');
-  svg.appendChild(annRect);
-  const annTxt = document.createElementNS(ns, 'text');
-  annTxt.setAttribute('x', padL + plotW * 0.79); annTxt.setAttribute('y', padT + plotH * 0.72);
-  annTxt.setAttribute('text-anchor', 'middle'); annTxt.setAttribute('font-size', '9');
-  annTxt.setAttribute('fill', '#2d8a5e'); annTxt.setAttribute('font-weight', '700');
-  annTxt.textContent = '✦ sweet spot';
-  svg.appendChild(annTxt);
-
-  // Completion estimate per project
-  function projectCompletion(job) {
-    const proj = coreProjects[job.toUpperCase()];
-    if (!proj) return { pct: null, label: 'Unknown' };
-    const stage = proj.stage || '';
-    if (stage === 'CA Signed') return { pct: 1.0, label: 'CA Signed' };
-    // Estimate from phase progress: weeks with hours vs total planned weeks
-    const phases = proj.phases || [];
-    const totalPlanned = phases.reduce((s, ph) => s + (ph.durWeeks || 0), 0);
-    if (!totalPlanned) return { pct: null, label: 'In Progress' };
-    const entries = allEntries.filter(e => e.jobUpper === job.toUpperCase() && !e.nonBillable && e.week);
-    const weeksLogged = new Set(entries.map(e => e.week)).size;
-    const pct = Math.min(weeksLogged / totalPlanned, 1.0);
-    return { pct, label: `~${Math.round(pct * 100)}% complete` };
-  }
-
-  // Data points
-  for (const p of withValue) {
-    const x = sx(p.value), y = sy(p.hours);
-    const r = ratio(p);
-    const comp = projectCompletion(p.job);
-    // Outer ring shows completion — full fill = complete, partial arc = in progress
-    const outerR = 9, innerR = 5;
-    if (comp.pct !== null && comp.pct < 1.0) {
-      // Draw completion arc ring
-      const bg = document.createElementNS(ns, 'circle');
-      bg.setAttribute('cx', x); bg.setAttribute('cy', y); bg.setAttribute('r', outerR);
-      bg.setAttribute('fill', 'none'); bg.setAttribute('stroke', '#ddd'); bg.setAttribute('stroke-width', '3');
-      svg.appendChild(bg);
-      // Arc for completion
-      const angle = comp.pct * 2 * Math.PI - Math.PI / 2;
-      const ax = x + outerR * Math.cos(-Math.PI / 2);
-      const ay = y + outerR * Math.sin(-Math.PI / 2);
-      const bx = x + outerR * Math.cos(angle);
-      const by = y + outerR * Math.sin(angle);
-      const large = comp.pct > 0.5 ? 1 : 0;
-      const arc = document.createElementNS(ns, 'path');
-      arc.setAttribute('d', `M ${ax},${ay} A ${outerR},${outerR} 0 ${large},1 ${bx},${by}`);
-      arc.setAttribute('fill', 'none'); arc.setAttribute('stroke', p.color); arc.setAttribute('stroke-width', '3');
-      svg.appendChild(arc);
-    }
-    const dot = document.createElementNS(ns, 'circle');
-    dot.setAttribute('cx', x); dot.setAttribute('cy', y);
-    dot.setAttribute('r', comp.pct === 1.0 ? outerR : innerR);
-    dot.setAttribute('fill', p.color);
-    dot.setAttribute('opacity', comp.pct === 1.0 ? '0.9' : '0.7');
-    dot.setAttribute('stroke', 'white'); dot.setAttribute('stroke-width', '1.5');
-    svg.appendChild(dot);
-    // Label
-    const lbl = document.createElementNS(ns, 'text');
-    lbl.setAttribute('x', x + outerR + 4); lbl.setAttribute('y', y + 3);
-    lbl.setAttribute('font-size', '9'); lbl.setAttribute('fill', '#444');
-    lbl.setAttribute('font-weight', '500');
-    lbl.textContent = p.label;
-    svg.appendChild(lbl);
-    // Ratio + completion
-    const rlbl = document.createElementNS(ns, 'text');
-    rlbl.setAttribute('x', x + outerR + 4); rlbl.setAttribute('y', y + 13);
-    rlbl.setAttribute('font-size', '8'); rlbl.setAttribute('fill', '#aaa');
-    rlbl.textContent = `${r.toFixed(1)} hrs/$10K · ${comp.label}`;
-    svg.appendChild(rlbl);
-  }
-
-  let html = '<div class="cost-scatter-title">Cost vs Design Hours</div>';
-  html += '<div class="cost-scatter-sub">Lower-right = high value, fewer hours — your sweet spot. Ratio = design hours per $10K of project value.</div>';
-  if (noValue.length) html += `<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">Projects without value data (not shown): ${noValue.map(p=>p.label).join(', ')}</div>`;
-  el.innerHTML = html;
-  el.appendChild(svg);
-}
-
-// --- Aggregate Scatter ---
-function renderAggregateScatter() {
-  const el = document.getElementById('aggregatePanel');
-  if (!el) return;
-  if (!isOnline || !allEntries.length) { el.style.display = 'none'; return; }
-
-  // Collect all billable projects across all designers
-  const jobTotalsAll = {};
-  const jobDesigners = {};
-  for (const e of allEntries) {
-    if (e.nonBillable) continue;
-    jobTotalsAll[e.jobUpper] = (jobTotalsAll[e.jobUpper] || 0) + e.hours;
-    if (!jobDesigners[e.jobUpper]) jobDesigners[e.jobUpper] = new Set();
-    jobDesigners[e.jobUpper].add(e.designer);
-  }
-
-  // Build points
-  let ci = 0;
-  const points = [];
-  for (const [job, hours] of Object.entries(jobTotalsAll)) {
-    const proj = coreProjects[job];
-    const vr = proj ? bestValue(proj) : null;
-    const color = CHART_COLORS[ci % CHART_COLORS.length]; ci++;
-    points.push({
-      job, hours,
-      label: proj ? proj.displayName : job,
-      value: vr ? vr.value : null,
-      stage: proj ? proj.stage : null,
-      color,
-      designers: jobDesigners[job] ? [...jobDesigners[job]] : [],
-    });
-  }
-
-  const withValue = points.filter(p => p.value);
-  if (withValue.length < 2) { el.style.display = 'none'; return; }
-  el.style.display = '';
-
-  const W = 800, H = 380, padL = 65, padR = 180, padT = 30, padB = 55;
-  const plotW = W - padL - padR, plotH = H - padT - padB;
-  const maxVal = Math.max(...withValue.map(p => p.value));
-  const maxHrs = Math.max(...withValue.map(p => p.hours));
-  const sx = v => padL + (v / maxVal) * plotW;
-  const sy = h => padT + plotH - (h / maxHrs) * plotH;
-  const ratio = p => p.value ? (p.hours / (p.value / 10000)) : null;
-
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('width', W); svg.setAttribute('height', H);
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-
-  // Grid
-  [0, 0.25, 0.5, 0.75, 1].forEach(t => {
-    const gl = document.createElementNS(ns, 'line');
-    gl.setAttribute('x1', padL); gl.setAttribute('x2', padL + plotW);
-    gl.setAttribute('y1', padT + plotH * (1-t)); gl.setAttribute('y2', padT + plotH * (1-t));
-    gl.setAttribute('stroke', '#e8e4dc'); gl.setAttribute('stroke-width', '1');
-    svg.appendChild(gl);
-    const vl = document.createElementNS(ns, 'line');
-    vl.setAttribute('x1', padL + plotW*t); vl.setAttribute('x2', padL + plotW*t);
-    vl.setAttribute('y1', padT); vl.setAttribute('y2', padT + plotH);
-    vl.setAttribute('stroke', '#e8e4dc'); vl.setAttribute('stroke-width', '1');
-    svg.appendChild(vl);
-    ['x','y'].forEach(axis => {
-      const txt = document.createElementNS(ns, 'text');
-      txt.setAttribute('font-size', '9'); txt.setAttribute('fill', '#aaa');
-      if (axis === 'y') {
-        txt.setAttribute('x', padL - 6); txt.setAttribute('y', padT + plotH*(1-t) + 4);
-        txt.setAttribute('text-anchor', 'end');
-        txt.textContent = Math.round(maxHrs * t) + 'h';
-      } else {
-        txt.setAttribute('x', padL + plotW*t); txt.setAttribute('y', padT + plotH + 18);
-        txt.setAttribute('text-anchor', 'middle');
-        txt.textContent = '$' + Math.round(maxVal * t / 1000) + 'K';
-      }
-      svg.appendChild(txt);
-    });
-  });
-
-  // Sweet spot
-  const ss = document.createElementNS(ns, 'rect');
-  ss.setAttribute('x', padL + plotW * 0.55); ss.setAttribute('y', padT + plotH * 0.55);
-  ss.setAttribute('width', plotW * 0.43); ss.setAttribute('height', plotH * 0.43);
-  ss.setAttribute('fill', '#e8f5ee'); ss.setAttribute('rx', '4'); ss.setAttribute('opacity', '0.5');
-  svg.appendChild(ss);
-  const ssT = document.createElementNS(ns, 'text');
-  ssT.setAttribute('x', padL + plotW * 0.77); ssT.setAttribute('y', padT + plotH * 0.68);
-  ssT.setAttribute('text-anchor', 'middle'); ssT.setAttribute('font-size', '9');
-  ssT.setAttribute('fill', '#2d8a5e'); ssT.setAttribute('font-weight', '700');
-  ssT.textContent = '✦ sweet spot';
-  svg.appendChild(ssT);
-
-  // Trend line (simple linear regression)
-  const xs = withValue.map(p => p.value), ys = withValue.map(p => p.hours);
-  const n = xs.length, mx = xs.reduce((a,b)=>a+b)/n, my = ys.reduce((a,b)=>a+b)/n;
-  const slope = xs.map((x,i)=>(x-mx)*(ys[i]-my)).reduce((a,b)=>a+b) / xs.map(x=>(x-mx)**2).reduce((a,b)=>a+b);
-  const intercept = my - slope * mx;
-  const trendLine = document.createElementNS(ns, 'line');
-  trendLine.setAttribute('x1', sx(0)); trendLine.setAttribute('y1', sy(intercept));
-  trendLine.setAttribute('x2', sx(maxVal)); trendLine.setAttribute('y2', sy(slope * maxVal + intercept));
-  trendLine.setAttribute('stroke', '#c9a84c'); trendLine.setAttribute('stroke-width', '1.5');
-  trendLine.setAttribute('stroke-dasharray', '4,3'); trendLine.setAttribute('opacity', '0.7');
-  svg.appendChild(trendLine);
-
-  // Dots
-  for (const p of withValue) {
-    const x = sx(p.value), y = sy(p.hours);
-    const isCA = p.stage === 'CA Signed';
-    const dot = document.createElementNS(ns, 'circle');
-    dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', isCA ? 8 : 6);
-    dot.setAttribute('fill', p.color); dot.setAttribute('opacity', isCA ? '0.9' : '0.6');
-    dot.setAttribute('stroke', isCA ? 'white' : '#fff'); dot.setAttribute('stroke-width', isCA ? '2' : '1');
-    svg.appendChild(dot);
-    const lbl = document.createElementNS(ns, 'text');
-    lbl.setAttribute('x', x + 11); lbl.setAttribute('y', y + 3);
-    lbl.setAttribute('font-size', '9'); lbl.setAttribute('fill', '#444'); lbl.setAttribute('font-weight', '500');
-    lbl.textContent = p.label + (isCA ? ' ✓' : '');
-    svg.appendChild(lbl);
-    const r = ratio(p);
-    if (r !== null) {
-      const rlbl = document.createElementNS(ns, 'text');
-      rlbl.setAttribute('x', x + 11); rlbl.setAttribute('y', y + 13);
-      rlbl.setAttribute('font-size', '8'); rlbl.setAttribute('fill', '#aaa');
-      rlbl.textContent = `${r.toFixed(1)} hrs/$10K`;
-      svg.appendChild(rlbl);
-    }
-  }
-
-  // Axis labels
-  const xA = document.createElementNS(ns, 'text');
-  xA.setAttribute('x', padL + plotW/2); xA.setAttribute('y', H - 8);
-  xA.setAttribute('text-anchor', 'middle'); xA.setAttribute('font-size', '10');
-  xA.setAttribute('fill', '#888'); xA.setAttribute('font-weight', '600');
-  xA.textContent = 'Project Value →'; svg.appendChild(xA);
-  const yA = document.createElementNS(ns, 'text');
-  yA.setAttribute('x', 12); yA.setAttribute('y', padT + plotH/2);
-  yA.setAttribute('text-anchor', 'middle'); yA.setAttribute('font-size', '10');
-  yA.setAttribute('fill', '#888'); yA.setAttribute('font-weight', '600');
-  yA.setAttribute('transform', `rotate(-90,12,${padT+plotH/2})`);
-  yA.textContent = '↑ Design Hours'; svg.appendChild(yA);
-
-  // Legend
-  const legY = padT;
-  [['Larger/solid = CA Signed (complete)', '#444'], ['Dashed line = trend', '#c9a84c']].forEach(([txt, col], i) => {
-    const lt = document.createElementNS(ns, 'text');
-    lt.setAttribute('x', padL + plotW + 14); lt.setAttribute('y', legY + i * 16);
-    lt.setAttribute('font-size', '9'); lt.setAttribute('fill', col);
-    lt.textContent = txt; svg.appendChild(lt);
-  });
-
-  // Summary stats
-  const ratios = withValue.map(ratio).filter(Boolean).sort((a,b)=>a-b);
-  const caPoints = withValue.filter(p => p.stage === 'CA Signed');
-  const avgRatio = ratios.reduce((a,b)=>a+b,0)/ratios.length;
-  const fmt = h => h%1===0?h:h.toFixed(1);
-
-  const summaryLines = [
-    `${withValue.length} projects with value data (${caPoints.length} CA-signed / complete)`,
-    `Avg efficiency: ${fmt(avgRatio)} hrs per $10K`,
-    `Best: ${fmt(ratios[0])} · Worst: ${fmt(ratios[ratios.length-1])} hrs/$10K`,
-    caPoints.length >= 2 ? `Complete projects avg: ${fmt(caPoints.map(ratio).reduce((a,b)=>a+b,0)/caPoints.length)} hrs/$10K` : 'Not enough complete projects yet for reliable baseline',
-    slope > 0 ? `Trend: higher-value projects tend to use more hours` : `Trend: higher-value projects tend to use fewer hours (favorable)`,
-  ];
-
-  let html = `<div style="font-family:'Swear Text',serif;font-size:16px;color:var(--navy);margin-bottom:4px">All Projects — Hours vs Value</div>`;
-  html += `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">Solid/large dots = CA Signed (design complete). Dashed line = trend. ✓ = construction started.</div>`;
-  el.innerHTML = html;
-  el.appendChild(svg);
-
-  // Summary conclusions
-  const concEl = document.createElement('div');
-  concEl.style.cssText = 'margin-top:16px;padding:14px 16px;background:var(--header-bg);border-radius:6px;border:1px solid var(--border);font-size:11px;line-height:1.7;color:var(--text);';
-  concEl.innerHTML = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.35);margin-bottom:8px">Summary</div>' +
-    summaryLines.map(l => `<div>· ${l}</div>`).join('');
-  el.appendChild(concEl);
-}
-
-// --- Sankey ---
-function renderSankey(sn, data) {
-  const el = document.getElementById(`sankey_${sn}`);
-  if (!el) return;
-  const { weeks, billableJobs, nbLabel, grid, jobTotals, weekTotals } = data;
-  const allJobs = [...billableJobs, nbLabel];
-
-  // Only show weeks and jobs with any hours
-  const activeWeeks = weeks.filter(w => (weekTotals[w]||0) > 0);
-  const activeJobs = allJobs.filter(j => (jobTotals[j]||0) > 0);
-  if (activeWeeks.length < 2 || activeJobs.length < 1) { el.innerHTML = ''; return; }
-
-  // Layout constants
-  const W = 900, nodeW = 14, jobGap = 8;
-  const leftX = nodeW + 80;   // week nodes x (room for date + hours label)
-  const rightX = W - nodeW - 140; // project nodes x (room for name label)
-  const minRowH = 32, weekRowH = Math.max(minRowH, Math.floor(420 / Math.max(activeWeeks.length, 1)));
-  const totalH_weeks = activeWeeks.length * weekRowH;
-
-  // Color map
-  const colorMap = {};
-  let ci = 0;
-  for (const j of billableJobs) { colorMap[j] = CHART_COLORS[ci % CHART_COLORS.length]; ci++; }
-  colorMap[nbLabel] = '#B7A9A3';
-
-  // Right side: project nodes sized by total hours, with fixed minimum height
-  const totalAllHours = activeJobs.reduce((s, j) => s + (jobTotals[j] || 0), 0);
-  const minJobH = 20;
-  // First pass: compute natural heights
-  const naturalJobH = activeJobs.map(j => Math.max((jobTotals[j] || 0) / totalAllHours * totalH_weeks, minJobH));
-  const totalRightH = naturalJobH.reduce((a, b) => a + b, 0) + jobGap * (activeJobs.length - 1);
-  const H = Math.max(totalH_weeks, totalRightH) + 40;
-
-  // Week nodes — evenly spaced, centered in H
-  const weekNodes = {};
-  const weekAreaTop = (H - totalH_weeks) / 2;
-  activeWeeks.forEach((w, i) => {
-    const cy = weekAreaTop + i * weekRowH + weekRowH / 2;
-    weekNodes[w] = { y: cy, total: weekTotals[w] || 0 };
-  });
-
-  // Project nodes — packed and centered
-  const jobNodes = {};
-  const jobAreaTop = (H - totalRightH) / 2;
-  let rightY = jobAreaTop;
-  for (let ji = 0; ji < activeJobs.length; ji++) {
-    const j = activeJobs[ji];
-    const nodeHeight = naturalJobH[ji];
-    jobNodes[j] = { y: rightY + nodeHeight / 2, height: nodeHeight, total: jobTotals[j] || 0 };
-    rightY += nodeHeight + jobGap;
-  }
-
-  // Build flows: week → job
-  // For each week, compute cumulative y offsets on both sides
-  const flows = [];
-  // Track running y offset per week node (top of next band)
-  const weekOffset = {};
-  for (const w of activeWeeks) weekOffset[w] = weekNodes[w].y - weekNodes[w].total * 0.5; // not pixel — use proportional below
-
-  // Pixel height per hour: map to week node visual band
-  // Each week node will be a vertical bar of height proportional to weekTotals
-  const maxWeekTotal = Math.max(...activeWeeks.map(w => weekTotals[w] || 0));
-  const weekBarScale = (weekRowH * 0.80) / (maxWeekTotal || 1);
-  const rightBarScale = (j) => (jobNodes[j].height * 0.92) / (jobNodes[j].total || 1);
-
-  // Reset offsets as pixel positions relative to node center
-  for (const w of activeWeeks) {
-    const bar = weekNodes[w].total * weekBarScale;
-    weekOffset[w] = weekNodes[w].y - bar / 2;
-  }
-  const jobOffset = {};
-  for (const j of activeJobs) jobOffset[j] = jobNodes[j].y - jobNodes[j].height / 2;
-
-  for (const w of activeWeeks) {
-    for (const j of activeJobs) {
-      const h = grid[j] && grid[j][w] ? grid[j][w] : 0;
-      if (h <= 0) continue;
-      const bandW_left = h * weekBarScale;
-      const bandW_right = h * rightBarScale(j);
-      flows.push({
-        w, j,
-        y1_top: weekOffset[w],
-        y1_bot: weekOffset[w] + bandW_left,
-        y2_top: jobOffset[j],
-        y2_bot: jobOffset[j] + bandW_right,
-        color: colorMap[j],
-        hours: h,
-      });
-      weekOffset[w] += bandW_left;
-      jobOffset[j] += bandW_right;
-    }
-  }
-
-  // Render SVG
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-
-  // Flow bands
-  for (const f of flows) {
-    const cx = (leftX + rightX) / 2;
-    const path = document.createElementNS(ns, 'path');
-    const d = `M ${leftX + nodeW},${f.y1_top} C ${cx},${f.y1_top} ${cx},${f.y2_top} ${rightX},${f.y2_top} L ${rightX},${f.y2_bot} C ${cx},${f.y2_bot} ${cx},${f.y1_bot} ${leftX + nodeW},${f.y1_bot} Z`;
-    path.setAttribute('d', d);
-    path.setAttribute('fill', f.color);
-    path.setAttribute('opacity', '0.35');
-    path.setAttribute('stroke', f.color);
-    path.setAttribute('stroke-width', '0.5');
-    path.setAttribute('stroke-opacity', '0.5');
-    svg.appendChild(path);
-  }
-
-  // Week nodes (left) — vertical bars
-  for (const w of activeWeeks) {
-    const wn = weekNodes[w];
-    const bar = wn.total * weekBarScale;
-    const rect = document.createElementNS(ns, 'rect');
-    rect.setAttribute('x', leftX);
-    rect.setAttribute('y', wn.y - bar / 2);
-    rect.setAttribute('width', nodeW);
-    rect.setAttribute('height', Math.max(bar, 1));
-    rect.setAttribute('fill', '#8a9ab0');
-    rect.setAttribute('rx', '2');
-    svg.appendChild(rect);
-    // Label
-    const txt = document.createElementNS(ns, 'text');
-    txt.setAttribute('x', leftX - 6);
-    txt.setAttribute('y', wn.y + 4);
-    txt.setAttribute('text-anchor', 'end');
-    txt.setAttribute('font-size', '9');
-    txt.setAttribute('fill', '#888');
-    txt.setAttribute('font-family', 'monospace');
-    const wp = w.slice(0, 10);
-    const [wy, wmo, wday] = wp.split('-').map(Number);
-    const d = new Date(wy, wmo - 1, wday);
-    txt.textContent = d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-    svg.appendChild(txt);
-    // Hour total
-    const htxt = document.createElementNS(ns, 'text');
-    htxt.setAttribute('x', leftX - 6);
-    htxt.setAttribute('y', wn.y + 14);
-    htxt.setAttribute('text-anchor', 'end');
-    htxt.setAttribute('font-size', '8');
-    htxt.setAttribute('fill', '#aaa');
-    htxt.setAttribute('font-family', 'monospace');
-    const wTotal = wn.total;
-    htxt.textContent = `${wTotal % 1 === 0 ? wTotal : wTotal.toFixed(1)}h`;
-    svg.appendChild(htxt);
-  }
-
-  // Project nodes (right) — vertical bars sized by total
-  for (const j of activeJobs) {
-    const jn = jobNodes[j];
-    const rect = document.createElementNS(ns, 'rect');
-    rect.setAttribute('x', rightX);
-    rect.setAttribute('y', jn.y - jn.height / 2);
-    rect.setAttribute('width', nodeW);
-    rect.setAttribute('height', Math.max(jn.height, 2));
-    rect.setAttribute('fill', colorMap[j]);
-    rect.setAttribute('rx', '2');
-    svg.appendChild(rect);
-    // Label
-    const proj = coreProjects[j.toUpperCase()];
-    const label = proj ? proj.displayName : j;
-    const txt = document.createElementNS(ns, 'text');
-    txt.setAttribute('x', rightX + nodeW + 8);
-    txt.setAttribute('y', jn.y + 4);
-    txt.setAttribute('font-size', '10');
-    txt.setAttribute('fill', '#444');
-    txt.setAttribute('font-family', 'sans-serif');
-    txt.setAttribute('font-weight', '500');
-    txt.textContent = label;
-    svg.appendChild(txt);
-    // Hours label
-    const htxt = document.createElementNS(ns, 'text');
-    htxt.setAttribute('x', rightX + nodeW + 8);
-    htxt.setAttribute('y', jn.y + 16);
-    htxt.setAttribute('font-size', '9');
-    htxt.setAttribute('fill', '#aaa');
-    htxt.setAttribute('font-family', 'monospace');
-    htxt.textContent = `${jn.total % 1 === 0 ? jn.total : jn.total.toFixed(1)} hrs`;
-    svg.appendChild(htxt);
-  }
-
-  const sankeyId = `sankey-inner-${sn.replace(/\s/g,'_')}`;
-  el.innerHTML = `<button class="panel-toggle-btn" onclick="togglePanel('${sankeyId}',this)"><span class="panel-toggle-chev">▼</span> Hour Flow — Weeks → Projects</button><div class="panel-collapsible" id="${sankeyId}" style="max-height:2000px"></div>`;
-  document.getElementById(sankeyId).appendChild(svg);
 }
 
 // --- Trend overlay ---
@@ -1605,62 +967,57 @@ function render() {
     <div class="summary-stat"><div class="val">${uniqProj}</div><div class="lbl">Projects</div></div>`;
   renderPhaseAlert();
   const ctr = document.getElementById('designerSections'); ctr.innerHTML = '';
-  for (const designer of DESIGNERS) {
-    const data = buildDesignerData(designer); if (data.weeks.length === 0) continue;
-    const sn = SHORT_NAMES[designer], dt = Object.values(data.weekTotals).reduce((a,b)=>a+b,0), bid = `body_${sn}`;
+  const jobs = allBillableJobs();
+  for (const jobUpper of jobs) {
+    const data = buildProjectData(jobUpper);
+    if (!data.weeks.length) continue;
+    const proj = coreProjects[jobUpper];
+    const projLabel = proj ? (proj.displayName || jobUpper) : jobUpper;
+    const projSub = proj && proj.displayName && proj.displayName !== jobUpper ? jobUpper : null;
+    const dt = data.totalHours;
+    const bid = `body_${jobUpper}`;
+    const gridTogId = `grid-tog-${bid}`;
     const sec = document.createElement('div'); sec.className = 'section';
-    const gridTogId=`grid-tog-${bid}`;
-    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="monthly-summary-panel" id="monthly_${sn}"></div><div style="padding:0 18px"><button class="panel-toggle-btn" onclick="togglePanel('${gridTogId}',this)"><span class="panel-toggle-chev">▼</span> Weekly Hours Grid</button></div><div class="panel-collapsible" id="${gridTogId}" style="max-height:5000px"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div></div><div class="proj-phase-panel" id="projphase_${sn}"></div><div class="cost-scatter-panel" id="costscatter_${sn}"></div><div class="sankey-wrap" id="sankey_${sn}"></div></div>`;
+    const designerPills = data.designers.map(d => `<span class="designer-pill">${shortName(d)}</span>`).join('');
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${projLabel}${projSub?`<span class="proj-code-meta">${projSub}</span>`:''}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} wks${data.designers.length>1?' · '+data.designers.length+' designers':''}</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="designer-chips">${designerPills}</div><div class="monthly-summary-panel" id="monthly_${jobUpper}"></div><div style="padding:0 18px"><button class="panel-toggle-btn" onclick="togglePanel('${gridTogId}',this)"><span class="panel-toggle-chev">▼</span> Weekly Hours Grid</button></div><div class="panel-collapsible" id="${gridTogId}" style="max-height:5000px"><div class="grid-wrap"><table class="hours-grid" id="grid_${jobUpper}"></table></div><div class="phase-summary hidden" id="phasesummary_${jobUpper}"></div></div></div>`;
     ctr.appendChild(sec);
-    renderMonthlySummary(sn, data);
-    renderGrid(sn, data);
-    renderProjectPhasePanel(sn, data);
-    renderCostScatter(sn, data);
-    renderSankey(sn, data);
+    renderMonthlySummary(jobUpper, data);
+    renderGrid(jobUpper, data);
   }
-  renderAggregateScatter();
 }
 
 // Phase palette (index into these by phase order)
 const PHASE_COLORS = ['#3b5fa0','#5a8a5a','#8a6a3a','#7a4a8a','#3a7a8a'];
 
-function renderGrid(sn, data) {
-  const table = document.getElementById(`grid_${sn}`);
-  const { weeks, billableJobs, nbLabel, grid, jobTotals, weekTotals } = data;
+function renderGrid(jobUpper, data) {
+  const table = document.getElementById(`grid_${jobUpper}`);
+  const { weeks, designers, grid, designerTotals, weekTotals } = data;
   let globalMax = 0;
-  for (const j of Object.keys(grid)) for (const w of weeks) if ((grid[j][w]||0)>globalMax) globalMax=grid[j][w];
+  for (const d of designers) for (const w of weeks) if ((grid[d][w]||0)>globalMax) globalMax=grid[d][w];
   let totalMax = 0;
   for (const w of weeks) if ((weekTotals[w]||0)>totalMax) totalMax=weekTotals[w];
 
   const colorMap = {}; let ci = 0;
-  for (const j of billableJobs) { colorMap[j] = CHART_COLORS[ci%CHART_COLORS.length]; ci++; }
-  colorMap[nbLabel] = '#B7A9A3';
+  for (const d of designers) { colorMap[d] = CHART_COLORS[ci%CHART_COLORS.length]; ci++; }
 
-  // Build week→phase map across all billable projects in this designer's data
-  // A week gets a phase label if the majority of billable projects with phase data agree
-  // (simplified: first phase found per week wins — phases are mutually exclusive per project)
-  const weekPhaseMap = {}; // week -> {name, colorIdx}
-  const phaseNames = []; // ordered unique phase names seen
+  // Build week→phase map for this specific project
+  const weekPhaseMap = {};
+  const phaseNames = [];
   for (const w of weeks) {
-    for (const job of billableJobs) {
-      if (!grid[job][w]) continue;
-      const ph = getPhaseForWeek(job.toUpperCase(), w);
-      if (ph) {
-        if (!phaseNames.includes(ph)) phaseNames.push(ph);
-        if (!weekPhaseMap[w]) weekPhaseMap[w] = { name: ph, colorIdx: phaseNames.indexOf(ph) };
-        break;
-      }
+    const ph = getPhaseForWeek(jobUpper, w);
+    if (ph) {
+      if (!phaseNames.includes(ph)) phaseNames.push(ph);
+      if (!weekPhaseMap[w]) weekPhaseMap[w] = { name: ph, colorIdx: phaseNames.indexOf(ph) };
     }
   }
 
   const hasPhases = Object.keys(weekPhaseMap).length > 0;
 
-  // Header — phase band row first if we have data, then week labels
+  // Header — phase band row, then week labels
   const thead = document.createElement('thead');
   let theadHtml = '';
   if (hasPhases) {
-    // Build phase band: merge consecutive weeks with same phase into colspan cells
-    theadHtml += '<tr class="phase-row"><th class="phase-empty"></th>'; // name col spacer
+    theadHtml += '<tr class="phase-row"><th class="phase-empty"></th>';
     let i = 0;
     while (i < weeks.length) {
       const ph = weekPhaseMap[weeks[i]];
@@ -1671,9 +1028,9 @@ function renderGrid(sn, data) {
       theadHtml += `<th class="phase-cell ${colorCls}" colspan="${span}" title="${ph.name}">${ph.name}</th>`;
       i += span;
     }
-    theadHtml += '<th class="phase-empty"></th></tr>'; // total col spacer
+    theadHtml += '<th class="phase-empty"></th></tr>';
   }
-  theadHtml += '<tr><th>Project</th>' + weeks.map(w=>`<th>${formatWeekLabel(w)}</th>`).join('') + '<th class="total-col">Total</th></tr>';
+  theadHtml += '<tr><th>Designer</th>' + weeks.map(w=>`<th>${formatWeekLabel(w)}</th>`).join('') + '<th class="total-col">Total</th></tr>';
   thead.innerHTML = theadHtml;
   table.appendChild(thead);
 
@@ -1685,12 +1042,13 @@ function renderGrid(sn, data) {
     return `<td class="has-hours"><span class="cell-num">${display}</span></td>`;
   }
 
-  // Billable rows
-  for (const job of billableJobs) {
-    const tr = document.createElement('tr'); tr.className = 'trend-row-wrap'; const vals = [], color = colorMap[job];
-    let html = `<td title="${job}"><span class="proj-swatch" style="background:${color}"></span>${job}</td>`;
-    for (const w of weeks) { const h = grid[job][w]||0; vals.push(h); html += makeCell(h); }
-    const tot = jobTotals[job]||0;
+  // One row per designer
+  for (const d of designers) {
+    const tr = document.createElement('tr'); tr.className = 'trend-row-wrap';
+    const vals = [], color = colorMap[d];
+    let html = `<td><span class="proj-swatch" style="background:${color}"></span>${shortName(d)}</td>`;
+    for (const w of weeks) { const h = grid[d][w]||0; vals.push(h); html += makeCell(h); }
+    const tot = designerTotals[d]||0;
     html += `<td class="total-col"><span class="cell-num">${tot%1===0?tot:tot.toFixed(1)}</span></td>`;
     tr.innerHTML = html;
     tr.dataset.trendVals = JSON.stringify(vals);
@@ -1699,39 +1057,28 @@ function renderGrid(sn, data) {
     tbody.appendChild(tr);
   }
 
-  // Non-billable
-  const nbRow = document.createElement('tr'); nbRow.className = 'nonbillable-row trend-row-wrap';
-  const nbVals = []; let nbHtml = `<td><span class="proj-swatch" style="background:#B7A9A3"></span>${nbLabel}</td>`;
-  for (const w of weeks) { const h=grid[nbLabel][w]||0; nbVals.push(h); nbHtml += makeCell(h); }
-  nbHtml += `<td class="total-col"><span class="cell-num">${(jobTotals[nbLabel]||0)%1===0?jobTotals[nbLabel]||0:(jobTotals[nbLabel]||0).toFixed(1)}</span></td>`;
-  nbRow.innerHTML = nbHtml;
-  nbRow.dataset.trendVals = JSON.stringify(nbVals);
-  nbRow.dataset.trendColor = '#B7A9A3';
-  nbRow.dataset.trendMax = globalMax;
-  tbody.appendChild(nbRow);
-
-  // Total
-  const totRow = document.createElement('tr'); totRow.className = 'total-row trend-row-wrap';
-  const totVals = []; let grand = 0, totHtml = '<td>Total</td>';
-  for (const w of weeks) { const h=weekTotals[w]||0; grand+=h; totVals.push(h); totHtml += `<td class="total-col"><span class="cell-num">${h%1===0?h:h.toFixed(1)}</span></td>`; }
-  totHtml += `<td class="total-col"><span class="cell-num">${grand%1===0?grand:grand.toFixed(1)}</span></td>`;
-  totRow.innerHTML = totHtml;
-  totRow.dataset.trendVals = JSON.stringify(totVals);
-  totRow.dataset.trendColor = 'TOTAL';
-  totRow.dataset.trendMax = totalMax;
-  tbody.appendChild(totRow);
+  // Total row (only if more than one designer)
+  if (designers.length > 1) {
+    const totRow = document.createElement('tr'); totRow.className = 'total-row trend-row-wrap';
+    const totVals = []; let grand = 0, totHtml = '<td>Total</td>';
+    for (const w of weeks) { const h=weekTotals[w]||0; grand+=h; totVals.push(h); totHtml += `<td class="total-col"><span class="cell-num">${h%1===0?h:h.toFixed(1)}</span></td>`; }
+    totHtml += `<td class="total-col"><span class="cell-num">${grand%1===0?grand:grand.toFixed(1)}</span></td>`;
+    totRow.innerHTML = totHtml;
+    totRow.dataset.trendVals = JSON.stringify(totVals);
+    totRow.dataset.trendColor = 'TOTAL';
+    totRow.dataset.trendMax = totalMax;
+    tbody.appendChild(totRow);
+  }
 
   table.appendChild(tbody);
-  // Draw trend overlays after table is in DOM (needs layout)
   requestAnimationFrame(() => drawTrendOverlays(table, weeks.length));
 
-
   // Phase summary panel
-  renderPhaseSummary(sn, data, billableJobs, phaseNames, weekPhaseMap);
+  renderPhaseSummary(jobUpper, data, designers, phaseNames, weekPhaseMap);
 }
 
-function renderPhaseSummary(sn, data, billableJobs, phaseNames, weekPhaseMap) {
-  const panel = document.getElementById(`phasesummary_${sn}`);
+function renderPhaseSummary(jobUpper, data, designers, phaseNames, weekPhaseMap) {
+  const panel = document.getElementById(`phasesummary_${jobUpper}`);
   if (!panel) return;
   if (!phaseNames || !phaseNames.length) { panel.classList.add('hidden'); return; }
 
@@ -1744,7 +1091,7 @@ function renderPhaseSummary(sn, data, billableJobs, phaseNames, weekPhaseMap) {
     if (!ps) continue;
     ps.weekCount++;
     let wkHours = 0;
-    for (const job of billableJobs) wkHours += data.grid[job][w] || 0;
+    for (const d of designers) wkHours += data.grid[d][w] || 0;
     ps.totalHours += wkHours;
     if (wkHours > 0) ps.weeksWithHours++;
   }
@@ -1875,7 +1222,7 @@ function copyToClipboard(text) { if (navigator.clipboard?.writeText) navigator.c
 function fbCopy(text) { const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch{}document.body.removeChild(ta); }
 function copyAllGrids() {
   let tsv = '';
-  for (const d of DESIGNERS) { const data=buildDesignerData(d); if(!data.weeks.length)continue; tsv+=`${SHORT_NAMES[d]}\nProject\t${data.weeks.map(formatWeekLabel).join('\t')}\tTotal\n`; for(const j of data.billableJobs){tsv+=j;for(const w of data.weeks)tsv+=`\t${data.grid[j][w]||''}`;tsv+=`\t${data.jobTotals[j]||''}\n`;}tsv+=data.nbLabel;for(const w of data.weeks)tsv+=`\t${data.grid[data.nbLabel][w]||''}`;tsv+=`\t${data.jobTotals[data.nbLabel]||''}\n`;tsv+='Total';let g=0;for(const w of data.weeks){const h=data.weekTotals[w]||0;g+=h;tsv+=`\t${h}`;}tsv+=`\t${g}\n\n`;}
+  for (const jobUpper of allBillableJobs()) { const data=buildProjectData(jobUpper); if(!data.weeks.length)continue; const proj=coreProjects[jobUpper]; const lbl=proj?proj.displayName||jobUpper:jobUpper; tsv+=`${lbl}\nDesigner\t${data.weeks.map(formatWeekLabel).join('\t')}\tTotal\n`; for(const d of data.designers){tsv+=shortName(d);for(const w of data.weeks)tsv+=`\t${data.grid[d][w]||''}`;tsv+=`\t${data.designerTotals[d]||''}\n`;}tsv+='Total';let g=0;for(const w of data.weeks){const h=data.weekTotals[w]||0;g+=h;tsv+=`\t${h}`;}tsv+=`\t${g}\n\n`;}
   copyToClipboard(tsv); showToast('Copied');
 }
 function clearHistory() {
