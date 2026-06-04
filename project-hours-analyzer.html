@@ -230,7 +230,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v29</span></h1>
+  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v30</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -242,7 +242,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v29</span></h1>
+        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v30</span></h1>
       </div>
       <div class="subtitle">Hours by project, phase, and designer</div>
     </div>
@@ -574,8 +574,13 @@ function buildEmpiricalPhases() {
       return gp?.durWeeks || null;
     };
 
-    // Design start from designLane.startWeek
-    const designStartWeek = gd.designLane?.startWeek;
+    // Design start: prefer individual Phase I startWeek from GanttData phases,
+    // fall back to designLane.startWeek (some projects only have one or the other)
+    const ph1Gantt = ganttPhases.find(p => {
+      const n = p.name?.trim().toLowerCase();
+      return ['phase i','phase 1','initial design','schematic design'].includes(n);
+    });
+    const designStartWeek = ph1Gantt?.startWeek ?? gd.designLane?.startWeek;
     if (designStartWeek == null) continue;
     const designStartDate = pipelineWeekToDate(designStartWeek);
     if (!designStartDate) continue;
@@ -1160,53 +1165,47 @@ function renderProjectSparklineChart(jobUpper, data, globalMax) {
     if (h > 0) activePts.push({ x, y });
   });
 
-  // Build segments split on consecutive gaps
-  const segs = [];
-  let cur = [];
-  timelineWeeks.forEach((w, i) => {
+  // Continuous curve across full timeline — zero weeks hug the baseline
+  const allPts = timelineWeeks.map((w, i) => {
     const h = weekTotals[w] || 0;
-    const x = PAD_L + i * COL_W + COL_W / 2;
-    const y = PAD_T + plotH - (h / sm) * plotH;
-    if (h > 0) { cur.push({ x, y }); }
-    else if (cur.length) { segs.push(cur); cur = []; }
-  });
-  if (cur.length) segs.push(cur);
-
-  segs.forEach(seg => {
-    const path = catmull(seg);
-    if (!path) return;
-    const fillD = path + ` L ${seg[seg.length-1].x},${baseline} L ${seg[0].x},${baseline} Z`;
-    const fill = document.createElementNS(ns, 'path');
-    fill.setAttribute('d', fillD); fill.setAttribute('fill', CHART_COLORS[0]); fill.setAttribute('opacity', '0.28');
-    svg.appendChild(fill);
-    const stroke = document.createElementNS(ns, 'path');
-    stroke.setAttribute('d', path); stroke.setAttribute('fill', 'none');
-    stroke.setAttribute('stroke', CHART_COLORS[0]); stroke.setAttribute('stroke-width', '2');
-    stroke.setAttribute('stroke-linecap', 'round'); stroke.setAttribute('opacity', '0.85');
-    svg.appendChild(stroke);
+    return {
+      x: PAD_L + i * COL_W + COL_W / 2,
+      y: PAD_T + plotH - (h / sm) * plotH,
+      h
+    };
   });
 
-  // Per-designer curves (dimmed dashed)
+  // Only draw if there are any hours at all
+  if (allPts.some(p => p.h > 0)) {
+    const path = catmull(allPts);
+    if (path) {
+      const fillD = path + ` L ${allPts[allPts.length-1].x},${baseline} L ${allPts[0].x},${baseline} Z`;
+      const fill = document.createElementNS(ns, 'path');
+      fill.setAttribute('d', fillD); fill.setAttribute('fill', CHART_COLORS[0]); fill.setAttribute('opacity', '0.28');
+      svg.appendChild(fill);
+      const stroke = document.createElementNS(ns, 'path');
+      stroke.setAttribute('d', path); stroke.setAttribute('fill', 'none');
+      stroke.setAttribute('stroke', CHART_COLORS[0]); stroke.setAttribute('stroke-width', '2');
+      stroke.setAttribute('stroke-linecap', 'round'); stroke.setAttribute('opacity', '0.85');
+      svg.appendChild(stroke);
+    }
+  }
+
+  // Per-designer curves — also continuous, dimmed dashed
   designers.forEach((d, di) => {
-    const dSegs = [];
-    let dCur = [];
-    timelineWeeks.forEach((w, i) => {
-      const h = (data.grid[d] || {})[w] || 0;
-      const x = PAD_L + i * COL_W + COL_W / 2;
-      const y = PAD_T + plotH - (h / sm) * plotH;
-      if (h > 0) { dCur.push({ x, y }); }
-      else if (dCur.length) { dSegs.push(dCur); dCur = []; }
-    });
-    if (dCur.length) dSegs.push(dCur);
-    dSegs.forEach(seg => {
-      const dPath = catmull(seg); if (!dPath) return;
-      const ds = document.createElementNS(ns, 'path');
-      ds.setAttribute('d', dPath); ds.setAttribute('fill', 'none');
-      ds.setAttribute('stroke', CHART_COLORS[(di+1) % CHART_COLORS.length]);
-      ds.setAttribute('stroke-width', '1'); ds.setAttribute('stroke-linecap', 'round');
-      ds.setAttribute('opacity', '0.38'); ds.setAttribute('stroke-dasharray', '3,2');
-      svg.appendChild(ds);
-    });
+    const dPts = timelineWeeks.map((w, i) => ({
+      x: PAD_L + i * COL_W + COL_W / 2,
+      y: PAD_T + plotH - (((data.grid[d] || {})[w] || 0) / sm) * plotH,
+      h: (data.grid[d] || {})[w] || 0
+    }));
+    if (!dPts.some(p => p.h > 0)) return;
+    const dPath = catmull(dPts); if (!dPath) return;
+    const ds = document.createElementNS(ns, 'path');
+    ds.setAttribute('d', dPath); ds.setAttribute('fill', 'none');
+    ds.setAttribute('stroke', CHART_COLORS[(di+1) % CHART_COLORS.length]);
+    ds.setAttribute('stroke-width', '1'); ds.setAttribute('stroke-linecap', 'round');
+    ds.setAttribute('opacity', '0.38'); ds.setAttribute('stroke-dasharray', '3,2');
+    svg.appendChild(ds);
   });
 
   wrap.appendChild(svg);
@@ -1411,8 +1410,8 @@ function renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk) {
   const overallMax = Math.max(...stackTotals, 1);
 
   const W_INNER = Math.max(600, (wrap.offsetWidth || 760) - 36);
-  const H_CHART = 300;
-  const PAD_L = 44, PAD_R = 20, PAD_T = 28, PAD_B = 36;
+  const H_CHART = 320;
+  const PAD_L = 44, PAD_R = 20, PAD_T = 28, PAD_B = 48;
   const plotW = W_INNER - PAD_L - PAD_R;
   const plotH = H_CHART - PAD_T - PAD_B;
   const COL_W = plotW / allWeeks.length;
@@ -1452,7 +1451,21 @@ function renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk) {
   });
 
   // Week axis ticks
-  // x-axis tick marks only — no date labels
+  // X-axis: week numbers every 4 weeks
+  allWeeks.forEach((w, i) => {
+    if (i % 4 !== 0) return;
+    const x = PAD_L + i * COL_W;
+    const tick = document.createElementNS(ns, 'line');
+    tick.setAttribute('x1',x); tick.setAttribute('x2',x);
+    tick.setAttribute('y1',PAD_T+plotH); tick.setAttribute('y2',PAD_T+plotH+3);
+    tick.setAttribute('stroke','rgba(255,255,255,.25)'); tick.setAttribute('stroke-width','1');
+    svg.appendChild(tick);
+    const t = document.createElementNS(ns, 'text');
+    t.setAttribute('x',x+2); t.setAttribute('y',PAD_T+plotH+12);
+    t.setAttribute('font-size','8'); t.setAttribute('fill','rgba(255,255,255,.35)');
+    t.setAttribute('text-anchor','middle');
+    t.textContent = 'w'+(i+1); svg.appendChild(t);
+  });
 
   // Phase divider lines — use first project's phase map as reference, draw for all phase transitions
   // Phase dividers: use median planned phase durations from GanttData
@@ -1470,23 +1483,24 @@ function renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk) {
   const medPhIDur  = medianNum(phIDurs)  || 6;
   const medPhIIDur = medianNum(phIIDurs) || 16;
 
-  // Find the column in allWeeks that corresponds to the median Phase I→II and II→III transitions
-  // Use the earliest logged week as week 0 reference
-  const epochDate = allWeeks[0];
-  const wkIdx = dateStr => allWeeks.indexOf(dateStr) >= 0 ? allWeeks.indexOf(dateStr) :
-    Math.round((new Date(dateStr) - new Date(epochDate)) / (7*24*3600*1000));
+  // Map a date string to the nearest column index in allWeeks using date arithmetic
+  const epochMs = new Date(allWeeks[0]).getTime();
+  const dateToCol = dateStr => {
+    const ms = new Date(dateStr).getTime();
+    return Math.round((ms - epochMs) / (7*24*3600*1000));
+  };
 
-  // Consensus: median absolute week number for the two transitions
+  // Consensus Phase I→II and II→III columns using planned durations from each project
   const trans12abs = [], trans23abs = [];
   allProjectData.forEach(({ jobUpper }) => {
     const proj = coreProjects[jobUpper];
     if (!proj || !proj.phases) return;
     const ph1 = proj.phases.find(p => p.name === PHASE_I);
     const ph2 = proj.phases.find(p => p.name === PHASE_PD);
-    if (ph1 && ph2) {
-      trans12abs.push(wkIdx(ph2.startDate));
-      if (ph2.endDate && ph2.endDate !== '9999-12-31') trans23abs.push(wkIdx(ph2.endDate));
-    }
+    const ph3 = proj.phases.find(p => p.name === PHASE_CD);
+    if (ph1 && ph2 && ph2.startDate) trans12abs.push(dateToCol(ph2.startDate));
+    if (ph2 && ph3 && ph3.startDate) trans23abs.push(dateToCol(ph3.startDate));
+    else if (ph2 && ph2.endDate && ph2.endDate !== '9999-12-31') trans23abs.push(dateToCol(ph2.endDate));
   });
   const div12col = medianNum(trans12abs), div23col = medianNum(trans23abs);
   const dividerCols = [div12col, div23col].filter(d => d !== null && d > 0 && d < allWeeks.length);
