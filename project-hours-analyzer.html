@@ -152,6 +152,17 @@
   .hours-grid thead tr.phase-row th.phase-cell{border-radius:3px 3px 0 0;}
   .hours-grid thead tr.phase-row th.phase-gap{background:transparent;color:transparent;}
   .hours-grid thead tr.phase-row th.phase-empty{background:transparent;}
+  /* Job Code Modal */
+  .jc-section-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border);}
+  .jc-section-title:first-child{margin-top:0;}
+  .jc-row{display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px solid #f5f2ee;}
+  .jc-row:last-child{border-bottom:none;}
+  .jc-code{font-family:var(--font-mono);font-weight:600;font-size:11px;color:#1f2e3e;min-width:100px;}
+  .jc-name{flex:1;color:var(--text);}
+  .jc-value{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);}
+  .jc-stage{font-size:9px;padding:2px 6px;border-radius:10px;font-weight:600;}
+  .jc-stage.ca{background:#d4edda;color:#00521b;}
+  .jc-stage.da{background:#cce5ff;color:#003981;}
   /* Phase data alert */
   .phase-alert{margin:0 0 16px;padding:10px 14px 10px 12px;border:1px solid #e8c97a;border-left:3px solid #c9a84c;border-radius:6px;background:#fdf8ec;font-size:12px;color:#5a4a1a;display:flex;align-items:flex-start;gap:10px;}
   .phase-alert-icon{font-size:14px;flex-shrink:0;margin-top:1px;}
@@ -178,7 +189,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v14</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v16</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -190,7 +201,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v14</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v16</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -199,6 +210,7 @@
         <span class="dot saved"></span> <span id="saveText">Saved</span>
       </div>
       <span class="user-name" id="userName"></span>
+      <button class="file-btn" onclick="showJobCodeModal()" id="jobCodeBtn" style="display:none">Job Codes</button>
       <div style="position:relative">
         <button class="file-btn" id="fileBtn" onclick="toggleFilePanel()"><span id="fileCount">No files</span></button>
         <div class="file-panel" id="filePanel">
@@ -313,6 +325,7 @@ function goOffline() {
   allEntries = loadFromCache();
   loadedFiles = loadFilesFromCache();
   document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('jobCodeBtn').style.display = '';
   document.getElementById('mainApp').classList.remove('hidden');
   showSaveStatus('offline', 'Offline');
   render();
@@ -320,6 +333,7 @@ function goOffline() {
 
 async function onAuthenticated(account) {
   document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('jobCodeBtn').style.display = '';
   document.getElementById('mainApp').classList.remove('hidden');
   document.getElementById('userName').textContent = account.name || account.username || '';
   showSaveStatus('saving', 'Connecting…');
@@ -428,13 +442,14 @@ async function fetchCoreProjects() {
       const data = await graphGet(url);
       for (const item of (data.value || [])) {
         const f = item.fields;
-        if (!f.JobCode) continue;
+        const jobCode = f.JobCode || f.Job_x0020_Code;
+        if (!jobCode) continue;
         const stage = f.PipelineStage || '';
         if (stage === 'Archive' || stage === 'Cancelled') continue;
         let ganttData = null;
         if (f.GanttData) { try { ganttData = JSON.parse(f.GanttData); } catch {} }
-        map[f.JobCode.toUpperCase()] = {
-          jobCode: f.JobCode,
+        map[jobCode.toUpperCase()] = {
+          jobCode,
           clientName: f.ClientName || '',
           projectName: f.ProjectName || '',
           displayName: f.ProjectName || f.ClientName || f.JobCode,
@@ -1276,6 +1291,71 @@ function renderPhaseAlert() {
   el.classList.remove('hidden');
 }
 
+// --- Job Code Modal ---
+function showJobCodeModal() {
+  const modal = document.getElementById('jobCodeModal');
+  const body = document.getElementById('jobCodeModalBody');
+
+  // Collect all unique job codes from timecard entries
+  const allCodes = [...new Set(allEntries.filter(e => !e.nonBillable).map(e => e.jobUpper))].sort();
+
+  // Separate into pre-construction and construction
+  const preCon = [], con = [], unknown = [];
+  for (const code of allCodes) {
+    const proj = coreProjects[code];
+    if (!proj) { unknown.push({ code, name: null, value: null, stage: null }); continue; }
+    const valueResult = bestValue(proj);
+    const entry = { code, name: proj.displayName, value: valueResult ? valueResult.value : null, stage: proj.stage };
+    if (proj.stage === 'CA Signed') con.push(entry);
+    else preCon.push(entry);
+  }
+
+  const sortName = (a, b) => (a.name || a.code).localeCompare(b.name || b.code);
+  preCon.sort(sortName); con.sort(sortName); unknown.sort((a,b) => a.code.localeCompare(b.code));
+
+  function renderRows(arr) {
+    return arr.map(e => {
+      const stageLbl = e.stage ? `<span class="jc-stage ${e.stage==='CA Signed'?'ca':'da'}">${e.stage}</span>` : '';
+      const valLbl = e.value ? `<span class="jc-value">${fmtValue(e.value)}</span>` : '';
+      return `<div class="jc-row"><span class="jc-code">${e.code}</span><span class="jc-name">${e.name||'—'}</span>${valLbl}${stageLbl}</div>`;
+    }).join('');
+  }
+
+  let html = '';
+  if (preCon.length) html += `<div class="jc-section-title">Pre-Construction (${preCon.length})</div>${renderRows(preCon)}`;
+  if (con.length) html += `<div class="jc-section-title">Construction (${con.length})</div>${renderRows(con)}`;
+  if (unknown.length) html += `<div class="jc-section-title">Not in CORE_Projects (${unknown.length})</div>${renderRows(unknown)}`;
+  if (!html) html = '<div style="color:var(--text-muted);padding:20px 0;text-align:center">No billable job codes found in loaded timecards.</div>';
+
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+function copyJobCodeList() {
+  const rows = document.querySelectorAll('#jobCodeModalBody .jc-row');
+  let txt = '';
+  let section = '';
+  const sectionEls = document.querySelectorAll('#jobCodeModalBody .jc-section-title');
+  // Build plain text version
+  document.querySelectorAll('#jobCodeModalBody .jc-section-title, #jobCodeModalBody .jc-row').forEach(el => {
+    if (el.classList.contains('jc-section-title')) {
+      txt += '\n' + el.textContent.trim() + '\n' + '-'.repeat(30) + '\n';
+    } else {
+      const code = el.querySelector('.jc-code')?.textContent || '';
+      const name = el.querySelector('.jc-name')?.textContent || '';
+      const val = el.querySelector('.jc-value')?.textContent || '';
+      txt += `${code.padEnd(14)}${name.padEnd(30)}${val}\n`;
+    }
+  });
+  navigator.clipboard?.writeText(txt.trim()).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = txt.trim(); ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  });
+}
+
 // --- Copy ---
 function copyToClipboard(text) { if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(()=>{},()=>fbCopy(text)); else fbCopy(text); }
 function fbCopy(text) { const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch{}document.body.removeChild(ta); }
@@ -1326,5 +1406,18 @@ async function handleFiles(files) {
 // --- Init ---
 initMsal();
 </script>
+<div id="jobCodeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:10px;max-width:640px;width:90%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="padding:18px 20px 14px;border-bottom:1px solid #e8e3da;display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-family:'Swear Text',serif;font-size:17px;color:#1f2e3e">Job Code Directory</div>
+      <button onclick="document.getElementById('jobCodeModal').style.display='none'" style="background:none;border:none;font-size:20px;color:#aaa;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div id="jobCodeModalBody" style="overflow-y:auto;padding:18px 20px;flex:1;font-size:12px;"></div>
+    <div style="padding:12px 20px;border-top:1px solid #e8e3da;display:flex;justify-content:flex-end;gap:8px;">
+      <button onclick="copyJobCodeList()" class="file-btn">Copy</button>
+      <button onclick="document.getElementById('jobCodeModal').style.display='none'" class="file-btn">Close</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
