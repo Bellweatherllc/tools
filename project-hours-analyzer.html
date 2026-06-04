@@ -124,6 +124,23 @@
   .month-btn.active{background:var(--primary);color:white;border-color:var(--primary);}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#333;color:white;padding:10px 20px;border-radius:6px;font-size:13px;transition:transform .3s;z-index:999;pointer-events:none;}
   .toast.show{transform:translateX(-50%) translateY(0);}
+  /* Monthly Summary */
+  .monthly-summary-panel{padding:14px 18px 10px;border-bottom:1px solid var(--border);}
+  .monthly-summary-panel:empty{display:none;}
+  .monthly-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .monthly-table th{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);padding:4px 10px;text-align:right;border-bottom:2px solid var(--border);}
+  .monthly-table th:first-child{text-align:left;}
+  .monthly-table td{padding:5px 10px;text-align:right;border-bottom:1px solid #f0ede8;font-family:var(--font-mono);font-size:11px;}
+  .monthly-table td:first-child{text-align:left;font-family:var(--font-sans);font-weight:500;}
+  .monthly-table tr:last-child td{border-bottom:none;font-weight:700;background:var(--header-bg);}
+  .monthly-table tr:hover td{background:var(--hover-bg);}
+  .monthly-bar{display:inline-block;height:6px;border-radius:3px;background:var(--primary);opacity:.4;vertical-align:middle;margin-right:6px;}
+  /* Cost Scatter */
+  .cost-scatter-panel{padding:16px 18px 20px;border-top:1px solid var(--border);}
+  .cost-scatter-panel:empty{display:none;}
+  .cost-scatter-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:4px;}
+  .cost-scatter-sub{font-size:10px;color:var(--text-muted);margin-bottom:12px;}
+  .cost-scatter-panel svg{display:block;overflow:visible;}
   /* Project Phase Panel */
   .proj-phase-panel{padding:16px 18px 20px;border-top:1px solid var(--border);}
   .proj-phase-panel:empty{display:none;}
@@ -189,7 +206,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v21</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v22</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -201,7 +218,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v21</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v22</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -857,6 +874,194 @@ function renderProjectPhasePanel(sn, data) {
   el.innerHTML = html;
 }
 
+// --- Monthly Summary ---
+function renderMonthlySummary(sn, data) {
+  const el = document.getElementById(`monthly_${sn}`);
+  if (!el) return;
+  const filtered = getFilteredEntries();
+  const designer = sn;
+  const entries = filtered.filter(e => e.designer === designer && e.date);
+
+  // Group by YYYY-MM
+  const monthMap = {};
+  for (const e of entries) {
+    const mo = e.date.slice(0, 7);
+    if (!monthMap[mo]) monthMap[mo] = { hours: 0, days: new Set() };
+    monthMap[mo].hours += e.hours;
+    monthMap[mo].days.add(e.date.slice(0, 10));
+  }
+  const months = Object.keys(monthMap).sort();
+  if (!months.length) { el.innerHTML = ''; return; }
+
+  const maxHrs = Math.max(...months.map(m => monthMap[m].hours));
+  const fmt = h => h % 1 === 0 ? h : h.toFixed(1);
+
+  let html = '<table class="monthly-table"><thead><tr><th>Month</th><th>Days Logged</th><th>Total Hrs</th><th>Avg Hrs/Day</th><th style="text-align:left;padding-left:16px">Distribution</th></tr></thead><tbody>';
+
+  let totHrs = 0, totDays = 0;
+  for (const mo of months) {
+    const { hours, days } = monthMap[mo];
+    const dCount = days.size;
+    const avg = dCount > 0 ? hours / dCount : 0;
+    const barW = Math.round((hours / maxHrs) * 120);
+    const [y, m] = mo.split('-');
+    const label = new Date(+y, +m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    totHrs += hours; totDays += dCount;
+    html += `<tr>
+      <td>${label}</td>
+      <td>${dCount}</td>
+      <td>${fmt(hours)}</td>
+      <td>${fmt(avg)}</td>
+      <td style="text-align:left;padding-left:16px"><span class="monthly-bar" style="width:${barW}px"></span></td>
+    </tr>`;
+  }
+  const totAvg = totDays > 0 ? totHrs / totDays : 0;
+  html += `<tr><td>Total / Avg</td><td>${totDays}</td><td>${fmt(totHrs)}</td><td>${fmt(totAvg)}</td><td></td></tr>`;
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// --- Cost vs Hours Scatter ---
+function renderCostScatter(sn, data) {
+  const el = document.getElementById(`costscatter_${sn}`);
+  if (!el) return;
+  const { billableJobs, jobTotals } = data;
+
+  // Build data points — only projects with both hours and a value
+  const points = [];
+  let ci = 0;
+  for (const job of billableJobs) {
+    const color = CHART_COLORS[ci % CHART_COLORS.length]; ci++;
+    const proj = coreProjects[job.toUpperCase()];
+    const hours = jobTotals[job] || 0;
+    if (!hours) continue;
+    const vr = proj ? bestValue(proj) : null;
+    points.push({
+      job,
+      label: proj ? proj.displayName : job,
+      hours,
+      value: vr ? vr.value : null,
+      valueSource: vr ? vr.source : null,
+      color,
+    });
+  }
+
+  const withValue = points.filter(p => p.value);
+  const noValue = points.filter(p => !p.value);
+
+  if (!withValue.length) {
+    el.innerHTML = '<div class="cost-scatter-title">Cost vs Hours</div><div style="font-size:11px;color:var(--text-muted);padding:8px 0">No project values available yet — enter values in Projects Manager.</div>';
+    return;
+  }
+
+  // SVG dimensions
+  const W = 640, H = 320, padL = 60, padR = 160, padT = 20, padB = 50;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+
+  const maxVal = Math.max(...withValue.map(p => p.value));
+  const maxHrs = Math.max(...withValue.map(p => p.hours));
+
+  // Scale functions
+  const sx = v => padL + (v / maxVal) * plotW;
+  const sy = h => padT + plotH - (h / maxHrs) * plotH;
+
+  // Efficiency ratio: hours per $10K — lower is better
+  const ratio = p => p.value ? (p.hours / (p.value / 10000)) : null;
+  const minRatio = Math.min(...withValue.map(ratio));
+  const maxRatio = Math.max(...withValue.map(ratio));
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  // Grid lines
+  const gridVals = [0, 0.25, 0.5, 0.75, 1];
+  for (const t of gridVals) {
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', padL + plotW);
+    line.setAttribute('y1', padT + plotH * (1 - t)); line.setAttribute('y2', padT + plotH * (1 - t));
+    line.setAttribute('stroke', '#e8e4dc'); line.setAttribute('stroke-width', '1');
+    svg.appendChild(line);
+    const vtx = document.createElementNS(ns, 'text');
+    vtx.setAttribute('x', padL - 6); vtx.setAttribute('y', padT + plotH * (1 - t) + 4);
+    vtx.setAttribute('text-anchor', 'end'); vtx.setAttribute('font-size', '9'); vtx.setAttribute('fill', '#aaa');
+    vtx.textContent = Math.round(maxHrs * t) + 'h';
+    svg.appendChild(vtx);
+    const vline = document.createElementNS(ns, 'line');
+    vline.setAttribute('x1', padL + plotW * t); vline.setAttribute('x2', padL + plotW * t);
+    vline.setAttribute('y1', padT); vline.setAttribute('y2', padT + plotH);
+    vline.setAttribute('stroke', '#e8e4dc'); vline.setAttribute('stroke-width', '1');
+    svg.appendChild(vline);
+    const vtx2 = document.createElementNS(ns, 'text');
+    vtx2.setAttribute('x', padL + plotW * t); vtx2.setAttribute('y', padT + plotH + 16);
+    vtx2.setAttribute('text-anchor', 'middle'); vtx2.setAttribute('font-size', '9'); vtx2.setAttribute('fill', '#aaa');
+    vtx2.textContent = '$' + Math.round(maxVal * t / 1000) + 'K';
+    svg.appendChild(vtx2);
+  }
+
+  // Axis labels
+  const xLbl = document.createElementNS(ns, 'text');
+  xLbl.setAttribute('x', padL + plotW / 2); xLbl.setAttribute('y', H - 4);
+  xLbl.setAttribute('text-anchor', 'middle'); xLbl.setAttribute('font-size', '10');
+  xLbl.setAttribute('fill', '#888'); xLbl.setAttribute('font-weight', '600');
+  xLbl.textContent = 'Project Value →';
+  svg.appendChild(xLbl);
+
+  const yLbl = document.createElementNS(ns, 'text');
+  yLbl.setAttribute('x', 12); yLbl.setAttribute('y', padT + plotH / 2);
+  yLbl.setAttribute('text-anchor', 'middle'); yLbl.setAttribute('font-size', '10');
+  yLbl.setAttribute('fill', '#888'); yLbl.setAttribute('font-weight', '600');
+  yLbl.setAttribute('transform', `rotate(-90, 12, ${padT + plotH / 2})`);
+  yLbl.textContent = '↑ Design Hours';
+  svg.appendChild(yLbl);
+
+  // Sweet spot annotation — lower right
+  const annRect = document.createElementNS(ns, 'rect');
+  annRect.setAttribute('x', padL + plotW * 0.6); annRect.setAttribute('y', padT + plotH * 0.6);
+  annRect.setAttribute('width', plotW * 0.38); annRect.setAttribute('height', plotH * 0.38);
+  annRect.setAttribute('fill', '#e8f5ee'); annRect.setAttribute('rx', '4'); annRect.setAttribute('opacity', '0.6');
+  svg.appendChild(annRect);
+  const annTxt = document.createElementNS(ns, 'text');
+  annTxt.setAttribute('x', padL + plotW * 0.79); annTxt.setAttribute('y', padT + plotH * 0.72);
+  annTxt.setAttribute('text-anchor', 'middle'); annTxt.setAttribute('font-size', '9');
+  annTxt.setAttribute('fill', '#2d8a5e'); annTxt.setAttribute('font-weight', '700');
+  annTxt.textContent = '✦ sweet spot';
+  svg.appendChild(annTxt);
+
+  // Data points
+  for (const p of withValue) {
+    const x = sx(p.value), y = sy(p.hours);
+    const r = ratio(p);
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+    dot.setAttribute('r', 7);
+    dot.setAttribute('fill', p.color); dot.setAttribute('opacity', '0.8');
+    dot.setAttribute('stroke', 'white'); dot.setAttribute('stroke-width', '1.5');
+    svg.appendChild(dot);
+    // Label
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', x + 10); lbl.setAttribute('y', y + 4);
+    lbl.setAttribute('font-size', '9'); lbl.setAttribute('fill', '#444');
+    lbl.setAttribute('font-weight', '500');
+    lbl.textContent = p.label;
+    svg.appendChild(lbl);
+    // Ratio label
+    const rlbl = document.createElementNS(ns, 'text');
+    rlbl.setAttribute('x', x + 10); rlbl.setAttribute('y', y + 14);
+    rlbl.setAttribute('font-size', '8'); rlbl.setAttribute('fill', '#aaa');
+    rlbl.textContent = `${r.toFixed(1)} hrs/$10K`;
+    svg.appendChild(rlbl);
+  }
+
+  let html = '<div class="cost-scatter-title">Cost vs Design Hours</div>';
+  html += '<div class="cost-scatter-sub">Lower-right = high value, fewer hours — your sweet spot. Ratio = design hours per $10K of project value.</div>';
+  if (noValue.length) html += `<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">Projects without value data (not shown): ${noValue.map(p=>p.label).join(', ')}</div>`;
+  el.innerHTML = html;
+  el.appendChild(svg);
+}
+
 // --- Sankey ---
 function renderSankey(sn, data) {
   const el = document.getElementById(`sankey_${sn}`);
@@ -1172,10 +1377,12 @@ function render() {
     const data = buildDesignerData(designer); if (data.weeks.length === 0) continue;
     const sn = SHORT_NAMES[designer], dt = Object.values(data.weekTotals).reduce((a,b)=>a+b,0), bid = `body_${sn}`;
     const sec = document.createElement('div'); sec.className = 'section';
-    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div><div class="proj-phase-panel" id="projphase_${sn}"></div><div class="sankey-wrap" id="sankey_${sn}"></div></div>`;
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="monthly-summary-panel" id="monthly_${sn}"></div><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div><div class="proj-phase-panel" id="projphase_${sn}"></div><div class="cost-scatter-panel" id="costscatter_${sn}"></div><div class="sankey-wrap" id="sankey_${sn}"></div></div>`;
     ctr.appendChild(sec);
+    renderMonthlySummary(sn, data);
     renderGrid(sn, data);
     renderProjectPhasePanel(sn, data);
+    renderCostScatter(sn, data);
     renderSankey(sn, data);
   }
 }
