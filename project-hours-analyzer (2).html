@@ -1,0 +1,2060 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Hours Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  @font-face { font-family:'TT Norms Pro'; src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2'); font-weight:400; font-style:normal; font-display:swap; }
+  @font-face { font-family:'TT Norms Pro'; src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2'); font-weight:500; font-style:normal; font-display:swap; }
+  @font-face { font-family:'TT Norms Pro'; src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_DemiBold.woff2') format('woff2'); font-weight:600; font-style:normal; font-display:swap; }
+  @font-face { font-family:'TT Norms Pro'; src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Bold.woff2') format('woff2'); font-weight:700; font-style:normal; font-display:swap; }
+  @font-face { font-family:'Swear Text'; src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Medium.woff2') format('woff2'); font-weight:500; font-style:normal; font-display:swap; }
+  @font-face { font-family:'Swear Text'; src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-MediumItalic.woff2') format('woff2'); font-weight:500; font-style:italic; font-display:swap; }
+  :root {
+    --bg:#F6F2EE; --surface:#FFFFFF; --border:#E5E1D8; --text:#282828; --text-muted:#9091A0; --text-light:#B7A9A3;
+    --primary:#263860; --primary-bg:#EDF5F9; --primary-border:#D2D5D8;
+    --success:#16803c; --warning:#d97706; --danger:#dc2626;
+    --header-bg:#F6F2EE; --hover-bg:#faf8f4;
+    --shadow:0 1px 3px rgba(40,40,40,.06),0 1px 2px rgba(40,40,40,.04); --radius:8px;
+    --font-sans:'TT Norms Pro',-apple-system,system-ui,sans-serif; --font-serif:'Swear Text',Georgia,serif; --font-mono:'JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font-sans);background:var(--bg);color:var(--text);padding:24px;min-height:100vh;}
+  .container{max-width:1400px;margin:0 auto;}
+
+  /* Auth overlay */
+  .auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;}
+  .auth-overlay img{height:48px;margin-bottom:8px;opacity:.85;}
+  .auth-overlay h1{font-family:var(--font-sans);font-size:22px;font-weight:500;}
+  .auth-overlay h1 .accent{font-family:var(--font-serif);font-style:italic;font-weight:500;}
+  .auth-overlay .version-badge{font-size:10px;font-weight:600;background:var(--primary);color:white;padding:2px 7px;border-radius:10px;margin-left:8px;vertical-align:middle;}
+  .auth-overlay .auth-status{font-size:13px;color:var(--text-muted);margin-top:4px;}
+  .sign-in-btn{margin-top:12px;padding:10px 28px;font-size:14px;font-family:var(--font-sans);font-weight:500;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;transition:background .15s;}
+  .sign-in-btn:hover{background:#1d2d4e;}
+  .sign-in-btn:disabled{opacity:.5;cursor:default;}
+  .auth-error{font-size:12px;color:var(--danger);margin-top:8px;max-width:400px;text-align:center;}
+  .offline-btn{margin-top:8px;padding:6px 16px;font-size:12px;font-family:var(--font-sans);background:none;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);cursor:pointer;}
+  .offline-btn:hover{border-color:var(--primary);color:var(--primary);}
+
+  /* Header */
+  .header-row{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
+  .topbar{display:flex;align-items:center;gap:12px;margin-bottom:4px;}
+  .topbar img{height:28px;width:auto;opacity:.85;}
+  h1{font-family:var(--font-sans);font-size:20px;font-weight:500;letter-spacing:.02em;}
+  h1 .accent{font-family:var(--font-serif);font-style:italic;font-weight:500;}
+  .version-badge{font-size:10px;font-weight:600;background:var(--primary);color:white;padding:2px 7px;border-radius:10px;margin-left:8px;vertical-align:middle;}
+  .subtitle{font-size:13px;color:var(--text-muted);}
+  .header-controls{display:flex;gap:8px;align-items:center;}
+  .save-indicator{font-size:11px;color:var(--text-light);display:flex;align-items:center;gap:4px;}
+  .save-indicator .dot{width:6px;height:6px;border-radius:50%;display:inline-block;}
+  .save-indicator .dot.saved{background:var(--success);} .save-indicator .dot.saving{background:var(--warning);} .save-indicator .dot.error{background:var(--danger);} .save-indicator .dot.offline{background:var(--text-light);}
+  .user-name{font-size:11px;color:var(--text-muted);margin-right:4px;}
+
+  /* File list button */
+  .file-btn{font-size:12px;color:var(--text-muted);background:var(--surface);padding:5px 12px;border-radius:14px;border:1px solid var(--border);cursor:pointer;font-family:var(--font-sans);transition:all .15s;position:relative;}
+  .file-btn:hover{border-color:var(--primary);color:var(--primary);}
+  .file-panel{display:none;position:absolute;top:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow),0 8px 24px rgba(0,0,0,.08);min-width:260px;z-index:100;padding:8px 0;}
+  .file-panel.open{display:block;}
+  .file-panel-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:6px 14px;}
+  .file-panel-item{display:flex;align-items:center;justify-content:space-between;padding:6px 14px;font-size:12px;}
+  .file-panel-item:hover{background:var(--hover-bg);}
+  .file-panel-item .fname{color:var(--text);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .file-panel-item .remove-btn{background:none;border:none;cursor:pointer;color:var(--text-light);font-size:14px;padding:0 4px;line-height:1;}
+  .file-panel-item .remove-btn:hover{color:var(--danger);}
+  .file-panel-empty{padding:12px 14px;font-size:12px;color:var(--text-light);text-align:center;}
+
+  /* Upload zone */
+  .upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:32px;text-align:center;background:var(--surface);cursor:pointer;transition:all .15s;margin-bottom:24px;}
+  .upload-zone:hover,.upload-zone.dragover{border-color:var(--primary);background:var(--primary-bg);}
+  .upload-zone .icon{font-size:36px;margin-bottom:8px;} .upload-zone .label{font-size:14px;color:var(--text-muted);} .upload-zone .hint{font-size:12px;color:var(--text-light);margin-top:4px;}
+
+  /* Section */
+  .section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:20px;box-shadow:var(--shadow);overflow:hidden;}
+  .section-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;cursor:pointer;user-select:none;background:var(--header-bg);border-bottom:1px solid var(--border);}
+  .section-header h2{font-family:var(--font-serif);font-size:16px;font-weight:500;}
+  .section-header .meta{font-size:12px;color:var(--text-muted);font-weight:400;margin-left:10px;font-family:var(--font-sans);}
+  .chevron{font-size:11px;color:var(--text-light);transition:transform .2s;} .chevron.open{transform:rotate(90deg);}
+  .section-body.collapsed{display:none;}
+
+  /* Grid table */
+  .grid-wrap{overflow-x:auto;overflow-y:visible;padding:0;}
+  .hours-grid{width:100%;border-collapse:collapse;font-size:12px;min-width:600px;}
+  .hours-grid thead th{padding:8px 10px;text-align:center;font-weight:600;font-size:11px;color:var(--text-muted);border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2;white-space:nowrap;}
+  .hours-grid thead th:first-child{text-align:left;position:sticky;left:0;z-index:3;min-width:160px;background:var(--surface);}
+  .hours-grid thead th.total-col{background:var(--header-bg);font-weight:700;color:var(--text);}
+  .hours-grid tbody td{padding:10px 10px;text-align:center;font-family:var(--font-mono);font-size:11px;border-bottom:1px solid #f0ede8;color:var(--text);position:relative;}
+  .hours-grid tbody td:first-child{text-align:left;font-family:var(--font-sans);font-weight:500;font-size:12px;position:sticky;left:0;background:var(--surface);z-index:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
+  .hours-grid tbody td.total-col{background:var(--header-bg);font-weight:600;}
+  .hours-grid tbody td.zero{color:var(--border);}
+  .hours-grid tbody td.has-hours{background:var(--primary-bg);color:var(--primary);font-weight:500;}
+  /* Trend overlay */
+  .trend-row-wrap{position:relative;}
+  .combined-sparkline-row td{height:72px;background:rgba(59,95,160,.04);}
+  .combined-sparkline-row td:first-child{vertical-align:middle;}
+  .proj-sparkline-wrap{padding:0 18px 0;border-bottom:1px solid var(--border);background:#1f2e3e;overflow:hidden;}
+  .proj-sparkline-wrap svg{display:block;}
+  .trend-svg-wrap{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2;}
+  .hours-grid tbody td .cell-num{position:relative;z-index:3;}
+  .hours-grid tbody tr.nonbillable-row td:first-child{color:var(--text-light);font-style:italic;}
+  .hours-grid tbody tr.total-row td{font-weight:700;border-top:2px solid var(--border);border-bottom:none;background:var(--header-bg);font-size:12px;color:var(--text);position:relative;}
+  .hours-grid tbody tr.total-row td:first-child{background:var(--header-bg);}
+  .hours-grid tbody tr.total-row td.total-col{background:#e8e4dc;}
+  .hours-grid tbody tr:hover td{background:var(--hover-bg);} .hours-grid tbody tr:hover td:first-child{background:var(--hover-bg);}
+  .hours-grid tbody tr.total-row:hover td{background:var(--header-bg);}
+  /* Project color swatch */
+  .proj-swatch{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle;flex-shrink:0;}
+
+  .legend-wrap{padding:8px 18px 12px;display:flex;flex-wrap:wrap;gap:6px 14px;border-top:1px solid var(--border);}
+  .legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);}
+  .legend-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+
+  .actions-bar{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--border);background:var(--header-bg);}
+  .btn{padding:7px 14px;font-size:12px;font-family:var(--font-sans);font-weight:500;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);cursor:pointer;transition:all .15s;}
+  .btn:hover{border-color:var(--primary);color:var(--primary);}
+  .btn-primary{background:var(--primary);color:white;border-color:var(--primary);} .btn-primary:hover{background:#1d2d4e;}
+  .btn-danger{color:var(--danger);border-color:var(--danger);} .btn-danger:hover{background:#fef2f2;}
+  .hidden{display:none !important;}
+  .summary-bar{display:flex;gap:12px;padding:12px 18px;flex-wrap:wrap;}
+  .summary-stat{padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--header-bg);font-size:12px;}
+  .summary-stat .val{font-family:var(--font-mono);font-weight:600;font-size:16px;color:var(--primary);} .summary-stat .lbl{color:var(--text-muted);margin-top:2px;}
+  .month-filter{display:flex;gap:4px;padding:4px 18px 12px;flex-wrap:wrap;}
+  .month-btn{padding:5px 12px;font-size:11px;font-family:var(--font-sans);font-weight:500;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text-muted);cursor:pointer;transition:all .15s;}
+  .month-btn:hover{border-color:var(--primary);color:var(--primary);}
+  .month-btn.active{background:var(--primary);color:white;border-color:var(--primary);}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#333;color:white;padding:10px 20px;border-radius:6px;font-size:13px;transition:transform .3s;z-index:999;pointer-events:none;}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+  /* Monthly Summary */
+  .monthly-summary-panel{padding:14px 18px 10px;border-bottom:1px solid var(--border);}
+  .monthly-summary-panel:empty{display:none;}
+  .monthly-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .monthly-table th{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);padding:4px 10px;text-align:right;border-bottom:2px solid var(--border);}
+  .monthly-table th:first-child{text-align:left;}
+  .monthly-table td{padding:5px 10px;text-align:right;border-bottom:1px solid #f0ede8;font-family:var(--font-mono);font-size:11px;}
+  .monthly-table td:first-child{text-align:left;font-family:var(--font-sans);font-weight:500;}
+  .monthly-table tr:last-child td{border-bottom:none;font-weight:700;background:var(--header-bg);}
+  .monthly-table tr:hover td{background:var(--hover-bg);}
+  .monthly-bar{display:inline-block;height:6px;border-radius:3px;background:var(--primary);opacity:.4;vertical-align:middle;margin-right:6px;}
+  /* Project Phase Panel */
+  .proj-phase-panel{padding:16px 18px 20px;border-top:1px solid var(--border);}
+  .proj-phase-panel:empty{display:none;}
+
+
+  /* ── Combined bump chart ── */
+  .combined-chart-wrap{padding:20px 18px 28px;border-top:2px solid var(--border);margin-top:4px;}
+  .combined-chart-wrap.hidden{display:none;}
+  .combined-chart-title{font-family:'Swear Text',serif;font-size:17px;color:var(--navy);margin-bottom:4px;}
+  .combined-chart-sub{font-size:11px;color:var(--text-muted);margin-bottom:16px;}
+  .combined-chart-wrap svg{display:block;overflow:visible;}
+
+  /* ── Per-project scatter ── */
+  .proj-scatter-panel{padding:14px 18px 18px;border-top:1px solid var(--border);}
+  .proj-scatter-panel:empty{display:none;}
+  .proj-scatter-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:10px;}
+  .proj-scatter-wrap{display:flex;align-items:flex-start;gap:24px;}
+  .proj-scatter-wrap svg{display:block;flex-shrink:0;}
+  .proj-scatter-meta{font-size:11px;color:var(--text);line-height:1.7;}
+  .proj-scatter-meta strong{color:var(--navy);}
+  .proj-scatter-meta .meta-row{margin-bottom:2px;}
+  .proj-scatter-meta .meta-muted{color:var(--text-muted);font-size:10px;}
+  /* Designer chips + project code meta */
+  .designer-chips{padding:6px 18px 2px;display:flex;flex-wrap:wrap;gap:5px;}
+  .designer-pill{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--header-bg);border:1px solid var(--border);color:var(--text-muted);}
+  .proj-code-meta{font-size:11px;font-weight:400;color:var(--text-muted);margin-left:7px;}
+  .proj-phase-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .proj-phase-table th{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);padding:5px 10px;text-align:right;border-bottom:2px solid var(--border);white-space:nowrap;}
+  .proj-phase-table th:first-child{text-align:left;}
+  .proj-phase-table th.ph-hd{border-bottom-color:var(--primary);}
+  .proj-phase-table td{padding:6px 10px;text-align:right;border-bottom:1px solid #f0ede8;vertical-align:middle;}
+  .proj-phase-table td:first-child{text-align:left;}
+  .proj-phase-table tr:last-child td{border-bottom:none;}
+  .proj-phase-table tr:hover td{background:var(--hover-bg);}
+  .ppt-name{font-weight:600;color:var(--text);display:flex;align-items:center;gap:7px;}
+  .ppt-swatch{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
+  .ppt-code{font-size:9px;color:var(--text-muted);font-family:var(--font-mono);}
+  .ppt-value{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);}
+  .ppt-hrs{font-family:var(--font-mono);font-weight:600;color:var(--primary);}
+  .ppt-hrs.dim{color:var(--text-muted);font-weight:400;}
+  .ppt-no-phase{color:var(--text-muted);font-style:italic;font-size:10px;}
+  .ppt-panel-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:12px;}
+  /* Collapsible panels */
+  .panel-toggle-btn{background:none;border:none;cursor:pointer;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.35);padding:0;display:flex;align-items:center;gap:5px;margin-bottom:10px;}
+  .panel-toggle-btn:hover{color:rgba(40,40,40,.6);}
+  .panel-toggle-chev{display:inline-block;transition:transform .2s;font-style:normal;}
+  .panel-toggle-chev.collapsed{transform:rotate(-90deg);}
+  .panel-collapsible{overflow:hidden;transition:max-height .3s ease;}
+  .panel-collapsible.collapsed{max-height:0!important;}
+  /* Phase bands */
+  .hours-grid thead tr.phase-row th{padding:3px 4px;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border-bottom:none;color:white;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;}
+  .hours-grid thead tr.phase-row th.phase-cell{border-radius:3px 3px 0 0;}
+  .hours-grid thead tr.phase-row th.phase-gap{background:transparent;color:transparent;}
+  .hours-grid thead tr.phase-row th.phase-empty{background:transparent;}
+  /* Job Code Modal */
+  .jc-section-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text-muted);margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border);}
+  .jc-section-title:first-child{margin-top:0;}
+  .jc-row{display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px solid #f5f2ee;}
+  .jc-row:last-child{border-bottom:none;}
+  .jc-code{font-family:var(--font-mono);font-weight:600;font-size:11px;color:#1f2e3e;min-width:100px;}
+  .jc-name{flex:1;color:var(--text);}
+  .jc-value{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);}
+  .jc-stage{font-size:9px;padding:2px 6px;border-radius:10px;font-weight:600;}
+  .jc-stage.ca{background:#d4edda;color:#00521b;}
+  .jc-stage.da{background:#cce5ff;color:#003981;}
+  /* Phase data alert */
+  .phase-alert{margin:0 0 16px;padding:10px 14px 10px 12px;border:1px solid #e8c97a;border-left:3px solid #c9a84c;border-radius:6px;background:#fdf8ec;font-size:12px;color:#5a4a1a;display:flex;align-items:flex-start;gap:10px;}
+  .phase-alert-icon{font-size:14px;flex-shrink:0;margin-top:1px;}
+  .phase-alert-body{flex:1;}
+  .phase-alert-title{font-weight:600;margin-bottom:3px;}
+  .phase-alert-codes{font-family:var(--font-mono);font-size:11px;color:#7a6030;margin-top:4px;line-height:1.7;}
+  .phase-alert-dismiss{background:none;border:none;cursor:pointer;color:#9a8050;font-size:16px;line-height:1;padding:0;flex-shrink:0;margin-top:-1px;}
+  .phase-alert-dismiss:hover{color:#5a4a1a;}
+  /* Phase palette */
+  .ph-color-0{background:#3b5fa0;} .ph-color-1{background:#5a8a5a;} .ph-color-2{background:#8a6a3a;} .ph-color-3{background:#7a4a8a;} .ph-color-4{background:#3a7a8a;}
+  /* Phase summary */
+  .phase-summary{padding:10px 18px 14px;border-top:1px solid var(--border);background:var(--header-bg);}
+  .phase-summary-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;}
+  .phase-summary-grid{display:flex;gap:8px;flex-wrap:wrap;}
+  .phase-card{padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);min-width:140px;}
+  .phase-card-name{font-size:11px;font-weight:600;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:6px;}
+  .phase-card-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
+  .phase-card-stats{font-size:11px;color:var(--text-muted);line-height:1.6;}
+  .phase-card-avg{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--primary);}
+</style>
+</head>
+<body>
+
+<!-- Auth overlay -->
+<div class="auth-overlay" id="authOverlay">
+  <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
+  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v34</span></h1>
+  <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
+  <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
+  <div class="auth-error" id="authError"></div>
+  <button class="offline-btn" onclick="goOffline()">Continue offline (localStorage only)</button>
+</div>
+
+<div class="container hidden" id="mainApp">
+  <div class="header-row">
+    <div>
+      <div class="topbar">
+        <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
+        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v34</span></h1>
+      </div>
+      <div class="subtitle">Hours by project, phase, and designer</div>
+    </div>
+    <div class="header-controls">
+      <div class="save-indicator" id="saveIndicator">
+        <span class="dot saved"></span> <span id="saveText">Saved</span>
+      </div>
+      <span class="user-name" id="userName"></span>
+      <button class="file-btn" onclick="showJobCodeModal()" id="jobCodeBtn" style="display:none">Job Codes</button>
+      <div style="position:relative">
+        <button class="file-btn" id="fileBtn" onclick="toggleFilePanel()"><span id="fileCount">No files</span></button>
+        <div class="file-panel" id="filePanel">
+          <div class="file-panel-title">Loaded Timecards</div>
+          <div id="filePanelList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="upload-zone" id="uploadZone">
+    <div class="icon">📊</div>
+    <div class="label">Drop timecard XLSX files here, or click to browse</div>
+    <div class="hint">Upload multiple pay periods to see trends over time</div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display:none">
+  </div>
+  <div id="resultsArea" class="hidden">
+    <div class="summary-bar" id="summaryBar"></div>
+    <div class="month-filter" id="monthFilter"></div>
+    <div id="scatterChart" class="combined-chart-wrap hidden"></div>
+    <div id="combinedChart" class="combined-chart-wrap hidden"></div>
+    <div id="phaseAlert" class="phase-alert hidden"></div>
+    <div id="designerSections"></div>
+    <div class="actions-bar">
+      <button class="btn btn-primary" onclick="copyAllGrids()">Copy All Grids (TSV)</button>
+      <button class="btn btn-danger" onclick="clearHistory()">Clear All History</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// --- Config ---
+const DESIGNERS = ['Stephanie Hoffmeier', 'Sean Farrell', 'Hayley Wynne', 'Dakota', 'Devon', 'Alex Sciacca'];
+const SHORT_NAMES = {
+  'Sean Farrell':'Sean','Hayley Wynne':'Hayley','Stephanie Hoffmeier':'Stephanie',
+  'Dakota':'Dakota','Devon':'Devon','Alex Sciacca':'Alex',
+};
+// Derive short display name for any designer, including unknown ones from SharePoint
+function shortName(designer) {
+  if (SHORT_NAMES[designer]) return SHORT_NAMES[designer];
+  // Fall back to first name only
+  return designer ? designer.split(' ')[0] : designer;
+}
+const NON_BILLABLE_JOBS = ['BWC','BWC GENERAL','GENERAL'];
+const PTO_TAGS = ['6609','PTO','VACATION','SICK','HOLIDAY','COMP TIME'];
+const STORAGE_KEY = 'bwc_project_hours_v2';
+const FILES_KEY = 'bwc_project_hours_files_v2';
+const SP_SITE = 'bellweather.sharepoint.com:/sites/BWCore:';
+const SP_LIST = 'CORE_DesignerTimecard';
+const ROLLING_WEEKS = 26;
+const CHART_COLORS = [
+  '#2563EB','#DC6B20','#16803c','#C13584','#7C3AED',
+  '#0891B2','#DB2777','#4F772D','#BE4D25','#2A6FAF',
+  '#9333EA','#0D9488','#CA6702','#4361EE','#7B2D26',
+  '#059669','#8E44AD','#C27803','#1D6FA5','#B91C1C',
+];
+
+let allEntries = [];
+let loadedFiles = [];
+let isOnline = false;
+let accessToken = null;
+let msalApp = null;
+let activeMonths = new Set(); // empty = All
+let coreProjects = {}; // keyed by jobCode.toUpperCase()
+
+function toggleMonth(m) {
+  if (m === 'all') { activeMonths.clear(); }
+  else { if (activeMonths.has(m)) activeMonths.delete(m); else activeMonths.add(m); }
+  render();
+}
+
+function getFilteredEntries() {
+  if (activeMonths.size === 0) return allEntries;
+  return allEntries.filter(e => e.week && activeMonths.has(e.week.slice(0, 7)));
+}
+
+// --- MSAL ---
+const msalConfig = {
+  auth: {
+    clientId: '84b37f0e-b149-4089-9bdc-fc654715db23',
+    authority: 'https://login.microsoftonline.com/ff0e3f46-615a-4a22-8a80-4bb83d627785',
+    redirectUri: 'https://bellweatherllc.github.io/tools/',
+    navigateToLoginRequestUrl: true,
+  },
+  cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
+};
+
+async function initMsal() {
+  msalApp = new msal.PublicClientApplication(msalConfig);
+  await msalApp.initialize();
+  // Handle redirect response
+  try {
+    const resp = await msalApp.handleRedirectPromise();
+    if (resp) {
+      accessToken = resp.accessToken;
+      showAuthStatus('Signed in, loading data…');
+      await onAuthenticated(resp.account);
+      return;
+    }
+  } catch (err) {
+    console.error('Redirect error:', err);
+  }
+  // Check for existing session
+  const accounts = msalApp.getAllAccounts();
+  if (accounts.length > 0) {
+    try {
+      const tokenResp = await msalApp.acquireTokenSilent({ scopes: ['https://graph.microsoft.com/Sites.ReadWrite.All'], account: accounts[0] });
+      accessToken = tokenResp.accessToken;
+      showAuthStatus('Signed in, loading data…');
+      await onAuthenticated(accounts[0]);
+    } catch (err) {
+      showAuthStatus('Session expired — please sign in again');
+    }
+  }
+}
+
+function doSignIn() {
+  if (!msalApp) return;
+  msalApp.loginRedirect({ scopes: ['https://graph.microsoft.com/Sites.ReadWrite.All'] });
+}
+
+function goOffline() {
+  isOnline = false;
+  allEntries = loadFromCache();
+  loadedFiles = loadFilesFromCache();
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('jobCodeBtn').style.display = '';
+  document.getElementById('mainApp').classList.remove('hidden');
+  showSaveStatus('offline', 'Offline');
+  render();
+}
+
+async function onAuthenticated(account) {
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('jobCodeBtn').style.display = '';
+  document.getElementById('mainApp').classList.remove('hidden');
+  document.getElementById('userName').textContent = account.name || account.username || '';
+  showSaveStatus('saving', 'Connecting…');
+  try {
+    await fetchFromSharePoint();
+    isOnline = true;
+    showSaveStatus('saved', 'Connected');
+  } catch (err) {
+    console.error('[SP fetch error]', err);
+    isOnline = false;
+    allEntries = loadFromCache();
+    loadedFiles = loadFilesFromCache();
+    showSaveStatus('error', 'SharePoint unavailable — uploads will not save');
+    // Show a persistent banner so the broken state is unmissable
+    showSpError(err.message || 'Unknown error');
+  }
+  render();
+}
+
+function showSpError(detail) {
+  let el = document.getElementById('spErrorBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'spErrorBanner';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#b91c1c;color:white;font-size:13px;font-weight:600;padding:8px 16px;z-index:9999;display:flex;align-items:center;gap:12px;';
+    document.body.prepend(el);
+  }
+  el.innerHTML = `<span>⚠ Not connected to SharePoint — files uploaded now will only be saved locally. Refresh to retry.</span><span style="margin-left:auto;font-size:11px;opacity:.8">${detail}</span><button onclick="location.reload()" style="background:white;color:#b91c1c;border:none;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px;">Refresh</button>`;
+}
+
+function showAuthStatus(msg) { document.getElementById('authStatus').textContent = msg; }
+function showAuthError(msg) { document.getElementById('authError').textContent = msg; }
+
+// --- Graph API helpers ---
+async function graphGet(url) {
+  const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' } });
+  if (!resp.ok) throw new Error(`Graph ${resp.status}: ${await resp.text()}`);
+  return resp.json();
+}
+async function graphPost(url, body) {
+  const resp = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!resp.ok) throw new Error(`Graph POST ${resp.status}: ${await resp.text()}`);
+  return resp.json();
+}
+async function graphDelete(url) {
+  const resp = await fetch(url, { method: 'DELETE', headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!resp.ok && resp.status !== 204) throw new Error(`Graph DELETE ${resp.status}`);
+}
+
+// --- SharePoint read/write ---
+function spListUrl() {
+  return `https://graph.microsoft.com/v1.0/sites/${SP_SITE}/lists/${SP_LIST}`;
+}
+
+function cutoffDate() {
+  const d = new Date();
+  d.setDate(d.getDate() - ROLLING_WEEKS * 7);
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchFromSharePoint() {
+  const cutoff = cutoffDate();
+  // Timecard fetch is load-bearing — let it throw on failure so onAuthenticated knows
+  await fetchTimecardEntries(cutoff);
+  saveToCache();
+  saveFilesToCache();
+  // CORE_Projects is additive — failure here must never break the main flow
+  fetchCoreProjects().then(() => { if (allEntries.length) render(); }).catch(err => console.warn('[CORE_Projects] Background fetch failed:', err));
+}
+
+async function fetchTimecardEntries(cutoff) {
+  let url = `${spListUrl()}/items?$expand=fields&$top=200&$filter=fields/EntryDate ge '${cutoff}'`;
+  allEntries = [];
+  const fileSet = new Set();
+  while (url) {
+    const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json', 'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly' } });
+    if (!resp.ok) throw new Error(`Graph ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
+    for (const item of (data.value || [])) {
+      const f = item.fields;
+      allEntries.push({
+        spId: item.id,
+        designer: f.Designer,
+        date: f.EntryDate ? f.EntryDate.slice(0, 10) : null,
+        week: f.WeekOf ? f.WeekOf.slice(0, 10) : null,
+        job: f.JobCode,
+        jobUpper: (f.JobCode || '').toUpperCase(),
+        hours: parseFloat(f.Hours) || 0,
+        nonBillable: f.NonBillable || false,
+        sourceFile: f.SourceFile || '',
+      });
+      if (f.SourceFile) fileSet.add(f.SourceFile);
+    }
+    url = data['@odata.nextLink'] || null;
+  }
+  loadedFiles = [...fileSet].sort();
+  // Deduplicate in-memory (catches any duplicates already in SharePoint)
+  const seen = new Set();
+  allEntries = allEntries.filter(e => {
+    const k = `${e.designer}|${e.date}|${e.jobUpper}|${e.hours}`;
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+}
+
+async function fetchCoreProjects() {
+  try {
+    const SP_PROJ_SITE = 'bellweather.sharepoint.com:/sites/BWCore:';
+    const SP_PROJ_LIST = 'CORE_Projects';
+    let url = `https://graph.microsoft.com/v1.0/sites/${SP_PROJ_SITE}/lists/${SP_PROJ_LIST}/items?$expand=fields&$top=200`;
+    const map = {};
+    while (url) {
+      const data = await graphGet(url);
+      for (const item of (data.value || [])) {
+        const f = item.fields;
+        const jobCode = f.JobCode || f.Job_x0020_Code;
+        if (!jobCode) continue;
+        const stage = f.PipelineStage || '';
+        if (stage === 'Archive' || stage === 'Cancelled') continue;
+        let ganttData = null;
+        if (f.GanttData) { try { ganttData = JSON.parse(f.GanttData); } catch {} }
+        map[jobCode.toUpperCase()] = {
+          jobCode,
+          clientName: f.ClientName || '',
+          projectName: f.ProjectName || '',
+          displayName: f.ProjectName || f.ClientName || jobCode,
+          estimatedValue: f.EstimatedProjectValue || '',
+          caValue: f.CaValue || null,
+          budgetLow: f.BudgetLow || null,
+          budgetHigh: f.BudgetHigh || null,
+          targetInvestment: f.TargetInvestmentAmount || null,
+          // caSigningDate derived from Pipeline milestones via pipelineWeekToDate()
+          stage,
+          designerName: f.DesignerName || '',
+          ganttData,
+          phases: [], // built empirically after all entries loaded
+        };
+      }
+      url = data['@odata.nextLink'] || null;
+    }
+    coreProjects = map;
+    console.log(`[CORE_Projects] Loaded ${Object.keys(map).length} projects`);
+    buildEmpiricalPhases();
+  } catch (err) {
+    console.warn('[CORE_Projects] Fetch failed, phase data unavailable:', err);
+    coreProjects = {};
+  }
+}
+
+// Canonical phase names (aligned with Pipeline v598+)
+const PHASE_I = 'Phase I';
+const PHASE_PD = 'Phase II';
+const PHASE_CD = 'Phase III';
+
+// Pipeline global epoch — week 0 = Mon Jan 5, 2025
+// This is C.startDate in the Pipeline codebase, a fixed architectural constant.
+const PIPELINE_EPOCH = new Date('2025-01-05T00:00:00');
+
+function pipelineWeekToDate(weekNum) {
+  if (weekNum == null) return null;
+  // Work in UTC throughout to avoid timezone shifts
+  const epochMs = Date.UTC(2025, 0, 5); // Jan 5 2025 UTC (pipeline epoch = Monday)
+  const ms = epochMs + weekNum * 7 * 24 * 3600 * 1000;
+  const d = new Date(ms);
+  // Format as YYYY-MM-DD using UTC fields
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Build phase windows for each project using Pipeline milestone week numbers
+// converted to calendar dates via the global Pipeline epoch (Jan 5, 2025).
+// Phase I   — design lane startWeek to startWeek+6
+// Phase II  — startWeek+6 to CA milestone week (or open-ended)
+// Phase III — CA milestone week onwards (isDesignProd:true, only if ca-signed)
+function buildEmpiricalPhases() {
+  for (const [code, proj] of Object.entries(coreProjects)) {
+    const gd = proj.ganttData;
+    proj.phases = [];
+    if (!gd) continue;
+
+    const ganttPhases = gd.designLane?.phases || [];
+    const durOf = name => {
+      const gp = ganttPhases.find(p => {
+        const n = p.name?.trim().toLowerCase();
+        if (name === PHASE_I) return ['phase i','phase 1','initial design','schematic design'].includes(n);
+        if (name === PHASE_PD) return ['phase ii','phase 2','plan detailing','design development','detailed design'].includes(n);
+        if (name === PHASE_CD) return p.isDesignProd || ['phase iii','phase 3','construction design','design production','construction docs'].includes(n);
+        return false;
+      });
+      return gp?.durWeeks || null;
+    };
+
+    // Design start: prefer individual Phase I startWeek from GanttData phases,
+    // fall back to designLane.startWeek (some projects only have one or the other)
+    const ph1Gantt = ganttPhases.find(p => {
+      const n = p.name?.trim().toLowerCase();
+      return ['phase i','phase 1','initial design','schematic design'].includes(n);
+    });
+    const designStartWeek = ph1Gantt?.startWeek ?? gd.designLane?.startWeek;
+    if (designStartWeek == null) continue;
+    const designStartDate = pipelineWeekToDate(designStartWeek);
+    if (!designStartDate) continue;
+
+    // Use actual GanttData durWeeks for phase boundaries; fall back to canonical defaults
+    const phaseIDur  = durOf(PHASE_I)  || 6;
+    const phaseIIDur = durOf(PHASE_PD) || 16;
+
+    const phaseIEndWk  = designStartWeek + phaseIDur;
+    const phaseIIEndWk = phaseIEndWk + phaseIIDur;
+
+    const phaseIEnd  = pipelineWeekToDate(phaseIEndWk);
+    const phaseIIEnd = pipelineWeekToDate(phaseIIEndWk);
+
+    // CA signing: find CA milestone with ca-signed status
+    const caMs = (gd.milestones || []).find(m => m.name === 'CA' && m.status === 'ca-signed');
+    const caDate = caMs ? pipelineWeekToDate(caMs.week) : null;
+
+    // Production end: last production phase end, for capping Phase III
+    const prodPhases = gd.productionLane?.phases || [];
+    const lastProd = prodPhases[prodPhases.length - 1];
+    const prodEndWk = lastProd ? (lastProd.startWeek || 0) + (lastProd.durWeeks || 0) : null;
+    const prodEndDate = prodEndWk ? pipelineWeekToDate(prodEndWk) : '9999-12-31';
+
+    proj.phases.push({
+      name: PHASE_I,
+      rawName: PHASE_I,
+      startDate: designStartDate,
+      endDate: phaseIEnd,
+      durWeeks: phaseIDur,
+      startWeek: designStartWeek,
+      endWeek: phaseIEndWk,
+    });
+
+    // Phase II: from Phase I end to either CA date or planned Phase II end
+    const phaseIIEndDate = caDate && caDate < phaseIIEnd ? caDate : phaseIIEnd;
+    proj.phases.push({
+      name: PHASE_PD,
+      rawName: PHASE_PD,
+      startDate: phaseIEnd,
+      endDate: phaseIIEndDate,
+      durWeeks: phaseIIDur,
+      startWeek: phaseIEndWk,
+      endWeek: phaseIEndWk + phaseIIDur,
+    });
+
+    // Phase III: from CA signing through production end (only if ca-signed)
+    if (caDate) {
+      proj.phases.push({
+        name: PHASE_CD,
+        rawName: PHASE_CD,
+        startDate: caDate,
+        endDate: prodEndDate,
+        durWeeks: durOf(PHASE_CD) || null,
+        startWeek: caMs.week,
+        endWeek: prodEndWk,
+      });
+    }
+
+    // Store full planned timeline on proj for x-axis standardization
+    proj.planStartWeek = designStartWeek;
+    proj.planEndWeek   = prodEndWk || (phaseIEndWk + phaseIIDur + 18);
+  }
+}
+
+// Given a week string (YYYY-MM-DD Monday), return the phase name or null
+function getPhaseForWeek(jobUpper, weekStr) {
+  const proj = coreProjects[jobUpper];
+  if (!proj || !proj.phases.length) return null;
+  for (const ph of proj.phases) {
+    if (weekStr >= ph.startDate && weekStr < ph.endDate) return ph.name;
+  }
+  return null;
+}
+
+async function writeEntriesToSharePoint(entries) {
+  showSaveStatus('saving');
+  const url = `${spListUrl()}/items`;
+  let successCount = 0;
+  for (const e of entries) {
+    try {
+      const result = await graphPost(url, {
+        fields: {
+          Title: `${e.designer}_${e.date}_${e.job}`,
+          Designer: e.designer,
+          EntryDate: e.date,
+          WeekOf: e.week,
+          JobCode: e.job,
+          Hours: e.hours,
+          NonBillable: e.nonBillable,
+          SourceFile: e.sourceFile || '',
+        }
+      });
+      e.spId = result.id;
+      successCount++;
+    } catch (err) {
+      console.error('Write error:', err);
+    }
+  }
+  if (successCount === entries.length) showSaveStatus('saved');
+  else showSaveStatus('error', `${successCount}/${entries.length} saved`);
+  saveToCache();
+}
+
+async function deleteEntriesByFile(filename) {
+  showSaveStatus('saving');
+  const toDelete = allEntries.filter(e => e.sourceFile === filename && e.spId);
+  let errors = 0;
+  for (const e of toDelete) {
+    try {
+      await graphDelete(`${spListUrl()}/items/${e.spId}`);
+    } catch { errors++; }
+  }
+  allEntries = allEntries.filter(e => e.sourceFile !== filename);
+  loadedFiles = loadedFiles.filter(f => f !== filename);
+  saveToCache();
+  saveFilesToCache();
+  if (errors === 0) showSaveStatus('saved');
+  else showSaveStatus('error', `${errors} delete errors`);
+}
+
+// --- localStorage cache ---
+function loadFromCache() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; } }
+function saveToCache() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(allEntries)); } catch {} }
+function loadFilesFromCache() { try { return JSON.parse(localStorage.getItem(FILES_KEY)) || []; } catch { return []; } }
+function saveFilesToCache() { try { localStorage.setItem(FILES_KEY, JSON.stringify(loadedFiles)); } catch {} }
+
+// --- UI helpers ---
+function showSaveStatus(status, customText) {
+  const dot = document.querySelector('#saveIndicator .dot');
+  const txt = document.getElementById('saveText');
+  dot.className = 'dot ' + status;
+  const labels = { saved: 'Saved', saving: 'Saving…', error: 'Error', offline: 'Offline' };
+  txt.textContent = customText || labels[status] || status;
+}
+function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); }
+function togglePanel(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const chev = btn.querySelector('.panel-toggle-chev');
+  el.classList.toggle('collapsed');
+  if (chev) chev.classList.toggle('collapsed');
+}
+function toggleSection(id, h) { document.getElementById(id).classList.toggle('collapsed'); h.querySelector('.chevron').classList.toggle('open'); }
+function isNonBillableJob(code) { return code ? NON_BILLABLE_JOBS.includes(code.trim().toUpperCase()) : false; }
+function isPtoEntry(tag) { if (!tag) return false; const u = String(tag).toUpperCase(); return PTO_TAGS.some(kw => u.includes(kw)); }
+function getWeekKey(date) {
+  // Parse as UTC date to avoid timezone shifts on YYYY-MM-DD strings
+  const parts = String(date).slice(0,10).split('-');
+  const y = +parts[0], mo = +parts[1]-1, d = +parts[2];
+  // Day of week in UTC
+  const ms = Date.UTC(y, mo, d);
+  const dow = new Date(ms).getUTCDay(); // 0=Sun
+  const diff = dow === 0 ? -6 : 1 - dow; // back to Monday
+  const mon = new Date(ms + diff * 86400000);
+  return mon.getUTCFullYear() + '-' +
+    String(mon.getUTCMonth()+1).padStart(2,'0') + '-' +
+    String(mon.getUTCDate()).padStart(2,'0');
+}
+function formatWeekLabel(wk) { const d = new Date(wk + 'T00:00:00'); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+// --- File panel ---
+function toggleFilePanel() {
+  const p = document.getElementById('filePanel');
+  p.classList.toggle('open');
+  if (p.classList.contains('open')) { renderFilePanel(); document.addEventListener('click', closeFP, true); }
+  else document.removeEventListener('click', closeFP, true);
+}
+function closeFP(e) { if (!document.getElementById('filePanel').contains(e.target) && !document.getElementById('fileBtn').contains(e.target)) { document.getElementById('filePanel').classList.remove('open'); document.removeEventListener('click', closeFP, true); } }
+function renderFilePanel() {
+  const list = document.getElementById('filePanelList');
+  if (loadedFiles.length === 0) { list.innerHTML = '<div class="file-panel-empty">No timecards loaded yet</div>'; return; }
+  list.innerHTML = loadedFiles.map((f, i) => `<div class="file-panel-item"><span class="fname" title="${f}">${f}</span><button class="remove-btn" title="Remove" onclick="removeFile(${i})">✕</button></div>`).join('');
+}
+async function removeFile(idx) {
+  const fname = loadedFiles[idx];
+  if (isOnline) await deleteEntriesByFile(fname);
+  else { allEntries = allEntries.filter(e => e.sourceFile !== fname); loadedFiles.splice(idx, 1); saveToCache(); saveFilesToCache(); }
+  renderFilePanel();
+  render();
+  showToast('Removed ' + fname);
+}
+
+// --- Parsing ---
+function parseTimecardFile(wb, filename) {
+  const entries = [];
+  for (const designer of DESIGNERS) {
+    if (!wb.SheetNames.includes(designer)) continue;
+    const ws = wb.Sheets[designer];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i]; if (!row || row.length < 7) continue;
+      const dateVal = row[0], jobCode = String(row[1]||'').trim(), tag = String(row[3]||''), hours = parseFloat(row[6]) || 0;
+      if (!dateVal || !jobCode || hours <= 0 || isPtoEntry(tag)) continue;
+      let dateStr;
+      if (typeof dateVal === 'number') { const d = XLSX.SSF.parse_date_code(dateVal); dateStr = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`; }
+      else if (dateVal instanceof Date) dateStr = dateVal.toISOString().slice(0, 10);
+      else { const p = new Date(dateVal); if (isNaN(p)) continue; dateStr = p.toISOString().slice(0, 10); }
+      entries.push({ designer, date: dateStr, week: getWeekKey(dateStr), job: jobCode, jobUpper: jobCode.toUpperCase(), hours, nonBillable: isNonBillableJob(jobCode), sourceFile: filename });
+    }
+  }
+  return entries;
+}
+function dedup(existing, incoming) {
+  const normalize = d => d ? String(d).slice(0, 10) : '';
+  const ks = new Set(existing.map(e => `${e.designer}|${normalize(e.date)}|${e.jobUpper}|${e.hours}`));
+  return incoming.filter(e => { const k = `${e.designer}|${normalize(e.date)}|${e.jobUpper}|${e.hours}`; if (ks.has(k)) return false; ks.add(k); return true; });
+}
+
+// --- Aggregation ---
+// Build data for a single project: rows = designers, columns = weeks
+function buildProjectData(jobUpper) {
+  const filtered = getFilteredEntries();
+  const entries = filtered.filter(e => e.jobUpper === jobUpper);
+  const weeks = [...new Set(entries.map(e => e.week).filter(Boolean))].sort();
+  // All unique designers who logged hours to this project
+  const designers = [...new Set(entries.filter(e => !e.nonBillable).map(e => e.designer))].sort();
+  // grid[designer][week] = hours
+  const grid = {};
+  for (const d of designers) { grid[d] = {}; for (const w of weeks) grid[d][w] = 0; }
+  for (const e of entries) {
+    if (e.nonBillable) continue;
+    if (!grid[e.designer]) { grid[e.designer] = {}; for (const w of weeks) grid[e.designer][w] = 0; if (!designers.includes(e.designer)) designers.push(e.designer); }
+    grid[e.designer][e.week] = (grid[e.designer][e.week] || 0) + e.hours;
+  }
+  const designerTotals = {};
+  for (const [d, wm] of Object.entries(grid)) designerTotals[d] = Object.values(wm).reduce((a, b) => a + b, 0);
+  designers.sort((a, b) => (designerTotals[b]||0) - (designerTotals[a]||0));
+  const weekTotals = {};
+  for (const w of weeks) { weekTotals[w] = 0; for (const d of designers) weekTotals[w] += grid[d][w] || 0; }
+  const totalHours = Object.values(weekTotals).reduce((a, b) => a + b, 0);
+  return { weeks, designers, grid, designerTotals, weekTotals, totalHours };
+}
+
+// Collect all billable job codes seen in filtered entries, sorted by total hours desc
+function allBillableJobs() {
+  const filtered = getFilteredEntries();
+  const totals = {};
+  for (const e of filtered) {
+    if (e.nonBillable) continue;
+    totals[e.jobUpper] = (totals[e.jobUpper] || 0) + e.hours;
+  }
+  return Object.entries(totals).sort((a, b) => b[1] - a[1]).map(([j]) => j);
+}
+
+// --- Project Phase Panel ---
+function parseValue(str) {
+  if (!str && str !== 0) return null;
+  const s = String(str).replace(/[$, ]/g, '').toUpperCase();
+  if (s.endsWith('K')) return parseFloat(s) * 1000;
+  if (s.endsWith('M')) return parseFloat(s) * 1000000;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+// Best available value for a project — hierarchy: CA Value > Target Investment > Estimated > Budget midpoint
+function bestValue(proj) {
+  if (!proj) return null;
+  if (proj.caValue) { const v = parseValue(proj.caValue); if (v) return { value: v, source: 'CA' }; }
+  if (proj.targetInvestment) { const v = parseValue(proj.targetInvestment); if (v) return { value: v, source: 'Target' }; }
+  if (proj.estimatedValue) { const v = parseValue(proj.estimatedValue); if (v) return { value: v, source: 'Est.' }; }
+  if (proj.budgetLow && proj.budgetHigh) {
+    const lo = parseValue(proj.budgetLow), hi = parseValue(proj.budgetHigh);
+    if (lo && hi) return { value: (lo + hi) / 2, source: 'Budget avg' };
+  }
+  if (proj.budgetLow) { const v = parseValue(proj.budgetLow); if (v) return { value: v, source: 'Budget low' }; }
+  return null;
+}
+
+function fmtValue(v) {
+  if (v == null) return '—';
+  if (v >= 1000000) return '$' + (v / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (v >= 1000) return '$' + Math.round(v / 1000) + 'K';
+  return '$' + Math.round(v);
+}
+
+// --- Monthly Summary ---
+function renderMonthlySummary(jobUpper, data) {
+  const el = document.getElementById(`monthly_${jobUpper}`);
+  if (!el) return;
+  // Show all entries for this project across all designers
+  const entries = allEntries.filter(e => e.jobUpper === jobUpper && !e.nonBillable && e.date);
+
+  // Group by YYYY-MM
+  const monthMap = {};
+  for (const e of entries) {
+    const mo = e.date.slice(0, 7);
+    if (!monthMap[mo]) monthMap[mo] = { hours: 0, days: new Set() };
+    monthMap[mo].hours += e.hours;
+    monthMap[mo].days.add(e.date.slice(0, 10));
+  }
+  const months = Object.keys(monthMap).sort();
+  if (!months.length) { el.innerHTML = ''; return; }
+
+  const maxHrs = Math.max(...months.map(m => monthMap[m].hours));
+  const fmt = h => h % 1 === 0 ? h : h.toFixed(1);
+
+  let html = '<table class="monthly-table"><thead><tr><th>Month</th><th>Days Logged</th><th>Total Hrs</th><th>Avg Hrs/Day</th><th style="text-align:left;padding-left:16px">Distribution</th></tr></thead><tbody>';
+
+  let totHrs = 0, totDays = 0;
+  for (const mo of months) {
+    const { hours, days } = monthMap[mo];
+    const dCount = days.size;
+    const avg = dCount > 0 ? hours / dCount : 0;
+    const barW = Math.round((hours / maxHrs) * 120);
+    const [y, m] = mo.split('-');
+    const label = new Date(+y, +m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    totHrs += hours; totDays += dCount;
+    html += `<tr>
+      <td>${label}</td>
+      <td>${dCount}</td>
+      <td>${fmt(hours)}</td>
+      <td>${fmt(avg)}</td>
+      <td style="text-align:left;padding-left:16px"><span class="monthly-bar" style="width:${barW}px"></span></td>
+    </tr>`;
+  }
+  const totAvg = totDays > 0 ? totHrs / totDays : 0;
+  html += `<tr><td>Total / Avg</td><td>${totDays}</td><td>${fmt(totHrs)}</td><td>${fmt(totAvg)}</td><td></td></tr>`;
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+// --- Trend overlay ---
+function drawTrendOverlays(table, numWeeks, globalMax) {
+  if (numWeeks < 1) return;
+  const rows = table.querySelectorAll('tr.trend-row-wrap');
+  if (!rows.length) return;
+
+  // Measure week cells from first data row (index 1 = after sticky name cell)
+  const firstRow = rows[0];
+  const allCells = firstRow.querySelectorAll('td');
+  // cells: [0]=name, [1..numWeeks]=week cells, [numWeeks+1]=total
+  const weekCells = Array.from(allCells).slice(1, 1 + numWeeks);
+  if (!weekCells.length) return;
+
+  const tableRect = table.getBoundingClientRect();
+  const firstCell = weekCells[0].getBoundingClientRect();
+  const lastCell = weekCells[weekCells.length - 1].getBoundingClientRect();
+
+  const svgLeft = firstCell.left - tableRect.left;
+  const svgWidth = lastCell.right - firstCell.left;
+
+  // Cell centers relative to SVG left edge
+  const cellCenters = weekCells.map(c => {
+    const r = c.getBoundingClientRect();
+    return r.left - firstCell.left + r.width / 2;
+  });
+
+  rows.forEach(tr => {
+    const vals = JSON.parse(tr.dataset.trendVals || '[]');
+    const rawColor = tr.dataset.trendColor;
+    const maxVal = parseFloat(tr.dataset.trendMax) || 0;
+    const isTotal = rawColor === 'TOTAL';
+    const color = isTotal ? '#1f2e3e' : rawColor;
+    if (!vals.length || maxVal === 0 || !vals.some(v => v > 0)) return;
+
+    const rowRect = tr.getBoundingClientRect();
+    const naturalH = rowRect.height;
+    const isCombined = tr.dataset.isCombined === '1';
+    const h = naturalH;
+    const pad = isCombined ? 6 : 4;
+    const ph = h - pad * 2;
+    const sm = globalMax || maxVal; // use globalMax for standardized scale if provided
+
+    const pts = vals.map((v, i) => ({
+      x: cellCenters[i],
+      y: pad + ph - (v / sm) * ph
+    }));
+
+    // Catmull-Rom path
+    let path;
+    if (pts.length === 1) {
+      path = null; // just a dot
+    } else if (pts.length === 2) {
+      path = `M ${pts[0].x},${pts[0].y} L ${pts[1].x},${pts[1].y}`;
+    } else {
+      path = `M ${pts[0].x},${pts[0].y}`;
+      const t = 0.3;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[Math.max(i-1,0)], p1 = pts[i], p2 = pts[i+1], p3 = pts[Math.min(i+2,pts.length-1)];
+        path += ` C ${p1.x+(p2.x-p0.x)*t},${p1.y+(p2.y-p0.y)*t} ${p2.x-(p3.x-p1.x)*t},${p2.y-(p3.y-p1.y)*t} ${p2.x},${p2.y}`;
+      }
+    }
+
+    const isCombinedRow = tr.dataset.isCombined === '1';
+    const strokeW = isCombinedRow ? 2.2 : (isTotal ? 1.5 : 1);
+    const fillOpacity = isCombinedRow ? 0.18 : (isTotal ? 0 : 0.05);
+    const dotR = isCombinedRow ? 2.5 : (isTotal ? 2 : 1.5);
+    const strokeOpacity = isCombinedRow ? 0.85 : 0.35;
+
+    let svgContent = '';
+    if (path) {
+      if (fillOpacity > 0) {
+        const fillPath = path + ` L ${pts[pts.length-1].x},${h-pad} L ${pts[0].x},${h-pad} Z`;
+        svgContent += `<path d="${fillPath}" fill="${color}" opacity="${fillOpacity}"/>`;
+      }
+      svgContent += `<path d="${path}" fill="none" stroke="${color}" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" opacity="${strokeOpacity}"/>`;
+    }
+    svgContent += pts.map((p, i) => vals[i] > 0
+      ? `<circle cx="${p.x}" cy="${p.y}" r="${dotR}" fill="${color}" opacity="0.7"/>`
+      : '').join('');
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', svgWidth);
+    svg.setAttribute('height', h);
+    svg.setAttribute('viewBox', `0 0 ${svgWidth} ${h}`);
+    const svgTop = 0; // SVG fits within row height
+    svg.style.cssText = `position:absolute;top:${svgTop}px;left:${svgLeft}px;pointer-events:none;z-index:2;overflow:visible;`;
+    svg.innerHTML = svgContent;
+
+    // Make tr position:relative
+    tr.style.position = 'relative';
+    tr.appendChild(svg);
+  });
+
+  // Phase divider vertical lines (drawn after all sparklines so they appear on top)
+  const transitions = JSON.parse(table.dataset.phaseTransitions || '[]');
+  if (transitions.length && rows.length) {
+    const firstRow = rows[0];
+    const allCells2 = firstRow.querySelectorAll('td');
+    const weekCells2 = Array.from(allCells2).slice(1, 1 + numWeeks);
+    if (weekCells2.length && transitions.length) {
+      const tableRect2 = table.getBoundingClientRect();
+      const totalTableH = table.offsetHeight;
+      transitions.forEach(colIdx => {
+        if (colIdx <= 0 || colIdx >= weekCells2.length) return;
+        const cellA = weekCells2[colIdx - 1].getBoundingClientRect();
+        const cellB = weekCells2[colIdx].getBoundingClientRect();
+        const divX = (cellA.right + cellB.left) / 2 - tableRect2.left;
+        // Draw a single absolutely-positioned div line across the table
+        const divEl = document.createElement('div');
+        divEl.style.cssText = `position:absolute;top:0;left:${divX}px;width:1.5px;height:${totalTableH}px;background:rgba(80,80,80,.18);pointer-events:none;z-index:3;`;
+        table.style.position = 'relative';
+        table.appendChild(divEl);
+      });
+    }
+  }
+}
+
+// ── Scatter + Combined chart orchestrator ──────────────────────────────────
+function renderAllScattersAndCombined(jobs) {
+  const allProjectData = [];
+  let globalMaxHrsPerWk = 0;
+
+  for (const jobUpper of jobs) {
+    const data = buildProjectData(jobUpper);
+    if (!data.weeks.length) continue;
+    for (const w of data.weeks) {
+      if ((data.weekTotals[w] || 0) > globalMaxHrsPerWk) globalMaxHrsPerWk = data.weekTotals[w];
+    }
+    allProjectData.push({ jobUpper, data });
+  }
+
+  // Per-project always-visible sparkline charts
+  for (const { jobUpper, data } of allProjectData) {
+    renderProjectSparklineChart(jobUpper, data, globalMaxHrsPerWk);
+  }
+
+  // Pass globalMax back into grid sparklines
+  for (const { jobUpper, data } of allProjectData) {
+    const table = document.getElementById(`grid_${jobUpper}`);
+    if (table) requestAnimationFrame(() => drawTrendOverlays(table, data.weeks.length, globalMaxHrsPerWk));
+  }
+
+  // Shared interactive scatter
+  renderInteractiveScatter(allProjectData);
+
+  // Combined stacked streamgraph
+  renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk);
+}
+
+// ── Per-project scatter ────────────────────────────────────────────────────
+// ── Per-project always-visible sparkline chart ────────────────────────────
+function renderProjectSparklineChart(jobUpper, data, globalMax) {
+  const wrap = document.getElementById(`spark_${jobUpper}`);
+  if (!wrap) return;
+  const { weeks, weekTotals, designers } = data;
+  if (!weeks.length) return;
+
+  const proj = coreProjects[jobUpper];
+  // Use GanttData planned timeline for x-axis; fall back to logged weeks
+  const planStartWk = proj?.planStartWeek ?? null;
+  const planEndWk   = proj?.planEndWeek   ?? null;
+
+  // Build canonical week list from plan start to plan end (weekly steps)
+  let timelineWeeks = weeks; // default: logged weeks only
+  if (planStartWk != null && planEndWk != null && planEndWk > planStartWk) {
+    const canon = [];
+    for (let wk = planStartWk; wk < planEndWk; wk++) {
+      canon.push(pipelineWeekToDate(wk));
+    }
+    if (canon.length > 0) timelineWeeks = canon;
+  }
+  const totalWks = timelineWeeks.length;
+
+  const W = Math.max(500, (wrap.parentElement?.offsetWidth || 700) - 36);
+  const H = 90;
+  const PAD_L = 8, PAD_R = 8, PAD_T = 14, PAD_B = 18;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+  const sm = globalMax || 1;
+  const COL_W = plotW / Math.max(totalWks, 1);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.style.cssText = 'display:block;';
+
+  // Phase regions: use planned phase windows from proj.phases
+  const phases = proj?.phases || [];
+  const phaseColors = [PHASE_COLORS[0], PHASE_COLORS[1], PHASE_COLORS[2]];
+  const phaseNames  = ['Phase I', 'Phase II', 'Phase III'];
+
+  phases.forEach((ph, pi) => {
+    // Find column indices where this phase starts and ends within timelineWeeks
+    const phStart = timelineWeeks.findIndex(w => w >= ph.startDate);
+    let phEnd = timelineWeeks.findIndex(w => w >= ph.endDate);
+    if (phEnd < 0) phEnd = totalWks;
+    if (phStart < 0 || phEnd <= phStart) return;
+
+    const x = PAD_L + phStart * COL_W;
+    const rw = (phEnd - phStart) * COL_W;
+    const color = phaseColors[pi] || '#888';
+
+    // Background tint
+    const bg = document.createElementNS(ns, 'rect');
+    bg.setAttribute('x', x); bg.setAttribute('y', 0);
+    bg.setAttribute('width', rw); bg.setAttribute('height', H);
+    bg.setAttribute('fill', color); bg.setAttribute('opacity', '0.13');
+    svg.appendChild(bg);
+
+    // Phase label
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', x + rw / 2); lbl.setAttribute('y', PAD_T - 3);
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('font-size', '8');
+    lbl.setAttribute('font-weight', '600'); lbl.setAttribute('fill', 'rgba(255,255,255,.55)');
+    lbl.setAttribute('letter-spacing', '.05em');
+    lbl.textContent = ph.name; svg.appendChild(lbl);
+
+    // Week count label on right edge of phase region
+    if (ph.durWeeks) {
+      const wkLbl = document.createElementNS(ns, 'text');
+      wkLbl.setAttribute('x', x + rw - 3); wkLbl.setAttribute('y', H - 4);
+      wkLbl.setAttribute('text-anchor', 'end'); wkLbl.setAttribute('font-size', '7');
+      wkLbl.setAttribute('fill', 'rgba(255,255,255,.35)');
+      wkLbl.textContent = ph.durWeeks + 'w'; svg.appendChild(wkLbl);
+    }
+
+    // Divider line at phase start (except first)
+    if (pi > 0) {
+      const dl = document.createElementNS(ns, 'line');
+      dl.setAttribute('x1', x); dl.setAttribute('x2', x);
+      dl.setAttribute('y1', 0); dl.setAttribute('y2', H);
+      dl.setAttribute('stroke', 'rgba(255,255,255,.30)'); dl.setAttribute('stroke-width', '1.5');
+      dl.setAttribute('stroke-dasharray', '3,3'); svg.appendChild(dl);
+    }
+  });
+
+  // Week count ticks on x-axis — every 4 weeks
+  for (let i = 0; i < totalWks; i += 4) {
+    const x = PAD_L + i * COL_W;
+    const tick = document.createElementNS(ns, 'line');
+    tick.setAttribute('x1', x); tick.setAttribute('x2', x);
+    tick.setAttribute('y1', PAD_T + plotH); tick.setAttribute('y2', PAD_T + plotH + 3);
+    tick.setAttribute('stroke', 'rgba(255,255,255,.20)'); tick.setAttribute('stroke-width', '1');
+    svg.appendChild(tick);
+    const t = document.createElementNS(ns, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', H - 3);
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '7');
+    t.setAttribute('fill', 'rgba(255,255,255,.30)');
+    t.textContent = 'w' + (i + 1); svg.appendChild(t);
+  }
+
+  // Build (x,y) pts for combined total — mapped onto canonical timeline
+  const catmull = (pts, t=0.3) => {
+    if (pts.length < 2) return null;
+    let d = `M ${pts[0].x},${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0=pts[Math.max(i-1,0)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(i+2,pts.length-1)];
+      d += ` C ${p1.x+(p2.x-p0.x)*t},${p1.y+(p2.y-p0.y)*t} ${p2.x-(p3.x-p1.x)*t},${p2.y-(p3.y-p1.y)*t} ${p2.x},${p2.y}`;
+    }
+    return d;
+  };
+
+  const baseline = PAD_T + plotH;
+
+  // Combined total curve — split on gaps (unworked weeks) so curve doesn't drag across zeros
+  const activePts = [];
+  timelineWeeks.forEach((w, i) => {
+    const h = weekTotals[w] || 0;
+    const x = PAD_L + i * COL_W + COL_W / 2;
+    const y = PAD_T + plotH - (h / sm) * plotH;
+    if (h > 0) activePts.push({ x, y });
+  });
+
+  // Continuous curve across full timeline — zero weeks hug the baseline
+  const allPts = timelineWeeks.map((w, i) => {
+    const h = weekTotals[w] || 0;
+    return {
+      x: PAD_L + i * COL_W + COL_W / 2,
+      y: PAD_T + plotH - (h / sm) * plotH,
+      h
+    };
+  });
+
+  // Only draw if there are any hours at all
+  if (allPts.some(p => p.h > 0)) {
+    const path = catmull(allPts);
+    if (path) {
+      const fillD = path + ` L ${allPts[allPts.length-1].x},${baseline} L ${allPts[0].x},${baseline} Z`;
+      const fill = document.createElementNS(ns, 'path');
+      fill.setAttribute('d', fillD); fill.setAttribute('fill', CHART_COLORS[0]); fill.setAttribute('opacity', '0.28');
+      svg.appendChild(fill);
+      const stroke = document.createElementNS(ns, 'path');
+      stroke.setAttribute('d', path); stroke.setAttribute('fill', 'none');
+      stroke.setAttribute('stroke', CHART_COLORS[0]); stroke.setAttribute('stroke-width', '2');
+      stroke.setAttribute('stroke-linecap', 'round'); stroke.setAttribute('opacity', '0.85');
+      svg.appendChild(stroke);
+    }
+  }
+
+  // Per-designer curves — also continuous, dimmed dashed
+  designers.forEach((d, di) => {
+    const dPts = timelineWeeks.map((w, i) => ({
+      x: PAD_L + i * COL_W + COL_W / 2,
+      y: PAD_T + plotH - (((data.grid[d] || {})[w] || 0) / sm) * plotH,
+      h: (data.grid[d] || {})[w] || 0
+    }));
+    if (!dPts.some(p => p.h > 0)) return;
+    const dPath = catmull(dPts); if (!dPath) return;
+    const ds = document.createElementNS(ns, 'path');
+    ds.setAttribute('d', dPath); ds.setAttribute('fill', 'none');
+    ds.setAttribute('stroke', CHART_COLORS[(di+1) % CHART_COLORS.length]);
+    ds.setAttribute('stroke-width', '1'); ds.setAttribute('stroke-linecap', 'round');
+    ds.setAttribute('opacity', '0.38'); ds.setAttribute('stroke-dasharray', '3,2');
+    svg.appendChild(ds);
+  });
+
+  wrap.appendChild(svg);
+}
+
+
+function renderInteractiveScatter(allProjectData) {
+  const wrap = document.getElementById('scatterChart');
+  if (!wrap) return;
+
+  const allWithValue = allProjectData.map(({ jobUpper, data }) => {
+    const proj = coreProjects[jobUpper];
+    const vr = proj ? bestValue(proj) : null;
+
+    // Completion estimate: weeks with logged hours vs total planned design weeks
+    const isComplete = proj?.stage === 'CA Signed';
+    let pct = isComplete ? 1.0 : null;
+    let projectedHours = data.totalHours;
+    if (!isComplete && proj?.phases) {
+      const totalPlanned = proj.phases
+        .filter(ph => ph.name !== PHASE_CD) // exclude Phase III — post-CA support
+        .reduce((s, ph) => s + (ph.durWeeks || 0), 0);
+      const weeksWorked = data.weeks.filter(w => (data.weekTotals[w] || 0) > 0).length;
+      if (totalPlanned > 0 && weeksWorked > 0) {
+        pct = Math.min(weeksWorked / totalPlanned, 1.0);
+        // Project forward: if 30% complete with X hours, full project ≈ X / 0.30
+        projectedHours = pct > 0 ? data.totalHours / pct : data.totalHours;
+      }
+    }
+
+    return {
+      jobUpper,
+      hours: data.totalHours,          // actual logged hours
+      projectedHours,                   // extrapolated to 100%
+      value: vr ? vr.value : null,
+      label: proj ? (proj.displayName || jobUpper) : jobUpper,
+      stage: proj ? proj.stage : null,
+      pct,                              // null = no plan data, 1.0 = complete
+      isComplete,
+      designerNames: data.designers.map(d => shortName(d)).join(', '),
+      vr
+    };
+  }).filter(p => p.value && p.hours);
+
+  if (!allWithValue.length) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+
+  const W = Math.min(760, (wrap.offsetWidth || 700) - 36);
+  const H = 300;
+  const padL = 50, padR = 20, padT = 20, padB = 42;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const maxVal = Math.max(...allWithValue.map(p => p.value));
+  // Scale y to projected hours so complete and in-progress projects share the same axis
+  const maxHrs = Math.max(...allWithValue.map(p => p.projectedHours));
+  const sx = v => padL + (v / maxVal) * plotW;
+  const sy = h => padT + plotH - (h / maxHrs) * plotH;
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // Tooltip div
+  let tipEl = document.getElementById('scatter-tip');
+  if (!tipEl) {
+    tipEl = document.createElement('div');
+    tipEl.id = 'scatter-tip';
+    tipEl.style.cssText = 'position:fixed;background:#1f2e3e;color:#fff;font-size:11px;padding:8px 12px;border-radius:6px;pointer-events:none;display:none;z-index:9999;line-height:1.6;max-width:220px;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+    document.body.appendChild(tipEl);
+  }
+
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.style.cssText = 'display:block;cursor:crosshair;';
+
+  // Grid + axes
+  [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+    const gl = document.createElementNS(ns, 'line');
+    gl.setAttribute('x1', padL); gl.setAttribute('x2', padL + plotW);
+    gl.setAttribute('y1', padT + plotH * (1-t)); gl.setAttribute('y2', padT + plotH * (1-t));
+    gl.setAttribute('stroke', '#e8e4dc'); gl.setAttribute('stroke-width', '1'); svg.appendChild(gl);
+    const vl = document.createElementNS(ns, 'line');
+    vl.setAttribute('x1', padL + plotW*t); vl.setAttribute('x2', padL + plotW*t);
+    vl.setAttribute('y1', padT); vl.setAttribute('y2', padT + plotH);
+    vl.setAttribute('stroke', '#e8e4dc'); vl.setAttribute('stroke-width', '1'); svg.appendChild(vl);
+    const yt = document.createElementNS(ns, 'text');
+    yt.setAttribute('x', padL-5); yt.setAttribute('y', padT + plotH*(1-t) + 3.5);
+    yt.setAttribute('text-anchor','end'); yt.setAttribute('font-size','8'); yt.setAttribute('fill','#aaa');
+    yt.textContent = Math.round(maxHrs*t)+'h'; svg.appendChild(yt);
+    const xt = document.createElementNS(ns, 'text');
+    xt.setAttribute('x', padL + plotW*t); xt.setAttribute('y', H-8);
+    xt.setAttribute('text-anchor','middle'); xt.setAttribute('font-size','8'); xt.setAttribute('fill','#aaa');
+    const vStr = maxVal*t >= 1000000 ? '$'+(maxVal*t/1e6).toFixed(1)+'M' : '$'+Math.round(maxVal*t/1000)+'k';
+    xt.textContent = t===0?'':vStr; svg.appendChild(xt);
+  });
+
+  // Axis labels
+  const xA = document.createElementNS(ns, 'text');
+  xA.setAttribute('x', padL + plotW/2); xA.setAttribute('y', H-2);
+  xA.setAttribute('text-anchor','middle'); xA.setAttribute('font-size','9');
+  xA.setAttribute('fill','#888'); xA.setAttribute('font-weight','600');
+  xA.textContent = 'Project Value →'; svg.appendChild(xA);
+  const yA = document.createElementNS(ns, 'text');
+  yA.setAttribute('x', 10); yA.setAttribute('y', padT + plotH/2);
+  yA.setAttribute('text-anchor','middle'); yA.setAttribute('font-size','9');
+  yA.setAttribute('fill','#888'); yA.setAttribute('font-weight','600');
+  yA.setAttribute('transform', `rotate(-90,10,${padT+plotH/2})`);
+  yA.textContent = '↑ Total Hours'; svg.appendChild(yA);
+
+  // Helper: fit a linear trend line through (value, projectedHours) pairs
+  function drawTrend(pts, stroke, dash, opacity) {
+    if (pts.length < 2) return;
+    const xs = pts.map(p=>p.value), ys = pts.map(p=>p.projectedHours);
+    const n = xs.length, mx = xs.reduce((a,b)=>a+b)/n, my = ys.reduce((a,b)=>a+b)/n;
+    const denom = xs.map(x=>(x-mx)**2).reduce((a,b)=>a+b);
+    if (!denom) return;
+    const slope = xs.map((x,i)=>(x-mx)*(ys[i]-my)).reduce((a,b)=>a+b) / denom;
+    const ic = my - slope*mx;
+    const tl = document.createElementNS(ns, 'line');
+    tl.setAttribute('x1',sx(0));       tl.setAttribute('y1',sy(Math.max(0,ic)));
+    tl.setAttribute('x2',sx(maxVal)); tl.setAttribute('y2',sy(Math.max(0,slope*maxVal+ic)));
+    tl.setAttribute('stroke',stroke); tl.setAttribute('stroke-width','1.5');
+    if (dash) tl.setAttribute('stroke-dasharray','4,3');
+    tl.setAttribute('opacity',opacity); svg.appendChild(tl);
+    // Label at right end
+    const ty = sy(Math.max(0, slope*maxVal+ic));
+    const tlbl = document.createElementNS(ns, 'text');
+    tlbl.setAttribute('x', padL+plotW+3); tlbl.setAttribute('y', ty+3);
+    tlbl.setAttribute('font-size','8'); tlbl.setAttribute('fill', stroke); tlbl.setAttribute('opacity', opacity);
+    tlbl.textContent = dash ? 'all' : 'complete'; svg.appendChild(tlbl);
+  }
+  const completePts = allWithValue.filter(p => p.isComplete);
+  const allPts2 = allWithValue;
+  if (completePts.length >= 2) drawTrend(completePts, '#019425', false, '0.70');
+  if (allPts2.length >= 2)     drawTrend(allPts2,     '#c9a84c', true,  '0.45');
+
+  // Sweet spot annotation — lower right quadrant (high value, low hours)
+  const ssX = padL + plotW * 0.62, ssY = padT + plotH * 0.60;
+  const ssW = plotW * 0.36, ssH = plotH * 0.37;
+  const ssRect = document.createElementNS(ns, 'rect');
+  ssRect.setAttribute('x', ssX); ssRect.setAttribute('y', ssY);
+  ssRect.setAttribute('width', ssW); ssRect.setAttribute('height', ssH);
+  ssRect.setAttribute('fill', '#e8f5ee'); ssRect.setAttribute('rx', '4');
+  ssRect.setAttribute('opacity', '0.55'); svg.appendChild(ssRect);
+  const ssTxt = document.createElementNS(ns, 'text');
+  ssTxt.setAttribute('x', ssX + ssW/2); ssTxt.setAttribute('y', ssY + ssH/2 + 4);
+  ssTxt.setAttribute('text-anchor', 'middle'); ssTxt.setAttribute('font-size', '10');
+  ssTxt.setAttribute('fill', '#2d8a5e'); ssTxt.setAttribute('font-weight', '700');
+  ssTxt.textContent = '✦ sweet spot'; svg.appendChild(ssTxt);
+
+  // Dots — with completion arc rings
+  let ci = 0;
+  const dotEls = [];
+  for (const p of allWithValue) {
+    const color = CHART_COLORS[ci++ % CHART_COLORS.length];
+    // Plot at projected position (extrapolated to 100%) with a ghost at actual position
+    const xProj = sx(p.projectedHours), yProj = sy(p.projectedHours);
+    // Primary dot plotted at (value, projectedHours) — apples-to-apples
+    const x = sx(p.value), y = sy(p.projectedHours);
+    // Ghost dot at actual logged hours (lower on chart for incomplete projects)
+    const yActual = sy(p.hours);
+    const outerR = 9, innerR = 5;
+
+    // Ghost (actual hours) — only when meaningfully different from projected
+    if (!p.isComplete && p.pct !== null && p.pct < 0.95 && Math.abs(yActual - y) > 3) {
+      const ghost = document.createElementNS(ns, 'circle');
+      ghost.setAttribute('cx', x); ghost.setAttribute('cy', yActual);
+      ghost.setAttribute('r', '3'); ghost.setAttribute('fill', color); ghost.setAttribute('opacity', '0.25');
+      ghost.setAttribute('stroke', 'none');
+      svg.appendChild(ghost);
+      // Dashed vertical line connecting ghost to projected dot
+      const connector = document.createElementNS(ns, 'line');
+      connector.setAttribute('x1', x); connector.setAttribute('x2', x);
+      connector.setAttribute('y1', yActual); connector.setAttribute('y2', y);
+      connector.setAttribute('stroke', color); connector.setAttribute('stroke-width', '1');
+      connector.setAttribute('stroke-dasharray', '2,2'); connector.setAttribute('opacity', '0.25');
+      svg.appendChild(connector);
+    }
+
+    // Completion arc ring for in-progress projects
+    if (!p.isComplete && p.pct !== null) {
+      // Background ring
+      const bgRing = document.createElementNS(ns, 'circle');
+      bgRing.setAttribute('cx', x); bgRing.setAttribute('cy', y); bgRing.setAttribute('r', outerR);
+      bgRing.setAttribute('fill', 'none'); bgRing.setAttribute('stroke', '#ddd'); bgRing.setAttribute('stroke-width', '3');
+      svg.appendChild(bgRing);
+      // Arc showing completion percentage
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + p.pct * 2 * Math.PI;
+      const ax = x + outerR * Math.cos(startAngle);
+      const ay = y + outerR * Math.sin(startAngle);
+      const bx = x + outerR * Math.cos(endAngle);
+      const by = y + outerR * Math.sin(endAngle);
+      const largeArc = p.pct > 0.5 ? 1 : 0;
+      if (p.pct > 0.02) {
+        const arc = document.createElementNS(ns, 'path');
+        arc.setAttribute('d', `M ${ax},${ay} A ${outerR},${outerR} 0 ${largeArc},1 ${bx},${by}`);
+        arc.setAttribute('fill', 'none'); arc.setAttribute('stroke', color); arc.setAttribute('stroke-width', '3');
+        arc.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(arc);
+      }
+    }
+
+    // Hit area
+    const hit = document.createElementNS(ns, 'circle');
+    hit.setAttribute('cx', x); hit.setAttribute('cy', y); hit.setAttribute('r', '14');
+    hit.setAttribute('fill', 'transparent'); svg.appendChild(hit);
+
+    // Inner dot
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+    dot.setAttribute('r', p.isComplete ? String(outerR) : String(innerR));
+    dot.setAttribute('fill', color);
+    dot.setAttribute('opacity', p.isComplete ? '0.90' : '0.75');
+    dot.setAttribute('stroke', 'white'); dot.setAttribute('stroke-width', '1.5');
+    dot.setAttribute('style', 'transition:r .1s,opacity .1s;');
+    svg.appendChild(dot);
+
+    // Label
+    const lbl = document.createElementNS(ns, 'text');
+    const lblText = p.label.length > 16 ? p.label.slice(0,15)+'…' : p.label;
+    lbl.setAttribute('x', x + outerR + 4); lbl.setAttribute('y', y + 3);
+    lbl.setAttribute('font-size','9'); lbl.setAttribute('fill','#555'); lbl.setAttribute('font-weight','500');
+    lbl.textContent = lblText; svg.appendChild(lbl);
+
+    dotEls.push({ dot, hit, p, color, x, y });
+  }
+
+  // Hover via SVG mousemove
+  svg.addEventListener('mousemove', ev => {
+    const svgRect = svg.getBoundingClientRect();
+    const mx = ev.clientX - svgRect.left;
+    const my = ev.clientY - svgRect.top;
+    let closest = null, minDist = 22;
+    for (const { p, dot, x, y } of dotEls) {
+      const dx = x - mx, dy = y - my;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < minDist) { minDist = dist; closest = { p, dot }; }
+    }
+    // Reset all dots to base size
+    dotEls.forEach(({ dot, p }) => {
+      dot.setAttribute('r', p.isComplete ? '9' : '5');
+      dot.setAttribute('opacity', p.isComplete ? '0.90' : '0.75');
+    });
+    if (closest) {
+      const { p, dot } = closest;
+      dot.setAttribute('r', '11'); dot.setAttribute('opacity', '1');
+      const fmt = h => h % 1 === 0 ? h : h.toFixed(1);
+      const vFmt = p.value >= 1e6 ? '$'+(p.value/1e6).toFixed(2).replace(/\.?0+$/,'')+'M' : '$'+Math.round(p.value/1000)+'k';
+      const ratioActual = (p.hours / (p.value / 10000)).toFixed(1);
+      const ratioProj   = (p.projectedHours / (p.value / 10000)).toFixed(1);
+      const pctStr = p.pct !== null ? Math.round(p.pct * 100) + '%' : '?';
+      let tipHtml = `<div style="font-weight:700;margin-bottom:4px">${p.label}</div>`;
+      tipHtml += `<div>${vFmt}</div>`;
+      if (p.isComplete) {
+        tipHtml += `<div>${fmt(p.hours)}h &nbsp;·&nbsp; ${ratioActual} hrs/$10k</div>`;
+        tipHtml += `<div style="color:#5de3a0;font-size:10px;margin-top:2px">✓ CA Signed — complete</div>`;
+      } else {
+        tipHtml += `<div>${fmt(p.hours)}h logged &nbsp;·&nbsp; ${pctStr} complete</div>`;
+        tipHtml += `<div style="color:#f9e6ae;font-size:10px">~${fmt(p.projectedHours)}h projected (${ratioProj} hrs/$10k)</div>`;
+        if (p.pct === null) tipHtml += `<div style="opacity:.55;font-size:10px">No GanttData — can't estimate completion</div>`;
+      }
+      tipHtml += `<div style="opacity:.65;font-size:10px;margin-top:3px">${p.designerNames}</div>`;
+      tipEl.innerHTML = tipHtml;
+      tipEl.style.display = 'block';
+      tipEl.style.left = (ev.clientX + 16) + 'px';
+      tipEl.style.top = (ev.clientY - 10) + 'px';
+    } else {
+      tipEl.style.display = 'none';
+    }
+  });
+  svg.addEventListener('mouseleave', () => { tipEl.style.display = 'none'; });
+
+  const avgRatio = allWithValue.length ?
+    allWithValue.map(p => p.hours/(p.value/10000)).reduce((a,b)=>a+b) / allWithValue.length : 0;
+
+    const completedCount = allWithValue.filter(p => p.isComplete).length;
+  const avgRatioComplete = completedCount ?
+    allWithValue.filter(p=>p.isComplete).map(p=>p.hours/(p.value/10000)).reduce((a,b)=>a+b) / completedCount : null;
+  wrap.innerHTML = '<div class="combined-chart-title">Hours vs Value — All Projects</div><div class="combined-chart-sub">Dots plotted at projected final hours. Arc ring = % complete. Ghost dot + dashed line = actual hours logged so far. Green trend = CA-signed only. Gold = all projects. Hover for details.'+(avgRatioComplete?' Completed avg: '+avgRatioComplete.toFixed(1)+' hrs/$10k.':'')+'</div>';
+  wrap.appendChild(svg);
+}
+
+// ── Combined stacked streamgraph ───────────────────────────────────────────
+function renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk) {
+  const wrap = document.getElementById('combinedChart');
+  if (!wrap || !allProjectData.length) return;
+
+  const allWeeksSet = new Set();
+  for (const { data } of allProjectData) data.weeks.forEach(w => allWeeksSet.add(w));
+  const allWeeks = [...allWeeksSet].sort();
+  if (!allWeeks.length) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+
+  // Compute stacked baselines: for each week, each project stacks on top of previous
+  // Sort projects by peak week for visual stability
+  const projWeekHours = allProjectData.map(({ data }) =>
+    allWeeks.map(w => data.weekTotals[w] || 0)
+  );
+
+  // Stack: baseline[proj][week], topline[proj][week]
+  const baselines = allProjectData.map(() => new Array(allWeeks.length).fill(0));
+  const toplines  = allProjectData.map(() => new Array(allWeeks.length).fill(0));
+  const stackTotals = new Array(allWeeks.length).fill(0);
+  allProjectData.forEach((_, pi) => {
+    allWeeks.forEach((_, wi) => {
+      baselines[pi][wi] = stackTotals[wi];
+      toplines[pi][wi]  = stackTotals[wi] + projWeekHours[pi][wi];
+      stackTotals[wi]   = toplines[pi][wi];
+    });
+  });
+  const overallMax = Math.max(...stackTotals, 1);
+
+  const W_INNER = Math.max(600, (wrap.offsetWidth || 760) - 36);
+  const H_CHART = 320;
+  const PAD_L = 44, PAD_R = 20, PAD_T = 28, PAD_B = 48;
+  const plotW = W_INNER - PAD_L - PAD_R;
+  const plotH = H_CHART - PAD_T - PAD_B;
+  const COL_W = plotW / allWeeks.length;
+
+  const xAt = i => PAD_L + i * COL_W + COL_W / 2;
+  const yAt = h => PAD_T + plotH - (h / overallMax) * plotH;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', W_INNER); svg.setAttribute('height', H_CHART);
+  svg.setAttribute('viewBox', `0 0 ${W_INNER} ${H_CHART}`);
+  svg.style.cssText = 'display:block;max-width:100%;cursor:crosshair;';
+
+  // Build Catmull-Rom path for a series of (x,y) points
+  function catmullPath(pts, t=0.3) {
+    if (pts.length < 2) return null;
+    let d = `M ${pts[0].x},${pts[0].y}`;
+    for (let i = 0; i < pts.length-1; i++) {
+      const p0=pts[Math.max(i-1,0)], p1=pts[i], p2=pts[i+1], p3=pts[Math.min(i+2,pts.length-1)];
+      d += ` C ${p1.x+(p2.x-p0.x)*t},${p1.y+(p2.y-p0.y)*t} ${p2.x-(p3.x-p1.x)*t},${p2.y-(p3.y-p1.y)*t} ${p2.x},${p2.y}`;
+    }
+    return d;
+  }
+
+  // Y axis grid
+  [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+    const y = PAD_T + plotH*(1-t);
+    const gl = document.createElementNS(ns, 'line');
+    gl.setAttribute('x1',PAD_L); gl.setAttribute('x2',PAD_L+plotW);
+    gl.setAttribute('y1',y); gl.setAttribute('y2',y);
+    gl.setAttribute('stroke','rgba(255,255,255,.15)'); gl.setAttribute('stroke-width','1');
+    svg.appendChild(gl);
+    const yt = document.createElementNS(ns, 'text');
+    yt.setAttribute('x',PAD_L-4); yt.setAttribute('y',y+3.5);
+    yt.setAttribute('text-anchor','end'); yt.setAttribute('font-size','8'); yt.setAttribute('fill','rgba(255,255,255,.45)');
+    yt.textContent = Math.round(overallMax*t)+'h'; svg.appendChild(yt);
+  });
+
+  // Week axis ticks
+  // X-axis: week numbers every 4 weeks
+  allWeeks.forEach((w, i) => {
+    if (i % 4 !== 0) return;
+    const x = PAD_L + i * COL_W;
+    const tick = document.createElementNS(ns, 'line');
+    tick.setAttribute('x1',x); tick.setAttribute('x2',x);
+    tick.setAttribute('y1',PAD_T+plotH); tick.setAttribute('y2',PAD_T+plotH+3);
+    tick.setAttribute('stroke','rgba(255,255,255,.25)'); tick.setAttribute('stroke-width','1');
+    svg.appendChild(tick);
+    const t = document.createElementNS(ns, 'text');
+    t.setAttribute('x',x+2); t.setAttribute('y',PAD_T+plotH+12);
+    t.setAttribute('font-size','8'); t.setAttribute('fill','rgba(255,255,255,.35)');
+    t.setAttribute('text-anchor','middle');
+    t.textContent = 'w'+(i+1); svg.appendChild(t);
+  });
+
+  // Phase dividers: fixed canonical boundaries (week 0–7 = Phase I, 7–18 = Phase II, 18+ = Phase III)
+  // Columns are relative to allWeeks[0] as week 0
+  const STREAM_DIV_I_II  = 7;   // Phase I ends after week 7
+  const STREAM_DIV_II_III = 18;  // Phase II ends after week 18
+  const dividerCols = [STREAM_DIV_I_II, STREAM_DIV_II_III].filter(c => c > 0 && c < allWeeks.length);
+
+  const regionLabels = ['Phase I', 'Phase II', 'Phase III'];
+  const regionStarts = [0, ...dividerCols, allWeeks.length];
+  for (let ri = 0; ri < regionStarts.length - 1; ri++) {
+    const rStart = regionStarts[ri], rEnd = regionStarts[ri+1];
+    const x0 = PAD_L + rStart*COL_W, x1 = PAD_L + rEnd*COL_W;
+    const bg = document.createElementNS(ns, 'rect');
+    bg.setAttribute('x',x0); bg.setAttribute('y',PAD_T);
+    bg.setAttribute('width',x1-x0); bg.setAttribute('height',plotH);
+    bg.setAttribute('fill',PHASE_COLORS[ri]||'#888'); bg.setAttribute('opacity','0.07');
+    svg.appendChild(bg);
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x',(x0+x1)/2); lbl.setAttribute('y',PAD_T+12);
+    lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('font-size','9');
+    lbl.setAttribute('font-weight','600'); lbl.setAttribute('fill','rgba(255,255,255,.55)');
+    lbl.setAttribute('letter-spacing','.06em');
+    lbl.textContent = regionLabels[ri]||''; svg.appendChild(lbl);
+  }
+  dividerCols.forEach(col => {
+    const x = PAD_L + col*COL_W;
+    const dl = document.createElementNS(ns,'line');
+    dl.setAttribute('x1',x); dl.setAttribute('x2',x);
+    dl.setAttribute('y1',PAD_T); dl.setAttribute('y2',PAD_T+plotH);
+    dl.setAttribute('stroke','rgba(255,255,255,.40)'); dl.setAttribute('stroke-width','1.5');
+    dl.setAttribute('stroke-dasharray','4,3'); svg.appendChild(dl);
+  });
+
+  // Tooltip
+  let tipEl2 = document.getElementById('stream-tip');
+  if (!tipEl2) {
+    tipEl2 = document.createElement('div');
+    tipEl2.id = 'stream-tip';
+    tipEl2.style.cssText = 'position:fixed;background:#1f2e3e;color:#fff;font-size:11px;padding:8px 12px;border-radius:6px;pointer-events:none;display:none;z-index:9999;line-height:1.6;max-width:220px;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+    document.body.appendChild(tipEl2);
+  }
+
+  // Draw stacked areas (back to front so front projects are on top)
+  const pathEls = [];
+  allProjectData.forEach(({ jobUpper, data }, pi) => {
+    const color = CHART_COLORS[pi % CHART_COLORS.length];
+    const proj = coreProjects[jobUpper];
+    const label = proj ? (proj.displayName || jobUpper) : jobUpper;
+
+    const topPts = allWeeks.map((w, i) => ({ x: xAt(i), y: yAt(toplines[pi][i]) }));
+    const basePts = allWeeks.map((w, i) => ({ x: xAt(i), y: yAt(baselines[pi][i]) }));
+
+    const topPath = catmullPath(topPts);
+    const basePathRev = catmullPath([...basePts].reverse());
+    if (!topPath || !basePathRev) return;
+
+    const fillD = topPath + ' L ' + basePts[basePts.length-1].x + ',' + basePts[basePts.length-1].y + ' ' + basePathRev.replace(/^M [\d.]+,[\d.]+ /,'') + ' Z';
+
+    const fill = document.createElementNS(ns, 'path');
+    fill.setAttribute('d', fillD);
+    fill.setAttribute('fill', color); fill.setAttribute('opacity','0.65');
+    fill.setAttribute('stroke', color); fill.setAttribute('stroke-width','0.5');
+    fill.setAttribute('stroke-opacity','0.4');
+    fill.dataset.projIdx = pi;
+    svg.appendChild(fill);
+    pathEls.push({ fill, jobUpper, label, data, pi, color });
+  });
+
+  // Hover: find which project band the mouse is in at that week
+  svg.addEventListener('mousemove', ev => {
+    const svgRect = svg.getBoundingClientRect();
+    const mx = ev.clientX - svgRect.left;
+    const my = ev.clientY - svgRect.top;
+    const wi = Math.floor((mx - PAD_L) / COL_W);
+    if (wi < 0 || wi >= allWeeks.length) { tipEl2.style.display='none'; return; }
+    const hVal = ((PAD_T + plotH - my) / plotH) * overallMax;
+    // Find which project stack this falls in
+    let hit = null;
+    for (let pi = allProjectData.length-1; pi >= 0; pi--) {
+      if (hVal >= baselines[pi][wi] && hVal <= toplines[pi][wi]) {
+        hit = pathEls.find(p => p.pi === pi); break;
+      }
+    }
+    pathEls.forEach(({ fill }) => fill.setAttribute('opacity','0.65'));
+    if (hit) {
+      hit.fill.setAttribute('opacity','0.90');
+      const w = allWeeks[wi];
+      const hrs = hit.data.weekTotals[w] || 0;
+      const phase = getPhaseForWeek(hit.jobUpper, w) || '—';
+      const designers = hit.data.designers.map(d => shortName(d)).join(', ');
+      const hFmt = hrs % 1 === 0 ? hrs : hrs.toFixed(1);
+      tipEl2.innerHTML = `<div style="font-weight:700;margin-bottom:4px">${hit.label}</div><div>${hFmt}h &nbsp;·&nbsp; ${phase}</div><div style="opacity:.65;font-size:10px;margin-top:2px">${designers}</div>`;
+      tipEl2.style.display = 'block';
+      tipEl2.style.left = (ev.clientX+16)+'px';
+      tipEl2.style.top  = (ev.clientY-10)+'px';
+    } else {
+      tipEl2.style.display = 'none';
+    }
+  });
+  svg.addEventListener('mouseleave', () => { tipEl2.style.display='none'; });
+
+  wrap.style.background = '#1f2e3e';
+  wrap.style.borderRadius = '8px';
+  wrap.innerHTML = '<div class="combined-chart-title" style="color:#f9e6ae;padding:16px 18px 4px">All Projects — Stacked Hours Over Time</div><div class="combined-chart-sub" style="color:rgba(255,255,255,.50);padding:0 18px 12px">Hover to identify projects. Each colored band = one project\u2019s weekly hours. Dashed lines = phase boundaries. Total height = combined team hours that week.</div>';
+  wrap.appendChild(svg);
+}
+
+// --- Render ---
+function render() {
+  if (allEntries.length === 0) { document.getElementById('resultsArea').classList.add('hidden'); document.getElementById('fileCount').textContent = 'No files'; return; }
+  document.getElementById('resultsArea').classList.remove('hidden');
+  document.getElementById('fileCount').textContent = `${loadedFiles.length} file${loadedFiles.length!==1?'s':''}`;
+
+  // Build month filter buttons from ALL entries (not filtered)
+  const allWeeksAll = [...new Set(allEntries.map(e => e.week))].sort();
+  const months = [...new Set(allWeeksAll.map(w => w.slice(0, 7)))].sort();
+  const filterEl = document.getElementById('monthFilter');
+  let filterHtml = `<button class="month-btn ${activeMonths.size===0?'active':''}" onclick="toggleMonth('all')">All</button>`;
+  for (const m of months) {
+    const d = new Date(m + '-01T00:00:00');
+    const label = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    filterHtml += `<button class="month-btn ${activeMonths.has(m)?'active':''}" onclick="toggleMonth('${m}')">${label}</button>`;
+  }
+  filterEl.innerHTML = filterHtml;
+
+  // Stats from filtered entries
+  const filtered = getFilteredEntries();
+  const allWeeks = [...new Set(filtered.map(e => e.week))].sort();
+  const totalHrs = filtered.reduce((s, e) => s + e.hours, 0);
+  const billHrs = filtered.filter(e => !e.nonBillable).reduce((s, e) => s + e.hours, 0);
+  const uniqProj = new Set(filtered.filter(e => !e.nonBillable).map(e => e.jobUpper)).size;
+  document.getElementById('summaryBar').innerHTML = `
+    <div class="summary-stat"><div class="val">${allWeeks.length}</div><div class="lbl">Weeks</div></div>
+    <div class="summary-stat"><div class="val">${Math.round(totalHrs)}</div><div class="lbl">Total hours</div></div>
+    <div class="summary-stat"><div class="val">${Math.round(billHrs)}</div><div class="lbl">Billable</div></div>
+    <div class="summary-stat"><div class="val">${uniqProj}</div><div class="lbl">Projects</div></div>`;
+  renderPhaseAlert();
+  const ctr = document.getElementById('designerSections'); ctr.innerHTML = '';
+  const jobs = allBillableJobs();
+  for (const jobUpper of jobs) {
+    const data = buildProjectData(jobUpper);
+    if (!data.weeks.length) continue;
+    const proj = coreProjects[jobUpper];
+    const projLabel = proj ? (proj.displayName || jobUpper) : jobUpper;
+    const projSub = proj && proj.displayName && proj.displayName !== jobUpper ? jobUpper : null;
+    const dt = data.totalHours;
+    const bid = `body_${jobUpper}`;
+    const gridTogId = `grid-tog-${bid}`;
+    const sec = document.createElement('div'); sec.className = 'section';
+    const designerPills = data.designers.map(d => `<span class="designer-pill">${shortName(d)}</span>`).join('');
+    // Section: header always visible; sparkline always visible; details collapsible
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${projLabel}${projSub?`<span class="proj-code-meta">${projSub}</span>`:''}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} wks${data.designers.length>1?' · '+data.designers.length+' designers':''}</span></h2><span class="chevron open">▶</span></div><div class="proj-sparkline-wrap" id="spark_${jobUpper}"></div><div class="section-body collapsed" id="${bid}"><div class="designer-chips">${designerPills}</div><div class="monthly-summary-panel" id="monthly_${jobUpper}"></div><div style="padding:0 18px"><button class="panel-toggle-btn" onclick="togglePanel('${gridTogId}',this)"><span class="panel-toggle-chev">▼</span> Weekly Hours Grid</button></div><div class="panel-collapsible" id="${gridTogId}" style="max-height:5000px"><div class="grid-wrap"><table class="hours-grid" id="grid_${jobUpper}"></table></div><div class="phase-summary hidden" id="phasesummary_${jobUpper}"></div></div></div>`;
+    ctr.appendChild(sec);
+    renderMonthlySummary(jobUpper, data);
+    renderGrid(jobUpper, data);
+  }
+  // After all sections built: compute global max, render sparklines + charts
+  renderAllScattersAndCombined(jobs);
+}
+
+// Phase palette (index into these by phase order)
+const PHASE_COLORS = ['#3b5fa0','#5a8a5a','#8a6a3a','#7a4a8a','#3a7a8a'];
+
+function renderGrid(jobUpper, data, globalMax) {
+  const table = document.getElementById(`grid_${jobUpper}`);
+  const { weeks, designers, grid, designerTotals, weekTotals } = data;
+  // globalMax passed in from orchestrator for standardized sparkline scale
+  let totalMax = 0;
+  for (const w of weeks) if ((weekTotals[w]||0)>totalMax) totalMax=weekTotals[w];
+
+  const colorMap = {}; let ci = 0;
+  for (const d of designers) { colorMap[d] = CHART_COLORS[ci%CHART_COLORS.length]; ci++; }
+
+  // Build week→phase map for this specific project
+  const weekPhaseMap = {};
+  const phaseNames = [];
+  for (const w of weeks) {
+    const ph = getPhaseForWeek(jobUpper, w);
+    if (ph) {
+      if (!phaseNames.includes(ph)) phaseNames.push(ph);
+      if (!weekPhaseMap[w]) weekPhaseMap[w] = { name: ph, colorIdx: phaseNames.indexOf(ph) };
+    }
+  }
+
+  const hasPhases = Object.keys(weekPhaseMap).length > 0;
+
+  // Header — phase band row, then week labels
+  const thead = document.createElement('thead');
+  let theadHtml = '';
+  if (hasPhases) {
+    theadHtml += '<tr class="phase-row"><th class="phase-empty"></th>';
+    let i = 0;
+    while (i < weeks.length) {
+      const ph = weekPhaseMap[weeks[i]];
+      if (!ph) { theadHtml += '<th class="phase-gap"></th>'; i++; continue; }
+      let span = 1;
+      while (i + span < weeks.length && weekPhaseMap[weeks[i+span]]?.name === ph.name) span++;
+      const colorCls = `ph-color-${ph.colorIdx % PHASE_COLORS.length}`;
+      theadHtml += `<th class="phase-cell ${colorCls}" colspan="${span}" title="${ph.name}">${ph.name}</th>`;
+      i += span;
+    }
+    theadHtml += '<th class="phase-empty"></th></tr>';
+  }
+  theadHtml += '<tr><th>Designer</th>' + weeks.map(w=>`<th>${formatWeekLabel(w)}</th>`).join('') + '<th class="total-col">Total</th></tr>';
+  thead.innerHTML = theadHtml;
+  table.appendChild(thead);
+
+  // Store phase transition weeks on table for drawTrendOverlays to draw dividers
+  const phaseTransitions = [];
+  let lastPhase = null;
+  for (let i = 0; i < weeks.length; i++) {
+    const ph = weekPhaseMap[weeks[i]]?.name || null;
+    if (ph && ph !== lastPhase && lastPhase !== null) phaseTransitions.push(i);
+    lastPhase = ph;
+  }
+  table.dataset.phaseTransitions = JSON.stringify(phaseTransitions);
+
+  const tbody = document.createElement('tbody');
+
+  function makeCell(h) {
+    if (h <= 0) return '<td class="zero"><span class="cell-num">–</span></td>';
+    const display = h % 1 === 0 ? h : h.toFixed(1);
+    return `<td class="has-hours"><span class="cell-num">${display}</span></td>`;
+  }
+
+  // Combined sparkline row — tall, shows project total across all designers
+  const combinedVals = weeks.map(w => weekTotals[w] || 0);
+  const combinedTotal = combinedVals.reduce((a, b) => a + b, 0);
+  const combRow = document.createElement('tr'); combRow.className = 'trend-row-wrap combined-sparkline-row';
+  let combHtml = `<td style="font-weight:700;font-size:10px;">All</td>`;
+  for (const w of weeks) { const h = weekTotals[w]||0; combHtml += makeCell(h); }
+  combHtml += `<td class="total-col"><span class="cell-num">${combinedTotal%1===0?combinedTotal:combinedTotal.toFixed(1)}</span></td>`;
+  combRow.innerHTML = combHtml;
+  combRow.dataset.trendVals = JSON.stringify(combinedVals);
+  combRow.dataset.trendColor = CHART_COLORS[0];
+  combRow.dataset.trendMax = globalMax;
+  combRow.dataset.isCombined = '1';
+  tbody.appendChild(combRow);
+
+  // One row per designer (dimmed sparklines)
+  for (const d of designers) {
+    const tr = document.createElement('tr'); tr.className = 'trend-row-wrap';
+    const vals = [], color = colorMap[d];
+    let html = `<td><span class="proj-swatch" style="background:${color}"></span>${shortName(d)}</td>`;
+    for (const w of weeks) { const h = grid[d][w]||0; vals.push(h); html += makeCell(h); }
+    const tot = designerTotals[d]||0;
+    html += `<td class="total-col"><span class="cell-num">${tot%1===0?tot:tot.toFixed(1)}</span></td>`;
+    tr.innerHTML = html;
+    tr.dataset.trendVals = JSON.stringify(vals);
+    tr.dataset.trendColor = color;
+    tr.dataset.trendMax = globalMax;
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  requestAnimationFrame(() => drawTrendOverlays(table, weeks.length, globalMax));
+
+  // Phase summary panel
+  renderPhaseSummary(jobUpper, data, designers, phaseNames, weekPhaseMap);
+}
+
+function renderPhaseSummary(jobUpper, data, designers, phaseNames, weekPhaseMap) {
+  const panel = document.getElementById(`phasesummary_${jobUpper}`);
+  if (!panel) return;
+  if (!phaseNames || !phaseNames.length) { panel.classList.add('hidden'); return; }
+
+  const phaseStats = {};
+  for (const ph of phaseNames) phaseStats[ph] = { totalHours: 0, weekCount: 0, weeksWithHours: 0 };
+  for (const w of data.weeks) {
+    const ph = weekPhaseMap[w];
+    if (!ph) continue;
+    const ps = phaseStats[ph.name];
+    if (!ps) continue;
+    ps.weekCount++;
+    let wkHours = 0;
+    for (const d of designers) wkHours += data.grid[d][w] || 0;
+    ps.totalHours += wkHours;
+    if (wkHours > 0) ps.weeksWithHours++;
+  }
+
+  const fmt = h => h % 1 === 0 ? h : h.toFixed(1);
+  let html = '<div class="phase-summary-title">Phase Averages — Design Hours / Week</div><div class="phase-summary-grid">';
+  for (let i = 0; i < phaseNames.length; i++) {
+    const ph = phaseNames[i];
+    const ps = phaseStats[ph];
+    const color = PHASE_COLORS[i % PHASE_COLORS.length];
+    const avgActive = ps.weeksWithHours > 0 ? ps.totalHours / ps.weeksWithHours : 0;
+    const avgAll = ps.weekCount > 0 ? ps.totalHours / ps.weekCount : 0;
+    html += `<div class="phase-card">
+      <div class="phase-card-name"><span class="phase-card-dot" style="background:${color}"></span>${ph}</div>
+      <div class="phase-card-avg">${fmt(avgActive)} hrs/wk</div>
+      <div class="phase-card-stats">${fmt(ps.totalHours)} total &middot; ${ps.weeksWithHours} active wks<br><span style="color:var(--text-light)">${fmt(avgAll)} incl. zero weeks</span></div>
+    </div>`;
+  }
+  html += '</div>';
+  panel.innerHTML = html;
+  panel.classList.remove('hidden');
+}
+
+// --- Phase alert ---
+function renderPhaseAlert() {
+  const el = document.getElementById('phaseAlert');
+  if (!el) return;
+  if (!isOnline) { el.classList.add('hidden'); return; }
+
+  const filtered = getFilteredEntries();
+  const billableJobCodes = [...new Set(filtered.filter(e => !e.nonBillable).map(e => e.jobUpper))];
+
+  const noRecord = [];    // in timecard, not in CORE_Projects at all
+  const noPhases = [];    // in CORE_Projects but no resolvable phase data
+
+  for (const code of billableJobCodes) {
+    const proj = coreProjects[code];
+    if (!proj) { noRecord.push(code); continue; }
+    if (!proj.phases || proj.phases.length === 0) { noPhases.push(proj.displayName || code); continue; }
+    // Non-standard name check removed — phases now built empirically
+  }
+
+  const hasIssues = noRecord.length || noPhases.length;
+  if (!hasIssues) { el.classList.add('hidden'); return; }
+
+  let body = '';
+  if (noRecord.length > 0) {
+    body += `<div style="margin-bottom:4px"><strong>Not found in CORE_Projects</strong> — job codes may not match:</div><div class="phase-alert-codes">${noRecord.join(', ')}</div>`;
+  }
+  if (noPhases.length > 0) {
+    if (body) body += '<div style="margin-top:8px">';
+    body += `<strong>Missing phase data</strong> (no GanttData or addedAt):<div class="phase-alert-codes">${noPhases.join(', ')}</div>`;
+    if (body.includes('margin-top:8px')) body += '</div>';
+  }
+  const title = 'Phase data incomplete — averages may be partial';
+
+  el.innerHTML = `<span class="phase-alert-icon">⚠</span><div class="phase-alert-body"><div class="phase-alert-title">${title}</div>${body}</div><button class="phase-alert-dismiss" onclick="this.closest('.phase-alert').classList.add('hidden')" title="Dismiss">✕</button>`;
+  el.classList.remove('hidden');
+}
+
+// --- Job Code Modal ---
+function showJobCodeModal() {
+  const modal = document.getElementById('jobCodeModal');
+  const body = document.getElementById('jobCodeModalBody');
+
+  // Collect all unique job codes from timecard entries
+  const allCodes = [...new Set(allEntries.filter(e => !e.nonBillable).map(e => e.jobUpper))].sort();
+
+  // Separate into pre-construction and construction
+  const preCon = [], con = [], unknown = [];
+  for (const code of allCodes) {
+    const proj = coreProjects[code];
+    if (!proj) { unknown.push({ code, name: null, value: null, stage: null }); continue; }
+    const valueResult = bestValue(proj);
+    const entry = { code, name: proj.displayName, value: valueResult ? valueResult.value : null, stage: proj.stage };
+    if (proj.stage === 'CA Signed') con.push(entry);
+    else preCon.push(entry);
+  }
+
+  const sortName = (a, b) => (a.name || a.code).localeCompare(b.name || b.code);
+  preCon.sort(sortName); con.sort(sortName); unknown.sort((a,b) => a.code.localeCompare(b.code));
+
+  function renderRows(arr) {
+    return arr.map(e => {
+      const stageLbl = e.stage ? `<span class="jc-stage ${e.stage==='CA Signed'?'ca':'da'}">${e.stage}</span>` : '';
+      const valLbl = e.value ? `<span class="jc-value">${fmtValue(e.value)}</span>` : '';
+      return `<div class="jc-row"><span class="jc-code">${e.code}</span><span class="jc-name">${e.name||'—'}</span>${valLbl}${stageLbl}</div>`;
+    }).join('');
+  }
+
+  let html = '';
+  if (preCon.length) html += `<div class="jc-section-title">Pre-Construction (${preCon.length})</div>${renderRows(preCon)}`;
+  if (con.length) html += `<div class="jc-section-title">Construction (${con.length})</div>${renderRows(con)}`;
+  if (unknown.length) html += `<div class="jc-section-title">Not in CORE_Projects (${unknown.length})</div>${renderRows(unknown)}`;
+  if (!html) html = '<div style="color:var(--text-muted);padding:20px 0;text-align:center">No billable job codes found in loaded timecards.</div>';
+
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+function copyJobCodeList() {
+  const rows = document.querySelectorAll('#jobCodeModalBody .jc-row');
+  let txt = '';
+  let section = '';
+  const sectionEls = document.querySelectorAll('#jobCodeModalBody .jc-section-title');
+  // Build plain text version
+  document.querySelectorAll('#jobCodeModalBody .jc-section-title, #jobCodeModalBody .jc-row').forEach(el => {
+    if (el.classList.contains('jc-section-title')) {
+      txt += '\n' + el.textContent.trim() + '\n' + '-'.repeat(30) + '\n';
+    } else {
+      const code = el.querySelector('.jc-code')?.textContent || '';
+      const name = el.querySelector('.jc-name')?.textContent || '';
+      const val = el.querySelector('.jc-value')?.textContent || '';
+      txt += `${code.padEnd(14)}${name.padEnd(30)}${val}\n`;
+    }
+  });
+  navigator.clipboard?.writeText(txt.trim()).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = txt.trim(); ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(ta);
+  });
+}
+
+// --- Copy ---
+function copyToClipboard(text) { if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(()=>{},()=>fbCopy(text)); else fbCopy(text); }
+function fbCopy(text) { const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch{}document.body.removeChild(ta); }
+function copyAllGrids() {
+  let tsv = '';
+  for (const jobUpper of allBillableJobs()) { const data=buildProjectData(jobUpper); if(!data.weeks.length)continue; const proj=coreProjects[jobUpper]; const lbl=proj?proj.displayName||jobUpper:jobUpper; tsv+=`${lbl}\nDesigner\t${data.weeks.map(formatWeekLabel).join('\t')}\tTotal\n`; for(const d of data.designers){tsv+=shortName(d);for(const w of data.weeks)tsv+=`\t${data.grid[d][w]||''}`;tsv+=`\t${data.designerTotals[d]||''}\n`;}tsv+='Total';let g=0;for(const w of data.weeks){const h=data.weekTotals[w]||0;g+=h;tsv+=`\t${h}`;}tsv+=`\t${g}\n\n`;}
+  copyToClipboard(tsv); showToast('Copied');
+}
+function clearHistory() {
+  if (!confirm('Clear all stored data? Cannot be undone.')) return;
+  allEntries=[]; loadedFiles=[];
+  saveToCache(); saveFilesToCache();
+  // Note: does not delete from SharePoint — use file removal for that
+  render(); showToast('Local history cleared');
+}
+
+// --- File handling ---
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', () => { handleFiles(fileInput.files); fileInput.value = ''; });
+
+async function handleFiles(files) {
+  let processed = 0, newCount = 0;
+  for (const file of files) {
+    if (loadedFiles.includes(file.name)) { showToast(`${file.name} already loaded`); continue; }
+    const buf = await file.arrayBuffer();
+    try {
+      const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+      const parsed = parseTimecardFile(wb, file.name);
+      const newOnes = dedup(allEntries, parsed);
+      allEntries = allEntries.concat(newOnes);
+      newCount += newOnes.length;
+      loadedFiles.push(file.name);
+      if (isOnline && newOnes.length > 0) await writeEntriesToSharePoint(newOnes);
+      else saveToCache();
+      saveFilesToCache();
+      processed++;
+    } catch (err) { console.error(err); showToast(`Error: ${file.name}`); processed++; }
+  }
+  render();
+  if (newCount > 0) showToast(`Added ${newCount} entries from ${processed} file${processed>1?'s':''}`);
+}
+
+// --- Init ---
+initMsal();
+</script>
+<div id="jobCodeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:10px;max-width:640px;width:90%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="padding:18px 20px 14px;border-bottom:1px solid #e8e3da;display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-family:'Swear Text',serif;font-size:17px;color:#1f2e3e">Job Code Directory</div>
+      <button onclick="document.getElementById('jobCodeModal').style.display='none'" style="background:none;border:none;font-size:20px;color:#aaa;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div id="jobCodeModalBody" style="overflow-y:auto;padding:18px 20px;flex:1;font-size:12px;"></div>
+    <div style="padding:12px 20px;border-top:1px solid #e8e3da;display:flex;justify-content:flex-end;gap:8px;">
+      <button onclick="copyJobCodeList()" class="file-btn">Copy</button>
+      <button onclick="document.getElementById('jobCodeModal').style.display='none'" class="file-btn">Close</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
