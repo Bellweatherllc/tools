@@ -189,7 +189,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v18</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v19</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -201,7 +201,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v18</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v19</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -452,82 +452,117 @@ async function fetchCoreProjects() {
           jobCode,
           clientName: f.ClientName || '',
           projectName: f.ProjectName || '',
-          displayName: f.ProjectName || f.ClientName || f.JobCode,
-          // Value: prefer CaValue (most accurate once signed), fall back through estimates
+          displayName: f.ProjectName || f.ClientName || jobCode,
           estimatedValue: f.EstimatedProjectValue || '',
           caValue: f.CaValue || null,
           budgetLow: f.BudgetLow || null,
           budgetHigh: f.BudgetHigh || null,
           targetInvestment: f.TargetInvestmentAmount || null,
+          caSigningDate: f.CASigningDate ? f.CASigningDate.slice(0, 10) : null,
           stage,
           designerName: f.DesignerName || '',
           ganttData,
-          phases: ganttData ? resolvePhases(ganttData) : [],
+          phases: [], // built empirically after all entries loaded
         };
       }
       url = data['@odata.nextLink'] || null;
     }
     coreProjects = map;
     console.log(`[CORE_Projects] Loaded ${Object.keys(map).length} projects`);
+    buildEmpiricalPhases();
   } catch (err) {
     console.warn('[CORE_Projects] Fetch failed, phase data unavailable:', err);
     coreProjects = {};
   }
 }
 
-// Canonical phase names — all variants normalize to these three
-const PHASE_NAME_MAP = {
-  // Phase I variants
-  'initial design':     'Phase I',
-  'phase 1':            'Phase I',
-  'phase one':          'Phase I',
-  'schematic design':   'Phase I',
-  'sd':                 'Phase I',
-  // Plan Detailing variants
-  'plan detailing':     'Plan Detailing',
-  'design development': 'Plan Detailing',
-  'dd':                 'Plan Detailing',
-  'detailed design':    'Plan Detailing',
-  // Construction Design variants
-  'construction design':  'Construction Design',
-  'design production':    'Construction Design',
-  'construction docs':    'Construction Design',
-  'cd':                   'Construction Design',
-  'construction drawings':'Construction Design',
-};
+// Canonical phase names
+const PHASE_I = 'Phase I';
+const PHASE_PD = 'Plan Detailing';
+const PHASE_CD = 'Construction Design';
 
-function normalizePhase(name) {
-  if (!name) return name;
-  const key = name.trim().toLowerCase();
-  return PHASE_NAME_MAP[key] || name; // pass through unknown names unchanged
-}
+// After coreProjects is populated, build empirical phase windows per project
+// using timecard data as the anchor rather than the broken addedAt epoch.
+// Rules:
+//   Phase I          — weeks 1-6 after first timecard entry for this project
+//   Plan Detailing   — week 7 onwards until CASigningDate (exclusive)
+//   Construction Design — CASigningDate onwards
+// If no CASigningDate, Construction Design never starts; Plan Detailing runs to present.
+// durWeeks comes from GanttData designLane phases for display purposes only.
+function buildEmpiricalPhases() {
+  for (const [code, proj] of Object.entries(coreProjects)) {
+    const entries = allEntries.filter(e => e.jobUpper === code && !e.nonBillable && e.week);
+    if (!entries.length) { proj.phases = []; continue; }
 
-// Convert GanttData design phases (week offsets) to calendar date ranges
-function resolvePhases(ganttData) {
-  const phases = [];
-  const addedAt = ganttData.addedAt;
-  if (!addedAt) return phases;
-  const epoch = new Date(addedAt);
-  if (isNaN(epoch)) return phases;
-  const designPhases = ganttData.designLane?.phases;
-  if (!Array.isArray(designPhases)) return phases;
-  for (const ph of designPhases) {
-    if (ph.startWeek == null || !ph.durWeeks) continue;
-    const start = new Date(epoch);
-    start.setDate(start.getDate() + ph.startWeek * 7);
-    const end = new Date(start);
-    end.setDate(end.getDate() + ph.durWeeks * 7);
-    const canonicalName = normalizePhase(ph.name);
+    const weeks = [...new Set(entries.map(e => e.week))].sort();
+    const firstWeek = weeks[0];
+
+    // Phase I: first 6 weeks from first timecard entry
+    const phaseIStart = firstWeek;
+    const phaseIEndDate = new Date(firstWeek + 'T00:00:00');
+    phaseIEndDate.setDate(phaseIEndDate.getDate() + 6 * 7);
+    const phaseIEnd = phaseIEndDate.toISOString().slice(0, 10);
+
+    // Plan Detailing: week 7 until CA signing (or open-ended)
+    const caDate = proj.caSigningDate || null;
+
+    // Construction Design: CA signing date onwards (only if we have a date)
+    const phases = [];
+
+    // Get planned durWeeks from GanttData if available
+    const ganttPhases = proj.ganttData?.designLane?.phases || [];
+    const durOf = name => {
+      // Find matching phase by canonical name
+      const gp = ganttPhases.find(p => {
+        const n = p.name?.trim().toLowerCase();
+        if (name === PHASE_I) return ['phase i','phase 1','initial design','schematic design'].includes(n);
+        if (name === PHASE_PD) return ['plan detailing','design development','detailed design'].includes(n);
+        if (name === PHASE_CD) return ['construction design','design production','construction docs'].includes(n) && !p.isDesignProd;
+        return false;
+      });
+      return gp?.durWeeks || null;
+    };
+
     phases.push({
-      name: canonicalName,
-      rawName: ph.name, // preserve original for diagnostics
-      startDate: start.toISOString().slice(0, 10),
-      endDate: end.toISOString().slice(0, 10),
-      durWeeks: ph.durWeeks,
-      plannedHrsPerWeek: ph.hoursPerWeek || null,
+      name: PHASE_I,
+      rawName: PHASE_I,
+      startDate: phaseIStart,
+      endDate: phaseIEnd,
+      durWeeks: durOf(PHASE_I) || 6,
     });
+
+    if (caDate) {
+      // Plan Detailing runs from end of Phase I to CA signing
+      if (phaseIEnd < caDate) {
+        phases.push({
+          name: PHASE_PD,
+          rawName: PHASE_PD,
+          startDate: phaseIEnd,
+          endDate: caDate,
+          durWeeks: durOf(PHASE_PD) || 16,
+        });
+      }
+      // Construction Design from CA signing onwards
+      phases.push({
+        name: PHASE_CD,
+        rawName: PHASE_CD,
+        startDate: caDate,
+        endDate: '9999-12-31', // open-ended
+        durWeeks: durOf(PHASE_CD) || null,
+      });
+    } else {
+      // No CA date — Plan Detailing runs open-ended from end of Phase I
+      phases.push({
+        name: PHASE_PD,
+        rawName: PHASE_PD,
+        startDate: phaseIEnd,
+        endDate: '9999-12-31',
+        durWeeks: durOf(PHASE_PD) || 16,
+      });
+    }
+
+    proj.phases = phases;
   }
-  return phases;
 }
 
 // Given a week string (YYYY-MM-DD Monday), return the phase name or null
@@ -1295,23 +1330,15 @@ function renderPhaseAlert() {
 
   const noRecord = [];    // in timecard, not in CORE_Projects at all
   const noPhases = [];    // in CORE_Projects but no resolvable phase data
-  const badNames = [];    // projects with non-standard phase names (after normalization, rawName differs)
 
   for (const code of billableJobCodes) {
     const proj = coreProjects[code];
     if (!proj) { noRecord.push(code); continue; }
     if (!proj.phases || proj.phases.length === 0) { noPhases.push(proj.displayName || code); continue; }
-    // Check for non-standard names
-    const nonStandard = proj.phases.filter(ph => ph.rawName && ph.rawName !== ph.name);
-    if (nonStandard.length) {
-      badNames.push({
-        project: proj.displayName || code,
-        issues: nonStandard.map(ph => `"${ph.rawName}" → "${ph.name}"`),
-      });
-    }
+    // Non-standard name check removed — phases now built empirically
   }
 
-  const hasIssues = noRecord.length || noPhases.length || badNames.length;
+  const hasIssues = noRecord.length || noPhases.length;
   if (!hasIssues) { el.classList.add('hidden'); return; }
 
   let body = '';
@@ -1323,17 +1350,7 @@ function renderPhaseAlert() {
     body += `<strong>Missing phase data</strong> (no GanttData or addedAt):<div class="phase-alert-codes">${noPhases.join(', ')}</div>`;
     if (body.includes('margin-top:8px')) body += '</div>';
   }
-  if (badNames.length > 0) {
-    if (body) body += '<div style="margin-top:8px"></div>';
-    body += `<div style="margin-top:8px"><strong>Non-standard phase names</strong> — auto-corrected in this tool, but fix in Pipeline for consistency:</div>`;
-    for (const b of badNames) {
-      body += `<div class="phase-alert-codes" style="margin-top:3px"><em>${b.project}:</em> ${b.issues.join(', ')}</div>`;
-    }
-  }
-
-  const title = badNames.length && !noRecord.length && !noPhases.length
-    ? 'Phase name inconsistencies detected — auto-corrected here, fix Pipeline to resolve'
-    : 'Phase data incomplete — averages may be partial';
+  const title = 'Phase data incomplete — averages may be partial';
 
   el.innerHTML = `<span class="phase-alert-icon">⚠</span><div class="phase-alert-body"><div class="phase-alert-title">${title}</div>${body}</div><button class="phase-alert-dismiss" onclick="this.closest('.phase-alert').classList.add('hidden')" title="Dismiss">✕</button>`;
   el.classList.remove('hidden');
