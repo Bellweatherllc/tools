@@ -189,7 +189,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v17</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v18</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -201,7 +201,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v17</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v18</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -475,6 +475,33 @@ async function fetchCoreProjects() {
   }
 }
 
+// Canonical phase names — all variants normalize to these three
+const PHASE_NAME_MAP = {
+  // Phase I variants
+  'initial design':     'Phase I',
+  'phase 1':            'Phase I',
+  'phase one':          'Phase I',
+  'schematic design':   'Phase I',
+  'sd':                 'Phase I',
+  // Plan Detailing variants
+  'plan detailing':     'Plan Detailing',
+  'design development': 'Plan Detailing',
+  'dd':                 'Plan Detailing',
+  'detailed design':    'Plan Detailing',
+  // Construction Design variants
+  'construction design':  'Construction Design',
+  'design production':    'Construction Design',
+  'construction docs':    'Construction Design',
+  'cd':                   'Construction Design',
+  'construction drawings':'Construction Design',
+};
+
+function normalizePhase(name) {
+  if (!name) return name;
+  const key = name.trim().toLowerCase();
+  return PHASE_NAME_MAP[key] || name; // pass through unknown names unchanged
+}
+
 // Convert GanttData design phases (week offsets) to calendar date ranges
 function resolvePhases(ganttData) {
   const phases = [];
@@ -490,12 +517,14 @@ function resolvePhases(ganttData) {
     start.setDate(start.getDate() + ph.startWeek * 7);
     const end = new Date(start);
     end.setDate(end.getDate() + ph.durWeeks * 7);
+    const canonicalName = normalizePhase(ph.name);
     phases.push({
-      name: ph.name,
+      name: canonicalName,
+      rawName: ph.name, // preserve original for diagnostics
       startDate: start.toISOString().slice(0, 10),
       endDate: end.toISOString().slice(0, 10),
       durWeeks: ph.durWeeks,
-      plannedHrsPerWeek: ph.hoursPerWeek || null, // Pipeline's planned hrs/wk if set
+      plannedHrsPerWeek: ph.hoursPerWeek || null,
     });
   }
   return phases;
@@ -1264,30 +1293,49 @@ function renderPhaseAlert() {
   const filtered = getFilteredEntries();
   const billableJobCodes = [...new Set(filtered.filter(e => !e.nonBillable).map(e => e.jobUpper))];
 
-  const noRecord = [];   // in timecard, not in CORE_Projects at all
-  const noPhases = [];   // in CORE_Projects but no resolvable phase data
+  const noRecord = [];    // in timecard, not in CORE_Projects at all
+  const noPhases = [];    // in CORE_Projects but no resolvable phase data
+  const badNames = [];    // projects with non-standard phase names (after normalization, rawName differs)
 
   for (const code of billableJobCodes) {
     const proj = coreProjects[code];
     if (!proj) { noRecord.push(code); continue; }
-    if (!proj.phases || proj.phases.length === 0) noPhases.push(proj.displayName || code);
+    if (!proj.phases || proj.phases.length === 0) { noPhases.push(proj.displayName || code); continue; }
+    // Check for non-standard names
+    const nonStandard = proj.phases.filter(ph => ph.rawName && ph.rawName !== ph.name);
+    if (nonStandard.length) {
+      badNames.push({
+        project: proj.displayName || code,
+        issues: nonStandard.map(ph => `"${ph.rawName}" → "${ph.name}"`),
+      });
+    }
   }
 
-  if (noRecord.length === 0 && noPhases.length === 0) {
-    el.classList.add('hidden'); return;
-  }
+  const hasIssues = noRecord.length || noPhases.length || badNames.length;
+  if (!hasIssues) { el.classList.add('hidden'); return; }
 
   let body = '';
   if (noRecord.length > 0) {
-    body += `<div>Not found in CORE_Projects — job codes may not match:</div><div class="phase-alert-codes">${noRecord.join(', ')}</div>`;
+    body += `<div style="margin-bottom:4px"><strong>Not found in CORE_Projects</strong> — job codes may not match:</div><div class="phase-alert-codes">${noRecord.join(', ')}</div>`;
   }
   if (noPhases.length > 0) {
-    if (body) body += '<div style="margin-top:6px">';
-    body += `<div>In CORE_Projects but missing phase data (no GanttData or addedAt):</div><div class="phase-alert-codes">${noPhases.join(', ')}</div>`;
-    if (body.includes('margin-top')) body += '</div>';
+    if (body) body += '<div style="margin-top:8px">';
+    body += `<strong>Missing phase data</strong> (no GanttData or addedAt):<div class="phase-alert-codes">${noPhases.join(', ')}</div>`;
+    if (body.includes('margin-top:8px')) body += '</div>';
+  }
+  if (badNames.length > 0) {
+    if (body) body += '<div style="margin-top:8px"></div>';
+    body += `<div style="margin-top:8px"><strong>Non-standard phase names</strong> — auto-corrected in this tool, but fix in Pipeline for consistency:</div>`;
+    for (const b of badNames) {
+      body += `<div class="phase-alert-codes" style="margin-top:3px"><em>${b.project}:</em> ${b.issues.join(', ')}</div>`;
+    }
   }
 
-  el.innerHTML = `<span class="phase-alert-icon">⚠</span><div class="phase-alert-body"><div class="phase-alert-title">Phase data incomplete — averages may be partial</div>${body}</div><button class="phase-alert-dismiss" onclick="this.closest('.phase-alert').classList.add('hidden')" title="Dismiss">✕</button>`;
+  const title = badNames.length && !noRecord.length && !noPhases.length
+    ? 'Phase name inconsistencies detected — auto-corrected here, fix Pipeline to resolve'
+    : 'Phase data incomplete — averages may be partial';
+
+  el.innerHTML = `<span class="phase-alert-icon">⚠</span><div class="phase-alert-body"><div class="phase-alert-title">${title}</div>${body}</div><button class="phase-alert-dismiss" onclick="this.closest('.phase-alert').classList.add('hidden')" title="Dismiss">✕</button>`;
   el.classList.remove('hidden');
 }
 

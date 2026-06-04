@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v583</title>
+<title>BW Project Pipeline — v584</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2416,7 +2416,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v583</div>
+    <div class="auth-version" id="authVersionBadge">v584</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2435,7 +2435,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v583</div>
+  <div class="proto-badge" id="versionBadge">v584</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3629,10 +3629,32 @@ document.addEventListener('pointerdown',e=>{
   if(jumpOpen&&!JUMP_POPUP.contains(e.target)&&!e.target.closest('[data-jump-btn]'))closeJumpPopup();
 });
 
+// ════════════════════════════════════════════════  PHASE NAME NORMALIZATION
+// Canonical design lane phase names and their accepted aliases.
+// Any project loaded from SharePoint with an old name gets renamed here and
+// marked dirty so the correction propagates back to SP on the next save.
+const DESIGN_PHASE_NORM=[
+  [/^(initial design|phase\s*1|phase\s*one|schematic design)$/i,       'Phase I'],
+  [/^(design development|detailed design)$/i,                           'Plan Detailing'],
+  [/^(design production|construction docs?|construction drawings?)$/i,  'Construction Design'],
+];
+function normalizeDesignPhaseName(ph){
+  // Never rename the isDesignProd production-support phase — the flag is authoritative
+  if(ph.isDesignProd) return false;
+  for(const[re,canonical]of DESIGN_PHASE_NORM){
+    if(re.test(ph.name)&&ph.name!==canonical){ ph.name=canonical; return true; }
+  }
+  return false;
+}
+
 // ════════════════════════════════════════════════  PER-PHASE STARTWEEK INIT
 function initPhaseStartWeeks(proj){
   const phases=proj.designLane.phases;
-  // Backfill isDesignProd flag on any "Design Production" phase from older data that lacks it
+  // 1. Normalize any non-canonical phase names from older GanttData
+  let renamed=false;
+  phases.forEach(ph=>{ if(normalizeDesignPhaseName(ph)) renamed=true; });
+  if(renamed) markDirty(proj); // persist corrected names to SharePoint
+  // 2. Backfill isDesignProd flag on any "Design Production" phase from older data that lacks it
   // Without this, the phase passes calcTally's !isDesignProd filter and inflates designer hours
   phases.forEach(ph=>{ if(!ph.isDesignProd&&/design production/i.test(ph.name)) ph.isDesignProd=true; });
   // Ensure Design Production phase exists
@@ -7291,8 +7313,8 @@ function rebuildSection(sType){
 
 function buildAll(){
   PROJECTS.forEach(proj=>initPhaseStartWeeks(proj));
-  // Auto-advance statuses based on milestone dates
-  if(autoAdvanceStatus()) triggerSave();
+  // Auto-advance statuses based on milestone dates; also save if normalization renamed any phases
+  if(autoAdvanceStatus()||_dirtyProjects.size>0) triggerSave();
   // Preserve per-person eyeball state before rebuild
   const personEyeState=[];
   document.querySelectorAll('.person-eye-btn.is-screened').forEach(btn=>{
