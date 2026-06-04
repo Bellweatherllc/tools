@@ -94,6 +94,8 @@
   .hours-grid tbody td.has-hours{background:var(--primary-bg);color:var(--primary);font-weight:500;}
   /* Trend overlay */
   .trend-row-wrap{position:relative;}
+  .combined-sparkline-row td{height:72px;background:rgba(59,95,160,.04);}
+  .combined-sparkline-row td:first-child{vertical-align:middle;}
   .trend-svg-wrap{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:2;}
   .hours-grid tbody td .cell-num{position:relative;z-index:3;}
   .hours-grid tbody tr.nonbillable-row td:first-child{color:var(--text-light);font-style:italic;}
@@ -226,7 +228,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v26</span></h1>
+  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v27</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -238,7 +240,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v26</span></h1>
+        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v27</span></h1>
       </div>
       <div class="subtitle">Hours by project, phase, and designer</div>
     </div>
@@ -268,6 +270,7 @@
     <div class="month-filter" id="monthFilter"></div>
     <div id="phaseAlert" class="phase-alert hidden"></div>
     <div id="designerSections"></div>
+    <div id="scatterChart" class="combined-chart-wrap hidden"></div>
     <div id="combinedChart" class="combined-chart-wrap hidden"></div>
     <div class="actions-bar">
       <button class="btn btn-primary" onclick="copyAllGrids()">Copy All Grids (TSV)</button>
@@ -900,8 +903,9 @@ function drawTrendOverlays(table, numWeeks, globalMax) {
 
     const rowRect = tr.getBoundingClientRect();
     const naturalH = rowRect.height;
-    const h = naturalH; // constrained to row height for standardized comparison
-    const pad = 4;
+    const isCombined = tr.dataset.isCombined === '1';
+    const h = naturalH;
+    const pad = isCombined ? 6 : 4;
     const ph = h - pad * 2;
     const sm = globalMax || maxVal; // use globalMax for standardized scale if provided
 
@@ -925,9 +929,11 @@ function drawTrendOverlays(table, numWeeks, globalMax) {
       }
     }
 
-    const strokeW = isTotal ? 2 : 1.5;
-    const fillOpacity = isTotal ? 0 : 0.10;
-    const dotR = isTotal ? 2.5 : 2;
+    const isCombinedRow = tr.dataset.isCombined === '1';
+    const strokeW = isCombinedRow ? 2.2 : (isTotal ? 1.5 : 1);
+    const fillOpacity = isCombinedRow ? 0.18 : (isTotal ? 0 : 0.05);
+    const dotR = isCombinedRow ? 2.5 : (isTotal ? 2 : 1.5);
+    const strokeOpacity = isCombinedRow ? 0.85 : 0.35;
 
     let svgContent = '';
     if (path) {
@@ -935,7 +941,7 @@ function drawTrendOverlays(table, numWeeks, globalMax) {
         const fillPath = path + ` L ${pts[pts.length-1].x},${h-pad} L ${pts[0].x},${h-pad} Z`;
         svgContent += `<path d="${fillPath}" fill="${color}" opacity="${fillOpacity}"/>`;
       }
-      svgContent += `<path d="${path}" fill="none" stroke="${color}" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>`;
+      svgContent += `<path d="${path}" fill="none" stroke="${color}" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" opacity="${strokeOpacity}"/>`;
     }
     svgContent += pts.map((p, i) => vals[i] > 0
       ? `<circle cx="${p.x}" cy="${p.y}" r="${dotR}" fill="${color}" opacity="0.7"/>`
@@ -953,6 +959,29 @@ function drawTrendOverlays(table, numWeeks, globalMax) {
     tr.style.position = 'relative';
     tr.appendChild(svg);
   });
+
+  // Phase divider vertical lines (drawn after all sparklines so they appear on top)
+  const transitions = JSON.parse(table.dataset.phaseTransitions || '[]');
+  if (transitions.length && rows.length) {
+    const firstRow = rows[0];
+    const allCells2 = firstRow.querySelectorAll('td');
+    const weekCells2 = Array.from(allCells2).slice(1, 1 + numWeeks);
+    if (weekCells2.length && transitions.length) {
+      const tableRect2 = table.getBoundingClientRect();
+      const totalTableH = table.offsetHeight;
+      transitions.forEach(colIdx => {
+        if (colIdx <= 0 || colIdx >= weekCells2.length) return;
+        const cellA = weekCells2[colIdx - 1].getBoundingClientRect();
+        const cellB = weekCells2[colIdx].getBoundingClientRect();
+        const divX = (cellA.right + cellB.left) / 2 - tableRect2.left;
+        // Draw a single absolutely-positioned div line across the table
+        const divEl = document.createElement('div');
+        divEl.style.cssText = `position:absolute;top:0;left:${divX}px;width:1.5px;height:${totalTableH}px;background:rgba(80,80,80,.18);pointer-events:none;z-index:3;`;
+        table.style.position = 'relative';
+        table.appendChild(divEl);
+      });
+    }
+  }
 }
 
 // ── Scatter + Combined chart orchestrator ──────────────────────────────────
@@ -976,314 +1005,357 @@ function renderAllScattersAndCombined(jobs) {
     if (table) requestAnimationFrame(() => drawTrendOverlays(table, data.weeks.length, globalMaxHrsPerWk));
   }
 
-  // Per-project scatter
-  for (const { jobUpper, data } of allProjectData) {
-    renderProjectScatter(jobUpper, data, allProjectData);
-  }
+  // Shared interactive scatter (all projects, one chart)
+  renderInteractiveScatter(allProjectData);
 
-  // Combined bump chart
+  // Combined stacked streamgraph
   renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk);
 }
 
 // ── Per-project scatter ────────────────────────────────────────────────────
-function renderProjectScatter(jobUpper, data, allProjectData) {
-  const el = document.getElementById(`scatter_${jobUpper}`);
-  if (!el) return;
-  const proj = coreProjects[jobUpper];
-  const vr = proj ? bestValue(proj) : null;
+function renderInteractiveScatter(allProjectData) {
+  const wrap = document.getElementById('scatterChart');
+  if (!wrap) return;
 
-  // Axis: x = project value, y = total hours
-  const allWithValue = allProjectData
-    .map(({ jobUpper: ju, data: d }) => {
-      const p = coreProjects[ju];
-      const v = p ? bestValue(p) : null;
-      return { jobUpper: ju, hours: d.totalHours, value: v ? v.value : null, label: p ? (p.displayName || ju) : ju };
-    })
-    .filter(p => p.value && p.hours);
+  const allWithValue = allProjectData.map(({ jobUpper, data }) => {
+    const proj = coreProjects[jobUpper];
+    const vr = proj ? bestValue(proj) : null;
+    const designers = data.designers;
+    return { jobUpper, hours: data.totalHours, value: vr ? vr.value : null,
+             label: proj ? (proj.displayName || jobUpper) : jobUpper,
+             stage: proj ? proj.stage : null,
+             designerNames: designers.map(d => shortName(d)).join(', '), vr };
+  }).filter(p => p.value && p.hours);
 
-  if (!allWithValue.length || (!vr && !allWithValue.find(p => p.jobUpper === jobUpper))) {
-    el.innerHTML = '<div class="proj-scatter-title">Hours vs Value</div><div style="font-size:11px;color:var(--text-muted);padding:4px 0">No project value on record — add it in CORE Projects Manager.</div>';
-    return;
-  }
+  if (!allWithValue.length) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
 
-  const W = 320, H = 200, padL = 44, padR = 12, padT = 16, padB = 36;
+  const W = Math.min(760, (wrap.offsetWidth || 700) - 36);
+  const H = 300;
+  const padL = 50, padR = 20, padT = 20, padB = 42;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-
   const maxVal = Math.max(...allWithValue.map(p => p.value));
   const maxHrs = Math.max(...allWithValue.map(p => p.hours));
   const sx = v => padL + (v / maxVal) * plotW;
   const sy = h => padT + plotH - (h / maxHrs) * plotH;
-
   const ns = 'http://www.w3.org/2000/svg';
+
+  // Tooltip div
+  let tipEl = document.getElementById('scatter-tip');
+  if (!tipEl) {
+    tipEl = document.createElement('div');
+    tipEl.id = 'scatter-tip';
+    tipEl.style.cssText = 'position:fixed;background:#1f2e3e;color:#fff;font-size:11px;padding:8px 12px;border-radius:6px;pointer-events:none;display:none;z-index:9999;line-height:1.6;max-width:220px;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+    document.body.appendChild(tipEl);
+  }
+
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('width', W); svg.setAttribute('height', H);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.style.cssText = 'display:block;cursor:crosshair;';
 
-  // Grid
+  // Grid + axes
   [0, 0.25, 0.5, 0.75, 1].forEach(t => {
     const gl = document.createElementNS(ns, 'line');
     gl.setAttribute('x1', padL); gl.setAttribute('x2', padL + plotW);
-    gl.setAttribute('y1', padT + plotH * (1 - t)); gl.setAttribute('y2', padT + plotH * (1 - t));
-    gl.setAttribute('stroke', '#e8e4dc'); gl.setAttribute('stroke-width', '1');
-    svg.appendChild(gl);
+    gl.setAttribute('y1', padT + plotH * (1-t)); gl.setAttribute('y2', padT + plotH * (1-t));
+    gl.setAttribute('stroke', '#e8e4dc'); gl.setAttribute('stroke-width', '1'); svg.appendChild(gl);
     const vl = document.createElementNS(ns, 'line');
-    vl.setAttribute('x1', padL + plotW * t); vl.setAttribute('x2', padL + plotW * t);
+    vl.setAttribute('x1', padL + plotW*t); vl.setAttribute('x2', padL + plotW*t);
     vl.setAttribute('y1', padT); vl.setAttribute('y2', padT + plotH);
-    vl.setAttribute('stroke', '#e8e4dc'); vl.setAttribute('stroke-width', '1');
-    svg.appendChild(vl);
-    // Y axis labels
+    vl.setAttribute('stroke', '#e8e4dc'); vl.setAttribute('stroke-width', '1'); svg.appendChild(vl);
     const yt = document.createElementNS(ns, 'text');
-    yt.setAttribute('x', padL - 5); yt.setAttribute('y', padT + plotH * (1 - t) + 3.5);
-    yt.setAttribute('text-anchor', 'end'); yt.setAttribute('font-size', '8'); yt.setAttribute('fill', '#aaa');
-    yt.textContent = Math.round(maxHrs * t) + 'h';
-    svg.appendChild(yt);
+    yt.setAttribute('x', padL-5); yt.setAttribute('y', padT + plotH*(1-t) + 3.5);
+    yt.setAttribute('text-anchor','end'); yt.setAttribute('font-size','8'); yt.setAttribute('fill','#aaa');
+    yt.textContent = Math.round(maxHrs*t)+'h'; svg.appendChild(yt);
+    const xt = document.createElementNS(ns, 'text');
+    xt.setAttribute('x', padL + plotW*t); xt.setAttribute('y', H-8);
+    xt.setAttribute('text-anchor','middle'); xt.setAttribute('font-size','8'); xt.setAttribute('fill','#aaa');
+    const vStr = maxVal*t >= 1000000 ? '$'+(maxVal*t/1e6).toFixed(1)+'M' : '$'+Math.round(maxVal*t/1000)+'k';
+    xt.textContent = t===0?'':vStr; svg.appendChild(xt);
   });
 
   // Axis labels
   const xA = document.createElementNS(ns, 'text');
-  xA.setAttribute('x', padL + plotW / 2); xA.setAttribute('y', H - 6);
-  xA.setAttribute('text-anchor', 'middle'); xA.setAttribute('font-size', '9');
-  xA.setAttribute('fill', '#999'); xA.setAttribute('font-weight', '600');
+  xA.setAttribute('x', padL + plotW/2); xA.setAttribute('y', H-2);
+  xA.setAttribute('text-anchor','middle'); xA.setAttribute('font-size','9');
+  xA.setAttribute('fill','#888'); xA.setAttribute('font-weight','600');
   xA.textContent = 'Project Value →'; svg.appendChild(xA);
+  const yA = document.createElementNS(ns, 'text');
+  yA.setAttribute('x', 10); yA.setAttribute('y', padT + plotH/2);
+  yA.setAttribute('text-anchor','middle'); yA.setAttribute('font-size','9');
+  yA.setAttribute('fill','#888'); yA.setAttribute('font-weight','600');
+  yA.setAttribute('transform', `rotate(-90,10,${padT+plotH/2})`);
+  yA.textContent = '↑ Total Hours'; svg.appendChild(yA);
 
-  // Trend line (linear regression across all projects with values)
+  // Trend line
   if (allWithValue.length >= 3) {
-    const xs = allWithValue.map(p => p.value), ys = allWithValue.map(p => p.hours);
-    const n = xs.length, mx = xs.reduce((a, b) => a + b) / n, my = ys.reduce((a, b) => a + b) / n;
-    const slope = xs.map((x, i) => (x - mx) * (ys[i] - my)).reduce((a, b) => a + b) /
-                  xs.map(x => (x - mx) ** 2).reduce((a, b) => a + b);
-    const intercept = my - slope * mx;
+    const xs = allWithValue.map(p=>p.value), ys = allWithValue.map(p=>p.hours);
+    const n = xs.length, mx = xs.reduce((a,b)=>a+b)/n, my = ys.reduce((a,b)=>a+b)/n;
+    const slope = xs.map((x,i)=>(x-mx)*(ys[i]-my)).reduce((a,b)=>a+b) / xs.map(x=>(x-mx)**2).reduce((a,b)=>a+b);
+    const ic = my - slope*mx;
     const tl = document.createElementNS(ns, 'line');
-    tl.setAttribute('x1', sx(0)); tl.setAttribute('y1', sy(Math.max(0, intercept)));
-    tl.setAttribute('x2', sx(maxVal)); tl.setAttribute('y2', sy(Math.max(0, slope * maxVal + intercept)));
-    tl.setAttribute('stroke', '#c9a84c'); tl.setAttribute('stroke-width', '1');
-    tl.setAttribute('stroke-dasharray', '3,3'); tl.setAttribute('opacity', '0.6');
+    tl.setAttribute('x1',sx(0)); tl.setAttribute('y1',sy(Math.max(0,ic)));
+    tl.setAttribute('x2',sx(maxVal)); tl.setAttribute('y2',sy(Math.max(0,slope*maxVal+ic)));
+    tl.setAttribute('stroke','#c9a84c'); tl.setAttribute('stroke-width','1');
+    tl.setAttribute('stroke-dasharray','4,3'); tl.setAttribute('opacity','0.55');
     svg.appendChild(tl);
   }
 
-  // All project dots (dimmed)
+  // Dots — each interactive
   let ci = 0;
+  const dotEls = [];
   for (const p of allWithValue) {
-    const isSelf = p.jobUpper === jobUpper;
     const color = CHART_COLORS[ci++ % CHART_COLORS.length];
+    const x = sx(p.value), y = sy(p.hours);
+    const isCA = p.stage === 'CA Signed';
+    // Hit area (larger invisible circle for easier hover)
+    const hit = document.createElementNS(ns, 'circle');
+    hit.setAttribute('cx', x); hit.setAttribute('cy', y); hit.setAttribute('r', 14);
+    hit.setAttribute('fill', 'transparent'); hit.setAttribute('data-idx', dotEls.length);
+    svg.appendChild(hit);
     const dot = document.createElementNS(ns, 'circle');
-    dot.setAttribute('cx', sx(p.value)); dot.setAttribute('cy', sy(p.hours));
-    dot.setAttribute('r', isSelf ? 7 : 4);
-    dot.setAttribute('fill', color);
-    dot.setAttribute('opacity', isSelf ? '0.92' : '0.30');
-    dot.setAttribute('stroke', isSelf ? 'white' : 'none');
-    dot.setAttribute('stroke-width', '1.5');
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+    dot.setAttribute('r', isCA ? 8 : 6);
+    dot.setAttribute('fill', color); dot.setAttribute('opacity', isCA ? '0.90' : '0.70');
+    dot.setAttribute('stroke', 'white'); dot.setAttribute('stroke-width', '1.5');
+    dot.setAttribute('style', 'transition:r .1s,opacity .1s;');
     svg.appendChild(dot);
+    // Label (project name, truncated)
+    const lbl = document.createElementNS(ns, 'text');
+    const lblText = p.label.length > 16 ? p.label.slice(0,15)+'…' : p.label;
+    lbl.setAttribute('x', x+10); lbl.setAttribute('y', y+3);
+    lbl.setAttribute('font-size','9'); lbl.setAttribute('fill','#555'); lbl.setAttribute('font-weight','500');
+    lbl.textContent = lblText; svg.appendChild(lbl);
+    dotEls.push({ dot, hit, p, color });
   }
 
-  // Efficiency ratio for this project
-  const selfPoint = allWithValue.find(p => p.jobUpper === jobUpper);
-  const ratio = selfPoint && selfPoint.value ? (selfPoint.hours / (selfPoint.value / 10000)) : null;
-  const allRatios = allWithValue.map(p => p.value ? p.hours / (p.value / 10000) : null).filter(Boolean).sort((a, b) => a - b);
-  const avgRatio = allRatios.length ? allRatios.reduce((a, b) => a + b) / allRatios.length : null;
-  const fmt = h => h % 1 === 0 ? h : h.toFixed(1);
-  const fmtV = v => v >= 1000000 ? '$' + (v / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M' : '$' + Math.round(v / 1000) + 'k';
+  // Hover via SVG mousemove
+  svg.addEventListener('mousemove', ev => {
+    const svgRect = svg.getBoundingClientRect();
+    const mx = ev.clientX - svgRect.left;
+    const my = ev.clientY - svgRect.top;
+    let closest = null, minDist = 18;
+    for (const { p, dot } of dotEls) {
+      const dx = sx(p.value) - mx, dy = sy(p.hours) - my;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < minDist) { minDist = dist; closest = { p, dot }; }
+    }
+    // Reset all
+    dotEls.forEach(({ dot }) => { dot.setAttribute('r', dot.getAttribute('r') > 7 ? 8 : 6); dot.setAttribute('opacity', dot.getAttribute('r') > 7 ? '0.90':'0.70'); });
+    if (closest) {
+      const { p, dot } = closest;
+      dot.setAttribute('r', '10'); dot.setAttribute('opacity', '1');
+      const ratio = (p.hours / (p.value / 10000)).toFixed(1);
+      const vFmt = p.value >= 1e6 ? '$'+(p.value/1e6).toFixed(2).replace(/\.?0+$/,'')+'M' : '$'+Math.round(p.value/1000)+'k';
+      const hFmt = p.hours % 1 === 0 ? p.hours : p.hours.toFixed(1);
+      tipEl.innerHTML = `<div style="font-weight:700;margin-bottom:4px">${p.label}</div><div>${vFmt} &nbsp;·&nbsp; ${hFmt}h total</div><div style="opacity:.75">${ratio} hrs per $10k</div><div style="opacity:.65;font-size:10px;margin-top:3px">${p.designerNames}</div>${p.stage==='CA Signed'?'<div style="color:#5de3a0;font-size:10px;margin-top:2px">✓ CA Signed</div>':''}`;
+      tipEl.style.display = 'block';
+      tipEl.style.left = (ev.clientX + 16) + 'px';
+      tipEl.style.top = (ev.clientY - 10) + 'px';
+    } else {
+      tipEl.style.display = 'none';
+    }
+  });
+  svg.addEventListener('mouseleave', () => { tipEl.style.display = 'none'; });
 
-  // Meta panel
-  let metaHtml = '';
-  if (vr) metaHtml += `<div class="meta-row"><strong>${fmtV(vr.value)}</strong> <span class="meta-muted">${vr.source}</span></div>`;
-  if (selfPoint) metaHtml += `<div class="meta-row"><strong>${fmt(selfPoint.hours)}h</strong> <span class="meta-muted">total logged</span></div>`;
-  if (ratio !== null) metaHtml += `<div class="meta-row"><strong>${fmt(ratio)}</strong> <span class="meta-muted">hrs per $10k</span></div>`;
-  if (avgRatio !== null) {
-    const vsAvg = ratio !== null ? ratio - avgRatio : null;
-    const vsLabel = vsAvg !== null ? (vsAvg < 0 ? `${fmt(Math.abs(vsAvg))} below avg ✓` : `${fmt(vsAvg)} above avg`) : '';
-    metaHtml += `<div class="meta-row meta-muted">avg ${fmt(avgRatio)} hrs/$10k · ${vsLabel}</div>`;
-  }
-  if (!selfPoint) metaHtml += `<div class="meta-muted">Add project value in CORE Projects Manager to plot this project.</div>`;
+  const avgRatio = allWithValue.length ?
+    allWithValue.map(p => p.hours/(p.value/10000)).reduce((a,b)=>a+b) / allWithValue.length : 0;
 
-  el.innerHTML = '<div class="proj-scatter-title">Hours vs Value — All Projects</div><div class="proj-scatter-wrap"></div>';
-  const wrap = el.querySelector('.proj-scatter-wrap');
+  wrap.innerHTML = '<div class="combined-chart-title">Hours vs Value — All Projects</div><div class="combined-chart-sub">Each dot is one project. Hover for details. Dashed line = trend. Larger dots = CA Signed (complete). Avg efficiency: '+(avgRatio.toFixed(1))+' hrs per $10k.</div>';
   wrap.appendChild(svg);
-  const meta = document.createElement('div');
-  meta.className = 'proj-scatter-meta';
-  meta.innerHTML = metaHtml;
-  wrap.appendChild(meta);
 }
 
-// ── Combined bump chart ────────────────────────────────────────────────────
+// ── Combined stacked streamgraph ───────────────────────────────────────────
 function renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk) {
   const wrap = document.getElementById('combinedChart');
   if (!wrap || !allProjectData.length) return;
 
-  // Collect all unique weeks across all projects
   const allWeeksSet = new Set();
   for (const { data } of allProjectData) data.weeks.forEach(w => allWeeksSet.add(w));
   const allWeeks = [...allWeeksSet].sort();
   if (!allWeeks.length) { wrap.classList.add('hidden'); return; }
   wrap.classList.remove('hidden');
 
-  const LANE_H = 56;     // px per project lane
-  const PAD_L = 140;     // left margin for project labels
-  const PAD_R = 20;
-  const PAD_T = 32;      // top margin for week axis
-  const PAD_B = 24;
-  const COL_W = Math.max(7, Math.min(20, Math.floor((window.innerWidth - PAD_L - PAD_R - 36) / allWeeks.length)));
-  const W = PAD_L + allWeeks.length * COL_W + PAD_R;
-  const H = PAD_T + allProjectData.length * LANE_H + PAD_B;
+  // Compute stacked baselines: for each week, each project stacks on top of previous
+  // Sort projects by peak week for visual stability
+  const projWeekHours = allProjectData.map(({ data }) =>
+    allWeeks.map(w => data.weekTotals[w] || 0)
+  );
+
+  // Stack: baseline[proj][week], topline[proj][week]
+  const baselines = allProjectData.map(() => new Array(allWeeks.length).fill(0));
+  const toplines  = allProjectData.map(() => new Array(allWeeks.length).fill(0));
+  const stackTotals = new Array(allWeeks.length).fill(0);
+  allProjectData.forEach((_, pi) => {
+    allWeeks.forEach((_, wi) => {
+      baselines[pi][wi] = stackTotals[wi];
+      toplines[pi][wi]  = stackTotals[wi] + projWeekHours[pi][wi];
+      stackTotals[wi]   = toplines[pi][wi];
+    });
+  });
+  const overallMax = Math.max(...stackTotals, 1);
+
+  const W_INNER = Math.max(600, (wrap.offsetWidth || 760) - 36);
+  const H_CHART = 300;
+  const PAD_L = 44, PAD_R = 20, PAD_T = 28, PAD_B = 36;
+  const plotW = W_INNER - PAD_L - PAD_R;
+  const plotH = H_CHART - PAD_T - PAD_B;
+  const COL_W = plotW / allWeeks.length;
+
+  const xAt = i => PAD_L + i * COL_W + COL_W / 2;
+  const yAt = h => PAD_T + plotH - (h / overallMax) * plotH;
 
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('width', W); svg.setAttribute('height', H);
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.style.cssText = 'max-width:100%;display:block;';
+  svg.setAttribute('width', W_INNER); svg.setAttribute('height', H_CHART);
+  svg.setAttribute('viewBox', `0 0 ${W_INNER} ${H_CHART}`);
+  svg.style.cssText = 'display:block;max-width:100%;cursor:crosshair;';
 
-  const weekX = w => PAD_L + allWeeks.indexOf(w) * COL_W + COL_W / 2;
-  const sm = globalMaxHrsPerWk || 1;
+  // Build Catmull-Rom path for a series of (x,y) points
+  function catmullPath(pts, t=0.3) {
+    if (pts.length < 2) return null;
+    let d = `M ${pts[0].x},${pts[0].y}`;
+    for (let i = 0; i < pts.length-1; i++) {
+      const p0=pts[Math.max(i-1,0)], p1=pts[i], p2=pts[i+1], p3=pts[Math.min(i+2,pts.length-1)];
+      d += ` C ${p1.x+(p2.x-p0.x)*t},${p1.y+(p2.y-p0.y)*t} ${p2.x-(p3.x-p1.x)*t},${p2.y-(p3.y-p1.y)*t} ${p2.x},${p2.y}`;
+    }
+    return d;
+  }
 
-  // Week axis — tick every 4 weeks
+  // Y axis grid
+  [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+    const y = PAD_T + plotH*(1-t);
+    const gl = document.createElementNS(ns, 'line');
+    gl.setAttribute('x1',PAD_L); gl.setAttribute('x2',PAD_L+plotW);
+    gl.setAttribute('y1',y); gl.setAttribute('y2',y);
+    gl.setAttribute('stroke','rgba(255,255,255,.15)'); gl.setAttribute('stroke-width','1');
+    svg.appendChild(gl);
+    const yt = document.createElementNS(ns, 'text');
+    yt.setAttribute('x',PAD_L-4); yt.setAttribute('y',y+3.5);
+    yt.setAttribute('text-anchor','end'); yt.setAttribute('font-size','8'); yt.setAttribute('fill','rgba(255,255,255,.45)');
+    yt.textContent = Math.round(overallMax*t)+'h'; svg.appendChild(yt);
+  });
+
+  // Week axis ticks
   allWeeks.forEach((w, i) => {
     if (i % 4 !== 0) return;
-    const x = PAD_L + i * COL_W;
+    const x = PAD_L + i*COL_W;
     const tick = document.createElementNS(ns, 'line');
-    tick.setAttribute('x1', x); tick.setAttribute('x2', x);
-    tick.setAttribute('y1', PAD_T - 8); tick.setAttribute('y2', PAD_T - 2);
-    tick.setAttribute('stroke', '#ccc'); tick.setAttribute('stroke-width', '1');
+    tick.setAttribute('x1',x); tick.setAttribute('x2',x);
+    tick.setAttribute('y1',PAD_T+plotH); tick.setAttribute('y2',PAD_T+plotH+4);
+    tick.setAttribute('stroke','rgba(255,255,255,.3)'); tick.setAttribute('stroke-width','1');
     svg.appendChild(tick);
-    const d = new Date(w + 'T00:00:00');
-    const lbl = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const d = new Date(w+'T00:00:00');
+    const lbl = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
     const t = document.createElementNS(ns, 'text');
-    t.setAttribute('x', x); t.setAttribute('y', PAD_T - 10);
-    t.setAttribute('font-size', '8'); t.setAttribute('fill', '#aaa');
-    t.setAttribute('text-anchor', 'middle');
-    t.textContent = lbl; svg.appendChild(t);
+    t.setAttribute('x',x); t.setAttribute('y',PAD_T+plotH+14);
+    t.setAttribute('font-size','8'); t.setAttribute('fill','rgba(255,255,255,.40)');
+    t.setAttribute('text-anchor','middle'); t.textContent=lbl; svg.appendChild(t);
   });
 
-  // Phase color key at top-right
-  const phaseColorMap = { 'Phase I': PHASE_COLORS[0], 'Phase II': PHASE_COLORS[1], 'Phase III': PHASE_COLORS[2] };
-
-  // Per-project lanes
-  allProjectData.forEach(({ jobUpper, data }, pi) => {
-    const laneTop = PAD_T + pi * LANE_H;
-    const laneBot = laneTop + LANE_H;
-    const proj = coreProjects[jobUpper];
-    const color = CHART_COLORS[pi % CHART_COLORS.length];
-
-    // Lane background (alternating)
-    const bg = document.createElementNS(ns, 'rect');
-    bg.setAttribute('x', PAD_L); bg.setAttribute('y', laneTop);
-    bg.setAttribute('width', allWeeks.length * COL_W); bg.setAttribute('height', LANE_H);
-    bg.setAttribute('fill', pi % 2 === 0 ? 'rgba(0,0,0,.025)' : 'rgba(0,0,0,.00)');
-    svg.appendChild(bg);
-
-    // Phase band overlays (light tint behind curve)
-    if (proj && proj.phases) {
-      for (const ph of proj.phases) {
-        const phColor = phaseColorMap[ph.name] || '#ccc';
-        const phWeeks = allWeeks.filter(w => w >= ph.startDate && w < ph.endDate);
-        if (!phWeeks.length) continue;
-        const x0 = PAD_L + allWeeks.indexOf(phWeeks[0]) * COL_W;
-        const x1 = PAD_L + (allWeeks.indexOf(phWeeks[phWeeks.length - 1]) + 1) * COL_W;
-        const phRect = document.createElementNS(ns, 'rect');
-        phRect.setAttribute('x', x0); phRect.setAttribute('y', laneTop);
-        phRect.setAttribute('width', x1 - x0); phRect.setAttribute('height', LANE_H);
-        phRect.setAttribute('fill', phColor); phRect.setAttribute('opacity', '0.07');
-        svg.appendChild(phRect);
-      }
-    }
-
-    // Lane separator
-    const sep = document.createElementNS(ns, 'line');
-    sep.setAttribute('x1', 0); sep.setAttribute('x2', W);
-    sep.setAttribute('y1', laneBot); sep.setAttribute('y2', laneBot);
-    sep.setAttribute('stroke', '#e8e4dc'); sep.setAttribute('stroke-width', '1');
-    svg.appendChild(sep);
-
-    // Project label
-    const lbl = document.createElementNS(ns, 'text');
-    lbl.setAttribute('x', PAD_L - 8); lbl.setAttribute('y', laneTop + LANE_H / 2 + 4);
-    lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('font-size', '10');
-    lbl.setAttribute('font-weight', '600'); lbl.setAttribute('fill', '#444');
-    lbl.setAttribute('dominant-baseline', 'middle');
-    const labelText = proj ? (proj.displayName || jobUpper) : jobUpper;
-    lbl.textContent = labelText.length > 20 ? labelText.slice(0, 19) + '…' : labelText;
-    svg.appendChild(lbl);
-
-    // Hours curve — Catmull-Rom spline, filled area
-    const pts = allWeeks.map((w, i) => {
-      const h = data.weekTotals[w] || 0;
-      const x = PAD_L + i * COL_W + COL_W / 2;
-      const y = laneBot - 4 - (h / sm) * (LANE_H - 8);
-      return { x, y, h };
+  // Phase divider lines — use first project's phase map as reference, draw for all phase transitions
+  const phaseTransWeeks = new Set();
+  allProjectData.forEach(({ jobUpper }) => {
+    let last = null;
+    allWeeks.forEach(w => {
+      const ph = getPhaseForWeek(jobUpper, w);
+      if (ph && ph !== last && last !== null) phaseTransWeeks.add(w);
+      last = ph;
     });
-
-    // Only draw where project has weeks
-    const activePts = pts.filter(p => p.h > 0);
-    if (!activePts.length) return;
-
-    // Build path segments (split on gaps)
-    const segments = [];
-    let cur = [];
-    for (const p of pts) {
-      if (p.h > 0) { cur.push(p); }
-      else if (cur.length) { segments.push(cur); cur = []; }
-    }
-    if (cur.length) segments.push(cur);
-
-    const baseline = laneBot - 4;
-    const t = 0.3;
-
-    for (const seg of segments) {
-      if (!seg.length) continue;
-      let path;
-      if (seg.length === 1) {
-        path = `M ${seg[0].x},${seg[0].y}`;
-      } else {
-        path = `M ${seg[0].x},${seg[0].y}`;
-        for (let i = 0; i < seg.length - 1; i++) {
-          const p0 = seg[Math.max(i-1,0)], p1 = seg[i], p2 = seg[i+1], p3 = seg[Math.min(i+2,seg.length-1)];
-          path += ` C ${p1.x+(p2.x-p0.x)*t},${p1.y+(p2.y-p0.y)*t} ${p2.x-(p3.x-p1.x)*t},${p2.y-(p3.y-p1.y)*t} ${p2.x},${p2.y}`;
-        }
-      }
-
-      // Fill area under curve
-      const fillPath = path + ` L ${seg[seg.length-1].x},${baseline} L ${seg[0].x},${baseline} Z`;
-      const fill = document.createElementNS(ns, 'path');
-      fill.setAttribute('d', fillPath);
-      fill.setAttribute('fill', color); fill.setAttribute('opacity', '0.18');
-      svg.appendChild(fill);
-
-      // Stroke
-      if (seg.length > 1) {
-        const stroke = document.createElementNS(ns, 'path');
-        stroke.setAttribute('d', path);
-        stroke.setAttribute('fill', 'none'); stroke.setAttribute('stroke', color);
-        stroke.setAttribute('stroke-width', '1.8'); stroke.setAttribute('stroke-linecap', 'round');
-        stroke.setAttribute('opacity', '0.80');
-        svg.appendChild(stroke);
-      }
-
-      // Dots at active weeks
-      seg.forEach(p => {
-        const dot = document.createElementNS(ns, 'circle');
-        dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
-        dot.setAttribute('r', '2'); dot.setAttribute('fill', color); dot.setAttribute('opacity', '0.70');
-        svg.appendChild(dot);
-      });
+  });
+  phaseTransWeeks.forEach(w => {
+    const i = allWeeks.indexOf(w);
+    if (i < 0) return;
+    const x = PAD_L + i*COL_W;
+    const dl = document.createElementNS(ns, 'line');
+    dl.setAttribute('x1',x); dl.setAttribute('x2',x);
+    dl.setAttribute('y1',PAD_T); dl.setAttribute('y2',PAD_T+plotH);
+    dl.setAttribute('stroke','rgba(255,255,255,.35)'); dl.setAttribute('stroke-width','1.5');
+    dl.setAttribute('stroke-dasharray','4,3');
+    svg.appendChild(dl);
+    // Phase label at top
+    const proj0 = coreProjects[allProjectData[0]?.jobUpper];
+    const phName = proj0 ? getPhaseForWeek(allProjectData[0].jobUpper, w) : null;
+    if (phName) {
+      const pt = document.createElementNS(ns, 'text');
+      pt.setAttribute('x',x+4); pt.setAttribute('y',PAD_T+10);
+      pt.setAttribute('font-size','8'); pt.setAttribute('fill','rgba(255,255,255,.50)');
+      pt.textContent = phName; svg.appendChild(pt);
     }
   });
 
-  // Legend: phase colors
-  let legX = PAD_L;
-  const legY = PAD_T - 20;
-  [['Phase I', PHASE_COLORS[0]], ['Phase II', PHASE_COLORS[1]], ['Phase III', PHASE_COLORS[2]]].forEach(([name, col]) => {
-    const r = document.createElementNS(ns, 'rect');
-    r.setAttribute('x', legX); r.setAttribute('y', legY - 7);
-    r.setAttribute('width', 10); r.setAttribute('height', 10);
-    r.setAttribute('fill', col); r.setAttribute('opacity', '0.4'); r.setAttribute('rx', '2');
-    svg.appendChild(r);
-    const t = document.createElementNS(ns, 'text');
-    t.setAttribute('x', legX + 13); t.setAttribute('y', legY + 1);
-    t.setAttribute('font-size', '9'); t.setAttribute('fill', '#666');
-    t.textContent = name; svg.appendChild(t);
-    legX += 65;
+  // Tooltip
+  let tipEl2 = document.getElementById('stream-tip');
+  if (!tipEl2) {
+    tipEl2 = document.createElement('div');
+    tipEl2.id = 'stream-tip';
+    tipEl2.style.cssText = 'position:fixed;background:#1f2e3e;color:#fff;font-size:11px;padding:8px 12px;border-radius:6px;pointer-events:none;display:none;z-index:9999;line-height:1.6;max-width:220px;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+    document.body.appendChild(tipEl2);
+  }
+
+  // Draw stacked areas (back to front so front projects are on top)
+  const pathEls = [];
+  allProjectData.forEach(({ jobUpper, data }, pi) => {
+    const color = CHART_COLORS[pi % CHART_COLORS.length];
+    const proj = coreProjects[jobUpper];
+    const label = proj ? (proj.displayName || jobUpper) : jobUpper;
+
+    const topPts = allWeeks.map((w, i) => ({ x: xAt(i), y: yAt(toplines[pi][i]) }));
+    const basePts = allWeeks.map((w, i) => ({ x: xAt(i), y: yAt(baselines[pi][i]) }));
+
+    const topPath = catmullPath(topPts);
+    const basePathRev = catmullPath([...basePts].reverse());
+    if (!topPath || !basePathRev) return;
+
+    const fillD = topPath + ' L ' + basePts[basePts.length-1].x + ',' + basePts[basePts.length-1].y + ' ' + basePathRev.replace(/^M [\d.]+,[\d.]+ /,'') + ' Z';
+
+    const fill = document.createElementNS(ns, 'path');
+    fill.setAttribute('d', fillD);
+    fill.setAttribute('fill', color); fill.setAttribute('opacity','0.65');
+    fill.setAttribute('stroke', color); fill.setAttribute('stroke-width','0.5');
+    fill.setAttribute('stroke-opacity','0.4');
+    fill.dataset.projIdx = pi;
+    svg.appendChild(fill);
+    pathEls.push({ fill, jobUpper, label, data, pi, color });
   });
 
-  wrap.innerHTML = '<div class="combined-chart-title">All Projects — Hours Over Time</div><div class="combined-chart-sub">Each lane shows weekly hours logged. Curves share the same scale. Phase bands show design phase windows from CORE Projects GanttData.</div>';
+  // Hover: find which project band the mouse is in at that week
+  svg.addEventListener('mousemove', ev => {
+    const svgRect = svg.getBoundingClientRect();
+    const mx = ev.clientX - svgRect.left;
+    const my = ev.clientY - svgRect.top;
+    const wi = Math.floor((mx - PAD_L) / COL_W);
+    if (wi < 0 || wi >= allWeeks.length) { tipEl2.style.display='none'; return; }
+    const hVal = ((PAD_T + plotH - my) / plotH) * overallMax;
+    // Find which project stack this falls in
+    let hit = null;
+    for (let pi = allProjectData.length-1; pi >= 0; pi--) {
+      if (hVal >= baselines[pi][wi] && hVal <= toplines[pi][wi]) {
+        hit = pathEls.find(p => p.pi === pi); break;
+      }
+    }
+    pathEls.forEach(({ fill }) => fill.setAttribute('opacity','0.65'));
+    if (hit) {
+      hit.fill.setAttribute('opacity','0.90');
+      const w = allWeeks[wi];
+      const hrs = hit.data.weekTotals[w] || 0;
+      const phase = getPhaseForWeek(hit.jobUpper, w) || '—';
+      const designers = hit.data.designers.map(d => shortName(d)).join(', ');
+      const hFmt = hrs % 1 === 0 ? hrs : hrs.toFixed(1);
+      tipEl2.innerHTML = `<div style="font-weight:700;margin-bottom:4px">${hit.label}</div><div>${hFmt}h &nbsp;·&nbsp; ${phase}</div><div style="opacity:.65;font-size:10px;margin-top:2px">${designers}</div>`;
+      tipEl2.style.display = 'block';
+      tipEl2.style.left = (ev.clientX+16)+'px';
+      tipEl2.style.top  = (ev.clientY-10)+'px';
+    } else {
+      tipEl2.style.display = 'none';
+    }
+  });
+  svg.addEventListener('mouseleave', () => { tipEl2.style.display='none'; });
+
+  wrap.style.background = '#1f2e3e';
+  wrap.style.borderRadius = '8px';
+  wrap.innerHTML = '<div class="combined-chart-title" style="color:#f9e6ae;padding:16px 18px 4px">All Projects — Stacked Hours Over Time</div><div class="combined-chart-sub" style="color:rgba(255,255,255,.50);padding:0 18px 12px">Hover to identify projects. Each colored band = one project\u2019s weekly hours. Dashed lines = phase boundaries. Total height = combined team hours that week.</div>';
   wrap.appendChild(svg);
 }
 
@@ -1330,7 +1402,7 @@ function render() {
     const gridTogId = `grid-tog-${bid}`;
     const sec = document.createElement('div'); sec.className = 'section';
     const designerPills = data.designers.map(d => `<span class="designer-pill">${shortName(d)}</span>`).join('');
-    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${projLabel}${projSub?`<span class="proj-code-meta">${projSub}</span>`:''}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} wks${data.designers.length>1?' · '+data.designers.length+' designers':''}</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="designer-chips">${designerPills}</div><div class="monthly-summary-panel" id="monthly_${jobUpper}"></div><div style="padding:0 18px"><button class="panel-toggle-btn" onclick="togglePanel('${gridTogId}',this)"><span class="panel-toggle-chev">▼</span> Weekly Hours Grid</button></div><div class="panel-collapsible" id="${gridTogId}" style="max-height:5000px"><div class="grid-wrap"><table class="hours-grid" id="grid_${jobUpper}"></table></div><div class="phase-summary hidden" id="phasesummary_${jobUpper}"></div></div><div class="proj-scatter-panel" id="scatter_${jobUpper}"></div></div>`;
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${projLabel}${projSub?`<span class="proj-code-meta">${projSub}</span>`:''}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} wks${data.designers.length>1?' · '+data.designers.length+' designers':''}</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="designer-chips">${designerPills}</div><div class="monthly-summary-panel" id="monthly_${jobUpper}"></div><div style="padding:0 18px"><button class="panel-toggle-btn" onclick="togglePanel('${gridTogId}',this)"><span class="panel-toggle-chev">▼</span> Weekly Hours Grid</button></div><div class="panel-collapsible" id="${gridTogId}" style="max-height:5000px"><div class="grid-wrap"><table class="hours-grid" id="grid_${jobUpper}"></table></div><div class="phase-summary hidden" id="phasesummary_${jobUpper}"></div></div><div class="proj-</div>`;
     ctr.appendChild(sec);
     renderMonthlySummary(jobUpper, data);
     renderGrid(jobUpper, data);
@@ -1387,6 +1459,16 @@ function renderGrid(jobUpper, data, globalMax) {
   thead.innerHTML = theadHtml;
   table.appendChild(thead);
 
+  // Store phase transition weeks on table for drawTrendOverlays to draw dividers
+  const phaseTransitions = [];
+  let lastPhase = null;
+  for (let i = 0; i < weeks.length; i++) {
+    const ph = weekPhaseMap[weeks[i]]?.name || null;
+    if (ph && ph !== lastPhase && lastPhase !== null) phaseTransitions.push(i);
+    lastPhase = ph;
+  }
+  table.dataset.phaseTransitions = JSON.stringify(phaseTransitions);
+
   const tbody = document.createElement('tbody');
 
   function makeCell(h) {
@@ -1395,7 +1477,21 @@ function renderGrid(jobUpper, data, globalMax) {
     return `<td class="has-hours"><span class="cell-num">${display}</span></td>`;
   }
 
-  // One row per designer
+  // Combined sparkline row — tall, shows project total across all designers
+  const combinedVals = weeks.map(w => weekTotals[w] || 0);
+  const combinedTotal = combinedVals.reduce((a, b) => a + b, 0);
+  const combRow = document.createElement('tr'); combRow.className = 'trend-row-wrap combined-sparkline-row';
+  let combHtml = `<td style="font-weight:700;font-size:10px;">All</td>`;
+  for (const w of weeks) { const h = weekTotals[w]||0; combHtml += makeCell(h); }
+  combHtml += `<td class="total-col"><span class="cell-num">${combinedTotal%1===0?combinedTotal:combinedTotal.toFixed(1)}</span></td>`;
+  combRow.innerHTML = combHtml;
+  combRow.dataset.trendVals = JSON.stringify(combinedVals);
+  combRow.dataset.trendColor = CHART_COLORS[0];
+  combRow.dataset.trendMax = globalMax;
+  combRow.dataset.isCombined = '1';
+  tbody.appendChild(combRow);
+
+  // One row per designer (dimmed sparklines)
   for (const d of designers) {
     const tr = document.createElement('tr'); tr.className = 'trend-row-wrap';
     const vals = [], color = colorMap[d];
@@ -1408,19 +1504,6 @@ function renderGrid(jobUpper, data, globalMax) {
     tr.dataset.trendColor = color;
     tr.dataset.trendMax = globalMax;
     tbody.appendChild(tr);
-  }
-
-  // Total row (only if more than one designer)
-  if (designers.length > 1) {
-    const totRow = document.createElement('tr'); totRow.className = 'total-row trend-row-wrap';
-    const totVals = []; let grand = 0, totHtml = '<td>Total</td>';
-    for (const w of weeks) { const h=weekTotals[w]||0; grand+=h; totVals.push(h); totHtml += `<td class="total-col"><span class="cell-num">${h%1===0?h:h.toFixed(1)}</span></td>`; }
-    totHtml += `<td class="total-col"><span class="cell-num">${grand%1===0?grand:grand.toFixed(1)}</span></td>`;
-    totRow.innerHTML = totHtml;
-    totRow.dataset.trendVals = JSON.stringify(totVals);
-    totRow.dataset.trendColor = 'TOTAL';
-    totRow.dataset.trendMax = totalMax;
-    tbody.appendChild(totRow);
   }
 
   table.appendChild(tbody);
