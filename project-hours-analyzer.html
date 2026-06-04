@@ -160,8 +160,18 @@
   .ppt-hrs.dim{color:var(--text-muted);font-weight:400;}
   .ppt-no-phase{color:var(--text-muted);font-style:italic;font-size:10px;}
   .ppt-panel-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:12px;}
+  /* Collapsible panels */
+  .panel-toggle-btn{background:none;border:none;cursor:pointer;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.35);padding:0;display:flex;align-items:center;gap:5px;margin-bottom:10px;}
+  .panel-toggle-btn:hover{color:rgba(40,40,40,.6);}
+  .panel-toggle-chev{display:inline-block;transition:transform .2s;font-style:normal;}
+  .panel-toggle-chev.collapsed{transform:rotate(-90deg);}
+  .panel-collapsible{overflow:hidden;transition:max-height .3s ease;}
+  .panel-collapsible.collapsed{max-height:0!important;}
+  /* Aggregate scatter */
+  .aggregate-panel{padding:16px 18px 20px;border-top:2px solid var(--border);margin-top:8px;}
+  .aggregate-panel svg{display:block;overflow:visible;}
   /* Sankey */
-  .sankey-wrap{padding:18px 18px 24px;border-top:1px solid var(--border);}
+  .sankey-wrap{padding:0 18px 24px;border-top:1px solid var(--border);}
   .sankey-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.30);margin-bottom:12px;}
   .sankey-wrap svg{display:block;width:100%;overflow:visible;}
   /* Phase bands */
@@ -206,7 +216,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v22</span></h1>
+  <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v23</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -218,7 +228,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v22</span></h1>
+        <h1>Designer <span class="accent">Project Hours</span><span class="version-badge">v23</span></h1>
       </div>
       <div class="subtitle">Weekly hours per project per designer</div>
     </div>
@@ -248,6 +258,7 @@
     <div class="month-filter" id="monthFilter"></div>
     <div id="phaseAlert" class="phase-alert hidden"></div>
     <div id="designerSections"></div>
+    <div id="aggregatePanel" class="aggregate-panel" style="display:none"></div>
     <div class="actions-bar">
       <button class="btn btn-primary" onclick="copyAllGrids()">Copy All Grids (TSV)</button>
       <button class="btn btn-danger" onclick="clearHistory()">Clear All History</button>
@@ -660,6 +671,13 @@ function showSaveStatus(status, customText) {
   txt.textContent = customText || labels[status] || status;
 }
 function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200); }
+function togglePanel(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const chev = btn.querySelector('.panel-toggle-chev');
+  el.classList.toggle('collapsed');
+  if (chev) chev.classList.toggle('collapsed');
+}
 function toggleSection(id, h) { document.getElementById(id).classList.toggle('collapsed'); h.querySelector('.chevron').classList.toggle('open'); }
 function isNonBillableJob(code) { return code ? NON_BILLABLE_JOBS.includes(code.trim().toUpperCase()) : false; }
 function isPtoEntry(tag) { if (!tag) return false; const u = String(tag).toUpperCase(); return PTO_TAGS.some(kw => u.includes(kw)); }
@@ -878,9 +896,8 @@ function renderProjectPhasePanel(sn, data) {
 function renderMonthlySummary(sn, data) {
   const el = document.getElementById(`monthly_${sn}`);
   if (!el) return;
-  const filtered = getFilteredEntries();
-  const designer = sn;
-  const entries = filtered.filter(e => e.designer === designer && e.date);
+  // Always use allEntries for monthly view — filtering by month makes no sense here
+  const entries = allEntries.filter(e => e.designer === sn && e.date);
 
   // Group by YYYY-MM
   const monthMap = {};
@@ -1030,28 +1047,66 @@ function renderCostScatter(sn, data) {
   annTxt.textContent = '✦ sweet spot';
   svg.appendChild(annTxt);
 
+  // Completion estimate per project
+  function projectCompletion(job) {
+    const proj = coreProjects[job.toUpperCase()];
+    if (!proj) return { pct: null, label: 'Unknown' };
+    const stage = proj.stage || '';
+    if (stage === 'CA Signed') return { pct: 1.0, label: 'CA Signed' };
+    // Estimate from phase progress: weeks with hours vs total planned weeks
+    const phases = proj.phases || [];
+    const totalPlanned = phases.reduce((s, ph) => s + (ph.durWeeks || 0), 0);
+    if (!totalPlanned) return { pct: null, label: 'In Progress' };
+    const entries = allEntries.filter(e => e.jobUpper === job.toUpperCase() && !e.nonBillable && e.week);
+    const weeksLogged = new Set(entries.map(e => e.week)).size;
+    const pct = Math.min(weeksLogged / totalPlanned, 1.0);
+    return { pct, label: `~${Math.round(pct * 100)}% complete` };
+  }
+
   // Data points
   for (const p of withValue) {
     const x = sx(p.value), y = sy(p.hours);
     const r = ratio(p);
+    const comp = projectCompletion(p.job);
+    // Outer ring shows completion — full fill = complete, partial arc = in progress
+    const outerR = 9, innerR = 5;
+    if (comp.pct !== null && comp.pct < 1.0) {
+      // Draw completion arc ring
+      const bg = document.createElementNS(ns, 'circle');
+      bg.setAttribute('cx', x); bg.setAttribute('cy', y); bg.setAttribute('r', outerR);
+      bg.setAttribute('fill', 'none'); bg.setAttribute('stroke', '#ddd'); bg.setAttribute('stroke-width', '3');
+      svg.appendChild(bg);
+      // Arc for completion
+      const angle = comp.pct * 2 * Math.PI - Math.PI / 2;
+      const ax = x + outerR * Math.cos(-Math.PI / 2);
+      const ay = y + outerR * Math.sin(-Math.PI / 2);
+      const bx = x + outerR * Math.cos(angle);
+      const by = y + outerR * Math.sin(angle);
+      const large = comp.pct > 0.5 ? 1 : 0;
+      const arc = document.createElementNS(ns, 'path');
+      arc.setAttribute('d', `M ${ax},${ay} A ${outerR},${outerR} 0 ${large},1 ${bx},${by}`);
+      arc.setAttribute('fill', 'none'); arc.setAttribute('stroke', p.color); arc.setAttribute('stroke-width', '3');
+      svg.appendChild(arc);
+    }
     const dot = document.createElementNS(ns, 'circle');
     dot.setAttribute('cx', x); dot.setAttribute('cy', y);
-    dot.setAttribute('r', 7);
-    dot.setAttribute('fill', p.color); dot.setAttribute('opacity', '0.8');
+    dot.setAttribute('r', comp.pct === 1.0 ? outerR : innerR);
+    dot.setAttribute('fill', p.color);
+    dot.setAttribute('opacity', comp.pct === 1.0 ? '0.9' : '0.7');
     dot.setAttribute('stroke', 'white'); dot.setAttribute('stroke-width', '1.5');
     svg.appendChild(dot);
     // Label
     const lbl = document.createElementNS(ns, 'text');
-    lbl.setAttribute('x', x + 10); lbl.setAttribute('y', y + 4);
+    lbl.setAttribute('x', x + outerR + 4); lbl.setAttribute('y', y + 3);
     lbl.setAttribute('font-size', '9'); lbl.setAttribute('fill', '#444');
     lbl.setAttribute('font-weight', '500');
     lbl.textContent = p.label;
     svg.appendChild(lbl);
-    // Ratio label
+    // Ratio + completion
     const rlbl = document.createElementNS(ns, 'text');
-    rlbl.setAttribute('x', x + 10); rlbl.setAttribute('y', y + 14);
+    rlbl.setAttribute('x', x + outerR + 4); rlbl.setAttribute('y', y + 13);
     rlbl.setAttribute('font-size', '8'); rlbl.setAttribute('fill', '#aaa');
-    rlbl.textContent = `${r.toFixed(1)} hrs/$10K`;
+    rlbl.textContent = `${r.toFixed(1)} hrs/$10K · ${comp.label}`;
     svg.appendChild(rlbl);
   }
 
@@ -1060,6 +1115,182 @@ function renderCostScatter(sn, data) {
   if (noValue.length) html += `<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">Projects without value data (not shown): ${noValue.map(p=>p.label).join(', ')}</div>`;
   el.innerHTML = html;
   el.appendChild(svg);
+}
+
+// --- Aggregate Scatter ---
+function renderAggregateScatter() {
+  const el = document.getElementById('aggregatePanel');
+  if (!el) return;
+  if (!isOnline || !allEntries.length) { el.style.display = 'none'; return; }
+
+  // Collect all billable projects across all designers
+  const jobTotalsAll = {};
+  const jobDesigners = {};
+  for (const e of allEntries) {
+    if (e.nonBillable) continue;
+    jobTotalsAll[e.jobUpper] = (jobTotalsAll[e.jobUpper] || 0) + e.hours;
+    if (!jobDesigners[e.jobUpper]) jobDesigners[e.jobUpper] = new Set();
+    jobDesigners[e.jobUpper].add(e.designer);
+  }
+
+  // Build points
+  let ci = 0;
+  const points = [];
+  for (const [job, hours] of Object.entries(jobTotalsAll)) {
+    const proj = coreProjects[job];
+    const vr = proj ? bestValue(proj) : null;
+    const color = CHART_COLORS[ci % CHART_COLORS.length]; ci++;
+    points.push({
+      job, hours,
+      label: proj ? proj.displayName : job,
+      value: vr ? vr.value : null,
+      stage: proj ? proj.stage : null,
+      color,
+      designers: jobDesigners[job] ? [...jobDesigners[job]] : [],
+    });
+  }
+
+  const withValue = points.filter(p => p.value);
+  if (withValue.length < 2) { el.style.display = 'none'; return; }
+  el.style.display = '';
+
+  const W = 800, H = 380, padL = 65, padR = 180, padT = 30, padB = 55;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const maxVal = Math.max(...withValue.map(p => p.value));
+  const maxHrs = Math.max(...withValue.map(p => p.hours));
+  const sx = v => padL + (v / maxVal) * plotW;
+  const sy = h => padT + plotH - (h / maxHrs) * plotH;
+  const ratio = p => p.value ? (p.hours / (p.value / 10000)) : null;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  // Grid
+  [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+    const gl = document.createElementNS(ns, 'line');
+    gl.setAttribute('x1', padL); gl.setAttribute('x2', padL + plotW);
+    gl.setAttribute('y1', padT + plotH * (1-t)); gl.setAttribute('y2', padT + plotH * (1-t));
+    gl.setAttribute('stroke', '#e8e4dc'); gl.setAttribute('stroke-width', '1');
+    svg.appendChild(gl);
+    const vl = document.createElementNS(ns, 'line');
+    vl.setAttribute('x1', padL + plotW*t); vl.setAttribute('x2', padL + plotW*t);
+    vl.setAttribute('y1', padT); vl.setAttribute('y2', padT + plotH);
+    vl.setAttribute('stroke', '#e8e4dc'); vl.setAttribute('stroke-width', '1');
+    svg.appendChild(vl);
+    ['x','y'].forEach(axis => {
+      const txt = document.createElementNS(ns, 'text');
+      txt.setAttribute('font-size', '9'); txt.setAttribute('fill', '#aaa');
+      if (axis === 'y') {
+        txt.setAttribute('x', padL - 6); txt.setAttribute('y', padT + plotH*(1-t) + 4);
+        txt.setAttribute('text-anchor', 'end');
+        txt.textContent = Math.round(maxHrs * t) + 'h';
+      } else {
+        txt.setAttribute('x', padL + plotW*t); txt.setAttribute('y', padT + plotH + 18);
+        txt.setAttribute('text-anchor', 'middle');
+        txt.textContent = '$' + Math.round(maxVal * t / 1000) + 'K';
+      }
+      svg.appendChild(txt);
+    });
+  });
+
+  // Sweet spot
+  const ss = document.createElementNS(ns, 'rect');
+  ss.setAttribute('x', padL + plotW * 0.55); ss.setAttribute('y', padT + plotH * 0.55);
+  ss.setAttribute('width', plotW * 0.43); ss.setAttribute('height', plotH * 0.43);
+  ss.setAttribute('fill', '#e8f5ee'); ss.setAttribute('rx', '4'); ss.setAttribute('opacity', '0.5');
+  svg.appendChild(ss);
+  const ssT = document.createElementNS(ns, 'text');
+  ssT.setAttribute('x', padL + plotW * 0.77); ssT.setAttribute('y', padT + plotH * 0.68);
+  ssT.setAttribute('text-anchor', 'middle'); ssT.setAttribute('font-size', '9');
+  ssT.setAttribute('fill', '#2d8a5e'); ssT.setAttribute('font-weight', '700');
+  ssT.textContent = '✦ sweet spot';
+  svg.appendChild(ssT);
+
+  // Trend line (simple linear regression)
+  const xs = withValue.map(p => p.value), ys = withValue.map(p => p.hours);
+  const n = xs.length, mx = xs.reduce((a,b)=>a+b)/n, my = ys.reduce((a,b)=>a+b)/n;
+  const slope = xs.map((x,i)=>(x-mx)*(ys[i]-my)).reduce((a,b)=>a+b) / xs.map(x=>(x-mx)**2).reduce((a,b)=>a+b);
+  const intercept = my - slope * mx;
+  const trendLine = document.createElementNS(ns, 'line');
+  trendLine.setAttribute('x1', sx(0)); trendLine.setAttribute('y1', sy(intercept));
+  trendLine.setAttribute('x2', sx(maxVal)); trendLine.setAttribute('y2', sy(slope * maxVal + intercept));
+  trendLine.setAttribute('stroke', '#c9a84c'); trendLine.setAttribute('stroke-width', '1.5');
+  trendLine.setAttribute('stroke-dasharray', '4,3'); trendLine.setAttribute('opacity', '0.7');
+  svg.appendChild(trendLine);
+
+  // Dots
+  for (const p of withValue) {
+    const x = sx(p.value), y = sy(p.hours);
+    const isCA = p.stage === 'CA Signed';
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', isCA ? 8 : 6);
+    dot.setAttribute('fill', p.color); dot.setAttribute('opacity', isCA ? '0.9' : '0.6');
+    dot.setAttribute('stroke', isCA ? 'white' : '#fff'); dot.setAttribute('stroke-width', isCA ? '2' : '1');
+    svg.appendChild(dot);
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', x + 11); lbl.setAttribute('y', y + 3);
+    lbl.setAttribute('font-size', '9'); lbl.setAttribute('fill', '#444'); lbl.setAttribute('font-weight', '500');
+    lbl.textContent = p.label + (isCA ? ' ✓' : '');
+    svg.appendChild(lbl);
+    const r = ratio(p);
+    if (r !== null) {
+      const rlbl = document.createElementNS(ns, 'text');
+      rlbl.setAttribute('x', x + 11); rlbl.setAttribute('y', y + 13);
+      rlbl.setAttribute('font-size', '8'); rlbl.setAttribute('fill', '#aaa');
+      rlbl.textContent = `${r.toFixed(1)} hrs/$10K`;
+      svg.appendChild(rlbl);
+    }
+  }
+
+  // Axis labels
+  const xA = document.createElementNS(ns, 'text');
+  xA.setAttribute('x', padL + plotW/2); xA.setAttribute('y', H - 8);
+  xA.setAttribute('text-anchor', 'middle'); xA.setAttribute('font-size', '10');
+  xA.setAttribute('fill', '#888'); xA.setAttribute('font-weight', '600');
+  xA.textContent = 'Project Value →'; svg.appendChild(xA);
+  const yA = document.createElementNS(ns, 'text');
+  yA.setAttribute('x', 12); yA.setAttribute('y', padT + plotH/2);
+  yA.setAttribute('text-anchor', 'middle'); yA.setAttribute('font-size', '10');
+  yA.setAttribute('fill', '#888'); yA.setAttribute('font-weight', '600');
+  yA.setAttribute('transform', `rotate(-90,12,${padT+plotH/2})`);
+  yA.textContent = '↑ Design Hours'; svg.appendChild(yA);
+
+  // Legend
+  const legY = padT;
+  [['Larger/solid = CA Signed (complete)', '#444'], ['Dashed line = trend', '#c9a84c']].forEach(([txt, col], i) => {
+    const lt = document.createElementNS(ns, 'text');
+    lt.setAttribute('x', padL + plotW + 14); lt.setAttribute('y', legY + i * 16);
+    lt.setAttribute('font-size', '9'); lt.setAttribute('fill', col);
+    lt.textContent = txt; svg.appendChild(lt);
+  });
+
+  // Summary stats
+  const ratios = withValue.map(ratio).filter(Boolean).sort((a,b)=>a-b);
+  const caPoints = withValue.filter(p => p.stage === 'CA Signed');
+  const avgRatio = ratios.reduce((a,b)=>a+b,0)/ratios.length;
+  const fmt = h => h%1===0?h:h.toFixed(1);
+
+  const summaryLines = [
+    `${withValue.length} projects with value data (${caPoints.length} CA-signed / complete)`,
+    `Avg efficiency: ${fmt(avgRatio)} hrs per $10K`,
+    `Best: ${fmt(ratios[0])} · Worst: ${fmt(ratios[ratios.length-1])} hrs/$10K`,
+    caPoints.length >= 2 ? `Complete projects avg: ${fmt(caPoints.map(ratio).reduce((a,b)=>a+b,0)/caPoints.length)} hrs/$10K` : 'Not enough complete projects yet for reliable baseline',
+    slope > 0 ? `Trend: higher-value projects tend to use more hours` : `Trend: higher-value projects tend to use fewer hours (favorable)`,
+  ];
+
+  let html = `<div style="font-family:'Swear Text',serif;font-size:16px;color:var(--navy);margin-bottom:4px">All Projects — Hours vs Value</div>`;
+  html += `<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">Solid/large dots = CA Signed (design complete). Dashed line = trend. ✓ = construction started.</div>`;
+  el.innerHTML = html;
+  el.appendChild(svg);
+
+  // Summary conclusions
+  const concEl = document.createElement('div');
+  concEl.style.cssText = 'margin-top:16px;padding:14px 16px;background:var(--header-bg);border-radius:6px;border:1px solid var(--border);font-size:11px;line-height:1.7;color:var(--text);';
+  concEl.innerHTML = '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:rgba(40,40,40,.35);margin-bottom:8px">Summary</div>' +
+    summaryLines.map(l => `<div>· ${l}</div>`).join('');
+  el.appendChild(concEl);
 }
 
 // --- Sankey ---
@@ -1247,8 +1478,9 @@ function renderSankey(sn, data) {
     svg.appendChild(htxt);
   }
 
-  el.innerHTML = '<div class="sankey-title">Hour Flow — Weeks → Projects</div>';
-  el.appendChild(svg);
+  const sankeyId = `sankey-inner-${sn.replace(/\s/g,'_')}`;
+  el.innerHTML = `<button class="panel-toggle-btn" onclick="togglePanel('${sankeyId}',this)"><span class="panel-toggle-chev">▼</span> Hour Flow — Weeks → Projects</button><div class="panel-collapsible" id="${sankeyId}" style="max-height:2000px"></div>`;
+  document.getElementById(sankeyId).appendChild(svg);
 }
 
 // --- Trend overlay ---
@@ -1377,7 +1609,8 @@ function render() {
     const data = buildDesignerData(designer); if (data.weeks.length === 0) continue;
     const sn = SHORT_NAMES[designer], dt = Object.values(data.weekTotals).reduce((a,b)=>a+b,0), bid = `body_${sn}`;
     const sec = document.createElement('div'); sec.className = 'section';
-    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="monthly-summary-panel" id="monthly_${sn}"></div><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div><div class="proj-phase-panel" id="projphase_${sn}"></div><div class="cost-scatter-panel" id="costscatter_${sn}"></div><div class="sankey-wrap" id="sankey_${sn}"></div></div>`;
+    const gridTogId=`grid-tog-${bid}`;
+    sec.innerHTML = `<div class="section-header" onclick="toggleSection('${bid}',this)"><h2>${sn}<span class="meta">${Math.round(dt)} hrs · ${data.weeks.length} weeks</span></h2><span class="chevron open">▶</span></div><div class="section-body" id="${bid}"><div class="monthly-summary-panel" id="monthly_${sn}"></div><div style="padding:0 18px"><button class="panel-toggle-btn" onclick="togglePanel('${gridTogId}',this)"><span class="panel-toggle-chev">▼</span> Weekly Hours Grid</button></div><div class="panel-collapsible" id="${gridTogId}" style="max-height:5000px"><div class="grid-wrap"><table class="hours-grid" id="grid_${sn}"></table></div><div class="phase-summary hidden" id="phasesummary_${sn}"></div></div><div class="proj-phase-panel" id="projphase_${sn}"></div><div class="cost-scatter-panel" id="costscatter_${sn}"></div><div class="sankey-wrap" id="sankey_${sn}"></div></div>`;
     ctr.appendChild(sec);
     renderMonthlySummary(sn, data);
     renderGrid(sn, data);
@@ -1385,6 +1618,7 @@ function render() {
     renderCostScatter(sn, data);
     renderSankey(sn, data);
   }
+  renderAggregateScatter();
 }
 
 // Phase palette (index into these by phase order)
