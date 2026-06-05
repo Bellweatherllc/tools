@@ -230,7 +230,7 @@
 <!-- Auth overlay -->
 <div class="auth-overlay" id="authOverlay">
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v30</span></h1>
+  <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v34</span></h1>
   <div class="auth-status" id="authStatus">Sign in to sync with SharePoint</div>
   <button class="sign-in-btn" id="signInBtn" onclick="doSignIn()">Sign In with Microsoft</button>
   <div class="auth-error" id="authError"></div>
@@ -242,7 +242,7 @@
     <div>
       <div class="topbar">
         <img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="Bw">
-        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v30</span></h1>
+        <h1>Project <span class="accent">Hours Analyzer</span><span class="version-badge">v34</span></h1>
       </div>
       <div class="subtitle">Hours by project, phase, and designer</div>
     </div>
@@ -333,7 +333,8 @@ const msalConfig = {
   auth: {
     clientId: '84b37f0e-b149-4089-9bdc-fc654715db23',
     authority: 'https://login.microsoftonline.com/ff0e3f46-615a-4a22-8a80-4bb83d627785',
-    redirectUri: window.location.origin + window.location.pathname,
+    redirectUri: 'https://bellweatherllc.github.io/tools/',
+    navigateToLoginRequestUrl: true,
   },
   cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
 };
@@ -546,9 +547,15 @@ const PIPELINE_EPOCH = new Date('2025-01-05T00:00:00');
 
 function pipelineWeekToDate(weekNum) {
   if (weekNum == null) return null;
-  const d = new Date(PIPELINE_EPOCH);
-  d.setDate(d.getDate() + weekNum * 7);
-  return d.toISOString().slice(0, 10);
+  // Work in UTC throughout to avoid timezone shifts
+  const epochMs = Date.UTC(2025, 0, 5); // Jan 5 2025 UTC (pipeline epoch = Monday)
+  const ms = epochMs + weekNum * 7 * 24 * 3600 * 1000;
+  const d = new Date(ms);
+  // Format as YYYY-MM-DD using UTC fields
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 // Build phase windows for each project using Pipeline milestone week numbers
@@ -727,7 +734,19 @@ function togglePanel(id, btn) {
 function toggleSection(id, h) { document.getElementById(id).classList.toggle('collapsed'); h.querySelector('.chevron').classList.toggle('open'); }
 function isNonBillableJob(code) { return code ? NON_BILLABLE_JOBS.includes(code.trim().toUpperCase()) : false; }
 function isPtoEntry(tag) { if (!tag) return false; const u = String(tag).toUpperCase(); return PTO_TAGS.some(kw => u.includes(kw)); }
-function getWeekKey(date) { const d = new Date(date); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1); const m = new Date(d); m.setDate(diff); return m.toISOString().slice(0, 10); }
+function getWeekKey(date) {
+  // Parse as UTC date to avoid timezone shifts on YYYY-MM-DD strings
+  const parts = String(date).slice(0,10).split('-');
+  const y = +parts[0], mo = +parts[1]-1, d = +parts[2];
+  // Day of week in UTC
+  const ms = Date.UTC(y, mo, d);
+  const dow = new Date(ms).getUTCDay(); // 0=Sun
+  const diff = dow === 0 ? -6 : 1 - dow; // back to Monday
+  const mon = new Date(ms + diff * 86400000);
+  return mon.getUTCFullYear() + '-' +
+    String(mon.getUTCMonth()+1).padStart(2,'0') + '-' +
+    String(mon.getUTCDate()).padStart(2,'0');
+}
 function formatWeekLabel(wk) { const d = new Date(wk + 'T00:00:00'); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 
 // --- File panel ---
@@ -1219,11 +1238,35 @@ function renderInteractiveScatter(allProjectData) {
   const allWithValue = allProjectData.map(({ jobUpper, data }) => {
     const proj = coreProjects[jobUpper];
     const vr = proj ? bestValue(proj) : null;
-    const designers = data.designers;
-    return { jobUpper, hours: data.totalHours, value: vr ? vr.value : null,
-             label: proj ? (proj.displayName || jobUpper) : jobUpper,
-             stage: proj ? proj.stage : null,
-             designerNames: designers.map(d => shortName(d)).join(', '), vr };
+
+    // Completion estimate: weeks with logged hours vs total planned design weeks
+    const isComplete = proj?.stage === 'CA Signed';
+    let pct = isComplete ? 1.0 : null;
+    let projectedHours = data.totalHours;
+    if (!isComplete && proj?.phases) {
+      const totalPlanned = proj.phases
+        .filter(ph => ph.name !== PHASE_CD) // exclude Phase III — post-CA support
+        .reduce((s, ph) => s + (ph.durWeeks || 0), 0);
+      const weeksWorked = data.weeks.filter(w => (data.weekTotals[w] || 0) > 0).length;
+      if (totalPlanned > 0 && weeksWorked > 0) {
+        pct = Math.min(weeksWorked / totalPlanned, 1.0);
+        // Project forward: if 30% complete with X hours, full project ≈ X / 0.30
+        projectedHours = pct > 0 ? data.totalHours / pct : data.totalHours;
+      }
+    }
+
+    return {
+      jobUpper,
+      hours: data.totalHours,          // actual logged hours
+      projectedHours,                   // extrapolated to 100%
+      value: vr ? vr.value : null,
+      label: proj ? (proj.displayName || jobUpper) : jobUpper,
+      stage: proj ? proj.stage : null,
+      pct,                              // null = no plan data, 1.0 = complete
+      isComplete,
+      designerNames: data.designers.map(d => shortName(d)).join(', '),
+      vr
+    };
   }).filter(p => p.value && p.hours);
 
   if (!allWithValue.length) { wrap.classList.add('hidden'); return; }
@@ -1234,7 +1277,8 @@ function renderInteractiveScatter(allProjectData) {
   const padL = 50, padR = 20, padT = 20, padB = 42;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const maxVal = Math.max(...allWithValue.map(p => p.value));
-  const maxHrs = Math.max(...allWithValue.map(p => p.hours));
+  // Scale y to projected hours so complete and in-progress projects share the same axis
+  const maxHrs = Math.max(...allWithValue.map(p => p.projectedHours));
   const sx = v => padL + (v / maxVal) * plotW;
   const sy = h => padT + plotH - (h / maxHrs) * plotH;
   const ns = 'http://www.w3.org/2000/svg';
@@ -1287,19 +1331,32 @@ function renderInteractiveScatter(allProjectData) {
   yA.setAttribute('transform', `rotate(-90,10,${padT+plotH/2})`);
   yA.textContent = '↑ Total Hours'; svg.appendChild(yA);
 
-  // Trend line
-  if (allWithValue.length >= 3) {
-    const xs = allWithValue.map(p=>p.value), ys = allWithValue.map(p=>p.hours);
+  // Helper: fit a linear trend line through (value, projectedHours) pairs
+  function drawTrend(pts, stroke, dash, opacity) {
+    if (pts.length < 2) return;
+    const xs = pts.map(p=>p.value), ys = pts.map(p=>p.projectedHours);
     const n = xs.length, mx = xs.reduce((a,b)=>a+b)/n, my = ys.reduce((a,b)=>a+b)/n;
-    const slope = xs.map((x,i)=>(x-mx)*(ys[i]-my)).reduce((a,b)=>a+b) / xs.map(x=>(x-mx)**2).reduce((a,b)=>a+b);
+    const denom = xs.map(x=>(x-mx)**2).reduce((a,b)=>a+b);
+    if (!denom) return;
+    const slope = xs.map((x,i)=>(x-mx)*(ys[i]-my)).reduce((a,b)=>a+b) / denom;
     const ic = my - slope*mx;
     const tl = document.createElementNS(ns, 'line');
-    tl.setAttribute('x1',sx(0)); tl.setAttribute('y1',sy(Math.max(0,ic)));
+    tl.setAttribute('x1',sx(0));       tl.setAttribute('y1',sy(Math.max(0,ic)));
     tl.setAttribute('x2',sx(maxVal)); tl.setAttribute('y2',sy(Math.max(0,slope*maxVal+ic)));
-    tl.setAttribute('stroke','#c9a84c'); tl.setAttribute('stroke-width','1');
-    tl.setAttribute('stroke-dasharray','4,3'); tl.setAttribute('opacity','0.55');
-    svg.appendChild(tl);
+    tl.setAttribute('stroke',stroke); tl.setAttribute('stroke-width','1.5');
+    if (dash) tl.setAttribute('stroke-dasharray','4,3');
+    tl.setAttribute('opacity',opacity); svg.appendChild(tl);
+    // Label at right end
+    const ty = sy(Math.max(0, slope*maxVal+ic));
+    const tlbl = document.createElementNS(ns, 'text');
+    tlbl.setAttribute('x', padL+plotW+3); tlbl.setAttribute('y', ty+3);
+    tlbl.setAttribute('font-size','8'); tlbl.setAttribute('fill', stroke); tlbl.setAttribute('opacity', opacity);
+    tlbl.textContent = dash ? 'all' : 'complete'; svg.appendChild(tlbl);
   }
+  const completePts = allWithValue.filter(p => p.isComplete);
+  const allPts2 = allWithValue;
+  if (completePts.length >= 2) drawTrend(completePts, '#019425', false, '0.70');
+  if (allPts2.length >= 2)     drawTrend(allPts2,     '#c9a84c', true,  '0.45');
 
   // Sweet spot annotation — lower right quadrant (high value, low hours)
   const ssX = padL + plotW * 0.62, ssY = padT + plotH * 0.60;
@@ -1315,32 +1372,82 @@ function renderInteractiveScatter(allProjectData) {
   ssTxt.setAttribute('fill', '#2d8a5e'); ssTxt.setAttribute('font-weight', '700');
   ssTxt.textContent = '✦ sweet spot'; svg.appendChild(ssTxt);
 
-  // Dots — each interactive
+  // Dots — with completion arc rings
   let ci = 0;
   const dotEls = [];
   for (const p of allWithValue) {
     const color = CHART_COLORS[ci++ % CHART_COLORS.length];
-    const x = sx(p.value), y = sy(p.hours);
-    const isCA = p.stage === 'CA Signed';
-    // Hit area (larger invisible circle for easier hover)
+    // Plot at projected position (extrapolated to 100%) with a ghost at actual position
+    const xProj = sx(p.projectedHours), yProj = sy(p.projectedHours);
+    // Primary dot plotted at (value, projectedHours) — apples-to-apples
+    const x = sx(p.value), y = sy(p.projectedHours);
+    // Ghost dot at actual logged hours (lower on chart for incomplete projects)
+    const yActual = sy(p.hours);
+    const outerR = 9, innerR = 5;
+
+    // Ghost (actual hours) — only when meaningfully different from projected
+    if (!p.isComplete && p.pct !== null && p.pct < 0.95 && Math.abs(yActual - y) > 3) {
+      const ghost = document.createElementNS(ns, 'circle');
+      ghost.setAttribute('cx', x); ghost.setAttribute('cy', yActual);
+      ghost.setAttribute('r', '3'); ghost.setAttribute('fill', color); ghost.setAttribute('opacity', '0.25');
+      ghost.setAttribute('stroke', 'none');
+      svg.appendChild(ghost);
+      // Dashed vertical line connecting ghost to projected dot
+      const connector = document.createElementNS(ns, 'line');
+      connector.setAttribute('x1', x); connector.setAttribute('x2', x);
+      connector.setAttribute('y1', yActual); connector.setAttribute('y2', y);
+      connector.setAttribute('stroke', color); connector.setAttribute('stroke-width', '1');
+      connector.setAttribute('stroke-dasharray', '2,2'); connector.setAttribute('opacity', '0.25');
+      svg.appendChild(connector);
+    }
+
+    // Completion arc ring for in-progress projects
+    if (!p.isComplete && p.pct !== null) {
+      // Background ring
+      const bgRing = document.createElementNS(ns, 'circle');
+      bgRing.setAttribute('cx', x); bgRing.setAttribute('cy', y); bgRing.setAttribute('r', outerR);
+      bgRing.setAttribute('fill', 'none'); bgRing.setAttribute('stroke', '#ddd'); bgRing.setAttribute('stroke-width', '3');
+      svg.appendChild(bgRing);
+      // Arc showing completion percentage
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + p.pct * 2 * Math.PI;
+      const ax = x + outerR * Math.cos(startAngle);
+      const ay = y + outerR * Math.sin(startAngle);
+      const bx = x + outerR * Math.cos(endAngle);
+      const by = y + outerR * Math.sin(endAngle);
+      const largeArc = p.pct > 0.5 ? 1 : 0;
+      if (p.pct > 0.02) {
+        const arc = document.createElementNS(ns, 'path');
+        arc.setAttribute('d', `M ${ax},${ay} A ${outerR},${outerR} 0 ${largeArc},1 ${bx},${by}`);
+        arc.setAttribute('fill', 'none'); arc.setAttribute('stroke', color); arc.setAttribute('stroke-width', '3');
+        arc.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(arc);
+      }
+    }
+
+    // Hit area
     const hit = document.createElementNS(ns, 'circle');
-    hit.setAttribute('cx', x); hit.setAttribute('cy', y); hit.setAttribute('r', 14);
-    hit.setAttribute('fill', 'transparent'); hit.setAttribute('data-idx', dotEls.length);
-    svg.appendChild(hit);
+    hit.setAttribute('cx', x); hit.setAttribute('cy', y); hit.setAttribute('r', '14');
+    hit.setAttribute('fill', 'transparent'); svg.appendChild(hit);
+
+    // Inner dot
     const dot = document.createElementNS(ns, 'circle');
     dot.setAttribute('cx', x); dot.setAttribute('cy', y);
-    dot.setAttribute('r', isCA ? 8 : 6);
-    dot.setAttribute('fill', color); dot.setAttribute('opacity', isCA ? '0.90' : '0.70');
+    dot.setAttribute('r', p.isComplete ? String(outerR) : String(innerR));
+    dot.setAttribute('fill', color);
+    dot.setAttribute('opacity', p.isComplete ? '0.90' : '0.75');
     dot.setAttribute('stroke', 'white'); dot.setAttribute('stroke-width', '1.5');
     dot.setAttribute('style', 'transition:r .1s,opacity .1s;');
     svg.appendChild(dot);
-    // Label (project name, truncated)
+
+    // Label
     const lbl = document.createElementNS(ns, 'text');
     const lblText = p.label.length > 16 ? p.label.slice(0,15)+'…' : p.label;
-    lbl.setAttribute('x', x+10); lbl.setAttribute('y', y+3);
+    lbl.setAttribute('x', x + outerR + 4); lbl.setAttribute('y', y + 3);
     lbl.setAttribute('font-size','9'); lbl.setAttribute('fill','#555'); lbl.setAttribute('font-weight','500');
     lbl.textContent = lblText; svg.appendChild(lbl);
-    dotEls.push({ dot, hit, p, color });
+
+    dotEls.push({ dot, hit, p, color, x, y });
   }
 
   // Hover via SVG mousemove
@@ -1348,21 +1455,37 @@ function renderInteractiveScatter(allProjectData) {
     const svgRect = svg.getBoundingClientRect();
     const mx = ev.clientX - svgRect.left;
     const my = ev.clientY - svgRect.top;
-    let closest = null, minDist = 18;
-    for (const { p, dot } of dotEls) {
-      const dx = sx(p.value) - mx, dy = sy(p.hours) - my;
+    let closest = null, minDist = 22;
+    for (const { p, dot, x, y } of dotEls) {
+      const dx = x - mx, dy = y - my;
       const dist = Math.sqrt(dx*dx + dy*dy);
       if (dist < minDist) { minDist = dist; closest = { p, dot }; }
     }
-    // Reset all
-    dotEls.forEach(({ dot }) => { dot.setAttribute('r', dot.getAttribute('r') > 7 ? 8 : 6); dot.setAttribute('opacity', dot.getAttribute('r') > 7 ? '0.90':'0.70'); });
+    // Reset all dots to base size
+    dotEls.forEach(({ dot, p }) => {
+      dot.setAttribute('r', p.isComplete ? '9' : '5');
+      dot.setAttribute('opacity', p.isComplete ? '0.90' : '0.75');
+    });
     if (closest) {
       const { p, dot } = closest;
-      dot.setAttribute('r', '10'); dot.setAttribute('opacity', '1');
-      const ratio = (p.hours / (p.value / 10000)).toFixed(1);
+      dot.setAttribute('r', '11'); dot.setAttribute('opacity', '1');
+      const fmt = h => h % 1 === 0 ? h : h.toFixed(1);
       const vFmt = p.value >= 1e6 ? '$'+(p.value/1e6).toFixed(2).replace(/\.?0+$/,'')+'M' : '$'+Math.round(p.value/1000)+'k';
-      const hFmt = p.hours % 1 === 0 ? p.hours : p.hours.toFixed(1);
-      tipEl.innerHTML = `<div style="font-weight:700;margin-bottom:4px">${p.label}</div><div>${vFmt} &nbsp;·&nbsp; ${hFmt}h total</div><div style="opacity:.75">${ratio} hrs per $10k</div><div style="opacity:.65;font-size:10px;margin-top:3px">${p.designerNames}</div>${p.stage==='CA Signed'?'<div style="color:#5de3a0;font-size:10px;margin-top:2px">✓ CA Signed</div>':''}`;
+      const ratioActual = (p.hours / (p.value / 10000)).toFixed(1);
+      const ratioProj   = (p.projectedHours / (p.value / 10000)).toFixed(1);
+      const pctStr = p.pct !== null ? Math.round(p.pct * 100) + '%' : '?';
+      let tipHtml = `<div style="font-weight:700;margin-bottom:4px">${p.label}</div>`;
+      tipHtml += `<div>${vFmt}</div>`;
+      if (p.isComplete) {
+        tipHtml += `<div>${fmt(p.hours)}h &nbsp;·&nbsp; ${ratioActual} hrs/$10k</div>`;
+        tipHtml += `<div style="color:#5de3a0;font-size:10px;margin-top:2px">✓ CA Signed — complete</div>`;
+      } else {
+        tipHtml += `<div>${fmt(p.hours)}h logged &nbsp;·&nbsp; ${pctStr} complete</div>`;
+        tipHtml += `<div style="color:#f9e6ae;font-size:10px">~${fmt(p.projectedHours)}h projected (${ratioProj} hrs/$10k)</div>`;
+        if (p.pct === null) tipHtml += `<div style="opacity:.55;font-size:10px">No GanttData — can't estimate completion</div>`;
+      }
+      tipHtml += `<div style="opacity:.65;font-size:10px;margin-top:3px">${p.designerNames}</div>`;
+      tipEl.innerHTML = tipHtml;
       tipEl.style.display = 'block';
       tipEl.style.left = (ev.clientX + 16) + 'px';
       tipEl.style.top = (ev.clientY - 10) + 'px';
@@ -1375,7 +1498,10 @@ function renderInteractiveScatter(allProjectData) {
   const avgRatio = allWithValue.length ?
     allWithValue.map(p => p.hours/(p.value/10000)).reduce((a,b)=>a+b) / allWithValue.length : 0;
 
-  wrap.innerHTML = '<div class="combined-chart-title">Hours vs Value — All Projects</div><div class="combined-chart-sub">Each dot is one project. Hover for details. Dashed line = trend. Larger dots = CA Signed (complete). Avg efficiency: '+(avgRatio.toFixed(1))+' hrs per $10k.</div>';
+    const completedCount = allWithValue.filter(p => p.isComplete).length;
+  const avgRatioComplete = completedCount ?
+    allWithValue.filter(p=>p.isComplete).map(p=>p.hours/(p.value/10000)).reduce((a,b)=>a+b) / completedCount : null;
+  wrap.innerHTML = '<div class="combined-chart-title">Hours vs Value — All Projects</div><div class="combined-chart-sub">Dots plotted at projected final hours. Arc ring = % complete. Ghost dot + dashed line = actual hours logged so far. Green trend = CA-signed only. Gold = all projects. Hover for details.'+(avgRatioComplete?' Completed avg: '+avgRatioComplete.toFixed(1)+' hrs/$10k.':'')+'</div>';
   wrap.appendChild(svg);
 }
 
@@ -1467,43 +1593,11 @@ function renderCombinedBumpChart(allProjectData, globalMaxHrsPerWk) {
     t.textContent = 'w'+(i+1); svg.appendChild(t);
   });
 
-  // Phase divider lines — use first project's phase map as reference, draw for all phase transitions
-  // Phase dividers: use median planned phase durations from GanttData
-  // Collect Phase I dur and Phase II dur across all projects with GanttData
-  const phIDurs = [], phIIDurs = [], phIStartDates = [];
-  allProjectData.forEach(({ jobUpper }) => {
-    const proj = coreProjects[jobUpper];
-    if (!proj || !proj.phases) return;
-    const ph1 = proj.phases.find(p => p.name === PHASE_I);
-    const ph2 = proj.phases.find(p => p.name === PHASE_PD);
-    if (ph1) { phIDurs.push(ph1.durWeeks); phIStartDates.push(ph1.startDate); }
-    if (ph2) phIIDurs.push(ph2.durWeeks);
-  });
-  const medianNum = arr => arr.length ? [...arr].sort((a,b)=>a-b)[Math.floor(arr.length/2)] : null;
-  const medPhIDur  = medianNum(phIDurs)  || 6;
-  const medPhIIDur = medianNum(phIIDurs) || 16;
-
-  // Map a date string to the nearest column index in allWeeks using date arithmetic
-  const epochMs = new Date(allWeeks[0]).getTime();
-  const dateToCol = dateStr => {
-    const ms = new Date(dateStr).getTime();
-    return Math.round((ms - epochMs) / (7*24*3600*1000));
-  };
-
-  // Consensus Phase I→II and II→III columns using planned durations from each project
-  const trans12abs = [], trans23abs = [];
-  allProjectData.forEach(({ jobUpper }) => {
-    const proj = coreProjects[jobUpper];
-    if (!proj || !proj.phases) return;
-    const ph1 = proj.phases.find(p => p.name === PHASE_I);
-    const ph2 = proj.phases.find(p => p.name === PHASE_PD);
-    const ph3 = proj.phases.find(p => p.name === PHASE_CD);
-    if (ph1 && ph2 && ph2.startDate) trans12abs.push(dateToCol(ph2.startDate));
-    if (ph2 && ph3 && ph3.startDate) trans23abs.push(dateToCol(ph3.startDate));
-    else if (ph2 && ph2.endDate && ph2.endDate !== '9999-12-31') trans23abs.push(dateToCol(ph2.endDate));
-  });
-  const div12col = medianNum(trans12abs), div23col = medianNum(trans23abs);
-  const dividerCols = [div12col, div23col].filter(d => d !== null && d > 0 && d < allWeeks.length);
+  // Phase dividers: fixed canonical boundaries (week 0–7 = Phase I, 7–18 = Phase II, 18+ = Phase III)
+  // Columns are relative to allWeeks[0] as week 0
+  const STREAM_DIV_I_II  = 7;   // Phase I ends after week 7
+  const STREAM_DIV_II_III = 18;  // Phase II ends after week 18
+  const dividerCols = [STREAM_DIV_I_II, STREAM_DIV_II_III].filter(c => c > 0 && c < allWeeks.length);
 
   const regionLabels = ['Phase I', 'Phase II', 'Phase III'];
   const regionStarts = [0, ...dividerCols, allWeeks.length];
