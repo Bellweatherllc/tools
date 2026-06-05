@@ -232,6 +232,53 @@
     color: var(--text-sec);
     font-size: 13px;
   }
+
+  /* Per-project breakdown table */
+  .sg-breakdown {
+    margin-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .sg-breakdown-title {
+    padding: 14px 20px 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-sec);
+    font-weight: 600;
+  }
+  .sg-breakdown table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .sg-breakdown th {
+    text-align: left;
+    padding: 6px 20px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-sec);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+  .sg-breakdown th.num { text-align: right; }
+  .sg-breakdown td {
+    padding: 8px 20px;
+    border-bottom: 1px solid #f0ede8;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  .sg-breakdown td.num { text-align: right; }
+  .sg-breakdown td.num.zero { color: var(--muted); }
+  .sg-breakdown tr:hover td { background: var(--bg); }
+  .sg-breakdown tr.isolated td { background: var(--gold-light); font-weight: 500; }
+  .sg-breakdown .swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
   .sg-isolation {
     border-top: 1px solid var(--border);
     padding: 16px 20px;
@@ -759,6 +806,7 @@
       <div class="sg-chart-wrap" id="sgChartWrap">
         <div class="sg-empty">Click <strong>Render</strong> to load projects and timecards.</div>
       </div>
+      <div id="sgBreakdown"></div>
       <div id="sgIsolation"></div>
     </section>
 
@@ -807,7 +855,7 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 15;
+const VERSION = 16;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
@@ -2868,6 +2916,79 @@ function drawStreamgraph() {
   });
 
   renderIsolationPanel();
+  renderProjectBreakdown();
+}
+
+function renderProjectBreakdown() {
+  const container = document.getElementById('sgBreakdown');
+  if (!container) return;
+  if (!sgState.projects) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const projects = Object.values(sgState.projects);
+  if (projects.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  // Sort by total hours desc
+  projects.sort((a, b) => b.totalHours - a.totalHours);
+
+  const rows = projects.map(p => {
+    const sum = computePhaseSummary(p);
+    const phase1Hrs = Math.round(sum.phase1.totalHours);
+    const phase2Hrs = Math.round(sum.phase2.totalHours);
+    const phase3Hrs = Math.round(sum.phase3.totalHours);
+    const total = Math.round(p.totalHours);
+    const isIsolated = sgState.isolated === p.jobCode;
+
+    return `
+      <tr data-jobcode="${escapeHtml(p.jobCode)}" class="${isIsolated ? 'isolated' : ''}">
+        <td><span class="swatch" style="background:${p.color}"></span>${escapeHtml(p.profile.clientName || p.jobCode)}</td>
+        <td>${escapeHtml(p.jobCode)}</td>
+        <td>${escapeHtml(p.profile.projectType || '—')}</td>
+        <td class="num ${phase1Hrs === 0 ? 'zero' : ''}">${phase1Hrs} <span style="color:var(--text-sec);font-size:10px">(${sum.phase1.activeWeeks}w)</span></td>
+        <td class="num ${phase2Hrs === 0 ? 'zero' : ''}">${phase2Hrs} <span style="color:var(--text-sec);font-size:10px">(${sum.phase2.activeWeeks}w)</span></td>
+        <td class="num ${phase3Hrs === 0 ? 'zero' : ''}">${phase3Hrs} <span style="color:var(--text-sec);font-size:10px">(${sum.phase3.activeWeeks}w)</span></td>
+        <td class="num">${total}</td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="sg-breakdown">
+      <div class="sg-breakdown-title">Per-Project Phase Breakdown — click any row to isolate</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Job Code</th>
+            <th>Type</th>
+            <th class="num">Phase I hrs</th>
+            <th class="num">Phase II hrs</th>
+            <th class="num">Phase III hrs</th>
+            <th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+
+  // Wire row clicks
+  container.querySelectorAll('tr[data-jobcode]').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const jobCode = tr.getAttribute('data-jobcode');
+      sgState.isolated = sgState.isolated === jobCode ? null : jobCode;
+      drawStreamgraph();
+      if (sgState.isolated) {
+        const iso = document.getElementById('sgIsolation');
+        if (iso) iso.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
 }
 
 function showSgTooltip(e, jobCode) {
