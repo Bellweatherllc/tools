@@ -747,7 +747,7 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 12;
+const VERSION = 14;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
@@ -2138,7 +2138,10 @@ async function fetchAllForecastRecords() {
   return collected;
 }
 
-function projectPhaseWindows(f, lastTcDate) {
+function projectPhaseWindows(f, firstTcDate, lastTcDate) {
+  // Phase I always starts when the DA or IDEA is signed (contract entry).
+  // Phase I ends at FDDA signing (old model) or 6 weeks after entry (new model).
+  // Phase II ends at CA signing. Phase III runs from CA onward.
   const entryStr = f[spField('IDEADate')] || f[spField('DADate')];
   if (!entryStr) return null;
   const entryDate = new Date(entryStr);
@@ -2150,21 +2153,12 @@ function projectPhaseWindows(f, lastTcDate) {
   let phase1End;
   const fdda = f[spField('FDDADate')];
   if (fdda) {
-    // Old model with FDDA: Phase I ends at FDDA signing
     phase1End = new Date(fdda);
-  } else if (caDate) {
-    // New model (DA + CA, no FDDA): split DA→CA proportionally using the canonical
-    // 6:16 Phase I:Phase II ratio. This scales with actual project duration so projects
-    // with long timelines still show meaningful Phase I activity.
-    const span = caDate.getTime() - entryDate.getTime();
-    const phase1Fraction = PHASE_I_CANONICAL_WEEKS / (PHASE_I_CANONICAL_WEEKS + 16);
-    phase1End = new Date(entryDate.getTime() + span * phase1Fraction);
   } else {
-    // No CA yet — fall back to canonical 6-week Phase I
     phase1End = new Date(entryDate.getTime() + PHASE_I_CANONICAL_WEEKS * 7 * 86400000);
   }
 
-  // Phase III ends at the project's last timecard date (if known and after CA),
+  // Phase III ends at the project's last timecard date (if after CA),
   // otherwise the canonical 16-week post-CA window.
   let phase3End = null;
   if (caDate) {
@@ -2199,7 +2193,8 @@ function buildProjectStream(f, timecards) {
     .sort((a, b) => a.date - b.date);
 
   const lastTcDate = weeklyArr.length ? weeklyArr[weeklyArr.length - 1].date : null;
-  const windows = projectPhaseWindows(f, lastTcDate);
+  const firstTcDate = weeklyArr.length ? weeklyArr[0].date : null;
+  const windows = projectPhaseWindows(f, firstTcDate, lastTcDate);
   if (!windows) return null;
 
   if (tcs.length === 0) return {
@@ -2425,16 +2420,20 @@ function drawStreamgraph() {
   }
   svg += `<text class="sg-axis-label" x="${M.left - 38}" y="${M.top + innerH / 2}" transform="rotate(-90, ${M.left - 38}, ${M.top + innerH / 2})" text-anchor="middle">hours/week</text>`;
 
-  // Render bands (each project)
-  const baselineY = yScale(0);
+  // Render bands (each project) as straight-line areas. Catmull-Rom smoothing
+  // applied independently to top and bottom curves causes band heights to shift
+  // with what's stacked below — so we use linear segments here. The dense sampling
+  // (~93 points across the chart) keeps the result visually smooth.
   for (const { project, layer } of stacked) {
-    const topPts = layer.map(p => ({ x: xScale(p.x), y: yScale(p.y1) }));
-    const botPts = layer.map(p => ({ x: xScale(p.x), y: yScale(p.y0) })).reverse();
-    const topPath = catmullRomPath(topPts, baselineY);
-    const botPath = catmullRomPath(botPts, baselineY);
-    // Build a closed area path
-    const dPath = topPath + ' L ' + botPts[0].x.toFixed(2) + ' ' + botPts[0].y.toFixed(2) + ' ' +
-      botPath.replace(/^M [^ ]+ [^ ]+/, '').trim() + ' Z';
+    let dPath = `M ${xScale(layer[0].x).toFixed(2)} ${yScale(layer[0].y1).toFixed(2)}`;
+    for (let i = 1; i < layer.length; i++) {
+      dPath += ` L ${xScale(layer[i].x).toFixed(2)} ${yScale(layer[i].y1).toFixed(2)}`;
+    }
+    for (let i = layer.length - 1; i >= 0; i--) {
+      dPath += ` L ${xScale(layer[i].x).toFixed(2)} ${yScale(layer[i].y0).toFixed(2)}`;
+    }
+    dPath += ' Z';
+
     const isHovered = sgState.hovered === project.jobCode;
     const isIsolated = sgState.isolated === project.jobCode;
     const dimmed = (sgState.isolated && !isIsolated) || (sgState.hovered && !isHovered && !isIsolated);
@@ -2466,6 +2465,10 @@ function drawStreamgraph() {
       hideSgTooltip();
       drawStreamgraph();
       renderIsolationPanel();
+      if (sgState.isolated) {
+        const iso = document.getElementById('sgIsolation');
+        if (iso) iso.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
   });
 
