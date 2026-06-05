@@ -233,6 +233,65 @@
     font-size: 13px;
   }
 
+  /* Uploaded files list */
+  .tc-files {
+    margin-top: 18px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+  .tc-files-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-sec);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .tc-file-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 14px;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid #f0ede8;
+    font-size: 12px;
+  }
+  .tc-file-row:hover { background: var(--bg); }
+  .tc-file-row:last-child { border-bottom: none; }
+  .tc-file-row .fname {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-pri);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .tc-file-row .fmeta {
+    color: var(--text-sec);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .tc-file-row .remove-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-sec);
+    cursor: pointer;
+    padding: 3px 10px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 11px;
+  }
+  .tc-file-row .remove-btn:hover { color: var(--error); border-color: var(--error); }
+  .tc-file-row .remove-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .tc-files-empty {
+    padding: 10px;
+    color: var(--muted);
+    font-style: italic;
+    font-size: 12px;
+    text-align: center;
+  }
+
   /* Per-project breakdown table */
   .sg-breakdown {
     margin-top: 20px;
@@ -272,6 +331,22 @@
   .sg-breakdown td.num.zero { color: var(--muted); }
   .sg-breakdown tr:hover td { background: var(--bg); }
   .sg-breakdown tr.isolated td { background: var(--gold-light); font-weight: 500; }
+  .sg-breakdown tr.detail td {
+    border-bottom: 1px solid var(--border);
+    padding-top: 0; padding-bottom: 8px;
+    background: #fafaf6;
+    cursor: default;
+    font-size: 11px;
+    color: var(--text-sec);
+  }
+  .sg-breakdown tr.detail .date-badge {
+    display: inline-block;
+    margin-right: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  .sg-breakdown tr.detail .date-badge strong { color: var(--text-pri); margin-right: 4px; }
+  .sg-breakdown tr.detail .warn { color: var(--warning); }
+  .sg-breakdown tr.detail .err { color: var(--error); }
   .sg-breakdown .swatch {
     display: inline-block;
     width: 10px; height: 10px;
@@ -779,12 +854,15 @@
         </div>
       </div>
       <div class="panel-body collapsed" id="timecardBody">
-        <div class="dropzone" id="timecardDrop">
-          <div class="dropzone-icon">↓</div>
-          <div>Drop one or more timecard XLSX files here</div>
-          <div class="dropzone-hint">or click to choose files</div>
-          <input type="file" id="timecardFile" accept=".xlsx,.xls" multiple style="display:none">
+        <div id="timecardDropArea">
+          <div class="dropzone" id="timecardDrop">
+            <div class="dropzone-icon">↓</div>
+            <div>Drop one or more timecard XLSX files here</div>
+            <div class="dropzone-hint">or click to choose files</div>
+            <input type="file" id="timecardFile" accept=".xlsx,.xls" multiple style="display:none">
+          </div>
         </div>
+        <div id="timecardFiles"></div>
       </div>
     </section>
 
@@ -855,7 +933,7 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 16;
+const VERSION = 18;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
@@ -1424,10 +1502,12 @@ async function ensureTimecardsLoaded() {
       const jobCode = (f.JobCode || '').toString().trim();
       if (!jobCode) continue;
       collected.push({
+        id: item.id,
         designer: f.Designer || '',
         date: f.EntryDate || '',
         jobCode: jobCode.toUpperCase(),
-        hours: parseFloat(f.Hours) || 0
+        hours: parseFloat(f.Hours) || 0,
+        sourceFile: f.SourceFile || ''
       });
     }
     url = data['@odata.nextLink'] || null;
@@ -1436,6 +1516,7 @@ async function ensureTimecardsLoaded() {
   allTimecards = collected;
   distinctJobCodes = Array.from(new Set(collected.map(t => t.jobCode))).sort();
   timecardsLoaded = true;
+  renderUploadedFiles();
 }
 
 function proposeJobCodes(clientName) {
@@ -1634,16 +1715,16 @@ async function writeTimecardEntries(entries, onProgress) {
 }
 
 async function handleTimecardFiles(files) {
-  const body = document.getElementById('timecardBody');
+  const dropArea = document.getElementById('timecardDropArea');
   const filesArr = Array.from(files);
-  body.innerHTML = `
+  dropArea.innerHTML = `
     <div class="status info"><span class="spinner"></span>Loading existing timecards for deduplication...</div>
   `;
 
   try {
     await ensureTimecardsLoaded();
   } catch (err) {
-    body.innerHTML = `<div class="status error"><strong>Error loading existing timecards:</strong> ${escapeHtml(err.message)}</div>
+    dropArea.innerHTML = `<div class="status error"><strong>Error loading existing timecards:</strong> ${escapeHtml(err.message)}</div>
       <div class="actions"><button class="btn-secondary" id="timecardRetryBtn">Try Again</button></div>`;
     document.getElementById('timecardRetryBtn').addEventListener('click', resetTimecard);
     return;
@@ -1668,7 +1749,7 @@ async function handleTimecardFiles(files) {
   const duplicates = allParsed.length - toWrite.length;
 
   if (toWrite.length === 0) {
-    body.innerHTML = `
+    dropArea.innerHTML = `
       <div class="status warning">
         Parsed ${allParsed.length} entries across ${filesArr.length} file${filesArr.length === 1 ? '' : 's'}, but all were duplicates of existing entries. Nothing written.
       </div>
@@ -1681,7 +1762,7 @@ async function handleTimecardFiles(files) {
     return;
   }
 
-  body.innerHTML = `
+  dropArea.innerHTML = `
     <div class="status info"><span class="spinner"></span>Writing <span id="tcProgress">0</span> of ${toWrite.length} entries to SharePoint...</div>
     ${renderFileResults(fileResults)}
     ${duplicates > 0 ? `<div style="font-size:12px;color:var(--text-sec);margin-top:8px">${duplicates} duplicate entr${duplicates === 1 ? 'y' : 'ies'} skipped.</div>` : ''}
@@ -1692,24 +1773,21 @@ async function handleTimecardFiles(files) {
     if (progressEl) progressEl.textContent = i;
   });
 
-  // Push new entries into cache so analog lookup sees them without re-fetching
-  for (const e of toWrite) {
-    allTimecards.push({
-      designer: e.designer,
-      date: e.date,
-      jobCode: e.jobUpper,
-      hours: e.hours
-    });
-    if (!distinctJobCodes.includes(e.jobUpper)) distinctJobCodes.push(e.jobUpper);
+  // Refresh the cache from SharePoint so newly written entries are captured with their IDs
+  // (so they show up in the uploaded files list with working Remove buttons)
+  timecardsLoaded = false;
+  try {
+    await ensureTimecardsLoaded();
+  } catch (err) {
+    console.warn('Failed to refresh timecard cache after upload:', err);
   }
-  distinctJobCodes.sort();
 
   const statusClass = result.failed === 0 ? 'success' : (result.success > 0 ? 'warning' : 'error');
   const statusMsg = result.failed === 0
     ? `Wrote ${result.success} new entries to SharePoint.`
     : `Wrote ${result.success} entries; ${result.failed} failed (see console).`;
 
-  body.innerHTML = `
+  dropArea.innerHTML = `
     <div class="status ${statusClass}">${statusMsg}${duplicates > 0 ? ` ${duplicates} duplicate${duplicates === 1 ? '' : 's'} skipped.` : ''}</div>
     ${renderFileResults(fileResults)}
     <div class="actions">
@@ -1734,7 +1812,7 @@ function renderFileResults(results) {
 }
 
 function resetTimecard() {
-  document.getElementById('timecardBody').innerHTML = `
+  document.getElementById('timecardDropArea').innerHTML = `
     <div class="dropzone" id="timecardDrop">
       <div class="dropzone-icon">↓</div>
       <div>Drop one or more timecard XLSX files here</div>
@@ -1743,6 +1821,130 @@ function resetTimecard() {
     </div>
   `;
   wireTimecardDropzone();
+}
+
+function renderUploadedFiles() {
+  const container = document.getElementById('timecardFiles');
+  if (!container) return;
+  if (!timecardsLoaded || !allTimecards || allTimecards.length === 0) {
+    container.innerHTML = `
+      <div class="tc-files">
+        <div class="tc-files-title">Uploaded Files</div>
+        <div class="tc-files-empty">No timecards loaded yet. Drop files above or expand the panel to load.</div>
+      </div>
+    `;
+    return;
+  }
+
+  // Group cached entries by sourceFile
+  const groups = {};
+  for (const t of allTimecards) {
+    const src = t.sourceFile || '(no source file recorded)';
+    if (!groups[src]) groups[src] = { name: src, entries: [], minDate: null, maxDate: null };
+    groups[src].entries.push(t);
+    if (t.date) {
+      const d = new Date(t.date);
+      if (!isNaN(d.getTime())) {
+        if (!groups[src].minDate || d < groups[src].minDate) groups[src].minDate = d;
+        if (!groups[src].maxDate || d > groups[src].maxDate) groups[src].maxDate = d;
+      }
+    }
+  }
+  const sorted = Object.values(groups).sort((a, b) => {
+    const aT = a.maxDate ? a.maxDate.getTime() : 0;
+    const bT = b.maxDate ? b.maxDate.getTime() : 0;
+    return bT - aT;
+  });
+
+  const fmt = (d) => d ? d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }) : '—';
+
+  container.innerHTML = `
+    <div class="tc-files">
+      <div class="tc-files-title">Uploaded Files (${sorted.length})</div>
+      ${sorted.map((g, i) => {
+        const removable = g.name !== '(no source file recorded)' && g.entries.some(e => e.id);
+        return `
+          <div class="tc-file-row" data-file-idx="${i}">
+            <div class="fname" title="${escapeHtml(g.name)}">${escapeHtml(g.name)}</div>
+            <div class="fmeta">${g.entries.length} entr${g.entries.length === 1 ? 'y' : 'ies'}</div>
+            <div class="fmeta">${fmt(g.minDate)} → ${fmt(g.maxDate)}</div>
+            <button class="remove-btn" data-fname="${escapeHtml(g.name)}" ${removable ? '' : 'disabled title="No deletable entries"'}>Remove</button>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  container.querySelectorAll('.remove-btn').forEach(btn => {
+    if (btn.disabled) return;
+    btn.addEventListener('click', () => {
+      const fname = btn.getAttribute('data-fname');
+      deleteFileEntries(fname);
+    });
+  });
+}
+
+async function deleteFileEntries(filename) {
+  const entries = allTimecards.filter(t => (t.sourceFile || '(no source file recorded)') === filename && t.id);
+  if (entries.length === 0) return;
+  const ok = confirm(`Delete all ${entries.length} timecard entr${entries.length === 1 ? 'y' : 'ies'} from "${filename}"? This cannot be undone.`);
+  if (!ok) return;
+
+  const container = document.getElementById('timecardFiles');
+  // Find the row for this file and disable its button + show progress
+  const rows = container.querySelectorAll('.tc-file-row');
+  let targetRow = null;
+  for (const row of rows) {
+    const btn = row.querySelector('.remove-btn');
+    if (btn && btn.getAttribute('data-fname') === filename) {
+      targetRow = row;
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+    }
+  }
+
+  const token = await getGraphToken();
+  if (!token) {
+    alert('Authentication expired. Sign in and try again.');
+    return;
+  }
+
+  let deleted = 0;
+  let failed = 0;
+  const baseUrl = `https://graph.microsoft.com/v1.0/sites/${SP_SITE_PATH}:/lists/${SP_TIMECARD_LIST}/items`;
+  const successfullyDeletedIds = new Set();
+  for (const e of entries) {
+    try {
+      const resp = await fetch(`${baseUrl}/${e.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (resp.ok || resp.status === 404) {
+        deleted++;
+        successfullyDeletedIds.add(e.id);
+      } else {
+        failed++;
+        console.error(`Delete failed for entry ${e.id}: HTTP ${resp.status}`);
+      }
+    } catch (err) {
+      failed++;
+      console.error(`Delete failed for entry ${e.id}:`, err);
+    }
+    if (targetRow) {
+      const btn = targetRow.querySelector('.remove-btn');
+      if (btn) btn.textContent = `Deleting ${deleted + failed} of ${entries.length}...`;
+    }
+  }
+
+  // Remove deleted entries from cache
+  allTimecards = allTimecards.filter(t => !successfullyDeletedIds.has(t.id));
+  distinctJobCodes = Array.from(new Set(allTimecards.map(t => t.jobCode))).sort();
+
+  renderUploadedFiles();
+
+  if (failed > 0) {
+    alert(`Deleted ${deleted} entries. ${failed} failed (see console).`);
+  }
 }
 
 function wireTimecardDropzone() {
@@ -2944,6 +3146,25 @@ function renderProjectBreakdown() {
     const total = Math.round(p.totalHours);
     const isIsolated = sgState.isolated === p.jobCode;
 
+    // Build detail row content
+    const w = p.windows;
+    const first = p.weekly.length ? p.weekly[0].date : null;
+    const last = p.weekly.length ? p.weekly[p.weekly.length - 1].date : null;
+    const fmtShort = (d) => d ? d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }) : '—';
+
+    // Diagnostic markers
+    const phase1Gap = first && w.phase1End && first > w.phase1End;
+    const phase3Gap = w.phase2End && (!last || last < w.phase2End);
+
+    const detailParts = [];
+    detailParts.push(`<span class="date-badge"><strong>Entry:</strong>${fmtShort(w.entryDate)}</span>`);
+    detailParts.push(`<span class="date-badge"><strong>P1 end:</strong>${fmtShort(w.phase1End)}</span>`);
+    if (w.phase2End) detailParts.push(`<span class="date-badge"><strong>CA:</strong>${fmtShort(w.phase2End)}</span>`);
+    if (last && w.phase2End && last > w.phase2End) detailParts.push(`<span class="date-badge"><strong>P3 end:</strong>${fmtShort(w.phase3End)}</span>`);
+    detailParts.push(`<span class="date-badge"><strong>Timecards:</strong>${fmtShort(first)} → ${fmtShort(last)}</span>`);
+    if (phase1Gap) detailParts.push(`<span class="date-badge warn">⚠ First timecard is after Phase I cutoff — early data missing or not yet logged</span>`);
+    if (phase3Gap && w.phase2End) detailParts.push(`<span class="date-badge warn">⚠ No timecards after CA date</span>`);
+
     return `
       <tr data-jobcode="${escapeHtml(p.jobCode)}" class="${isIsolated ? 'isolated' : ''}">
         <td><span class="swatch" style="background:${p.color}"></span>${escapeHtml(p.profile.clientName || p.jobCode)}</td>
@@ -2953,6 +3174,9 @@ function renderProjectBreakdown() {
         <td class="num ${phase2Hrs === 0 ? 'zero' : ''}">${phase2Hrs} <span style="color:var(--text-sec);font-size:10px">(${sum.phase2.activeWeeks}w)</span></td>
         <td class="num ${phase3Hrs === 0 ? 'zero' : ''}">${phase3Hrs} <span style="color:var(--text-sec);font-size:10px">(${sum.phase3.activeWeeks}w)</span></td>
         <td class="num">${total}</td>
+      </tr>
+      <tr class="detail ${isIsolated ? 'isolated' : ''}">
+        <td colspan="7">${detailParts.join('')}</td>
       </tr>
     `;
   }).join('');
@@ -3326,8 +3550,23 @@ document.querySelectorAll('.panel-header.collapsible').forEach(header => {
   header.addEventListener('click', () => {
     const body = header.nextElementSibling;
     if (!body) return;
+    const wasCollapsed = body.classList.contains('collapsed');
     body.classList.toggle('collapsed');
     header.classList.toggle('expanded');
+    // When the timecard panel is being expanded, load cache (if not yet) and render file list
+    if (wasCollapsed && body.id === 'timecardBody') {
+      if (!timecardsLoaded) {
+        ensureTimecardsLoaded()
+          .then(() => renderUploadedFiles())
+          .catch(err => {
+            console.warn('Timecard load failed on panel expand:', err);
+            const container = document.getElementById('timecardFiles');
+            if (container) container.innerHTML = `<div class="tc-files"><div class="tc-files-empty">Could not load timecards: ${escapeHtml(err.message || 'unknown error')}</div></div>`;
+          });
+      } else {
+        renderUploadedFiles();
+      }
+    }
   });
 });
 
