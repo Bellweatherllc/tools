@@ -455,11 +455,17 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 1;
+const VERSION = 2;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
 const SP_LIST_NAME = 'CORE_DesignForecast';
+const SP_TIMECARD_LIST = 'CORE_DesignerTimecard';
+
+// Session cache for timecard data
+let timecardsLoaded = false;
+let allTimecards = [];      // [{ designer, date, jobCode, hours }, ...]
+let distinctJobCodes = [];  // unique JobCodes, uppercase
 
 const MSAL_CONFIG = {
   auth: {
@@ -791,7 +797,7 @@ async function fetchCompletedRecords() {
   return (data.value || []).map(it => it.fields);
 }
 
-function buildFieldsPayload(extracted, existingFields) {
+function buildFieldsPayload(extracted, existingFields, jobCode) {
   // Build the SharePoint fields object from the extracted data,
   // merging with any existing fields so we don't blank out prior data.
 
@@ -804,6 +810,9 @@ function buildFieldsPayload(extracted, existingFields) {
   if (extracted.scopeDescription) fields.ScopeDescription = extracted.scopeDescription;
   if (extracted.designFee != null) fields.DesignFee = extracted.designFee;
   if (extracted.constructionBudget != null) fields.ConstructionBudget = extracted.constructionBudget;
+
+  // JobCode — set if provided; preserve existing if not
+  if (jobCode) fields.JobCode = jobCode.toUpperCase();
 
   // Date field based on document type
   const dateISO = extracted.executionDate
@@ -887,6 +896,127 @@ async function updateItem(itemId, fields) {
 }
 
 // ------------------------------------------------------------
+// Timecard data (CORE_DesignerTimecard)
+// ------------------------------------------------------------
+
+async function ensureTimecardsLoaded() {
+  if (timecardsLoaded) return;
+
+  const token = await getGraphToken();
+  if (!token) throw new Error('No auth token for timecard fetch.');
+
+  const base = `https://graph.microsoft.com/v1.0/sites/${SP_SITE_PATH}:/lists/${SP_TIMECARD_LIST}`;
+  let url = `${base}/items?$expand=fields&$top=200`;
+  const collected = [];
+
+  while (url) {
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly'
+      }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`Timecard fetch failed (${resp.status}): ${errText}`);
+    }
+    const data = await resp.json();
+    for (const item of (data.value || [])) {
+      const f = item.fields || {};
+      const jobCode = (f.JobCode || '').toString().trim();
+      if (!jobCode) continue;
+      collected.push({
+        designer: f.Designer || '',
+        date: f.EntryDate || '',
+        jobCode: jobCode.toUpperCase(),
+        hours: parseFloat(f.Hours) || 0
+      });
+    }
+    url = data['@odata.nextLink'] || null;
+  }
+
+  allTimecards = collected;
+  distinctJobCodes = Array.from(new Set(collected.map(t => t.jobCode))).sort();
+  timecardsLoaded = true;
+}
+
+function proposeJobCodes(clientName) {
+  // Extract probable last names from a client string like "John & Jane Wortman" or "Smith Family"
+  if (!clientName) return distinctJobCodes.slice(0, 10);
+  const cleaned = clientName.replace(/\b(and|family|trust|llc|inc)\b/gi, ' ').replace(/&/g, ' ');
+  const tokens = cleaned.split(/[\s,]+/).filter(t => t.length >= 2);
+  // Likely last names are the longest tokens; bias toward last-position tokens
+  const lastNameCandidates = tokens
+    .map((t, i) => ({ t: t.toUpperCase(), score: t.length + (i === tokens.length - 1 ? 3 : 0) }))
+    .sort((a, b) => b.score - a.score)
+    .map(x => x.t);
+
+  const scored = distinctJobCodes.map(code => {
+    let score = 0;
+    for (const ln of lastNameCandidates) {
+      if (code === ln) score = Math.max(score, 100);
+      else if (code.startsWith(ln)) score = Math.max(score, 80 - (code.length - ln.length));
+      else if (code.includes(ln)) score = Math.max(score, 50);
+      else if (ln.startsWith(code) && code.length >= 3) score = Math.max(score, 30);
+    }
+    return { code, score };
+  });
+
+  const matches = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score).map(s => s.code);
+  // Return matches plus a few alphabetical fallbacks for browsing
+  const fallback = distinctJobCodes.filter(c => !matches.includes(c)).slice(0, 8);
+  return [...matches, ...fallback];
+}
+
+function timecardsForJobCode(jobCode) {
+  if (!jobCode) return [];
+  const up = jobCode.toUpperCase();
+  return allTimecards.filter(t => t.jobCode === up);
+}
+
+function bucketHoursByPhase(timecards, dates) {
+  // dates = { ideaDate, fddaDate, daDate, caDate } as ISO strings (or null)
+  const entry = dates.ideaDate || dates.daDate || null;
+  const fdda = dates.fddaDate || null;
+  const ca = dates.caDate || null;
+
+  const buckets = { preContract: 0, phase1: 0, phase2: 0, phase3: 0 };
+
+  const entryD = entry ? new Date(entry) : null;
+  const fddaD = fdda ? new Date(fdda) : null;
+  const caD = ca ? new Date(ca) : null;
+
+  for (const tc of timecards) {
+    if (!tc.date) continue;
+    const d = new Date(tc.date);
+    if (isNaN(d.getTime())) continue;
+
+    if (entryD && d < entryD) {
+      buckets.preContract += tc.hours;
+    } else if (fddaD && d < fddaD) {
+      buckets.phase1 += tc.hours;
+    } else if (caD && d < caD) {
+      // Between FDDA (if present) and CA — that's Phase II in old model,
+      // or Phase I+II combined in new model (where fddaD is null and we fall through to here)
+      buckets.phase2 += tc.hours;
+    } else if (caD && d >= caD) {
+      buckets.phase3 += tc.hours;
+    } else {
+      // No CA yet; everything post-entry is in-progress design work
+      buckets.phase2 += tc.hours;
+    }
+  }
+
+  // For display, collapse to Design (pre-CA) and Construction (post-CA),
+  // since old/new contract models split the design portion differently.
+  buckets.design = buckets.phase1 + buckets.phase2;
+  buckets.construction = buckets.phase3;
+  buckets.total = buckets.design + buckets.construction + buckets.preContract;
+
+  return buckets;
+}
+
+// ------------------------------------------------------------
 // Intake panel
 // ------------------------------------------------------------
 
@@ -898,27 +1028,67 @@ async function handleIntakeFile(file) {
 
   try {
     const extracted = await extractFromPdf(file);
-    renderIntakeReview(extracted, file.name);
+    // Load timecards in background so JobCode picker is ready
+    body.innerHTML = `
+      <div class="status info"><span class="spinner"></span>Loading job codes from timecards...</div>
+    `;
+    try {
+      await ensureTimecardsLoaded();
+    } catch (err) {
+      // Non-fatal — user can still type a JobCode manually
+      console.warn('Timecard preload failed:', err);
+    }
+    // Check if there's an existing row so we can preserve its JobCode
+    let existingJobCode = '';
+    if (extracted.clientName && extracted.projectAddress) {
+      try {
+        const existing = await findExistingItem(extracted.clientName, extracted.projectAddress);
+        if (existing && existing.fields && existing.fields.JobCode) {
+          existingJobCode = existing.fields.JobCode;
+        }
+      } catch (err) {
+        console.warn('Existing-row check failed:', err);
+      }
+    }
+    renderIntakeReview(extracted, file.name, existingJobCode);
   } catch (err) {
     renderIntakeError(err.message);
   }
 }
 
-function renderIntakeReview(extracted, fileName) {
+function renderIntakeReview(extracted, fileName, existingJobCode) {
+  const proposed = existingJobCode || (proposeJobCodes(extracted.clientName)[0] || '');
+  const candidates = proposeJobCodes(extracted.clientName);
+
   const body = document.getElementById('intakeBody');
   body.innerHTML = `
-    <div class="status info">Extracted from <strong>${escapeHtml(fileName)}</strong>. Review and save.</div>
+    <div class="status info">Extracted from <strong>${escapeHtml(fileName)}</strong>. Review, set the Job Code, and save.</div>
     <div class="extracted" id="intakeReview">${renderProfile(extracted)}</div>
+    <div class="data-section">
+      <div class="data-section-title">Job Code</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="intakeJobCode" list="intakeJobCodeList" value="${escapeHtml(proposed)}" style="padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:13px;min-width:200px;text-transform:uppercase">
+        <datalist id="intakeJobCodeList">
+          ${candidates.map(c => `<option value="${escapeHtml(c)}">`).join('')}
+        </datalist>
+        <span style="font-size:12px;color:var(--text-sec)">
+          ${existingJobCode ? 'Existing code from prior contract' : (candidates.length ? `${candidates.length} known code${candidates.length === 1 ? '' : 's'} suggested` : 'No timecards yet — type a new code')}
+        </span>
+      </div>
+    </div>
     <div class="actions">
       <button class="btn-secondary" id="intakeCancelBtn">Cancel</button>
       <button class="btn-primary" id="intakeSaveBtn">Save to SharePoint</button>
     </div>
   `;
   document.getElementById('intakeCancelBtn').addEventListener('click', resetIntake);
-  document.getElementById('intakeSaveBtn').addEventListener('click', () => saveIntake(extracted));
+  document.getElementById('intakeSaveBtn').addEventListener('click', () => {
+    const jobCode = (document.getElementById('intakeJobCode').value || '').trim().toUpperCase();
+    saveIntake(extracted, jobCode);
+  });
 }
 
-async function saveIntake(extracted) {
+async function saveIntake(extracted, jobCode) {
   const body = document.getElementById('intakeBody');
   const saveBtn = document.getElementById('intakeSaveBtn');
   if (saveBtn) {
@@ -930,9 +1100,12 @@ async function saveIntake(extracted) {
     if (!extracted.clientName || !extracted.projectAddress) {
       throw new Error('Extraction missing ClientName or ProjectAddress — cannot match or create a row. Edit not yet supported; re-run extraction or open SharePoint directly.');
     }
+    if (!jobCode) {
+      throw new Error('Job Code is required. Type one in or pick from the suggestions.');
+    }
 
     const existing = await findExistingItem(extracted.clientName, extracted.projectAddress);
-    const fields = buildFieldsPayload(extracted, existing ? existing.fields : null);
+    const fields = buildFieldsPayload(extracted, existing ? existing.fields : null, jobCode);
 
     let actionLabel;
     if (existing) {
@@ -944,7 +1117,7 @@ async function saveIntake(extracted) {
     }
 
     body.innerHTML = `
-      <div class="status success"><strong>${actionLabel}</strong> for ${escapeHtml(extracted.clientName)} — ${escapeHtml(extracted.projectAddress)}. RecordComplete: ${fields.RecordComplete ? 'Yes' : 'No'}.</div>
+      <div class="status success"><strong>${actionLabel}</strong> for ${escapeHtml(extracted.clientName)} — ${escapeHtml(extracted.projectAddress)} (JobCode: ${escapeHtml(jobCode)}). RecordComplete: ${fields.RecordComplete ? 'Yes' : 'No'}.</div>
       <div class="actions">
         <button class="btn-primary" id="intakeAgainBtn">Process Another</button>
       </div>
@@ -998,6 +1171,14 @@ async function handleLookupFile(file) {
       <div class="status info"><span class="spinner"></span>Loading completed projects from SharePoint...</div>
     `;
     const completed = await fetchCompletedRecords();
+    body.innerHTML = `
+      <div class="status info"><span class="spinner"></span>Loading timecards...</div>
+    `;
+    try {
+      await ensureTimecardsLoaded();
+    } catch (err) {
+      console.warn('Timecard load failed during lookup:', err);
+    }
     renderLookupResults(extracted, completed, file.name);
   } catch (err) {
     renderLookupError(err.message);
@@ -1013,6 +1194,11 @@ function profileFromSharePointFields(f) {
     clientName: f.ClientName || '(unnamed)',
     projectAddress: f.ProjectAddress || '',
     projectType: f.ProjectType || 'Other',
+    jobCode: f.JobCode || '',
+    ideaDate: f.IDEADate || null,
+    fddaDate: f.FDDADate || null,
+    daDate: f.DADate || null,
+    caDate: f.CADate || null,
     lod: {
       drawings: f.LOD_Drawings || 'MED',
       siteVerification: f.LOD_SiteVerification || 'MED',
@@ -1048,6 +1234,31 @@ function renderLookupResults(newProfile, completedFields, fileName) {
   scored.sort((a, b) => a.distance - b.distance);
   const top = scored.slice(0, 5);
 
+  // Compute hours per analog
+  const analogsWithHours = top.map(({ profile, distance }) => {
+    const tcs = timecardsForJobCode(profile.jobCode);
+    const hours = bucketHoursByPhase(tcs, {
+      ideaDate: profile.ideaDate,
+      fddaDate: profile.fddaDate,
+      daDate: profile.daDate,
+      caDate: profile.caDate
+    });
+    return { profile, distance, hours, hasTimecards: tcs.length > 0 };
+  });
+
+  // Forecast = average across analogs that have timecard data
+  const withData = analogsWithHours.filter(a => a.hasTimecards);
+  let forecast = null;
+  if (withData.length > 0) {
+    const avg = (key) => withData.reduce((s, a) => s + a.hours[key], 0) / withData.length;
+    forecast = {
+      design: avg('design'),
+      construction: avg('construction'),
+      total: avg('total'),
+      n: withData.length
+    };
+  }
+
   const body = document.getElementById('lookupBody');
   let html = `
     <div class="status info">Extracted from <strong>${escapeHtml(fileName)}</strong>. Showing ${top.length} closest analog${top.length === 1 ? '' : 's'} of ${candidates.length} completed project${candidates.length === 1 ? '' : 's'}.</div>
@@ -1059,26 +1270,27 @@ function renderLookupResults(newProfile, completedFields, fileName) {
     </div>
   `;
 
+  if (forecast) {
+    html += `
+      <div class="data-section">
+        <div class="data-section-title">Forecast (average of ${forecast.n} analog${forecast.n === 1 ? '' : 's'} with timecard data)</div>
+        <div class="hours-grid">
+          ${renderHoursCard('Design (pre-CA)', forecast.design)}
+          ${renderHoursCard('Construction (post-CA)', forecast.construction)}
+          ${renderHoursCard('Total', forecast.total, true)}
+        </div>
+      </div>
+    `;
+  }
+
   if (top.length === 0) {
     html += `<div class="status warning">No completed records found in SharePoint yet. Once contracts have both an entry document (IDEA or DA) and a CA on file, they'll appear here as analogs.</div>`;
   } else {
     html += `<div class="data-section"><div class="data-section-title">Closest analogs</div><div class="analog-list">`;
-    for (const { profile, distance } of top) {
-      html += `
-        <div class="analog-card">
-          <div class="analog-header">
-            <div class="analog-name">${escapeHtml(profile.clientName)}</div>
-            <div class="analog-score">distance ${distance}</div>
-          </div>
-          <div class="analog-meta">${escapeHtml(profile.projectAddress)} · ${escapeHtml(profile.projectType)}</div>
-          <div class="analog-profile">
-            ${renderProfileBadges(profile)}
-          </div>
-        </div>
-      `;
+    for (const a of analogsWithHours) {
+      html += renderAnalogCard(a);
     }
     html += `</div></div>`;
-    html += `<div class="status info" style="margin-top:12px;font-size:12px">Phase hour data will be joined here once timecard integration is wired up.</div>`;
   }
 
   html += `
@@ -1089,6 +1301,42 @@ function renderLookupResults(newProfile, completedFields, fileName) {
 
   body.innerHTML = html;
   document.getElementById('lookupAgainBtn').addEventListener('click', resetLookup);
+}
+
+function renderHoursCard(label, value, total) {
+  const v = Math.round(value);
+  const style = total ? 'background:var(--gold-light);border-color:var(--gold)' : '';
+  return `
+    <div style="display:inline-block;padding:10px 14px;border:1px solid var(--border);border-radius:6px;margin-right:8px;margin-bottom:8px;${style}">
+      <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:0.04em">${escapeHtml(label)}</div>
+      <div style="font-size:20px;font-weight:600;color:var(--navy);font-variant-numeric:tabular-nums">${v.toLocaleString()} <span style="font-size:11px;color:var(--text-sec);font-weight:400">hrs</span></div>
+    </div>
+  `;
+}
+
+function renderAnalogCard(a) {
+  const { profile, distance, hours, hasTimecards } = a;
+  const hoursLine = hasTimecards
+    ? `<div style="display:flex;gap:14px;margin-top:8px;font-size:12px;color:var(--text-sec);font-variant-numeric:tabular-nums">
+         <span><strong style="color:var(--navy)">${Math.round(hours.design).toLocaleString()}</strong> design</span>
+         <span><strong style="color:var(--navy)">${Math.round(hours.construction).toLocaleString()}</strong> construction</span>
+         <span><strong style="color:var(--navy)">${Math.round(hours.total).toLocaleString()}</strong> total</span>
+       </div>`
+    : `<div style="margin-top:6px;font-size:12px;color:var(--muted);font-style:italic">No timecard entries${profile.jobCode ? ' for ' + escapeHtml(profile.jobCode) : ' (no JobCode set)'}</div>`;
+
+  return `
+    <div class="analog-card">
+      <div class="analog-header">
+        <div class="analog-name">${escapeHtml(profile.clientName)}${profile.jobCode ? ` <span style="font-size:11px;color:var(--text-sec);font-weight:400">· ${escapeHtml(profile.jobCode)}</span>` : ''}</div>
+        <div class="analog-score">distance ${distance}</div>
+      </div>
+      <div class="analog-meta">${escapeHtml(profile.projectAddress)} · ${escapeHtml(profile.projectType)}</div>
+      <div class="analog-profile">
+        ${renderProfileBadges(profile)}
+      </div>
+      ${hoursLine}
+    </div>
+  `;
 }
 
 function renderLookupError(message) {
