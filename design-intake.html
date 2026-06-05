@@ -380,6 +380,66 @@
     min-width: 4px;
   }
 
+  /* Bulk intake review table */
+  .bulk-review {
+    margin-top: 12px;
+    overflow-x: auto;
+  }
+  .bulk-review table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .bulk-review th {
+    text-align: left;
+    padding: 6px 8px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-sec);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky; top: 0;
+  }
+  .bulk-review td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #f0ede8;
+    vertical-align: middle;
+  }
+  .bulk-review tr.invalid { background: #fbeaea22; }
+  .bulk-review tr.saved td { opacity: 0.6; }
+  .bulk-review input, .bulk-review select {
+    width: 100%;
+    padding: 3px 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 12px;
+    background: var(--surface);
+  }
+  .bulk-review .filename {
+    font-family: monospace;
+    font-size: 10px;
+    color: var(--text-sec);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bulk-review .row-status {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .bulk-review .row-status.pending { background: #eef3f8; color: #2a4a6b; }
+  .bulk-review .row-status.invalid { background: #fbeaea; color: var(--error); }
+  .bulk-review .row-status.saving { background: #fdf2e6; color: var(--warning); }
+  .bulk-review .row-status.saved { background: #e8f5ec; color: var(--success); }
+  .bulk-review .row-status.failed { background: #fbeaea; color: var(--error); }
+
   .panel {
     background: var(--surface);
     border-radius: 8px;
@@ -714,9 +774,9 @@
       <div class="panel-body collapsed" id="intakeBody">
         <div class="dropzone" id="intakeDrop">
           <div class="dropzone-icon">↓</div>
-          <div>Drop a contract PDF here</div>
-          <div class="dropzone-hint">or click to choose a file</div>
-          <input type="file" id="intakeFile" accept="application/pdf" style="display:none">
+          <div>Drop one or more contract PDFs here</div>
+          <div class="dropzone-hint">Single PDF → full extraction · Multiple PDFs → fast filename parse</div>
+          <input type="file" id="intakeFile" accept="application/pdf" multiple style="display:none">
         </div>
       </div>
     </section>
@@ -747,7 +807,7 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 14;
+const VERSION = 15;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
@@ -899,11 +959,35 @@ function wireDropzone(dropEl, fileEl, handler) {
   });
 }
 
-wireDropzone(
-  document.getElementById('intakeDrop'),
-  document.getElementById('intakeFile'),
-  handleIntakeFile
-);
+// Intake dropzone — handles single PDF (API extraction) or multiple PDFs (bulk filename parse)
+function wireIntakeDropzone() {
+  const dropEl = document.getElementById('intakeDrop');
+  const fileEl = document.getElementById('intakeFile');
+  if (!dropEl || !fileEl) return;
+  const onFiles = (files) => {
+    const arr = Array.from(files || []);
+    if (arr.length === 0) return;
+    if (arr.length === 1) {
+      handleIntakeFile(arr[0]);
+    } else {
+      handleBulkIntakeFiles(arr);
+    }
+  };
+  dropEl.addEventListener('click', () => fileEl.click());
+  dropEl.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropEl.classList.add('dragover');
+  });
+  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('dragover'));
+  dropEl.addEventListener('drop', e => {
+    e.preventDefault();
+    dropEl.classList.remove('dragover');
+    onFiles(e.dataTransfer.files);
+  });
+  fileEl.addEventListener('change', e => onFiles(e.target.files));
+}
+
+wireIntakeDropzone();
 wireDropzone(
   document.getElementById('lookupDrop'),
   document.getElementById('lookupFile'),
@@ -1096,7 +1180,13 @@ async function findExistingItem(clientName, projectAddress) {
 
   const clientField = spField('ClientName');
   const addrField = spField('ProjectAddress');
-  const filter = `fields/${clientField} eq '${escapeOData(clientName)}' and fields/${addrField} eq '${escapeOData(projectAddress)}'`;
+  let filter;
+  if (projectAddress && addrField) {
+    filter = `fields/${clientField} eq '${escapeOData(clientName)}' and fields/${addrField} eq '${escapeOData(projectAddress)}'`;
+  } else {
+    // No address provided — match by client name alone (used by bulk filename intake)
+    filter = `fields/${clientField} eq '${escapeOData(clientName)}'`;
+  }
   const url = `${SP_BASE}/items?$expand=fields&$filter=${encodeURIComponent(filter)}`;
 
   const resp = await fetch(url, {
@@ -1628,7 +1718,316 @@ function wireTimecardDropzone() {
 }
 
 // ------------------------------------------------------------
-// Intake panel
+// Bulk filename intake — no API, parses metadata from PDF filenames
+// ------------------------------------------------------------
+
+function parseContractFilename(filename) {
+  // Strip extension and normalize whitespace
+  let name = filename.replace(/\.pdf$/i, '').trim();
+
+  // Normalize: convert underscores between words to spaces (but preserve in dates)
+  // Approach: convert all separators to spaces, then re-detect the date as MM-DD-YY
+  // First, find and capture the date
+  let executionDate = null;
+  let dateMatch = null;
+  // Try YYYY format first (more specific)
+  const datePatternLong = /(\d{1,2})[-_\/](\d{1,2})[-_\/](\d{4})/;
+  const datePatternShort = /(\d{1,2})[-_\/](\d{1,2})[-_\/](\d{2})(?!\d)/;
+  dateMatch = name.match(datePatternLong) || name.match(datePatternShort);
+  if (dateMatch) {
+    const month = parseInt(dateMatch[1], 10);
+    const day = parseInt(dateMatch[2], 10);
+    let year = parseInt(dateMatch[3], 10);
+    if (year < 100) year += year < 50 ? 2000 : 1900;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      executionDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  // Working string for client+doctype extraction: remove date and noise
+  let working = name;
+  if (dateMatch) working = working.replace(dateMatch[0], ' ');
+  working = working
+    .replace(/^SI[GN][NG]ED\b[\s\-_]*/i, ' ') // strip "SIGNED" or typo "SINGED" prefix
+    .replace(/\bSIGNED\b/gi, ' ')
+    .replace(/\(\d+\)/g, ' ')                  // remove "(1)" duplicate markers
+    .replace(/[_]+/g, ' ')                     // underscores to spaces
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Identify document type — check long forms first, then abbreviations
+  let documentType = null;
+  if (/\bConstruction\s+Agreement\b/i.test(working)) documentType = 'CA';
+  else if (/\bFull\s+Design\s+Development\s+Agreement\b/i.test(working)) documentType = 'FDDA';
+  else if (/\bFull\s+Design\s+Agreement\b/i.test(working)) documentType = 'DA';
+  else if (/\bInitial\s+Design\s+(?:&\s+|and\s+)?Exploration\s+Agreement\b/i.test(working)) documentType = 'IDEA';
+  else if (/\bInitial\s+Design\s+Agreement\b/i.test(working)) documentType = 'DA'; // OPILA-COX uses this for the early IDEA-equivalent
+  else if (/\bFDDA\b/i.test(working)) documentType = 'FDDA';
+  else if (/\bIDEA\b/i.test(working)) documentType = 'IDEA';
+  else if (/\bCA\b/i.test(working)) documentType = 'CA';
+  else if (/\bDA\b/i.test(working)) documentType = 'DA';
+
+  // Strip the doctype mention to leave the client name
+  let clientWorking = working
+    .replace(/\bConstruction\s+Agreement\b/gi, ' ')
+    .replace(/\bFull\s+Design\s+Development\s+Agreement\b/gi, ' ')
+    .replace(/\bFull\s+Design\s+Agreement\b/gi, ' ')
+    .replace(/\bInitial\s+Design\s+(?:&\s+|and\s+)?Exploration\s+Agreement\b/gi, ' ')
+    .replace(/\bInitial\s+Design\s+Agreement\b/gi, ' ')
+    .replace(/\b(FDDA|IDEA|CA|DA)\b/g, ' ')
+    // Common qualifiers that aren't part of client name
+    .replace(/\bPhase\s*#?\s*\d+\b/gi, ' ')
+    .replace(/\bRevised\b/gi, ' ')
+    .replace(/\bMAKE\s+SAFE\b/gi, ' ')
+    .replace(/\bWHITE\s+BOX\b/gi, ' ')
+    .replace(/\bRoofdeck\b/gi, ' ');
+
+  // Clean leading/trailing separators and excess whitespace
+  let clientName = clientWorking
+    .replace(/[-]{2,}/g, ' ')
+    .replace(/\s*-\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[-,\s]+|[-,\s]+$/g, '');
+
+  // Normalize case: title case for client names. Leaves hyphenated names intact.
+  if (clientName) {
+    clientName = clientName.split(/\s+/).map(w => {
+      // Preserve hyphenated multi-word like "Andrews-Zell"
+      return w.split('-').map(part => {
+        if (part.length === 0) return part;
+        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      }).join('-');
+    }).join(' ');
+  }
+
+  return {
+    filename,
+    clientName: clientName || '',
+    documentType: documentType || '',
+    executionDate: executionDate || '',
+    valid: !!(clientName && documentType && executionDate)
+  };
+}
+
+// Bulk intake state
+let bulkRows = [];
+
+async function handleBulkIntakeFiles(files) {
+  const body = document.getElementById('intakeBody');
+  body.innerHTML = `
+    <div class="status info"><span class="spinner"></span>Parsing ${files.length} filename${files.length === 1 ? '' : 's'} and loading job codes...</div>
+  `;
+
+  // Parse all filenames
+  bulkRows = files.map(f => {
+    const parsed = parseContractFilename(f.name);
+    return {
+      filename: parsed.filename,
+      clientName: parsed.clientName,
+      documentType: parsed.documentType,
+      executionDate: parsed.executionDate,
+      jobCode: '',
+      status: parsed.valid ? 'pending' : 'invalid',
+      statusMsg: ''
+    };
+  });
+
+  // Load timecards (for JobCode suggestions) and column map
+  try {
+    await ensureForecastColumnMap();
+  } catch (err) {
+    console.warn('Column map load failed (bulk):', err);
+  }
+  try {
+    await ensureTimecardsLoaded();
+  } catch (err) {
+    console.warn('Timecard load failed (bulk):', err);
+  }
+
+  // Pre-fill JobCode suggestions per row
+  for (const row of bulkRows) {
+    if (row.clientName) {
+      const candidates = proposeJobCodes(row.clientName);
+      if (candidates.length > 0) row.jobCode = candidates[0];
+    }
+  }
+
+  renderBulkReview();
+}
+
+function renderBulkReview() {
+  const body = document.getElementById('intakeBody');
+  const validCount = bulkRows.filter(r => r.status === 'pending' || r.status === 'saved').length;
+  const invalidCount = bulkRows.filter(r => r.status === 'invalid').length;
+  const pendingCount = bulkRows.filter(r => r.status === 'pending').length;
+
+  body.innerHTML = `
+    <div class="status info">
+      Parsed <strong>${bulkRows.length}</strong> file${bulkRows.length === 1 ? '' : 's'}.
+      ${pendingCount} ready to save${invalidCount > 0 ? `, ${invalidCount} need review` : ''}.
+      Edit any cell, then save.
+    </div>
+    <div class="bulk-review">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:24%">File</th>
+            <th style="width:18%">Client</th>
+            <th style="width:9%">Doc Type</th>
+            <th style="width:13%">Date</th>
+            <th style="width:18%">Job Code</th>
+            <th style="width:18%">Status</th>
+          </tr>
+        </thead>
+        <tbody id="bulkRowsBody">
+          ${bulkRows.map((r, i) => renderBulkRow(r, i)).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="btn-secondary" id="bulkCancelBtn">Cancel</button>
+      <button class="btn-primary" id="bulkSaveBtn" ${pendingCount === 0 ? 'disabled' : ''}>Save ${pendingCount} Row${pendingCount === 1 ? '' : 's'}</button>
+    </div>
+  `;
+
+  // Wire row inputs
+  bulkRows.forEach((row, i) => {
+    const updateField = (field) => (e) => {
+      row[field] = e.target.value.trim();
+      const isValid = !!(row.clientName && row.documentType && row.executionDate);
+      const newStatus = isValid ? (row.status === 'saved' ? 'saved' : 'pending') : 'invalid';
+      if (row.status !== newStatus && row.status !== 'saved' && row.status !== 'saving') {
+        row.status = newStatus;
+        renderBulkReview();
+      }
+    };
+    const clientEl = document.getElementById(`bulkClient_${i}`);
+    const typeEl = document.getElementById(`bulkType_${i}`);
+    const dateEl = document.getElementById(`bulkDate_${i}`);
+    const jobEl = document.getElementById(`bulkJob_${i}`);
+    if (clientEl) clientEl.addEventListener('change', updateField('clientName'));
+    if (typeEl) typeEl.addEventListener('change', updateField('documentType'));
+    if (dateEl) dateEl.addEventListener('change', updateField('executionDate'));
+    if (jobEl) jobEl.addEventListener('change', updateField('jobCode'));
+  });
+
+  document.getElementById('bulkCancelBtn').addEventListener('click', resetIntake);
+  const saveBtn = document.getElementById('bulkSaveBtn');
+  if (saveBtn) saveBtn.addEventListener('click', bulkSaveAll);
+}
+
+function renderBulkRow(row, i) {
+  const docOptions = ['', 'IDEA', 'FDDA', 'DA', 'CA'].map(t =>
+    `<option value="${t}" ${row.documentType === t ? 'selected' : ''}>${t || '—'}</option>`
+  ).join('');
+
+  const candidates = row.clientName ? proposeJobCodes(row.clientName) : distinctJobCodes;
+  const jobCandidates = (candidates.length ? candidates : distinctJobCodes).slice(0, 20);
+
+  const statusClass = row.status || 'pending';
+  const statusText = {
+    pending: 'Pending',
+    invalid: 'Needs review',
+    saving: 'Saving...',
+    saved: 'Saved',
+    failed: row.statusMsg || 'Failed'
+  }[row.status] || 'Pending';
+
+  return `
+    <tr class="${row.status === 'invalid' ? 'invalid' : ''} ${row.status === 'saved' ? 'saved' : ''}">
+      <td class="filename" title="${escapeHtml(row.filename)}">${escapeHtml(row.filename)}</td>
+      <td><input type="text" id="bulkClient_${i}" value="${escapeHtml(row.clientName)}"></td>
+      <td><select id="bulkType_${i}">${docOptions}</select></td>
+      <td><input type="text" id="bulkDate_${i}" value="${escapeHtml(row.executionDate)}" placeholder="YYYY-MM-DD"></td>
+      <td>
+        <input type="text" id="bulkJob_${i}" list="bulkJobList_${i}" value="${escapeHtml(row.jobCode)}" style="text-transform:uppercase">
+        <datalist id="bulkJobList_${i}">
+          ${jobCandidates.map(c => `<option value="${escapeHtml(c)}">`).join('')}
+        </datalist>
+      </td>
+      <td><span class="row-status ${statusClass}">${escapeHtml(statusText)}</span></td>
+    </tr>
+  `;
+}
+
+async function bulkSaveAll() {
+  const btn = document.getElementById('bulkSaveBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Saving...';
+  }
+
+  // Group rows by client name (so multiple docs for the same client merge into one SP row)
+  const byClient = {};
+  for (const row of bulkRows) {
+    if (row.status !== 'pending') continue;
+    const key = row.clientName.toUpperCase();
+    if (!byClient[key]) byClient[key] = [];
+    byClient[key].push(row);
+  }
+
+  let totalSaved = 0;
+  let totalFailed = 0;
+
+  for (const clientKey of Object.keys(byClient)) {
+    const clientRows = byClient[clientKey];
+    // Mark all as saving
+    for (const row of clientRows) row.status = 'saving';
+    renderBulkReview();
+
+    try {
+      // Find any existing row for this client (by name only, no address)
+      const clientName = clientRows[0].clientName;
+      let existing = await findExistingItem(clientName, null);
+      let existingId = existing ? existing.id : null;
+      let existingFields = existing ? existing.fields : null;
+
+      // Apply each contract in order — each one updates the row's date for that doc type
+      for (const row of clientRows) {
+        const extracted = {
+          clientName: row.clientName,
+          documentType: row.documentType,
+          executionDate: row.executionDate
+        };
+        const fields = buildFieldsPayload(extracted, existingFields, row.jobCode || null);
+
+        if (existingId) {
+          await updateItem(existingId, fields);
+        } else {
+          const result = await createItem(fields);
+          existingId = result.id;
+          existingFields = fields;
+        }
+        // Merge the just-written fields into existingFields so subsequent contracts for
+        // the same client see the cumulative state (e.g., IDEA then FDDA then CA)
+        existingFields = { ...existingFields, ...fields };
+        row.status = 'saved';
+        totalSaved++;
+      }
+    } catch (err) {
+      for (const row of clientRows) {
+        if (row.status === 'saving') {
+          row.status = 'failed';
+          row.statusMsg = err.message ? err.message.slice(0, 60) : 'Save failed';
+          totalFailed++;
+        }
+      }
+      console.error(`Bulk save failed for client ${clientKey}:`, err);
+    }
+    renderBulkReview();
+  }
+
+  // Final state summary
+  const body = document.getElementById('intakeBody');
+  const summary = document.createElement('div');
+  summary.className = `status ${totalFailed === 0 ? 'success' : (totalSaved > 0 ? 'warning' : 'error')}`;
+  summary.innerHTML = `Done. <strong>${totalSaved}</strong> saved${totalFailed > 0 ? `, <strong>${totalFailed}</strong> failed (see status column)` : ''}. The streamgraph will reflect new data after you click Render again.`;
+  body.insertBefore(summary, body.firstChild);
+}
+
+// ------------------------------------------------------------
+// Intake panel (single-PDF API-driven flow)
 // ------------------------------------------------------------
 
 async function handleIntakeFile(file) {
@@ -1754,16 +2153,12 @@ function resetIntake() {
   document.getElementById('intakeBody').innerHTML = `
     <div class="dropzone" id="intakeDrop">
       <div class="dropzone-icon">↓</div>
-      <div>Drop a contract PDF here</div>
-      <div class="dropzone-hint">or click to choose a file</div>
-      <input type="file" id="intakeFile" accept="application/pdf" style="display:none">
+      <div>Drop one or more contract PDFs here</div>
+      <div class="dropzone-hint">Single PDF → full extraction · Multiple PDFs → fast filename parse</div>
+      <input type="file" id="intakeFile" accept="application/pdf" multiple style="display:none">
     </div>
   `;
-  wireDropzone(
-    document.getElementById('intakeDrop'),
-    document.getElementById('intakeFile'),
-    handleIntakeFile
-  );
+  wireIntakeDropzone();
 }
 
 // ------------------------------------------------------------
