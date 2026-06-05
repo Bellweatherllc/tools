@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Design Project Intake</title>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --navy: #1f2e3e;
@@ -126,12 +127,141 @@
     padding: 24px;
     display: grid;
     grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "timecards timecards"
+      "streamgraph streamgraph"
+      "intake lookup";
     gap: 24px;
     max-width: 1600px;
     margin: 0 auto;
   }
+  #timecardPanel { grid-area: timecards; }
+  #streamgraphPanel { grid-area: streamgraph; }
+  #intakePanel { grid-area: intake; }
+  #lookupPanel { grid-area: lookup; }
   @media (max-width: 1100px) {
-    main { grid-template-columns: 1fr; }
+    main {
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        "timecards"
+        "streamgraph"
+        "intake"
+        "lookup";
+    }
+  }
+
+  /* Streamgraph */
+  .sg-controls {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: #fafaf6;
+  }
+  .sg-controls label {
+    font-size: 12px;
+    color: var(--text-sec);
+  }
+  .sg-controls select {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    background: var(--surface);
+  }
+  .sg-controls .spacer { flex: 1; }
+  .sg-controls .legend-hint {
+    font-size: 11px;
+    color: var(--text-sec);
+  }
+  .sg-chart-wrap {
+    padding: 20px;
+    overflow-x: auto;
+  }
+  .sg-chart-wrap svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .sg-chart-wrap .band {
+    transition: opacity 0.15s;
+    cursor: pointer;
+  }
+  .sg-chart-wrap .band.dimmed { opacity: 0.15; }
+  .sg-chart-wrap .band.highlighted { opacity: 1; }
+  .sg-phase-label {
+    font-size: 12px;
+    fill: var(--text-sec);
+    text-anchor: middle;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .sg-phase-divider {
+    stroke: var(--muted);
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+  }
+  .sg-phase-bg {
+    opacity: 0.35;
+  }
+  .sg-axis-label {
+    font-size: 10px;
+    fill: var(--text-sec);
+  }
+  .sg-tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--navy);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    z-index: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    max-width: 280px;
+    line-height: 1.4;
+  }
+  .sg-tooltip .name {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .sg-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-sec);
+    font-size: 13px;
+  }
+  .sg-isolation {
+    border-top: 1px solid var(--border);
+    padding: 16px 20px;
+    background: #fafaf6;
+  }
+  .sg-isolation-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 12px;
+  }
+  .sg-isolation-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .sg-isolation-meta {
+    font-size: 12px;
+    color: var(--text-sec);
+  }
+  .sg-isolation-close {
+    background: none; border: none; cursor: pointer; color: var(--text-sec); font-size: 18px; padding: 0 6px;
+  }
+  .sg-analog-legend {
+    display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap;
+    font-size: 11px;
+  }
+  .sg-analog-legend .item {
+    display: flex; align-items: center; gap: 5px;
+  }
+  .sg-analog-legend .swatch {
+    width: 12px; height: 6px; border-radius: 2px;
   }
 
   .panel {
@@ -416,6 +546,43 @@
   </header>
 
   <main>
+    <!-- Timecard upload panel -->
+    <section class="panel" id="timecardPanel">
+      <div class="panel-header">
+        <h2>Timecard Upload</h2>
+        <div class="subtitle">Drop biweekly timecard XLSX files. Entries are written to CORE_DesignerTimecard.</div>
+      </div>
+      <div class="panel-body" id="timecardBody">
+        <div class="dropzone" id="timecardDrop">
+          <div class="dropzone-icon">↓</div>
+          <div>Drop one or more timecard XLSX files here</div>
+          <div class="dropzone-hint">or click to choose files</div>
+          <input type="file" id="timecardFile" accept=".xlsx,.xls" multiple style="display:none">
+        </div>
+      </div>
+    </section>
+
+    <!-- Streamgraph panel -->
+    <section class="panel" id="streamgraphPanel">
+      <div class="panel-header">
+        <h2>Project Hours Streamgraph</h2>
+        <div class="subtitle">Design hours across projects, normalized by phase position.</div>
+      </div>
+      <div class="sg-controls">
+        <label for="sgGroup">Group:</label>
+        <select id="sgGroup">
+          <option value="all">All projects</option>
+        </select>
+        <span class="spacer"></span>
+        <span class="legend-hint">Hover a band to identify · click to isolate</span>
+        <button class="btn-secondary" id="sgRenderBtn">Render</button>
+      </div>
+      <div class="sg-chart-wrap" id="sgChartWrap">
+        <div class="sg-empty">Click <strong>Render</strong> to load projects and timecards.</div>
+      </div>
+      <div id="sgIsolation"></div>
+    </section>
+
     <!-- Intake panel -->
     <section class="panel" id="intakePanel">
       <div class="panel-header">
@@ -455,7 +622,7 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 2;
+const VERSION = 4;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
@@ -612,6 +779,7 @@ wireDropzone(
   document.getElementById('lookupFile'),
   handleLookupFile
 );
+wireTimecardDropzone();
 
 // ------------------------------------------------------------
 // PDF -> base64
@@ -1014,6 +1182,257 @@ function bucketHoursByPhase(timecards, dates) {
   buckets.total = buckets.design + buckets.construction + buckets.preContract;
 
   return buckets;
+}
+
+// ------------------------------------------------------------
+// Timecard ingestion (XLSX upload to CORE_DesignerTimecard)
+// ------------------------------------------------------------
+
+const DESIGNERS = ['Stephanie Hoffmeier', 'Sean Farrell', 'Hayley Wynne', 'Dakota', 'Devon', 'Alex Sciacca'];
+const NON_BILLABLE_JOBS = ['BWC', 'BWC GENERAL', 'GENERAL'];
+const PTO_TAGS = ['6609', 'PTO', 'VACATION', 'SICK', 'HOLIDAY', 'COMP TIME'];
+
+function isNonBillableJob(code) {
+  return code ? NON_BILLABLE_JOBS.includes(code.trim().toUpperCase()) : false;
+}
+function isPtoEntry(tag) {
+  if (!tag) return false;
+  const u = String(tag).toUpperCase();
+  return PTO_TAGS.some(kw => u.includes(kw));
+}
+function getWeekKey(dateStr) {
+  // ISO week-of: returns the Monday of the week containing dateStr, as YYYY-MM-DD
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const day = d.getUTCDay(); // 0 = Sun
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function parseTimecardWorkbook(wb, filename) {
+  const entries = [];
+  for (const designer of DESIGNERS) {
+    if (!wb.SheetNames.includes(designer)) continue;
+    const ws = wb.Sheets[designer];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row.length < 7) continue;
+      const dateVal = row[0];
+      const jobCode = String(row[1] || '').trim();
+      const tag = String(row[3] || '');
+      const hours = parseFloat(row[6]) || 0;
+      if (!dateVal || !jobCode || hours <= 0 || isPtoEntry(tag)) continue;
+      let dateStr;
+      if (typeof dateVal === 'number') {
+        const d = XLSX.SSF.parse_date_code(dateVal);
+        dateStr = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+      } else if (dateVal instanceof Date) {
+        dateStr = dateVal.toISOString().slice(0, 10);
+      } else {
+        const p = new Date(dateVal);
+        if (isNaN(p)) continue;
+        dateStr = p.toISOString().slice(0, 10);
+      }
+      entries.push({
+        designer,
+        date: dateStr,
+        week: getWeekKey(dateStr),
+        job: jobCode,
+        jobUpper: jobCode.toUpperCase(),
+        hours,
+        nonBillable: isNonBillableJob(jobCode),
+        sourceFile: filename
+      });
+    }
+  }
+  return entries;
+}
+
+function dedupAgainstCache(incoming) {
+  // allTimecards is the in-memory cache; key by designer|date|jobCode|hours
+  const existingKeys = new Set(
+    allTimecards.map(t => `${t.designer}|${t.date}|${t.jobCode}|${t.hours}`)
+  );
+  return incoming.filter(e => {
+    const k = `${e.designer}|${e.date}|${e.jobUpper}|${e.hours}`;
+    if (existingKeys.has(k)) return false;
+    existingKeys.add(k);
+    return true;
+  });
+}
+
+async function writeTimecardEntries(entries, onProgress) {
+  const token = await getGraphToken();
+  if (!token) throw new Error('No auth token for timecard write.');
+  const url = `https://graph.microsoft.com/v1.0/sites/${SP_SITE_PATH}:/lists/${SP_TIMECARD_LIST}/items`;
+
+  let success = 0;
+  let failed = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          fields: {
+            Title: `${e.designer}_${e.date}_${e.job}`,
+            Designer: e.designer,
+            EntryDate: e.date,
+            WeekOf: e.week,
+            JobCode: e.job,
+            Hours: e.hours,
+            NonBillable: e.nonBillable,
+            SourceFile: e.sourceFile || ''
+          }
+        })
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      success++;
+    } catch (err) {
+      console.error('Timecard write error:', err);
+      failed++;
+    }
+    if (onProgress) onProgress(i + 1, entries.length, success, failed);
+  }
+  return { success, failed };
+}
+
+async function handleTimecardFiles(files) {
+  const body = document.getElementById('timecardBody');
+  const filesArr = Array.from(files);
+  body.innerHTML = `
+    <div class="status info"><span class="spinner"></span>Loading existing timecards for deduplication...</div>
+  `;
+
+  try {
+    await ensureTimecardsLoaded();
+  } catch (err) {
+    body.innerHTML = `<div class="status error"><strong>Error loading existing timecards:</strong> ${escapeHtml(err.message)}</div>
+      <div class="actions"><button class="btn-secondary" id="timecardRetryBtn">Try Again</button></div>`;
+    document.getElementById('timecardRetryBtn').addEventListener('click', resetTimecard);
+    return;
+  }
+
+  // Parse all files
+  let allParsed = [];
+  const fileResults = [];
+  for (const file of filesArr) {
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+      const parsed = parseTimecardWorkbook(wb, file.name);
+      fileResults.push({ name: file.name, parsed: parsed.length, error: null });
+      allParsed = allParsed.concat(parsed);
+    } catch (err) {
+      fileResults.push({ name: file.name, parsed: 0, error: err.message });
+    }
+  }
+
+  const toWrite = dedupAgainstCache(allParsed);
+  const duplicates = allParsed.length - toWrite.length;
+
+  if (toWrite.length === 0) {
+    body.innerHTML = `
+      <div class="status warning">
+        Parsed ${allParsed.length} entries across ${filesArr.length} file${filesArr.length === 1 ? '' : 's'}, but all were duplicates of existing entries. Nothing written.
+      </div>
+      ${renderFileResults(fileResults)}
+      <div class="actions">
+        <button class="btn-primary" id="timecardAgainBtn">Upload More</button>
+      </div>
+    `;
+    document.getElementById('timecardAgainBtn').addEventListener('click', resetTimecard);
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="status info"><span class="spinner"></span>Writing <span id="tcProgress">0</span> of ${toWrite.length} entries to SharePoint...</div>
+    ${renderFileResults(fileResults)}
+    ${duplicates > 0 ? `<div style="font-size:12px;color:var(--text-sec);margin-top:8px">${duplicates} duplicate entr${duplicates === 1 ? 'y' : 'ies'} skipped.</div>` : ''}
+  `;
+
+  const progressEl = document.getElementById('tcProgress');
+  const result = await writeTimecardEntries(toWrite, (i) => {
+    if (progressEl) progressEl.textContent = i;
+  });
+
+  // Push new entries into cache so analog lookup sees them without re-fetching
+  for (const e of toWrite) {
+    allTimecards.push({
+      designer: e.designer,
+      date: e.date,
+      jobCode: e.jobUpper,
+      hours: e.hours
+    });
+    if (!distinctJobCodes.includes(e.jobUpper)) distinctJobCodes.push(e.jobUpper);
+  }
+  distinctJobCodes.sort();
+
+  const statusClass = result.failed === 0 ? 'success' : (result.success > 0 ? 'warning' : 'error');
+  const statusMsg = result.failed === 0
+    ? `Wrote ${result.success} new entries to SharePoint.`
+    : `Wrote ${result.success} entries; ${result.failed} failed (see console).`;
+
+  body.innerHTML = `
+    <div class="status ${statusClass}">${statusMsg}${duplicates > 0 ? ` ${duplicates} duplicate${duplicates === 1 ? '' : 's'} skipped.` : ''}</div>
+    ${renderFileResults(fileResults)}
+    <div class="actions">
+      <button class="btn-primary" id="timecardAgainBtn">Upload More</button>
+    </div>
+  `;
+  document.getElementById('timecardAgainBtn').addEventListener('click', resetTimecard);
+}
+
+function renderFileResults(results) {
+  if (!results.length) return '';
+  return `
+    <div style="margin-top:10px;font-size:12px;color:var(--text-sec)">
+      ${results.map(r => `
+        <div style="padding:3px 0">
+          <strong style="color:var(--text-pri)">${escapeHtml(r.name)}</strong>:
+          ${r.error ? `<span style="color:var(--error)">${escapeHtml(r.error)}</span>` : `${r.parsed} entr${r.parsed === 1 ? 'y' : 'ies'} parsed`}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function resetTimecard() {
+  document.getElementById('timecardBody').innerHTML = `
+    <div class="dropzone" id="timecardDrop">
+      <div class="dropzone-icon">↓</div>
+      <div>Drop one or more timecard XLSX files here</div>
+      <div class="dropzone-hint">or click to choose files</div>
+      <input type="file" id="timecardFile" accept=".xlsx,.xls" multiple style="display:none">
+    </div>
+  `;
+  wireTimecardDropzone();
+}
+
+function wireTimecardDropzone() {
+  const dropEl = document.getElementById('timecardDrop');
+  const fileEl = document.getElementById('timecardFile');
+  if (!dropEl || !fileEl) return;
+  dropEl.addEventListener('click', () => fileEl.click());
+  dropEl.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropEl.classList.add('dragover');
+  });
+  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('dragover'));
+  dropEl.addEventListener('drop', e => {
+    e.preventDefault();
+    dropEl.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleTimecardFiles(e.dataTransfer.files);
+  });
+  fileEl.addEventListener('change', e => {
+    if (e.target.files.length) handleTimecardFiles(e.target.files);
+  });
 }
 
 // ------------------------------------------------------------
@@ -1450,6 +1869,537 @@ function renderProfileBadges(p) {
   }
   return html;
 }
+
+// ------------------------------------------------------------
+// Streamgraph — phase-normalized project hours
+// ------------------------------------------------------------
+
+const PROJECT_PALETTE = [
+  '#4a7090', '#c19258', '#8a9b6e', '#b58fab', '#6f8ca8',
+  '#c2806e', '#93a07a', '#a59d8a', '#7e8aab', '#9d7d65',
+  '#82a18f', '#a690a3', '#5e8a7d', '#b8966b', '#7a8c9c'
+];
+
+function colorForJobCode(jobCode) {
+  let hash = 0;
+  for (let i = 0; i < jobCode.length; i++) {
+    hash = ((hash << 5) - hash) + jobCode.charCodeAt(i);
+    hash |= 0;
+  }
+  return PROJECT_PALETTE[Math.abs(hash) % PROJECT_PALETTE.length];
+}
+
+// Phase regions on the unified X axis [0,1]. Proportions reflect typical
+// phase durations (Phase I ~6w, Phase II ~16w, Phase III ~16w).
+const PHASE_REGIONS = {
+  phase1: [0.00, 0.18],
+  phase2: [0.18, 0.62],
+  phase3: [0.62, 1.00]
+};
+const PHASE_I_CANONICAL_WEEKS = 6;
+const PHASE_III_CANONICAL_WEEKS = 16;
+
+const sgState = {
+  forecasts: null,    // raw CORE_DesignForecast rows
+  projects: null,     // built ProjectStream objects keyed by jobCode
+  group: 'all',
+  isolated: null,
+  hovered: null
+};
+
+async function fetchAllForecastRecords() {
+  const token = await getGraphToken();
+  if (!token) throw new Error('No auth token for forecast fetch.');
+  let url = `${SP_BASE}/items?$expand=fields&$top=200`;
+  const collected = [];
+  while (url) {
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly'
+      }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`Forecast fetch failed (${resp.status}): ${errText}`);
+    }
+    const data = await resp.json();
+    for (const item of (data.value || [])) {
+      collected.push(item.fields || {});
+    }
+    url = data['@odata.nextLink'] || null;
+  }
+  return collected;
+}
+
+function projectPhaseWindows(f) {
+  const entryStr = f.IDEADate || f.DADate;
+  if (!entryStr) return null;
+  const entryDate = new Date(entryStr);
+  if (isNaN(entryDate.getTime())) return null;
+  let phase1End;
+  if (f.FDDADate) {
+    phase1End = new Date(f.FDDADate);
+  } else {
+    phase1End = new Date(entryDate.getTime() + PHASE_I_CANONICAL_WEEKS * 7 * 86400000);
+  }
+  const phase2End = f.CADate ? new Date(f.CADate) : null;
+  return { entryDate, phase1End, phase2End };
+}
+
+function buildProjectStream(f, timecards) {
+  const jobCode = (f.JobCode || '').toUpperCase();
+  if (!jobCode) return null;
+  const windows = projectPhaseWindows(f);
+  if (!windows) return null;
+
+  const tcs = timecards.filter(t => t.jobCode === jobCode);
+  if (tcs.length === 0) return {
+    jobCode, fields: f, windows,
+    weekly: [], phasePoints: { phase1: [], phase2: [], phase3: [] },
+    color: colorForJobCode(jobCode),
+    totalHours: 0
+  };
+
+  // Aggregate hours by ISO week (Monday)
+  const weekly = {};
+  for (const t of tcs) {
+    if (!t.date) continue;
+    const d = new Date(t.date);
+    if (isNaN(d.getTime())) continue;
+    const wk = getWeekKey(t.date);
+    weekly[wk] = (weekly[wk] || 0) + t.hours;
+  }
+  const weeklyArr = Object.entries(weekly)
+    .map(([wk, hours]) => ({ date: new Date(wk), wk, hours }))
+    .sort((a, b) => a.date - b.date);
+
+  // Bucket each weekly entry into a phase with a normalized position [0,1]
+  const phasePoints = { phase1: [], phase2: [], phase3: [] };
+  for (const w of weeklyArr) {
+    if (w.date < windows.entryDate) continue;
+    if (w.date < windows.phase1End) {
+      const dur = windows.phase1End - windows.entryDate;
+      const pos = dur > 0 ? (w.date - windows.entryDate) / dur : 0;
+      phasePoints.phase1.push({ pos, hours: w.hours });
+    } else if (!windows.phase2End || w.date < windows.phase2End) {
+      const start = windows.phase1End;
+      // If no CA, treat Phase II as ongoing — anchor end to last data + a buffer
+      const end = windows.phase2End || new Date(start.getTime() + 16 * 7 * 86400000);
+      const dur = end - start;
+      const pos = dur > 0 ? Math.min(1, Math.max(0, (w.date - start) / dur)) : 0;
+      phasePoints.phase2.push({ pos, hours: w.hours });
+    } else {
+      const start = windows.phase2End;
+      const end = new Date(start.getTime() + PHASE_III_CANONICAL_WEEKS * 7 * 86400000);
+      const dur = end - start;
+      const pos = dur > 0 ? (w.date - start) / dur : 0;
+      if (pos >= 0 && pos <= 1) phasePoints.phase3.push({ pos, hours: w.hours });
+    }
+  }
+
+  const totalHours = weeklyArr.reduce((s, w) => s + w.hours, 0);
+  return { jobCode, fields: f, windows, weekly: weeklyArr, phasePoints, color: colorForJobCode(jobCode), totalHours };
+}
+
+function projectUnifiedSamples(project, samplesPerPhase = 30) {
+  // Returns an array of {x, y} along the unified [0,1] X axis, sampled densely
+  // by linearly interpolating between known phase data points.
+  const result = [];
+  for (const phase of ['phase1', 'phase2', 'phase3']) {
+    const [xStart, xEnd] = PHASE_REGIONS[phase];
+    const pts = project.phasePoints[phase];
+    // Always emit zero samples across the phase so adjacent phases connect to 0
+    for (let i = 0; i <= samplesPerPhase; i++) {
+      const localPos = i / samplesPerPhase;
+      const x = xStart + localPos * (xEnd - xStart);
+      let y = 0;
+      if (pts.length > 0) {
+        // Find bounding points by phase-local pos and interpolate
+        const sorted = pts.slice().sort((a, b) => a.pos - b.pos);
+        if (localPos <= sorted[0].pos) {
+          y = sorted[0].hours * (localPos / Math.max(0.01, sorted[0].pos));
+          y = Math.max(0, y);
+        } else if (localPos >= sorted[sorted.length - 1].pos) {
+          const last = sorted[sorted.length - 1];
+          const drop = (1 - localPos) / Math.max(0.01, 1 - last.pos);
+          y = last.hours * Math.max(0, drop);
+        } else {
+          for (let j = 0; j < sorted.length - 1; j++) {
+            if (localPos >= sorted[j].pos && localPos <= sorted[j + 1].pos) {
+              const frac = (localPos - sorted[j].pos) / (sorted[j + 1].pos - sorted[j].pos);
+              y = sorted[j].hours + frac * (sorted[j + 1].hours - sorted[j].hours);
+              break;
+            }
+          }
+        }
+      }
+      result.push({ x, y });
+    }
+  }
+  return result;
+}
+
+function catmullRomPath(points) {
+  if (points.length < 2) return '';
+  let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+  return d;
+}
+
+function getStreamgraphGroups() {
+  if (!sgState.projects) return [];
+  const types = new Set();
+  for (const p of Object.values(sgState.projects)) {
+    if (p.fields.ProjectType) types.add(p.fields.ProjectType);
+  }
+  return Array.from(types).sort();
+}
+
+function projectsInActiveGroup() {
+  if (!sgState.projects) return [];
+  const all = Object.values(sgState.projects).filter(p => p.totalHours > 0);
+  if (sgState.group === 'all') return all;
+  return all.filter(p => p.fields.ProjectType === sgState.group);
+}
+
+async function renderStreamgraphPanel() {
+  const wrap = document.getElementById('sgChartWrap');
+  const btn = document.getElementById('sgRenderBtn');
+
+  if (!sgState.projects) {
+    wrap.innerHTML = '<div class="sg-empty"><span class="spinner"></span>Loading projects and timecards...</div>';
+    if (btn) btn.disabled = true;
+    try {
+      await ensureTimecardsLoaded();
+      sgState.forecasts = await fetchAllForecastRecords();
+      sgState.projects = {};
+      for (const f of sgState.forecasts) {
+        const p = buildProjectStream(f, allTimecards);
+        if (p) sgState.projects[p.jobCode] = p;
+      }
+    } catch (err) {
+      wrap.innerHTML = `<div class="sg-empty" style="color:var(--error)">${escapeHtml(err.message)}</div>`;
+      if (btn) btn.disabled = false;
+      return;
+    }
+    // Populate group dropdown
+    const select = document.getElementById('sgGroup');
+    select.innerHTML = '<option value="all">All projects</option>';
+    for (const g of getStreamgraphGroups()) {
+      const opt = document.createElement('option');
+      opt.value = g;
+      opt.textContent = g;
+      select.appendChild(opt);
+    }
+    if (btn) btn.disabled = false;
+  }
+
+  drawStreamgraph();
+}
+
+function drawStreamgraph() {
+  const wrap = document.getElementById('sgChartWrap');
+  const projects = projectsInActiveGroup();
+  if (projects.length === 0) {
+    wrap.innerHTML = '<div class="sg-empty">No projects with timecard data in this group yet.</div>';
+    renderIsolationPanel();
+    return;
+  }
+
+  // Sort projects by total hours desc so the largest is rendered at the bottom of the stack
+  projects.sort((a, b) => b.totalHours - a.totalHours);
+
+  // Sample each project on the unified X axis
+  const samplesPerPhase = 30;
+  const totalSamples = samplesPerPhase * 3 + 3;
+  const projectSamples = projects.map(p => ({
+    project: p,
+    samples: projectUnifiedSamples(p, samplesPerPhase)
+  }));
+
+  // Compute stacked baselines per X
+  const baseline = new Array(totalSamples).fill(0);
+  const stacked = projectSamples.map(({ project, samples }) => {
+    const layer = samples.map((s, i) => ({
+      x: s.x,
+      y0: baseline[i],
+      y1: baseline[i] + s.y
+    }));
+    for (let i = 0; i < samples.length; i++) baseline[i] += samples[i].y;
+    return { project, layer };
+  });
+
+  const maxY = Math.max(...baseline, 1);
+
+  const W = 1100, H = 380;
+  const M = { top: 30, right: 30, bottom: 50, left: 50 };
+  const innerW = W - M.left - M.right;
+  const innerH = H - M.top - M.bottom;
+
+  const xScale = (x) => M.left + x * innerW;
+  const yScale = (y) => M.top + (1 - y / maxY) * innerH;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">`;
+
+  // Phase background tints
+  const phaseFills = { phase1: '#fff5e6', phase2: '#eef3f8', phase3: '#f0eddb' };
+  for (const phase of ['phase1', 'phase2', 'phase3']) {
+    const [s, e] = PHASE_REGIONS[phase];
+    svg += `<rect class="sg-phase-bg" x="${xScale(s)}" y="${M.top}" width="${xScale(e) - xScale(s)}" height="${innerH}" fill="${phaseFills[phase]}"/>`;
+  }
+  // Phase dividers
+  svg += `<line class="sg-phase-divider" x1="${xScale(PHASE_REGIONS.phase2[0])}" y1="${M.top}" x2="${xScale(PHASE_REGIONS.phase2[0])}" y2="${M.top + innerH}"/>`;
+  svg += `<line class="sg-phase-divider" x1="${xScale(PHASE_REGIONS.phase3[0])}" y1="${M.top}" x2="${xScale(PHASE_REGIONS.phase3[0])}" y2="${M.top + innerH}"/>`;
+
+  // Phase labels
+  for (const [phase, label] of [['phase1', 'Phase I — Schematic'], ['phase2', 'Phase II — Plan Detailing'], ['phase3', 'Phase III — Construction Support']]) {
+    const [s, e] = PHASE_REGIONS[phase];
+    svg += `<text class="sg-phase-label" x="${xScale((s + e) / 2)}" y="${M.top + innerH + 28}">${label}</text>`;
+  }
+
+  // Y axis labels (a few gridlines)
+  for (let i = 0; i <= 4; i++) {
+    const val = (maxY / 4) * i;
+    const y = yScale(val);
+    svg += `<text class="sg-axis-label" x="${M.left - 8}" y="${y + 3}" text-anchor="end">${Math.round(val)}</text>`;
+    svg += `<line x1="${M.left}" y1="${y}" x2="${M.left + innerW}" y2="${y}" stroke="${i === 0 ? '#999' : '#eee'}" stroke-width="${i === 0 ? 1 : 0.5}"/>`;
+  }
+  svg += `<text class="sg-axis-label" x="${M.left - 38}" y="${M.top + innerH / 2}" transform="rotate(-90, ${M.left - 38}, ${M.top + innerH / 2})" text-anchor="middle">hours/week</text>`;
+
+  // Render bands (each project)
+  for (const { project, layer } of stacked) {
+    const topPts = layer.map(p => ({ x: xScale(p.x), y: yScale(p.y1) }));
+    const botPts = layer.map(p => ({ x: xScale(p.x), y: yScale(p.y0) })).reverse();
+    const topPath = catmullRomPath(topPts);
+    const botPath = catmullRomPath(botPts);
+    // Build a closed area path
+    const dPath = topPath + ' L ' + botPts[0].x.toFixed(2) + ' ' + botPts[0].y.toFixed(2) + ' ' +
+      botPath.replace(/^M [^ ]+ [^ ]+/, '').trim() + ' Z';
+    const isHovered = sgState.hovered === project.jobCode;
+    const isIsolated = sgState.isolated === project.jobCode;
+    const dimmed = (sgState.isolated && !isIsolated) || (sgState.hovered && !isHovered && !isIsolated);
+    const cls = `band${dimmed ? ' dimmed' : ''}${(isHovered || isIsolated) ? ' highlighted' : ''}`;
+    svg += `<path class="${cls}" data-jobcode="${escapeHtml(project.jobCode)}" d="${dPath}" fill="${project.color}" stroke="${project.color}" stroke-width="0.5" opacity="0.85"/>`;
+  }
+
+  svg += '</svg>';
+  wrap.innerHTML = svg;
+
+  // Wire band interactions
+  wrap.querySelectorAll('.band').forEach(band => {
+    const jobCode = band.getAttribute('data-jobcode');
+    band.addEventListener('mouseenter', (e) => {
+      sgState.hovered = jobCode;
+      showSgTooltip(e, jobCode);
+      drawStreamgraph();
+    });
+    band.addEventListener('mousemove', (e) => {
+      moveSgTooltip(e);
+    });
+    band.addEventListener('mouseleave', () => {
+      sgState.hovered = null;
+      hideSgTooltip();
+      drawStreamgraph();
+    });
+    band.addEventListener('click', () => {
+      sgState.isolated = sgState.isolated === jobCode ? null : jobCode;
+      hideSgTooltip();
+      drawStreamgraph();
+      renderIsolationPanel();
+    });
+  });
+
+  renderIsolationPanel();
+}
+
+function showSgTooltip(e, jobCode) {
+  let tip = document.getElementById('sgTooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'sgTooltip';
+    tip.className = 'sg-tooltip';
+    document.body.appendChild(tip);
+  }
+  const p = sgState.projects[jobCode];
+  if (!p) return;
+  tip.innerHTML = `
+    <div class="name">${escapeHtml(p.fields.ClientName || jobCode)} <span style="opacity:0.7;font-weight:400">· ${escapeHtml(jobCode)}</span></div>
+    <div>${escapeHtml(p.fields.ProjectType || '—')} · ${Math.round(p.totalHours)} total hours</div>
+    <div style="margin-top:4px;opacity:0.8">${p.weekly.length} week${p.weekly.length === 1 ? '' : 's'} of timecard data</div>
+  `;
+  tip.style.display = 'block';
+  moveSgTooltip(e);
+}
+
+function moveSgTooltip(e) {
+  const tip = document.getElementById('sgTooltip');
+  if (!tip) return;
+  tip.style.left = (e.clientX + 12) + 'px';
+  tip.style.top = (e.clientY + 12) + 'px';
+}
+
+function hideSgTooltip() {
+  const tip = document.getElementById('sgTooltip');
+  if (tip) tip.style.display = 'none';
+}
+
+function findAnalogsForProject(target) {
+  // Same distance function as the lookup panel, comparing against other projects with timecards
+  const targetProfile = {
+    projectType: target.fields.ProjectType || 'Other',
+    lod: {
+      drawings: target.fields.LOD_Drawings || 'MED',
+      siteVerification: target.fields.LOD_SiteVerification || 'MED',
+      engineering: target.fields.LOD_Engineering || 'MED',
+      exteriorDetail: target.fields.LOD_ExteriorDetail || 'MED',
+      interiorDetail: target.fields.LOD_InteriorDetail || 'MED',
+      selections: target.fields.LOD_Selections || 'MED'
+    },
+    risk: {
+      clientRelationship: target.fields.Risk_ClientRelationship || 'MED',
+      permitZoning: target.fields.Risk_PermitZoning || 'MED',
+      historical: target.fields.Risk_Historical || 'MED',
+      selectionsBudget: target.fields.Risk_SelectionsBudget || 'MED',
+      constructability: target.fields.Risk_Constructability || 'MED',
+      outsidePartners: target.fields.Risk_OutsidePartners || 'MED'
+    }
+  };
+  const others = Object.values(sgState.projects).filter(p => p.jobCode !== target.jobCode && p.totalHours > 0);
+  const scored = others.map(p => ({ project: p, distance: analogDistance(targetProfile, profileFromSharePointFields(p.fields)) }));
+  scored.sort((a, b) => a.distance - b.distance);
+  return scored.slice(0, 3);
+}
+
+function renderIsolationPanel() {
+  const container = document.getElementById('sgIsolation');
+  if (!container) return;
+  if (!sgState.isolated || !sgState.projects[sgState.isolated]) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const project = sgState.projects[sgState.isolated];
+  const analogs = findAnalogsForProject(project);
+
+  // Build the calendar-time chart for the isolated project + analogs
+  const allWeeklyArrays = [
+    { project, weekly: project.weekly, color: project.color, primary: true },
+    ...analogs.map(a => ({ project: a.project, weekly: a.project.weekly, color: a.project.color, primary: false }))
+  ].filter(s => s.weekly.length > 0);
+
+  let svg = '';
+  const W = 1100, H = 240;
+  const M = { top: 30, right: 30, bottom: 50, left: 50 };
+  const innerW = W - M.left - M.right;
+  const innerH = H - M.top - M.bottom;
+
+  if (allWeeklyArrays.length > 0) {
+    // X domain: from earliest start to latest end across primary + analogs (aligned by entry date)
+    // Normalize each series to weeks-since-entry so analogs align with the primary on the X axis
+    const normalized = allWeeklyArrays.map(s => {
+      const entry = s.project.windows.entryDate;
+      return {
+        ...s,
+        points: s.weekly.map(w => ({
+          weekOffset: (w.date - entry) / (7 * 86400000),
+          hours: w.hours
+        }))
+      };
+    });
+    const maxWeek = Math.max(...normalized.flatMap(s => s.points.map(p => p.weekOffset)), 1);
+    const maxHrs = Math.max(...normalized.flatMap(s => s.points.map(p => p.hours)), 1);
+
+    const xScale = w => M.left + (w / maxWeek) * innerW;
+    const yScale = h => M.top + (1 - h / maxHrs) * innerH;
+
+    svg += `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">`;
+
+    // Y axis labels
+    for (let i = 0; i <= 4; i++) {
+      const val = (maxHrs / 4) * i;
+      const y = yScale(val);
+      svg += `<text class="sg-axis-label" x="${M.left - 8}" y="${y + 3}" text-anchor="end">${Math.round(val)}</text>`;
+      svg += `<line x1="${M.left}" y1="${y}" x2="${M.left + innerW}" y2="${y}" stroke="${i === 0 ? '#999' : '#eee'}" stroke-width="${i === 0 ? 1 : 0.5}"/>`;
+    }
+    svg += `<text class="sg-axis-label" x="${M.left + innerW / 2}" y="${M.top + innerH + 38}" text-anchor="middle">weeks since project start</text>`;
+
+    // Contract date markers (primary project only)
+    const w = project.windows;
+    const markWeek = (d, label, color) => {
+      if (!d) return '';
+      const offset = (d - w.entryDate) / (7 * 86400000);
+      if (offset < 0 || offset > maxWeek) return '';
+      const x = xScale(offset);
+      return `<line x1="${x}" y1="${M.top}" x2="${x}" y2="${M.top + innerH}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>` +
+             `<text x="${x}" y="${M.top - 6}" text-anchor="middle" font-size="10" fill="${color}">${label}</text>`;
+    };
+    svg += markWeek(w.entryDate, project.fields.IDEADate ? 'IDEA' : 'DA', '#444');
+    if (project.fields.FDDADate) svg += markWeek(new Date(project.fields.FDDADate), 'FDDA', '#444');
+    if (w.phase2End) svg += markWeek(w.phase2End, 'CA', '#a30a0a');
+
+    // Plot each series — analogs first (so primary is on top)
+    const sorted = [...normalized].sort((a, b) => (a.primary ? 1 : 0) - (b.primary ? 1 : 0));
+    for (const s of sorted) {
+      if (s.points.length === 0) continue;
+      const pts = s.points.slice().sort((a, b) => a.weekOffset - b.weekOffset).map(p => ({
+        x: xScale(p.weekOffset),
+        y: yScale(p.hours)
+      }));
+      const path = catmullRomPath(pts);
+      const opacity = s.primary ? 1 : 0.45;
+      const width = s.primary ? 2.5 : 1.5;
+      svg += `<path d="${path}" stroke="${s.color}" stroke-width="${width}" fill="none" opacity="${opacity}"/>`;
+    }
+
+    svg += '</svg>';
+  }
+
+  let legendHtml = '';
+  if (analogs.length > 0) {
+    legendHtml = '<div class="sg-analog-legend"><div class="item"><div class="swatch" style="background:' + project.color + ';height:8px"></div><strong style="color:var(--text-pri)">' + escapeHtml(project.fields.ClientName || project.jobCode) + '</strong></div>';
+    for (const a of analogs) {
+      legendHtml += `<div class="item"><div class="swatch" style="background:${a.project.color}"></div>${escapeHtml(a.project.fields.ClientName || a.project.jobCode)} <span style="opacity:0.7">(d=${a.distance})</span></div>`;
+    }
+    legendHtml += '</div>';
+  }
+
+  container.innerHTML = `
+    <div class="sg-isolation">
+      <div class="sg-isolation-header">
+        <div>
+          <div class="sg-isolation-title">${escapeHtml(project.fields.ClientName || project.jobCode)} <span style="font-weight:400;color:var(--text-sec)">· ${escapeHtml(project.jobCode)}</span></div>
+          <div class="sg-isolation-meta">${escapeHtml(project.fields.ProjectType || '—')} · ${escapeHtml(project.fields.ProjectAddress || '')} · ${Math.round(project.totalHours)} total hours · ${analogs.length} analog${analogs.length === 1 ? '' : 's'}</div>
+        </div>
+        <button class="sg-isolation-close" id="sgCloseBtn" title="Close isolation view">×</button>
+      </div>
+      ${svg || '<div class="sg-empty">No weekly data to plot.</div>'}
+      ${legendHtml}
+    </div>
+  `;
+  document.getElementById('sgCloseBtn').addEventListener('click', () => {
+    sgState.isolated = null;
+    drawStreamgraph();
+  });
+}
+
+// Wire streamgraph controls on page load
+document.getElementById('sgRenderBtn').addEventListener('click', renderStreamgraphPanel);
+document.getElementById('sgGroup').addEventListener('change', (e) => {
+  sgState.group = e.target.value;
+  sgState.isolated = null;
+  drawStreamgraph();
+});
 
 // ------------------------------------------------------------
 // Utilities
