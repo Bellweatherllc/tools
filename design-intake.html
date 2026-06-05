@@ -622,7 +622,7 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 4;
+const VERSION = 5;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
@@ -711,11 +711,16 @@ async function getGraphToken() {
     const result = await msalApp.acquireTokenSilent(req);
     return result.accessToken;
   } catch (err) {
-    if (err instanceof msal.InteractionRequiredAuthError) {
-      msalApp.acquireTokenRedirect(req);
-      return null;
+    // Any silent failure (interaction required, iframe timeout from third-party cookie
+    // restrictions, etc.) — fall back to a full redirect. The user will be sent through
+    // the sign-in flow and land back on this page authenticated.
+    console.warn('Silent token acquisition failed, redirecting:', err);
+    try {
+      await msalApp.acquireTokenRedirect(req);
+    } catch (redirectErr) {
+      console.error('Redirect token acquisition also failed:', redirectErr);
     }
-    throw err;
+    return null;
   }
 }
 
