@@ -622,7 +622,7 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 8;
+const VERSION = 9;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
@@ -941,21 +941,23 @@ async function ensureForecastColumnMap() {
   }
   const data = await resp.json();
   const map = {};
+  const all = [];
   for (const col of (data.value || [])) {
-    // Map by display name (what humans see) and by internal name (identity)
     if (col.displayName) map[col.displayName] = col.name;
     if (col.name) map[col.name] = col.name;
+    all.push({ displayName: col.displayName, internalName: col.name });
   }
   forecastColumnMap = map;
-  console.log('CORE_DesignForecast column map loaded:', map);
+  console.log('CORE_DesignForecast columns (all):', all);
+  console.log('Mapping table:', map);
   return map;
 }
 
 // Returns the SharePoint internal name for a given logical/display field name.
-// Falls back to the input if the map hasn't loaded yet or the name isn't found.
+// Returns undefined if no column exists with that display or internal name.
 function spField(name) {
-  if (!forecastColumnMap) return name;
-  return forecastColumnMap[name] || name;
+  if (!forecastColumnMap) return name; // optimistic before map loads
+  return forecastColumnMap[name];
 }
 
 function escapeOData(str) {
@@ -1012,12 +1014,18 @@ async function fetchCompletedRecords() {
 function buildFieldsPayload(extracted, existingFields, jobCode) {
   // Build the SharePoint fields object from the extracted data,
   // merging with any existing fields so we don't blank out prior data.
-  // All field names get mapped to SharePoint's actual internal names via spField().
+  // Fields not present in the SharePoint column map are skipped with a warning.
 
   const fields = { ...(existingFields || {}) };
+  const skipped = [];
   const set = (name, value) => {
     if (value == null || value === '') return;
-    fields[spField(name)] = value;
+    const internal = spField(name);
+    if (!internal) {
+      skipped.push(name);
+      return;
+    }
+    fields[internal] = value;
   };
 
   // Top-level
@@ -1067,9 +1075,19 @@ function buildFieldsPayload(extracted, existingFields, jobCode) {
   set('ComplexityNarrative', extracted.complexityNarrative);
 
   // RecordComplete = (IDEADate OR DADate) AND CADate
-  const hasEntry = !!(fields[spField('IDEADate')] || fields[spField('DADate')]);
-  const hasCA = !!fields[spField('CADate')];
-  fields[spField('RecordComplete')] = hasEntry && hasCA;
+  const ideaField = spField('IDEADate');
+  const daField = spField('DADate');
+  const caField = spField('CADate');
+  const completeField = spField('RecordComplete');
+  if (completeField) {
+    const hasEntry = !!((ideaField && fields[ideaField]) || (daField && fields[daField]));
+    const hasCA = !!(caField && fields[caField]);
+    fields[completeField] = hasEntry && hasCA;
+  }
+
+  if (skipped.length > 0) {
+    console.warn('Skipped fields not found in CORE_DesignForecast:', skipped);
+  }
 
   return fields;
 }
