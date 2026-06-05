@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design Project Intake</title>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<style>
+  :root {
+    --navy: #1f2e3e;
+    --gold: #d8b64f;
+    --gold-light: #f9e6ae;
+    --bg: #f5f3ee;
+    --surface: #ffffff;
+    --text-pri: #1f2e3e;
+    --text-sec: #7a7a7a;
+    --muted: #a3a3a3;
+    --border: #e4dac4;
+    --success: #019425;
+    --warning: #d07820;
+    --error: #ac2828;
+    --shadow: 0 2px 8px rgba(31, 46, 62, 0.08);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text-pri);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* Auth overlay */
+  .overlay {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .overlay-content {
+    background: var(--surface);
+    padding: 48px;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    text-align: center;
+    max-width: 420px;
+  }
+  .overlay-content h1 {
+    margin: 0 0 4px;
+    font-size: 24px;
+    color: var(--navy);
+  }
+  .overlay-content .version {
+    color: var(--text-sec);
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .overlay-content p {
+    color: var(--text-sec);
+    margin: 0 0 20px;
+  }
+
+  /* Buttons */
+  button {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 8px 16px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--navy);
+    color: white;
+  }
+  .btn-primary:hover { background: #2a3d52; }
+  .btn-primary:disabled {
+    background: var(--muted);
+    cursor: not-allowed;
+  }
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--navy);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: var(--bg); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-sec);
+    padding: 6px 12px;
+  }
+  .btn-ghost:hover { color: var(--navy); }
+
+  /* Header */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--navy);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .version-badge {
+    background: var(--gold-light);
+    color: var(--navy);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .header-right {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 13px;
+    color: var(--text-sec);
+  }
+  #userDisplay { color: var(--text-pri); }
+
+  /* Main */
+  main {
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--surface);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(to bottom, #fafaf6, var(--surface));
+  }
+  .panel-header h2 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--navy);
+  }
+  .panel-header .subtitle {
+    color: var(--text-sec);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  .panel-body {
+    padding: 20px;
+    flex: 1;
+  }
+
+  /* Drop zone */
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 6px;
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--text-sec);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .dropzone:hover { border-color: var(--gold); background: #fafaf6; }
+  .dropzone.dragover {
+    border-color: var(--gold);
+    background: var(--gold-light);
+    color: var(--navy);
+  }
+  .dropzone-icon {
+    font-size: 32px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .dropzone-hint {
+    font-size: 12px;
+    margin-top: 6px;
+    color: var(--muted);
+  }
+
+  /* Status messages */
+  .status {
+    padding: 10px 14px;
+    border-radius: 4px;
+    margin-top: 12px;
+    font-size: 13px;
+  }
+  .status.info { background: #eef3f8; color: #2a4a6b; }
+  .status.success { background: #e8f5ec; color: var(--success); }
+  .status.warning { background: #fdf2e6; color: var(--warning); }
+  .status.error { background: #fbeaea; color: var(--error); }
+
+  /* Spinner */
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--navy);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Extracted data display */
+  .extracted {
+    margin-top: 16px;
+  }
+  .data-section {
+    margin-bottom: 18px;
+  }
+  .data-section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-sec);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .data-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 12px;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+  .data-row .label {
+    color: var(--text-sec);
+  }
+  .data-row .value {
+    color: var(--text-pri);
+    word-break: break-word;
+  }
+  .data-row .value.empty {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .level-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 6px;
+  }
+  .level-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px;
+    background: var(--bg);
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .level-item .label { color: var(--text-sec); }
+  .badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .badge.LOW { background: #e8f5ec; color: var(--success); }
+  .badge.MED { background: #fdf2e6; color: var(--warning); }
+  .badge.HIGH { background: #fbeaea; color: var(--error); }
+
+  .actions {
+    margin-top: 18px;
+    display: flex; gap: 10px; justify-content: flex-end;
+  }
+
+  /* Analog results */
+  .analog-list {
+    margin-top: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .analog-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    background: #fafaf6;
+  }
+  .analog-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .analog-name {
+    font-weight: 600;
+    color: var(--navy);
+    font-size: 14px;
+  }
+  .analog-score {
+    font-size: 11px;
+    color: var(--text-sec);
+  }
+  .analog-meta {
+    font-size: 12px;
+    color: var(--text-sec);
+    margin-bottom: 6px;
+  }
+  .analog-profile {
+    display: flex; flex-wrap: wrap; gap: 4px;
+  }
+  .analog-profile .badge {
+    font-size: 9px;
+    padding: 1px 6px;
+  }
+
+  /* Modal */
+  .modal {
+    position: fixed; inset: 0;
+    background: rgba(31, 46, 62, 0.4);
+    z-index: 900;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-content {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 24px;
+    width: 460px;
+    max-width: 90vw;
+    box-shadow: 0 8px 24px rgba(31, 46, 62, 0.2);
+  }
+  .modal-content h3 {
+    margin: 0 0 12px;
+    color: var(--navy);
+  }
+  .modal-content label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-sec);
+    margin: 12px 0 4px;
+  }
+  .modal-content input[type="text"], .modal-content input[type="password"] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .modal-content .help {
+    font-size: 12px;
+    color: var(--text-sec);
+    margin-top: 12px;
+    padding: 10px;
+    background: var(--bg);
+    border-radius: 4px;
+  }
+  .modal-actions {
+    margin-top: 18px;
+    display: flex; gap: 10px; justify-content: flex-end;
+  }
+
+  .hidden { display: none !important; }
+
+  .narrative {
+    font-style: italic;
+    color: var(--text-sec);
+    padding: 8px 12px;
+    background: var(--bg);
+    border-radius: 4px;
+    border-left: 3px solid var(--gold);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Auth overlay -->
+<div id="authOverlay" class="overlay">
+  <div class="overlay-content">
+    <h1>Design Project Intake</h1>
+    <div class="version">v<span class="vnum">1</span></div>
+    <p>Sign in with your Bellweather Microsoft account to continue.</p>
+    <button id="signInBtn" class="btn-primary">Sign In</button>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div id="settingsModal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Settings</h3>
+    <label for="apiKeyInput">Anthropic API key</label>
+    <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-...">
+    <div class="help">
+      Use the Bellweather organization key from the credentials card in Trello.
+      The key is stored locally in this browser only. It is never sent to SharePoint or any other service.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="settingsCancelBtn">Cancel</button>
+      <button class="btn-primary" id="settingsSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="mainApp" class="hidden">
+  <header>
+    <div class="title">
+      Design Project Intake
+      <span class="version-badge">v<span class="vnum">1</span></span>
+    </div>
+    <div class="header-right">
+      <span id="userDisplay"></span>
+      <button class="btn-ghost" id="settingsBtn">Settings</button>
+      <button class="btn-ghost" id="signOutBtn">Sign Out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Intake panel -->
+    <section class="panel" id="intakePanel">
+      <div class="panel-header">
+        <h2>Contract Intake</h2>
+        <div class="subtitle">Drop an IDEA, FDDA, DA, or CA to extract and save to SharePoint.</div>
+      </div>
+      <div class="panel-body" id="intakeBody">
+        <div class="dropzone" id="intakeDrop">
+          <div class="dropzone-icon">↓</div>
+          <div>Drop a contract PDF here</div>
+          <div class="dropzone-hint">or click to choose a file</div>
+          <input type="file" id="intakeFile" accept="application/pdf" style="display:none">
+        </div>
+      </div>
+    </section>
+
+    <!-- Lookup panel -->
+    <section class="panel" id="lookupPanel">
+      <div class="panel-header">
+        <h2>Analog Lookup</h2>
+        <div class="subtitle">Drop a new DA to find similar completed projects.</div>
+      </div>
+      <div class="panel-body" id="lookupBody">
+        <div class="dropzone" id="lookupDrop">
+          <div class="dropzone-icon">↓</div>
+          <div>Drop a DA PDF here</div>
+          <div class="dropzone-hint">or click to choose a file</div>
+          <input type="file" id="lookupFile" accept="application/pdf" style="display:none">
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+// ============================================================
+// Design Project Intake — v1
+// ============================================================
+
+const VERSION = 1;
+const API_KEY_STORAGE = 'bw_anthropic_api_key';
+const ANTHROPIC_MODEL = 'claude-opus-4-7';
+const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
+const SP_LIST_NAME = 'CORE_DesignForecast';
+
+const MSAL_CONFIG = {
+  auth: {
+    clientId: '84b37f0e-b149-4089-9bdc-fc654715db23',
+    authority: 'https://login.microsoftonline.com/ff0e3f46-615a-4a22-8a80-4bb83d627785',
+    redirectUri: 'https://bellweatherllc.github.io/tools/',
+    navigateToLoginRequestUrl: true
+  },
+  cache: {
+    cacheLocation: 'localStorage',
+    storeAuthStateInCookie: false
+  }
+};
+const GRAPH_SCOPES = ['Sites.ReadWrite.All'];
+
+// MSAL instance — must be named msalApp per CORE convention
+const msalApp = new msal.PublicClientApplication(MSAL_CONFIG);
+let currentAccount = null;
+
+// ------------------------------------------------------------
+// Boot
+// ------------------------------------------------------------
+
+document.querySelectorAll('.vnum').forEach(el => el.textContent = VERSION);
+
+(async function boot() {
+  try {
+    const resp = await msalApp.handleRedirectPromise();
+    if (resp && resp.account) {
+      currentAccount = resp.account;
+    } else {
+      const accounts = msalApp.getAllAccounts();
+      if (accounts.length > 0) currentAccount = accounts[0];
+    }
+  } catch (err) {
+    console.error('Redirect handling error:', err);
+  }
+
+  if (currentAccount) {
+    showApp();
+  } else {
+    showAuthOverlay();
+  }
+})();
+
+function showAuthOverlay() {
+  document.getElementById('authOverlay').classList.remove('hidden');
+  document.getElementById('mainApp').classList.add('hidden');
+}
+
+function showApp() {
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('mainApp').classList.remove('hidden');
+  document.getElementById('userDisplay').textContent = currentAccount.username || currentAccount.name || '';
+  if (!getApiKey()) {
+    // Prompt for key on first run
+    openSettings();
+  }
+}
+
+// ------------------------------------------------------------
+// Auth handlers
+// ------------------------------------------------------------
+
+document.getElementById('signInBtn').addEventListener('click', () => {
+  msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
+});
+
+document.getElementById('signOutBtn').addEventListener('click', () => {
+  msalApp.logoutRedirect();
+});
+
+async function getGraphToken() {
+  const req = { scopes: GRAPH_SCOPES, account: currentAccount };
+  try {
+    const result = await msalApp.acquireTokenSilent(req);
+    return result.accessToken;
+  } catch (err) {
+    if (err instanceof msal.InteractionRequiredAuthError) {
+      msalApp.acquireTokenRedirect(req);
+      return null;
+    }
+    throw err;
+  }
+}
+
+// ------------------------------------------------------------
+// Settings modal
+// ------------------------------------------------------------
+
+function getApiKey() {
+  return localStorage.getItem(API_KEY_STORAGE) || '';
+}
+
+function openSettings() {
+  document.getElementById('apiKeyInput').value = getApiKey();
+  document.getElementById('settingsModal').classList.remove('hidden');
+}
+
+function closeSettings() {
+  document.getElementById('settingsModal').classList.add('hidden');
+}
+
+document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('settingsCancelBtn').addEventListener('click', closeSettings);
+document.getElementById('settingsSaveBtn').addEventListener('click', () => {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (key) {
+    localStorage.setItem(API_KEY_STORAGE, key);
+  }
+  closeSettings();
+});
+
+// ------------------------------------------------------------
+// Drop zone wiring
+// ------------------------------------------------------------
+
+function wireDropzone(dropEl, fileEl, handler) {
+  dropEl.addEventListener('click', () => fileEl.click());
+  dropEl.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropEl.classList.add('dragover');
+  });
+  dropEl.addEventListener('dragleave', () => dropEl.classList.remove('dragover'));
+  dropEl.addEventListener('drop', e => {
+    e.preventDefault();
+    dropEl.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) handler(file);
+  });
+  fileEl.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) handler(file);
+  });
+}
+
+wireDropzone(
+  document.getElementById('intakeDrop'),
+  document.getElementById('intakeFile'),
+  handleIntakeFile
+);
+wireDropzone(
+  document.getElementById('lookupDrop'),
+  document.getElementById('lookupFile'),
+  handleLookupFile
+);
+
+// ------------------------------------------------------------
+// PDF -> base64
+// ------------------------------------------------------------
+
+function pdfToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('Failed to read PDF'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ------------------------------------------------------------
+// Anthropic extraction
+// ------------------------------------------------------------
+
+const EXTRACTION_PROMPT = `You are extracting structured data from a Bellweather Design Build contract document. The document will be one of four types:
+- IDEA (Initial Design Engagement Agreement, old contract model)
+- FDDA (Full Design Development Agreement, old contract model)
+- DA (Design Agreement, new contract model, covers both Phase I and Phase II)
+- CA (Construction Agreement)
+
+Return a JSON object only — no preamble, no markdown code fences, no commentary. The object must have these exact fields and types:
+
+{
+  "documentType": "IDEA" | "FDDA" | "DA" | "CA",
+  "executionDate": "YYYY-MM-DD",
+  "clientName": string,
+  "projectAddress": string,
+  "projectType": "Whole House" | "Addition" | "Kitchen" | "Bath" | "Kitchen+Bath" | "Kitchen+Addition" | "Roof/Exterior" | "Other",
+  "scopeDescription": string,
+  "designFee": number or null,
+  "constructionBudget": number or null,
+  "lod": {
+    "drawings": "LOW" | "MED" | "HIGH",
+    "siteVerification": "LOW" | "MED" | "HIGH",
+    "engineering": "LOW" | "MED" | "HIGH",
+    "exteriorDetail": "LOW" | "MED" | "HIGH",
+    "interiorDetail": "LOW" | "MED" | "HIGH",
+    "selections": "LOW" | "MED" | "HIGH"
+  },
+  "risk": {
+    "clientRelationship": "LOW" | "MED" | "HIGH",
+    "permitZoning": "LOW" | "MED" | "HIGH",
+    "historical": "LOW" | "MED" | "HIGH",
+    "selectionsBudget": "LOW" | "MED" | "HIGH",
+    "constructability": "LOW" | "MED" | "HIGH",
+    "outsidePartners": "LOW" | "MED" | "HIGH"
+  },
+  "complexityNarrative": string
+}
+
+Inference guidance for LOD (Level of Detail required for design work):
+- drawings: documentation detail. Single-room cosmetic = LOW; whole-house renovation = HIGH.
+- siteVerification: existing-conditions complexity. New construction = LOW; old/unknown conditions = HIGH.
+- engineering: structural/MEP work. Cosmetic only = LOW; structural changes or load-bearing modifications = HIGH.
+- exteriorDetail: architectural exterior. Interior-only = LOW; facade or envelope work = HIGH.
+- interiorDetail: interior architecture. Standard finishes = LOW; custom millwork or detailed interiors = HIGH.
+- selections: selection volume and complexity. Single room = LOW; whole house = HIGH.
+
+Inference guidance for Risk:
+- clientRelationship: hard to infer from contract alone; default MED unless contract suggests otherwise.
+- permitZoning: implied by scope. Interior cosmetic = LOW; addition or exterior changes = HIGH.
+- historical: historic district or landmarked property indicators. Default LOW unless mentioned.
+- selectionsBudget: risk that selections will exceed budget. Default MED.
+- constructability: trade coordination complexity. Single trade = LOW; multi-trade with sequencing = HIGH.
+- outsidePartners: architect, engineer, or specialist consultants required. Default LOW unless mentioned.
+
+complexityNarrative: 1 to 3 sentences summarizing what makes this project complex or straightforward, based on the contract text.
+
+If a value cannot be determined: use null for nullable fields (designFee, constructionBudget) and MED for LOW/MED/HIGH fields, and note the uncertainty in complexityNarrative.
+
+Respond with the JSON object only.`;
+
+async function extractFromPdf(file) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('API key not set. Open Settings to add it.');
+
+  const base64 = await pdfToBase64(file);
+
+  const body = {
+    model: ANTHROPIC_MODEL,
+    max_tokens: 1500,
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: base64 }
+        },
+        { type: 'text', text: EXTRACTION_PROMPT }
+      ]
+    }]
+  };
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Anthropic API error (${resp.status}): ${errText}`);
+  }
+
+  const data = await resp.json();
+  const text = (data.content || [])
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('\n')
+    .trim();
+
+  // Strip markdown fences just in case
+  let jsonStr = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  try {
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    throw new Error('Could not parse extraction response as JSON: ' + err.message + '\n\nRaw response:\n' + text);
+  }
+}
+
+// ------------------------------------------------------------
+// SharePoint
+// ------------------------------------------------------------
+
+const SP_BASE = `https://graph.microsoft.com/v1.0/sites/${SP_SITE_PATH}:/lists/${SP_LIST_NAME}`;
+
+function escapeOData(str) {
+  return String(str).replace(/'/g, "''");
+}
+
+async function findExistingItem(clientName, projectAddress) {
+  const token = await getGraphToken();
+  if (!token) return null;
+
+  const filter = `fields/ClientName eq '${escapeOData(clientName)}' and fields/ProjectAddress eq '${escapeOData(projectAddress)}'`;
+  const url = `${SP_BASE}/items?$expand=fields&$filter=${encodeURIComponent(filter)}`;
+
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly'
+    }
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`SharePoint lookup failed (${resp.status}): ${errText}`);
+  }
+  const data = await resp.json();
+  return (data.value && data.value[0]) || null;
+}
+
+async function fetchCompletedRecords() {
+  const token = await getGraphToken();
+  if (!token) return [];
+
+  const filter = `fields/RecordComplete eq true`;
+  const url = `${SP_BASE}/items?$expand=fields&$filter=${encodeURIComponent(filter)}&$top=200`;
+
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Prefer: 'HonorNonIndexedQueriesWarningMayFailRandomly'
+    }
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`SharePoint read failed (${resp.status}): ${errText}`);
+  }
+  const data = await resp.json();
+  return (data.value || []).map(it => it.fields);
+}
+
+function buildFieldsPayload(extracted, existingFields) {
+  // Build the SharePoint fields object from the extracted data,
+  // merging with any existing fields so we don't blank out prior data.
+
+  const fields = { ...(existingFields || {}) };
+
+  // Top-level
+  if (extracted.clientName) fields.ClientName = extracted.clientName;
+  if (extracted.projectAddress) fields.ProjectAddress = extracted.projectAddress;
+  if (extracted.projectType) fields.ProjectType = extracted.projectType;
+  if (extracted.scopeDescription) fields.ScopeDescription = extracted.scopeDescription;
+  if (extracted.designFee != null) fields.DesignFee = extracted.designFee;
+  if (extracted.constructionBudget != null) fields.ConstructionBudget = extracted.constructionBudget;
+
+  // Date field based on document type
+  const dateISO = extracted.executionDate
+    ? new Date(extracted.executionDate + 'T00:00:00Z').toISOString()
+    : null;
+  if (dateISO) {
+    switch (extracted.documentType) {
+      case 'IDEA': fields.IDEADate = dateISO; break;
+      case 'FDDA': fields.FDDADate = dateISO; break;
+      case 'DA':   fields.DADate = dateISO; break;
+      case 'CA':   fields.CADate = dateISO; break;
+    }
+  }
+
+  // LOD
+  if (extracted.lod) {
+    if (extracted.lod.drawings)         fields.LOD_Drawings = extracted.lod.drawings;
+    if (extracted.lod.siteVerification) fields.LOD_SiteVerification = extracted.lod.siteVerification;
+    if (extracted.lod.engineering)      fields.LOD_Engineering = extracted.lod.engineering;
+    if (extracted.lod.exteriorDetail)   fields.LOD_ExteriorDetail = extracted.lod.exteriorDetail;
+    if (extracted.lod.interiorDetail)   fields.LOD_InteriorDetail = extracted.lod.interiorDetail;
+    if (extracted.lod.selections)       fields.LOD_Selections = extracted.lod.selections;
+  }
+
+  // Risk
+  if (extracted.risk) {
+    if (extracted.risk.clientRelationship) fields.Risk_ClientRelationship = extracted.risk.clientRelationship;
+    if (extracted.risk.permitZoning)       fields.Risk_PermitZoning = extracted.risk.permitZoning;
+    if (extracted.risk.historical)         fields.Risk_Historical = extracted.risk.historical;
+    if (extracted.risk.selectionsBudget)   fields.Risk_SelectionsBudget = extracted.risk.selectionsBudget;
+    if (extracted.risk.constructability)   fields.Risk_Constructability = extracted.risk.constructability;
+    if (extracted.risk.outsidePartners)    fields.Risk_OutsidePartners = extracted.risk.outsidePartners;
+  }
+
+  if (extracted.complexityNarrative) fields.ComplexityNarrative = extracted.complexityNarrative;
+
+  // RecordComplete = (IDEADate OR DADate) AND CADate
+  const hasEntry = !!(fields.IDEADate || fields.DADate);
+  const hasCA = !!fields.CADate;
+  fields.RecordComplete = hasEntry && hasCA;
+
+  return fields;
+}
+
+async function createItem(fields) {
+  const token = await getGraphToken();
+  if (!token) throw new Error('No auth token.');
+
+  const resp = await fetch(`${SP_BASE}/items`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ fields })
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`SharePoint create failed (${resp.status}): ${errText}`);
+  }
+  return resp.json();
+}
+
+async function updateItem(itemId, fields) {
+  const token = await getGraphToken();
+  if (!token) throw new Error('No auth token.');
+
+  const resp = await fetch(`${SP_BASE}/items/${itemId}/fields`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(fields)
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`SharePoint update failed (${resp.status}): ${errText}`);
+  }
+  return resp.json();
+}
+
+// ------------------------------------------------------------
+// Intake panel
+// ------------------------------------------------------------
+
+async function handleIntakeFile(file) {
+  const body = document.getElementById('intakeBody');
+  body.innerHTML = `
+    <div class="status info"><span class="spinner"></span>Extracting from <strong>${escapeHtml(file.name)}</strong>...</div>
+  `;
+
+  try {
+    const extracted = await extractFromPdf(file);
+    renderIntakeReview(extracted, file.name);
+  } catch (err) {
+    renderIntakeError(err.message);
+  }
+}
+
+function renderIntakeReview(extracted, fileName) {
+  const body = document.getElementById('intakeBody');
+  body.innerHTML = `
+    <div class="status info">Extracted from <strong>${escapeHtml(fileName)}</strong>. Review and save.</div>
+    <div class="extracted" id="intakeReview">${renderProfile(extracted)}</div>
+    <div class="actions">
+      <button class="btn-secondary" id="intakeCancelBtn">Cancel</button>
+      <button class="btn-primary" id="intakeSaveBtn">Save to SharePoint</button>
+    </div>
+  `;
+  document.getElementById('intakeCancelBtn').addEventListener('click', resetIntake);
+  document.getElementById('intakeSaveBtn').addEventListener('click', () => saveIntake(extracted));
+}
+
+async function saveIntake(extracted) {
+  const body = document.getElementById('intakeBody');
+  const saveBtn = document.getElementById('intakeSaveBtn');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner"></span>Saving...';
+  }
+
+  try {
+    if (!extracted.clientName || !extracted.projectAddress) {
+      throw new Error('Extraction missing ClientName or ProjectAddress — cannot match or create a row. Edit not yet supported; re-run extraction or open SharePoint directly.');
+    }
+
+    const existing = await findExistingItem(extracted.clientName, extracted.projectAddress);
+    const fields = buildFieldsPayload(extracted, existing ? existing.fields : null);
+
+    let actionLabel;
+    if (existing) {
+      await updateItem(existing.id, fields);
+      actionLabel = 'Updated existing row';
+    } else {
+      await createItem(fields);
+      actionLabel = 'Created new row';
+    }
+
+    body.innerHTML = `
+      <div class="status success"><strong>${actionLabel}</strong> for ${escapeHtml(extracted.clientName)} — ${escapeHtml(extracted.projectAddress)}. RecordComplete: ${fields.RecordComplete ? 'Yes' : 'No'}.</div>
+      <div class="actions">
+        <button class="btn-primary" id="intakeAgainBtn">Process Another</button>
+      </div>
+    `;
+    document.getElementById('intakeAgainBtn').addEventListener('click', resetIntake);
+  } catch (err) {
+    renderIntakeError(err.message);
+  }
+}
+
+function renderIntakeError(message) {
+  const body = document.getElementById('intakeBody');
+  body.innerHTML = `
+    <div class="status error"><strong>Error:</strong> ${escapeHtml(message)}</div>
+    <div class="actions">
+      <button class="btn-secondary" id="intakeRetryBtn">Try Again</button>
+    </div>
+  `;
+  document.getElementById('intakeRetryBtn').addEventListener('click', resetIntake);
+}
+
+function resetIntake() {
+  document.getElementById('intakeBody').innerHTML = `
+    <div class="dropzone" id="intakeDrop">
+      <div class="dropzone-icon">↓</div>
+      <div>Drop a contract PDF here</div>
+      <div class="dropzone-hint">or click to choose a file</div>
+      <input type="file" id="intakeFile" accept="application/pdf" style="display:none">
+    </div>
+  `;
+  wireDropzone(
+    document.getElementById('intakeDrop'),
+    document.getElementById('intakeFile'),
+    handleIntakeFile
+  );
+}
+
+// ------------------------------------------------------------
+// Lookup panel
+// ------------------------------------------------------------
+
+async function handleLookupFile(file) {
+  const body = document.getElementById('lookupBody');
+  body.innerHTML = `
+    <div class="status info"><span class="spinner"></span>Extracting profile from <strong>${escapeHtml(file.name)}</strong>...</div>
+  `;
+
+  try {
+    const extracted = await extractFromPdf(file);
+    body.innerHTML = `
+      <div class="status info"><span class="spinner"></span>Loading completed projects from SharePoint...</div>
+    `;
+    const completed = await fetchCompletedRecords();
+    renderLookupResults(extracted, completed, file.name);
+  } catch (err) {
+    renderLookupError(err.message);
+  }
+}
+
+function levelNum(level) {
+  return { LOW: 1, MED: 2, HIGH: 3 }[level] || 2;
+}
+
+function profileFromSharePointFields(f) {
+  return {
+    clientName: f.ClientName || '(unnamed)',
+    projectAddress: f.ProjectAddress || '',
+    projectType: f.ProjectType || 'Other',
+    lod: {
+      drawings: f.LOD_Drawings || 'MED',
+      siteVerification: f.LOD_SiteVerification || 'MED',
+      engineering: f.LOD_Engineering || 'MED',
+      exteriorDetail: f.LOD_ExteriorDetail || 'MED',
+      interiorDetail: f.LOD_InteriorDetail || 'MED',
+      selections: f.LOD_Selections || 'MED'
+    },
+    risk: {
+      clientRelationship: f.Risk_ClientRelationship || 'MED',
+      permitZoning: f.Risk_PermitZoning || 'MED',
+      historical: f.Risk_Historical || 'MED',
+      selectionsBudget: f.Risk_SelectionsBudget || 'MED',
+      constructability: f.Risk_Constructability || 'MED',
+      outsidePartners: f.Risk_OutsidePartners || 'MED'
+    }
+  };
+}
+
+function analogDistance(a, b) {
+  const typePenalty = a.projectType === b.projectType ? 0 : 8;
+  const lodKeys = ['drawings', 'siteVerification', 'engineering', 'exteriorDetail', 'interiorDetail', 'selections'];
+  const riskKeys = ['clientRelationship', 'permitZoning', 'historical', 'selectionsBudget', 'constructability', 'outsidePartners'];
+  let d = typePenalty;
+  for (const k of lodKeys) d += Math.abs(levelNum(a.lod[k]) - levelNum(b.lod[k]));
+  for (const k of riskKeys) d += Math.abs(levelNum(a.risk[k]) - levelNum(b.risk[k]));
+  return d;
+}
+
+function renderLookupResults(newProfile, completedFields, fileName) {
+  const candidates = completedFields.map(profileFromSharePointFields);
+  const scored = candidates.map(c => ({ profile: c, distance: analogDistance(newProfile, c) }));
+  scored.sort((a, b) => a.distance - b.distance);
+  const top = scored.slice(0, 5);
+
+  const body = document.getElementById('lookupBody');
+  let html = `
+    <div class="status info">Extracted from <strong>${escapeHtml(fileName)}</strong>. Showing ${top.length} closest analog${top.length === 1 ? '' : 's'} of ${candidates.length} completed project${candidates.length === 1 ? '' : 's'}.</div>
+    <div class="extracted">
+      <div class="data-section">
+        <div class="data-section-title">New project profile</div>
+        ${renderProfileCompact(newProfile)}
+      </div>
+    </div>
+  `;
+
+  if (top.length === 0) {
+    html += `<div class="status warning">No completed records found in SharePoint yet. Once contracts have both an entry document (IDEA or DA) and a CA on file, they'll appear here as analogs.</div>`;
+  } else {
+    html += `<div class="data-section"><div class="data-section-title">Closest analogs</div><div class="analog-list">`;
+    for (const { profile, distance } of top) {
+      html += `
+        <div class="analog-card">
+          <div class="analog-header">
+            <div class="analog-name">${escapeHtml(profile.clientName)}</div>
+            <div class="analog-score">distance ${distance}</div>
+          </div>
+          <div class="analog-meta">${escapeHtml(profile.projectAddress)} · ${escapeHtml(profile.projectType)}</div>
+          <div class="analog-profile">
+            ${renderProfileBadges(profile)}
+          </div>
+        </div>
+      `;
+    }
+    html += `</div></div>`;
+    html += `<div class="status info" style="margin-top:12px;font-size:12px">Phase hour data will be joined here once timecard integration is wired up.</div>`;
+  }
+
+  html += `
+    <div class="actions">
+      <button class="btn-primary" id="lookupAgainBtn">Look Up Another</button>
+    </div>
+  `;
+
+  body.innerHTML = html;
+  document.getElementById('lookupAgainBtn').addEventListener('click', resetLookup);
+}
+
+function renderLookupError(message) {
+  const body = document.getElementById('lookupBody');
+  body.innerHTML = `
+    <div class="status error"><strong>Error:</strong> ${escapeHtml(message)}</div>
+    <div class="actions">
+      <button class="btn-secondary" id="lookupRetryBtn">Try Again</button>
+    </div>
+  `;
+  document.getElementById('lookupRetryBtn').addEventListener('click', resetLookup);
+}
+
+function resetLookup() {
+  document.getElementById('lookupBody').innerHTML = `
+    <div class="dropzone" id="lookupDrop">
+      <div class="dropzone-icon">↓</div>
+      <div>Drop a DA PDF here</div>
+      <div class="dropzone-hint">or click to choose a file</div>
+      <input type="file" id="lookupFile" accept="application/pdf" style="display:none">
+    </div>
+  `;
+  wireDropzone(
+    document.getElementById('lookupDrop'),
+    document.getElementById('lookupFile'),
+    handleLookupFile
+  );
+}
+
+// ------------------------------------------------------------
+// Profile rendering
+// ------------------------------------------------------------
+
+function renderProfile(p) {
+  const dateRow = (label, val) => `<div class="data-row"><div class="label">${label}</div><div class="value${val ? '' : ' empty'}">${val ? escapeHtml(val) : '—'}</div></div>`;
+
+  const money = v => v == null ? null : '$' + Number(v).toLocaleString();
+
+  return `
+    <div class="data-section">
+      <div class="data-section-title">Document</div>
+      <div class="data-row"><div class="label">Type</div><div class="value">${escapeHtml(p.documentType || '—')}</div></div>
+      <div class="data-row"><div class="label">Executed</div><div class="value">${escapeHtml(p.executionDate || '—')}</div></div>
+    </div>
+    <div class="data-section">
+      <div class="data-section-title">Project</div>
+      <div class="data-row"><div class="label">Client</div><div class="value">${escapeHtml(p.clientName || '—')}</div></div>
+      <div class="data-row"><div class="label">Address</div><div class="value">${escapeHtml(p.projectAddress || '—')}</div></div>
+      <div class="data-row"><div class="label">Type</div><div class="value">${escapeHtml(p.projectType || '—')}</div></div>
+      <div class="data-row"><div class="label">Design fee</div><div class="value${p.designFee == null ? ' empty' : ''}">${p.designFee == null ? '—' : money(p.designFee)}</div></div>
+      <div class="data-row"><div class="label">Constr. budget</div><div class="value${p.constructionBudget == null ? ' empty' : ''}">${p.constructionBudget == null ? '—' : money(p.constructionBudget)}</div></div>
+      <div class="data-row"><div class="label">Scope</div><div class="value">${escapeHtml(p.scopeDescription || '—')}</div></div>
+    </div>
+    <div class="data-section">
+      <div class="data-section-title">Level of Detail</div>
+      <div class="level-grid">
+        ${renderLevel('Drawings', p.lod?.drawings)}
+        ${renderLevel('Site Verification', p.lod?.siteVerification)}
+        ${renderLevel('Engineering', p.lod?.engineering)}
+        ${renderLevel('Exterior Detail', p.lod?.exteriorDetail)}
+        ${renderLevel('Interior Detail', p.lod?.interiorDetail)}
+        ${renderLevel('Selections', p.lod?.selections)}
+      </div>
+    </div>
+    <div class="data-section">
+      <div class="data-section-title">Risk</div>
+      <div class="level-grid">
+        ${renderLevel('Client Relationship', p.risk?.clientRelationship)}
+        ${renderLevel('Permit & Zoning', p.risk?.permitZoning)}
+        ${renderLevel('Historical', p.risk?.historical)}
+        ${renderLevel('Selections Budget', p.risk?.selectionsBudget)}
+        ${renderLevel('Constructability', p.risk?.constructability)}
+        ${renderLevel('Outside Partners', p.risk?.outsidePartners)}
+      </div>
+    </div>
+    ${p.complexityNarrative ? `<div class="data-section"><div class="data-section-title">Complexity Narrative</div><div class="narrative">${escapeHtml(p.complexityNarrative)}</div></div>` : ''}
+  `;
+}
+
+function renderProfileCompact(p) {
+  return `
+    <div class="data-row"><div class="label">Client</div><div class="value">${escapeHtml(p.clientName || '—')}</div></div>
+    <div class="data-row"><div class="label">Address</div><div class="value">${escapeHtml(p.projectAddress || '—')}</div></div>
+    <div class="data-row"><div class="label">Type</div><div class="value">${escapeHtml(p.projectType || '—')}</div></div>
+    <div class="analog-profile" style="margin-top:8px">${renderProfileBadges(p)}</div>
+  `;
+}
+
+function renderLevel(label, level) {
+  const l = level || 'MED';
+  return `<div class="level-item"><span class="label">${label}</span><span class="badge ${l}">${l}</span></div>`;
+}
+
+function renderProfileBadges(p) {
+  const lodKeys = [
+    ['drawings', 'Drw'], ['siteVerification', 'Site'], ['engineering', 'Eng'],
+    ['exteriorDetail', 'Ext'], ['interiorDetail', 'Int'], ['selections', 'Sel']
+  ];
+  const riskKeys = [
+    ['clientRelationship', 'Client'], ['permitZoning', 'Permit'], ['historical', 'Hist'],
+    ['selectionsBudget', 'Budget'], ['constructability', 'Constr'], ['outsidePartners', 'Partners']
+  ];
+  let html = '';
+  for (const [k, label] of lodKeys) {
+    const v = (p.lod && p.lod[k]) || 'MED';
+    html += `<span class="badge ${v}">${label} ${v}</span>`;
+  }
+  for (const [k, label] of riskKeys) {
+    const v = (p.risk && p.risk[k]) || 'MED';
+    html += `<span class="badge ${v}">${label} ${v}</span>`;
+  }
+  return html;
+}
+
+// ------------------------------------------------------------
+// Utilities
+// ------------------------------------------------------------
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+</script>
+</body>
+</html>
