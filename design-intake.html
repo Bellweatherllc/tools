@@ -622,7 +622,7 @@
 // Design Project Intake — v1
 // ============================================================
 
-const VERSION = 7;
+const VERSION = 8;
 const API_KEY_STORAGE = 'bw_anthropic_api_key';
 const ANTHROPIC_MODEL = 'claude-opus-4-7';
 const SP_SITE_PATH = 'bellweather.sharepoint.com:/sites/BWCore';
@@ -924,15 +924,52 @@ async function extractFromPdf(file) {
 
 const SP_BASE = `https://graph.microsoft.com/v1.0/sites/${SP_SITE_PATH}:/lists/${SP_LIST_NAME}`;
 
+// Column-name mapping for CORE_DesignForecast.
+// SharePoint's internal column names sometimes differ from display names
+// (e.g., encoded characters, version suffixes). We fetch once and cache.
+let forecastColumnMap = null; // displayName -> internalName
+
+async function ensureForecastColumnMap() {
+  if (forecastColumnMap) return forecastColumnMap;
+  const token = await getGraphToken();
+  if (!token) throw new Error('No auth token for column metadata.');
+  const url = `${SP_BASE}/columns?$top=200`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Column fetch failed (${resp.status}): ${errText}`);
+  }
+  const data = await resp.json();
+  const map = {};
+  for (const col of (data.value || [])) {
+    // Map by display name (what humans see) and by internal name (identity)
+    if (col.displayName) map[col.displayName] = col.name;
+    if (col.name) map[col.name] = col.name;
+  }
+  forecastColumnMap = map;
+  console.log('CORE_DesignForecast column map loaded:', map);
+  return map;
+}
+
+// Returns the SharePoint internal name for a given logical/display field name.
+// Falls back to the input if the map hasn't loaded yet or the name isn't found.
+function spField(name) {
+  if (!forecastColumnMap) return name;
+  return forecastColumnMap[name] || name;
+}
+
 function escapeOData(str) {
   return String(str).replace(/'/g, "''");
 }
 
 async function findExistingItem(clientName, projectAddress) {
+  await ensureForecastColumnMap();
   const token = await getGraphToken();
   if (!token) return null;
 
-  const filter = `fields/ClientName eq '${escapeOData(clientName)}' and fields/ProjectAddress eq '${escapeOData(projectAddress)}'`;
+  const clientField = spField('ClientName');
+  const addrField = spField('ProjectAddress');
+  const filter = `fields/${clientField} eq '${escapeOData(clientName)}' and fields/${addrField} eq '${escapeOData(projectAddress)}'`;
   const url = `${SP_BASE}/items?$expand=fields&$filter=${encodeURIComponent(filter)}`;
 
   const resp = await fetch(url, {
@@ -950,10 +987,12 @@ async function findExistingItem(clientName, projectAddress) {
 }
 
 async function fetchCompletedRecords() {
+  await ensureForecastColumnMap();
   const token = await getGraphToken();
   if (!token) return [];
 
-  const filter = `fields/RecordComplete eq true`;
+  const completeField = spField('RecordComplete');
+  const filter = `fields/${completeField} eq true`;
   const url = `${SP_BASE}/items?$expand=fields&$filter=${encodeURIComponent(filter)}&$top=200`;
 
   const resp = await fetch(url, {
@@ -973,19 +1012,24 @@ async function fetchCompletedRecords() {
 function buildFieldsPayload(extracted, existingFields, jobCode) {
   // Build the SharePoint fields object from the extracted data,
   // merging with any existing fields so we don't blank out prior data.
+  // All field names get mapped to SharePoint's actual internal names via spField().
 
   const fields = { ...(existingFields || {}) };
+  const set = (name, value) => {
+    if (value == null || value === '') return;
+    fields[spField(name)] = value;
+  };
 
   // Top-level
-  if (extracted.clientName) fields.ClientName = extracted.clientName;
-  if (extracted.projectAddress) fields.ProjectAddress = extracted.projectAddress;
-  if (extracted.projectType) fields.ProjectType = extracted.projectType;
-  if (extracted.scopeDescription) fields.ScopeDescription = extracted.scopeDescription;
-  if (extracted.designFee != null) fields.DesignFee = extracted.designFee;
-  if (extracted.constructionBudget != null) fields.ConstructionBudget = extracted.constructionBudget;
+  set('ClientName', extracted.clientName);
+  set('ProjectAddress', extracted.projectAddress);
+  set('ProjectType', extracted.projectType);
+  set('ScopeDescription', extracted.scopeDescription);
+  if (extracted.designFee != null) set('DesignFee', extracted.designFee);
+  if (extracted.constructionBudget != null) set('ConstructionBudget', extracted.constructionBudget);
 
   // JobCode — set if provided; preserve existing if not
-  if (jobCode) fields.JobCode = jobCode.toUpperCase();
+  if (jobCode) set('JobCode', jobCode.toUpperCase());
 
   // Date field based on document type
   const dateISO = extracted.executionDate
@@ -993,39 +1037,39 @@ function buildFieldsPayload(extracted, existingFields, jobCode) {
     : null;
   if (dateISO) {
     switch (extracted.documentType) {
-      case 'IDEA': fields.IDEADate = dateISO; break;
-      case 'FDDA': fields.FDDADate = dateISO; break;
-      case 'DA':   fields.DADate = dateISO; break;
-      case 'CA':   fields.CADate = dateISO; break;
+      case 'IDEA': set('IDEADate', dateISO); break;
+      case 'FDDA': set('FDDADate', dateISO); break;
+      case 'DA':   set('DADate', dateISO); break;
+      case 'CA':   set('CADate', dateISO); break;
     }
   }
 
   // LOD
   if (extracted.lod) {
-    if (extracted.lod.drawings)         fields.LOD_Drawings = extracted.lod.drawings;
-    if (extracted.lod.siteVerification) fields.LOD_SiteVerification = extracted.lod.siteVerification;
-    if (extracted.lod.engineering)      fields.LOD_Engineering = extracted.lod.engineering;
-    if (extracted.lod.exteriorDetail)   fields.LOD_ExteriorDetail = extracted.lod.exteriorDetail;
-    if (extracted.lod.interiorDetail)   fields.LOD_InteriorDetail = extracted.lod.interiorDetail;
-    if (extracted.lod.selections)       fields.LOD_Selections = extracted.lod.selections;
+    set('LOD_Drawings', extracted.lod.drawings);
+    set('LOD_SiteVerification', extracted.lod.siteVerification);
+    set('LOD_Engineering', extracted.lod.engineering);
+    set('LOD_ExteriorDetail', extracted.lod.exteriorDetail);
+    set('LOD_InteriorDetail', extracted.lod.interiorDetail);
+    set('LOD_Selections', extracted.lod.selections);
   }
 
   // Risk
   if (extracted.risk) {
-    if (extracted.risk.clientRelationship) fields.Risk_ClientRelationship = extracted.risk.clientRelationship;
-    if (extracted.risk.permitZoning)       fields.Risk_PermitZoning = extracted.risk.permitZoning;
-    if (extracted.risk.historical)         fields.Risk_Historical = extracted.risk.historical;
-    if (extracted.risk.selectionsBudget)   fields.Risk_SelectionsBudget = extracted.risk.selectionsBudget;
-    if (extracted.risk.constructability)   fields.Risk_Constructability = extracted.risk.constructability;
-    if (extracted.risk.outsidePartners)    fields.Risk_OutsidePartners = extracted.risk.outsidePartners;
+    set('Risk_ClientRelationship', extracted.risk.clientRelationship);
+    set('Risk_PermitZoning', extracted.risk.permitZoning);
+    set('Risk_Historical', extracted.risk.historical);
+    set('Risk_SelectionsBudget', extracted.risk.selectionsBudget);
+    set('Risk_Constructability', extracted.risk.constructability);
+    set('Risk_OutsidePartners', extracted.risk.outsidePartners);
   }
 
-  if (extracted.complexityNarrative) fields.ComplexityNarrative = extracted.complexityNarrative;
+  set('ComplexityNarrative', extracted.complexityNarrative);
 
   // RecordComplete = (IDEADate OR DADate) AND CADate
-  const hasEntry = !!(fields.IDEADate || fields.DADate);
-  const hasCA = !!fields.CADate;
-  fields.RecordComplete = hasEntry && hasCA;
+  const hasEntry = !!(fields[spField('IDEADate')] || fields[spField('DADate')]);
+  const hasCA = !!fields[spField('CADate')];
+  fields[spField('RecordComplete')] = hasEntry && hasCA;
 
   return fields;
 }
@@ -1467,8 +1511,8 @@ async function handleIntakeFile(file) {
     if (extracted.clientName && extracted.projectAddress) {
       try {
         const existing = await findExistingItem(extracted.clientName, extracted.projectAddress);
-        if (existing && existing.fields && existing.fields.JobCode) {
-          existingJobCode = existing.fields.JobCode;
+        if (existing && existing.fields && existing.fields[spField('JobCode')]) {
+          existingJobCode = existing.fields[spField('JobCode')];
         }
       } catch (err) {
         console.warn('Existing-row check failed:', err);
@@ -1541,7 +1585,7 @@ async function saveIntake(extracted, jobCode) {
     }
 
     body.innerHTML = `
-      <div class="status success"><strong>${actionLabel}</strong> for ${escapeHtml(extracted.clientName)} — ${escapeHtml(extracted.projectAddress)} (JobCode: ${escapeHtml(jobCode)}). RecordComplete: ${fields.RecordComplete ? 'Yes' : 'No'}.</div>
+      <div class="status success"><strong>${actionLabel}</strong> for ${escapeHtml(extracted.clientName)} — ${escapeHtml(extracted.projectAddress)} (JobCode: ${escapeHtml(jobCode)}). RecordComplete: ${fields[spField('RecordComplete')] ? 'Yes' : 'No'}.</div>
       <div class="actions">
         <button class="btn-primary" id="intakeAgainBtn">Process Another</button>
       </div>
@@ -1614,30 +1658,31 @@ function levelNum(level) {
 }
 
 function profileFromSharePointFields(f) {
+  const get = (name) => f[spField(name)];
   return {
-    clientName: f.ClientName || '(unnamed)',
-    projectAddress: f.ProjectAddress || '',
-    projectType: f.ProjectType || 'Other',
-    jobCode: f.JobCode || '',
-    ideaDate: f.IDEADate || null,
-    fddaDate: f.FDDADate || null,
-    daDate: f.DADate || null,
-    caDate: f.CADate || null,
+    clientName: get('ClientName') || '(unnamed)',
+    projectAddress: get('ProjectAddress') || '',
+    projectType: get('ProjectType') || 'Other',
+    jobCode: get('JobCode') || '',
+    ideaDate: get('IDEADate') || null,
+    fddaDate: get('FDDADate') || null,
+    daDate: get('DADate') || null,
+    caDate: get('CADate') || null,
     lod: {
-      drawings: f.LOD_Drawings || 'MED',
-      siteVerification: f.LOD_SiteVerification || 'MED',
-      engineering: f.LOD_Engineering || 'MED',
-      exteriorDetail: f.LOD_ExteriorDetail || 'MED',
-      interiorDetail: f.LOD_InteriorDetail || 'MED',
-      selections: f.LOD_Selections || 'MED'
+      drawings: get('LOD_Drawings') || 'MED',
+      siteVerification: get('LOD_SiteVerification') || 'MED',
+      engineering: get('LOD_Engineering') || 'MED',
+      exteriorDetail: get('LOD_ExteriorDetail') || 'MED',
+      interiorDetail: get('LOD_InteriorDetail') || 'MED',
+      selections: get('LOD_Selections') || 'MED'
     },
     risk: {
-      clientRelationship: f.Risk_ClientRelationship || 'MED',
-      permitZoning: f.Risk_PermitZoning || 'MED',
-      historical: f.Risk_Historical || 'MED',
-      selectionsBudget: f.Risk_SelectionsBudget || 'MED',
-      constructability: f.Risk_Constructability || 'MED',
-      outsidePartners: f.Risk_OutsidePartners || 'MED'
+      clientRelationship: get('Risk_ClientRelationship') || 'MED',
+      permitZoning: get('Risk_PermitZoning') || 'MED',
+      historical: get('Risk_Historical') || 'MED',
+      selectionsBudget: get('Risk_SelectionsBudget') || 'MED',
+      constructability: get('Risk_Constructability') || 'MED',
+      outsidePartners: get('Risk_OutsidePartners') || 'MED'
     }
   };
 }
@@ -1913,6 +1958,7 @@ const sgState = {
 };
 
 async function fetchAllForecastRecords() {
+  await ensureForecastColumnMap();
   const token = await getGraphToken();
   if (!token) throw new Error('No auth token for forecast fetch.');
   let url = `${SP_BASE}/items?$expand=fields&$top=200`;
@@ -1938,22 +1984,24 @@ async function fetchAllForecastRecords() {
 }
 
 function projectPhaseWindows(f) {
-  const entryStr = f.IDEADate || f.DADate;
+  const entryStr = f[spField('IDEADate')] || f[spField('DADate')];
   if (!entryStr) return null;
   const entryDate = new Date(entryStr);
   if (isNaN(entryDate.getTime())) return null;
   let phase1End;
-  if (f.FDDADate) {
-    phase1End = new Date(f.FDDADate);
+  const fdda = f[spField('FDDADate')];
+  if (fdda) {
+    phase1End = new Date(fdda);
   } else {
     phase1End = new Date(entryDate.getTime() + PHASE_I_CANONICAL_WEEKS * 7 * 86400000);
   }
-  const phase2End = f.CADate ? new Date(f.CADate) : null;
+  const ca = f[spField('CADate')];
+  const phase2End = ca ? new Date(ca) : null;
   return { entryDate, phase1End, phase2End };
 }
 
 function buildProjectStream(f, timecards) {
-  const jobCode = (f.JobCode || '').toUpperCase();
+  const jobCode = (f[spField('JobCode')] || '').toUpperCase();
   if (!jobCode) return null;
   const windows = projectPhaseWindows(f);
   if (!windows) return null;
@@ -2004,7 +2052,16 @@ function buildProjectStream(f, timecards) {
   }
 
   const totalHours = weeklyArr.reduce((s, w) => s + w.hours, 0);
-  return { jobCode, fields: f, windows, weekly: weeklyArr, phasePoints, color: colorForJobCode(jobCode), totalHours };
+  return {
+    jobCode,
+    fields: f,
+    profile: profileFromSharePointFields(f),
+    windows,
+    weekly: weeklyArr,
+    phasePoints,
+    color: colorForJobCode(jobCode),
+    totalHours
+  };
 }
 
 function projectUnifiedSamples(project, samplesPerPhase = 30) {
@@ -2066,7 +2123,7 @@ function getStreamgraphGroups() {
   if (!sgState.projects) return [];
   const types = new Set();
   for (const p of Object.values(sgState.projects)) {
-    if (p.fields.ProjectType) types.add(p.fields.ProjectType);
+    if (p.profile.projectType) types.add(p.profile.projectType);
   }
   return Array.from(types).sort();
 }
@@ -2075,7 +2132,7 @@ function projectsInActiveGroup() {
   if (!sgState.projects) return [];
   const all = Object.values(sgState.projects).filter(p => p.totalHours > 0);
   if (sgState.group === 'all') return all;
-  return all.filter(p => p.fields.ProjectType === sgState.group);
+  return all.filter(p => p.profile.projectType === sgState.group);
 }
 
 async function renderStreamgraphPanel() {
@@ -2239,8 +2296,8 @@ function showSgTooltip(e, jobCode) {
   const p = sgState.projects[jobCode];
   if (!p) return;
   tip.innerHTML = `
-    <div class="name">${escapeHtml(p.fields.ClientName || jobCode)} <span style="opacity:0.7;font-weight:400">· ${escapeHtml(jobCode)}</span></div>
-    <div>${escapeHtml(p.fields.ProjectType || '—')} · ${Math.round(p.totalHours)} total hours</div>
+    <div class="name">${escapeHtml(p.profile.clientName || jobCode)} <span style="opacity:0.7;font-weight:400">· ${escapeHtml(jobCode)}</span></div>
+    <div>${escapeHtml(p.profile.projectType || '—')} · ${Math.round(p.totalHours)} total hours</div>
     <div style="margin-top:4px;opacity:0.8">${p.weekly.length} week${p.weekly.length === 1 ? '' : 's'} of timecard data</div>
   `;
   tip.style.display = 'block';
@@ -2260,28 +2317,8 @@ function hideSgTooltip() {
 }
 
 function findAnalogsForProject(target) {
-  // Same distance function as the lookup panel, comparing against other projects with timecards
-  const targetProfile = {
-    projectType: target.fields.ProjectType || 'Other',
-    lod: {
-      drawings: target.fields.LOD_Drawings || 'MED',
-      siteVerification: target.fields.LOD_SiteVerification || 'MED',
-      engineering: target.fields.LOD_Engineering || 'MED',
-      exteriorDetail: target.fields.LOD_ExteriorDetail || 'MED',
-      interiorDetail: target.fields.LOD_InteriorDetail || 'MED',
-      selections: target.fields.LOD_Selections || 'MED'
-    },
-    risk: {
-      clientRelationship: target.fields.Risk_ClientRelationship || 'MED',
-      permitZoning: target.fields.Risk_PermitZoning || 'MED',
-      historical: target.fields.Risk_Historical || 'MED',
-      selectionsBudget: target.fields.Risk_SelectionsBudget || 'MED',
-      constructability: target.fields.Risk_Constructability || 'MED',
-      outsidePartners: target.fields.Risk_OutsidePartners || 'MED'
-    }
-  };
   const others = Object.values(sgState.projects).filter(p => p.jobCode !== target.jobCode && p.totalHours > 0);
-  const scored = others.map(p => ({ project: p, distance: analogDistance(targetProfile, profileFromSharePointFields(p.fields)) }));
+  const scored = others.map(p => ({ project: p, distance: analogDistance(target.profile, p.profile) }));
   scored.sort((a, b) => a.distance - b.distance);
   return scored.slice(0, 3);
 }
@@ -2349,8 +2386,8 @@ function renderIsolationPanel() {
       return `<line x1="${x}" y1="${M.top}" x2="${x}" y2="${M.top + innerH}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>` +
              `<text x="${x}" y="${M.top - 6}" text-anchor="middle" font-size="10" fill="${color}">${label}</text>`;
     };
-    svg += markWeek(w.entryDate, project.fields.IDEADate ? 'IDEA' : 'DA', '#444');
-    if (project.fields.FDDADate) svg += markWeek(new Date(project.fields.FDDADate), 'FDDA', '#444');
+    svg += markWeek(w.entryDate, project.profile.ideaDate ? 'IDEA' : 'DA', '#444');
+    if (project.profile.fddaDate) svg += markWeek(new Date(project.profile.fddaDate), 'FDDA', '#444');
     if (w.phase2End) svg += markWeek(w.phase2End, 'CA', '#a30a0a');
 
     // Plot each series — analogs first (so primary is on top)
@@ -2372,9 +2409,9 @@ function renderIsolationPanel() {
 
   let legendHtml = '';
   if (analogs.length > 0) {
-    legendHtml = '<div class="sg-analog-legend"><div class="item"><div class="swatch" style="background:' + project.color + ';height:8px"></div><strong style="color:var(--text-pri)">' + escapeHtml(project.fields.ClientName || project.jobCode) + '</strong></div>';
+    legendHtml = '<div class="sg-analog-legend"><div class="item"><div class="swatch" style="background:' + project.color + ';height:8px"></div><strong style="color:var(--text-pri)">' + escapeHtml(project.profile.clientName || project.jobCode) + '</strong></div>';
     for (const a of analogs) {
-      legendHtml += `<div class="item"><div class="swatch" style="background:${a.project.color}"></div>${escapeHtml(a.project.fields.ClientName || a.project.jobCode)} <span style="opacity:0.7">(d=${a.distance})</span></div>`;
+      legendHtml += `<div class="item"><div class="swatch" style="background:${a.project.color}"></div>${escapeHtml(a.project.profile.clientName || a.project.jobCode)} <span style="opacity:0.7">(d=${a.distance})</span></div>`;
     }
     legendHtml += '</div>';
   }
@@ -2383,8 +2420,8 @@ function renderIsolationPanel() {
     <div class="sg-isolation">
       <div class="sg-isolation-header">
         <div>
-          <div class="sg-isolation-title">${escapeHtml(project.fields.ClientName || project.jobCode)} <span style="font-weight:400;color:var(--text-sec)">· ${escapeHtml(project.jobCode)}</span></div>
-          <div class="sg-isolation-meta">${escapeHtml(project.fields.ProjectType || '—')} · ${escapeHtml(project.fields.ProjectAddress || '')} · ${Math.round(project.totalHours)} total hours · ${analogs.length} analog${analogs.length === 1 ? '' : 's'}</div>
+          <div class="sg-isolation-title">${escapeHtml(project.profile.clientName || project.jobCode)} <span style="font-weight:400;color:var(--text-sec)">· ${escapeHtml(project.jobCode)}</span></div>
+          <div class="sg-isolation-meta">${escapeHtml(project.profile.projectType || '—')} · ${escapeHtml(project.profile.projectAddress || '')} · ${Math.round(project.totalHours)} total hours · ${analogs.length} analog${analogs.length === 1 ? '' : 's'}</div>
         </div>
         <button class="sg-isolation-close" id="sgCloseBtn" title="Close isolation view">×</button>
       </div>
