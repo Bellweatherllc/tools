@@ -24,6 +24,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:#f5f3ef;color:#1a1917
 .spinner{width:13px;height:13px;border-radius:50%;border:2px solid #c0d0f0;border-top-color:#2a3a8a;animation:spin .7s linear infinite;flex-shrink:0;}
 .spinner.off{display:none}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes savePulse{0%,100%{opacity:1}50%{opacity:.3}}
 .hdr{margin-bottom:22px}
 .hdr h1{font-size:22px;font-weight:700;letter-spacing:-.02em;display:flex;align-items:center;gap:9px;}
 .ver{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.06em;padding:3px 8px;border-radius:3px;background:#e8eeeb;color:#2c4a3e;}
@@ -91,7 +92,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
 <div id="auth-screen">
   <div>
-    <div class="auth-logo">Project Hours Analyzer <span class="ver">v5.0</span></div>
+    <div class="auth-logo">Project Hours Analyzer <span class="ver">v6.0</span></div>
     <p class="auth-sub">Bellweather Design-Build · Sign in with your Microsoft account.</p>
   </div>
   <button class="btn-ms" id="btn-signin">
@@ -105,23 +106,48 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div id="statusbar"><div class="spinner" id="spinner"></div><span id="statustext"></span></div>
 
   <div class="hdr">
-    <h1>Project Hours Analyzer <span class="ver">v5.0</span></h1>
-    <p>5234 Sales &amp; Design · 5236A Project Development · Projects ≥ 20 hrs · All data in SharePoint<span id="last-saved" style="margin-left:10px;font-style:italic;color:#b0aba6"></span></p>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+      <div>
+        <h1>Project Hours Analyzer <span class="ver">v6.0</span></h1>
+        <p>5234 Sales &amp; Design · 5236A Project Development · Projects ≥ 20 hrs</p>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-top:3px;flex-shrink:0;">
+        <div style="font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#2c4a3e">SharePoint</div>
+        <div style="display:flex;align-items:center;gap:7px;">
+          <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
+          <span id="last-saved" style="font-size:12px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;min-width:130px;text-align:right;"></span>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- Files -->
+  <!-- Files — collapsed by default -->
   <div class="card">
     <div class="card-hdr">
       <div class="card-lbl" style="flex:1;margin-bottom:0">Source Files</div>
       <button class="btn-clear" id="btn-clear-all">Clear all data</button>
-      <button id="btn-toggle-files" style="font-size:13px;background:transparent;border:none;color:#8a8682;cursor:pointer;padding:2px 6px;margin-left:4px;line-height:1" title="Collapse">▼</button>
+      <button id="btn-toggle-files" style="font-size:13px;background:transparent;border:none;color:#8a8682;cursor:pointer;padding:2px 6px;margin-left:4px;line-height:1" title="Expand">▶</button>
     </div>
-    <div id="files-body">
+    <div id="files-body" style="display:none">
       <div id="dropzone">
         <div class="dz-main">Drop timecard Excel files here, or click to browse</div>
         <div class="dz-hint">Imports 5234 and 5236A entries · Multi-sheet files supported · Re-importing replaces existing data</div>
       </div>
       <div id="file-list"></div>
+    </div>
+  </div>
+
+  <!-- Project Aliases — collapsed by default, moved beneath files -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="card-lbl" style="flex:1;margin-bottom:0">Project Aliases</div>
+      <button class="btn-save-a" id="btn-save-aliases">Save changes</button>
+      <button id="btn-toggle-aliases" style="font-size:13px;background:transparent;border:none;color:#8a8682;cursor:pointer;padding:2px 6px;margin-left:6px;line-height:1" title="Expand">▶</button>
+    </div>
+    <div id="aliases-body" style="display:none">
+      <p class="alias-intro">When two job codes from different file exports refer to the same project, give them the same canonical name below. They will be combined into a single stream in the graph.</p>
+      <div id="aliases-5234"></div>
+      <div id="aliases-5236A"></div>
     </div>
   </div>
 
@@ -132,26 +158,13 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
       <button id="btn-toggle-5234" style="font-size:13px;background:transparent;border:none;color:#8a8682;cursor:pointer;padding:2px 6px;margin-left:4px;line-height:1" title="Collapse">▼</button>
     </div>
     <div id="chart-body-5234">
-      <p class="chart-note">All projects aligned to Week 0 · Phase markers at W6 and W18 · Hover for detail · Click to inspect</p>
+      <p class="chart-note">Projects phase-aligned · Phases I / II / III share equal visual width · Actual weeks in pullout · Click to inspect</p>
       <div id="chart-empty-5234" class="empty-state">No 5234 projects with ≥ 20 hours yet.</div>
       <div class="chart-area" id="main-wrap-5234"><svg id="main-svg-5234" class="chart-svg"></svg></div>
     </div>
   </div>
 
-  <!-- 5236A Chart -->
-  <div class="card">
-    <div class="card-hdr" style="margin-bottom:8px">
-      <div class="card-lbl" style="flex:1;margin-bottom:0">Project Development <span style="font-weight:400;color:#aaa;margin-left:4px">(5236A)</span></div>
-      <button id="btn-toggle-5236A" style="font-size:13px;background:transparent;border:none;color:#8a8682;cursor:pointer;padding:2px 6px;margin-left:4px;line-height:1" title="Collapse">▼</button>
-    </div>
-    <div id="chart-body-5236A">
-      <p class="chart-note">All projects aligned to Week 0 · Phase markers at W6 and W18 · Hover for detail · Click to inspect</p>
-      <div id="chart-empty-5236A" class="empty-state">No 5236A projects with ≥ 20 hours yet.</div>
-      <div class="chart-area" id="main-wrap-5236A"><svg id="main-svg-5236A" class="chart-svg"></svg></div>
-    </div>
-  </div>
-
-  <!-- Detail Panel -->
+  <!-- Detail Panel — persistent, lives between the two charts -->
   <div id="detail-panel">
     <div class="dp-head">
       <div>
@@ -186,17 +199,16 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
     </div>
   </div>
 
-  <!-- Project Aliases -->
+  <!-- 5236A Chart — at the bottom -->
   <div class="card">
-    <div class="card-hdr">
-      <div class="card-lbl" style="flex:1;margin-bottom:0">Project Aliases</div>
-      <button class="btn-save-a" id="btn-save-aliases">Save changes</button>
-      <button id="btn-toggle-aliases" style="font-size:13px;background:transparent;border:none;color:#8a8682;cursor:pointer;padding:2px 6px;margin-left:6px;line-height:1" title="Collapse">▶</button>
+    <div class="card-hdr" style="margin-bottom:8px">
+      <div class="card-lbl" style="flex:1;margin-bottom:0">Project Development <span style="font-weight:400;color:#aaa;margin-left:4px">(5236A)</span></div>
+      <button id="btn-toggle-5236A" style="font-size:13px;background:transparent;border:none;color:#8a8682;cursor:pointer;padding:2px 6px;margin-left:4px;line-height:1" title="Collapse">▼</button>
     </div>
-    <div id="aliases-body" style="display:none">
-      <p class="alias-intro">When two job codes from different file exports refer to the same project, give them the same canonical name below. They will be combined into a single stream in the graph.</p>
-      <div id="aliases-5234"></div>
-      <div id="aliases-5236A"></div>
+    <div id="chart-body-5236A">
+      <p class="chart-note">Projects phase-aligned · Phases I / II / III share equal visual width · Actual weeks in pullout · Click to inspect</p>
+      <div id="chart-empty-5236A" class="empty-state">No 5236A projects with ≥ 20 hours yet.</div>
+      <div class="chart-area" id="main-wrap-5236A"><svg id="main-svg-5236A" class="chart-svg"></svg></div>
     </div>
   </div>
 
@@ -291,9 +303,22 @@ function setStatus(msg, isErr=false, spin=true) {
   tx.textContent=msg; sp.classList.toggle('off',!spin);
   bar.classList.toggle('err',isErr); bar.classList.add('on');
 }
+function setSaveState(msg, state) {
+  const dot=document.getElementById('save-dot'), txt=document.getElementById('last-saved');
+  if (!txt) return;
+  txt.textContent = msg;
+  const cfg = {
+    idle:   {bg:'#ddd9d0', color:'#8a8682', weight:'normal', anim:'none'},
+    saving: {bg:'#e07820', color:'#a05010', weight:'normal', anim:'savePulse 1s ease-in-out infinite'},
+    saved:  {bg:'#27ae60', color:'#1a7a4a', weight:'600',    anim:'none'},
+    error:  {bg:'#c0392b', color:'#c0392b', weight:'normal', anim:'none'},
+  };
+  const c = cfg[state] || cfg.idle;
+  if (dot) { dot.style.background=c.bg; dot.style.animation=c.anim; }
+  txt.style.color=c.color; txt.style.fontWeight=c.weight;
+}
 function updateLastSaved() {
-  const el=document.getElementById('last-saved');
-  if (el) el.textContent='Saved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  setSaveState('Saved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), 'saved');
 }
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
@@ -382,6 +407,7 @@ async function loadAllItems() {
     url = r['@odata.nextLink']?.replace('https://graph.microsoft.com/v1.0','')||null;
   }
   await loadMerges();
+  setSaveState(S.items.length ? `${S.items.length} entries` : 'Connected — no data yet', 'idle');
 }
 async function loadMerges() {
   if (!S.metaListId) return;
@@ -410,6 +436,7 @@ async function saveItems(newItems) {
   for (let i=0;i<total;i+=20) {
     const slice=newItems.slice(i,i+20);
     setStatus(`Saving to SharePoint… ${Math.min(i+20,total)} / ${total}`);
+    setSaveState(`Saving ${Math.min(i+20,total)} / ${total}…`, 'saving');
     const idMap={};
     slice.forEach((f,idx)=>{idMap[String(idx+1)]=f;});
     const reqs=slice.map((fields,idx)=>({
@@ -435,6 +462,7 @@ async function deleteBySourceFile(fn) {
     await gbatch(ids.slice(i,i+20).map((id,idx)=>({id:String(idx+1),method:'DELETE',url:`/sites/${S.siteId}/lists/${S.listId}/items/${id}`})));
   }
   S.items=S.items.filter(i=>i.fields?.SourceFile!==fn);
+  updateLastSaved();
   setStatus(`"${fn}" removed.`,false,false); setTimeout(()=>setStatus(''),2500);
 }
 async function clearAllData() {
@@ -446,6 +474,7 @@ async function clearAllData() {
     await gbatch(ids.slice(i,i+20).map((id,idx)=>({id:String(idx+1),method:'DELETE',url:`/sites/${S.siteId}/lists/${S.listId}/items/${id}`})));
   }
   S.items=[]; computeProjects(); renderAll();
+  updateLastSaved();
   setStatus('All data cleared.',false,false); setTimeout(()=>setStatus(''),3000);
 }
 
@@ -609,26 +638,33 @@ function dateToWeek(proj,isoDate){
 }
 
 // ── PHASE-NORMALIZED DATA ─────────────────────────────────────────────────────
-// Each phase maps to N units. Height = phase_total / N so area = total hours.
-function buildPhaseData(cc,vis,N){
-  const rows=[];
-  function addRow(nx){
-    const row={nx};
-    vis.forEach(job=>{
-      const proj=S.projectsByCost[cc][job];
-      const ph=getPhases(job,cc);
-      const p1=sumHours(proj,0,ph.p2)/N;
-      const p2=sumHours(proj,ph.p2,ph.p3)/N;
-      const p3=sumHours(proj,ph.p3,proj.span+1)/N;
-      row[job]= nx<N ? p1 : nx<2*N ? p2 : p3;
+// Maps each project's actual weekly hours to a shared phase-normalized x-axis.
+// Phase I → [0,N], Phase II → [N,2N], Phase III → [2N,3N].
+// Actual hour values are preserved — real ebbs and flows, phase breaks aligned.
+function interpolateAtNx(proj, ph, nx, N) {
+  let actualWeek;
+  if (nx <= N) {
+    actualWeek = (nx / N) * Math.max(1, ph.p2);
+  } else if (nx <= 2*N) {
+    const len = Math.max(1, ph.p3 - ph.p2);
+    actualWeek = ph.p2 + ((nx - N) / N) * len;
+  } else {
+    const span = Math.max(ph.p3 + 1, proj.span);
+    const len = Math.max(1, span - ph.p3);
+    actualWeek = ph.p3 + ((nx - 2*N) / N) * len;
+  }
+  const f = Math.floor(actualWeek), frac = actualWeek - f;
+  return (proj.weeks[f]?.hours || 0) * (1-frac) + (proj.weeks[f+1]?.hours || 0) * frac;
+}
+function buildPhaseData(cc, vis, N) {
+  const rows = [];
+  for (let nx = 0; nx <= 3*N; nx++) {
+    const row = { nx };
+    vis.forEach(job => {
+      row[job] = interpolateAtNx(S.projectsByCost[cc][job], getPhases(job, cc), nx, N);
     });
     rows.push(row);
   }
-  for(let nx=0;nx<N;nx++) addRow(nx);
-  addRow(N-0.001); addRow(N);           // step at Phase I→II boundary
-  for(let nx=N+1;nx<2*N;nx++) addRow(nx);
-  addRow(2*N-0.001); addRow(2*N);       // step at Phase II→III boundary
-  for(let nx=2*N+1;nx<=3*N;nx++) addRow(nx);
   return rows;
 }
 
@@ -660,10 +696,10 @@ function renderStream(cc){
     g.append('rect').attr('x',xSc(a)).attr('y',0).attr('width',xSc(b)-xSc(a)).attr('height',h).attr('fill',fill);
   });
 
-  // Stacked area streams — linear curve preserves crisp phase steps
+  // Stacked area streams — catmullRom for smooth curves
   const area=d3.area()
     .x(d=>xSc(d.data.nx)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1]))
-    .curve(d3.curveLinear);
+    .curve(d3.curveCatmullRom);
 
   const selJob=S.selJob?.costCode===cc?S.selJob.job:null;
   series.forEach(s=>{
@@ -672,7 +708,7 @@ function renderStream(cc){
       .attr('d',area).attr('fill',colorOf(job)).attr('opacity',op).style('cursor','pointer')
       .on('mousemove',ev=>onHoverPhase(ev,job,cc,xSc,M,N))
       .on('mouseleave',hideTip)
-      .on('click',()=>{S.selJob?.job===job&&S.selJob?.costCode===cc?deselectJob():selectJob(job,cc);});
+      .on('click',()=>selectJob(job,cc));
   });
 
   // Phase divider lines (solid — actual phase boundaries)
@@ -836,10 +872,31 @@ function addSliders(g,xSc,w,h,M,ph,mW,job,cc) {
 function updatePhaseInfo(job,cc){
   const ph=S.phases[job],proj=S.projectsByCost[cc][job]; if(!ph||!proj)return;
   const hrs=(a,b)=>{let t=0;for(let w=a;w<b;w++)t+=proj.weeks[w]?.hours||0;return t;};
+  const avg=(total,wks)=>wks>0?fh(total/wks)+' hrs/wk':'—';
+
+  const p1h=hrs(0,ph.p2),       p1w=Math.max(1,ph.p2);
+  const p2h=hrs(ph.p2,ph.p3),   p2w=Math.max(1,ph.p3-ph.p2);
+  const p3h=hrs(ph.p3,proj.span+1), p3w=Math.max(1,proj.span-ph.p3+1);
+
   document.getElementById('phase-info').innerHTML=`
-    <div class="ph-tag" style="border-color:#1a7a4a"><strong style="color:#1a7a4a">Phase I</strong> · Wks 0–${ph.p2-1} · ${fh(hrs(0,ph.p2))} hrs</div>
-    <div class="ph-tag" style="border-color:#1a7a4a"><strong style="color:#1a7a4a">Phase II</strong> · Wks ${ph.p2}–${ph.p3-1} · ${fh(hrs(ph.p2,ph.p3))} hrs</div>
-    <div class="ph-tag" style="border-color:#1a3a7a"><strong style="color:#1a3a7a">Phase III</strong> · Wks ${ph.p3}+ · ${fh(hrs(ph.p3,S.maxWeekByCost[cc]+1))} hrs</div>`;
+    <div class="ph-tag" style="border-color:#1a7a4a">
+      <strong style="color:#1a7a4a">Phase I</strong>
+      &nbsp;·&nbsp;Wks 0–${ph.p2-1}
+      &nbsp;·&nbsp;${fh(p1h)} hrs total
+      &nbsp;·&nbsp;<span style="color:#8a8682">${avg(p1h,p1w)} avg</span>
+    </div>
+    <div class="ph-tag" style="border-color:#1a7a4a">
+      <strong style="color:#1a7a4a">Phase II</strong>
+      &nbsp;·&nbsp;Wks ${ph.p2}–${ph.p3-1}
+      &nbsp;·&nbsp;${fh(p2h)} hrs total
+      &nbsp;·&nbsp;<span style="color:#8a8682">${avg(p2h,p2w)} avg</span>
+    </div>
+    <div class="ph-tag" style="border-color:#1a3a7a">
+      <strong style="color:#1a3a7a">Phase III</strong>
+      &nbsp;·&nbsp;Wks ${ph.p3}+
+      &nbsp;·&nbsp;${fh(p3h)} hrs total
+      &nbsp;·&nbsp;<span style="color:#8a8682">${avg(p3h,p3w)} avg</span>
+    </div>`;
   // Date inputs — don't overwrite while user is actively typing
   document.getElementById('phase-dates').style.display='';
   const p2El=document.getElementById('date-p2'), p3El=document.getElementById('date-p3');
