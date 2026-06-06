@@ -77,6 +77,10 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 /* Aliases */
 #aliases-body{margin-top:4px}
 #aliases-5236A{margin-top:18px;padding-top:16px;border-top:2px solid #ddd9d0;}
+#aliases-excluded{margin-top:18px;padding-top:16px;border-top:2px solid #e8d5c0;}
+.aliases-excluded-lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8b4513;margin-bottom:8px;}
+.btn-revive{font:600 11px 'DM Sans',sans-serif;padding:4px 10px;border-radius:4px;border:1px solid #c8a882;background:transparent;color:#8b4513;cursor:pointer;flex-shrink:0;transition:all .15s;}
+.btn-revive:hover{background:#f5e6d8;border-color:#8b4513;}
 .aliases-section-lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8a8682;margin-bottom:8px;margin-top:14px;}
 .aliases-section-lbl:first-child{margin-top:0}
 .alias-intro{font-size:12px;color:#6a6865;line-height:1.6;margin-bottom:14px;}
@@ -93,7 +97,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
 <div id="auth-screen">
   <div>
-    <div class="auth-logo">Project Hours Analyzer <span class="ver">v8.0</span></div>
+    <div class="auth-logo">Project Hours Analyzer <span class="ver">v9.0</span></div>
     <p class="auth-sub">Bellweather Design-Build · Sign in with your Microsoft account.</p>
   </div>
   <button class="btn-ms" id="btn-signin">
@@ -109,7 +113,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1>Project Hours Analyzer <span class="ver">v8.0</span></h1>
+        <h1>Project Hours Analyzer <span class="ver">v9.0</span></h1>
         <p>5234 Sales &amp; Design · 5236A Project Development · Projects ≥ 20 hrs</p>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-top:3px;flex-shrink:0;">
@@ -149,6 +153,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
       <p class="alias-intro">When two job codes from different file exports refer to the same project, give them the same canonical name below. They will be combined into a single stream in the graph.</p>
       <div id="aliases-5234"></div>
       <div id="aliases-5236A"></div>
+      <div id="aliases-excluded"></div>
     </div>
   </div>
 
@@ -408,27 +413,38 @@ async function loadAllItems() {
     S.items.push(...(r.value||[]));
     url = r['@odata.nextLink']?.replace('https://graph.microsoft.com/v1.0','')||null;
   }
-  await loadMerges();
+  await loadState();
   setSaveState(S.items.length ? `${S.items.length} entries` : 'Connected — no data yet', 'idle');
 }
-async function loadMerges() {
+async function loadState() {
   if (!S.metaListId) return;
   try {
-    const r = await gfetch('GET',`/sites/${S.siteId}/lists/${S.metaListId}/items?$expand=fields($select=Title,Data)&$filter=fields/Title eq 'merges'&$top=1`);
-    if (r.value?.length) {
-      S.metaMergesItemId = r.value[0].id;
-      try { S.merges = JSON.parse(r.value[0].fields.Data||'{}'); } catch { S.merges={}; }
+    // Fetch all items (meta list is tiny) — avoids OData filter failures on non-indexed columns
+    const r = await gfetch('GET',`/sites/${S.siteId}/lists/${S.metaListId}/items?$expand=fields($select=Title,Data)&$top=100`);
+    const item = r.value?.find(i => i.fields?.Title === 'merges');
+    if (item) {
+      S.metaMergesItemId = item.id;
+      try {
+        const parsed = JSON.parse(item.fields.Data || '{}');
+        // Support old format {jobCode:canonical} and new format {merges:{...}, excluded:[...]}
+        if (parsed.merges !== undefined) {
+          S.merges   = parsed.merges || {};
+          S.excluded = new Set(Array.isArray(parsed.excluded) ? parsed.excluded : []);
+        } else {
+          S.merges   = parsed;
+          S.excluded = new Set();
+        }
+      } catch { S.merges = {}; S.excluded = new Set(); }
     }
-  } catch { /* meta list may not have Data column yet */ }
+  } catch(e) { console.warn('Could not load state:', e.message); }
 }
-async function persistMerges() {
-  if (!S.metaListId) throw new Error('Meta list not available — aliases cannot be saved');
-  // Ensure the Data column exists (creates it if missing, ignores if already present)
+async function persistState() {
+  if (!S.metaListId) throw new Error('Meta list not available — state cannot be saved');
   try {
     await gfetch('POST',`/sites/${S.siteId}/lists/${S.metaListId}/columns`,
       {name:'Data',text:{allowMultipleLines:true}});
   } catch { /* column already exists */ }
-  const data = JSON.stringify(S.merges);
+  const data = JSON.stringify({ merges: S.merges, excluded: [...S.excluded] });
   if (S.metaMergesItemId) {
     await gfetch('PATCH',`/sites/${S.siteId}/lists/${S.metaListId}/items/${S.metaMergesItemId}/fields`,{Data:data});
   } else {
@@ -962,6 +978,25 @@ function renderAliasesTable() {
       container.appendChild(row);
     });
   }
+  // Excluded projects — revivable from here
+  const excEl = document.getElementById('aliases-excluded');
+  excEl.innerHTML = '';
+  if (S.excluded.size > 0) {
+    const lbl = document.createElement('div'); lbl.className = 'aliases-excluded-lbl'; lbl.textContent = 'Excluded from graph';
+    excEl.appendChild(lbl);
+    [...S.excluded].sort().forEach(job => {
+      const row = document.createElement('div'); row.className = 'alias-row';
+      const nameSpan = document.createElement('span'); nameSpan.className = 'alias-code'; nameSpan.textContent = job; nameSpan.title = job;
+      const btn = document.createElement('button'); btn.className = 'btn-revive'; btn.textContent = 'Revive';
+      btn.addEventListener('click', async () => {
+        S.excluded.delete(job);
+        persistState().catch(e => setStatus('Revive save failed: ' + (e.message||e), true, false));
+        computeProjects(); renderAll();
+      });
+      row.appendChild(nameSpan); row.appendChild(btn);
+      excEl.appendChild(row);
+    });
+  }
 }
 function populateProjNav(currentJob, currentCC) {
   const sel = document.getElementById('proj-nav');
@@ -991,7 +1026,7 @@ async function saveAliasesFromUI() {
   S.merges=newMerges;
   setStatus('Saving aliases to SharePoint…');
   try {
-    await persistMerges();
+    await persistState();
     computeProjects();
     renderAll();
     updateLastSaved();
@@ -1056,7 +1091,7 @@ function wireEvents() {
   document.getElementById('btn-save-aliases').addEventListener('click',()=>
     saveAliasesFromUI().catch(e=>setStatus('Error: '+(e.message||e),true,false))
   );
-  document.getElementById('btn-exclude').addEventListener('click',()=>{
+  document.getElementById('btn-exclude').addEventListener('click', async () => {
     if (!S.selJob) return;
     const {job: curJob, costCode: curCC} = S.selJob;
     const sel = document.getElementById('proj-nav');
@@ -1078,6 +1113,7 @@ function wireEvents() {
       }
     }
     S.excluded.add(curJob);
+    persistState().catch(e => setStatus('Exclude save failed: ' + (e.message||e), true, false));
     if (nextJob) {
       selectJob(nextJob, nextCC);
     } else {
