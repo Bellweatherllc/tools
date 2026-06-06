@@ -249,7 +249,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <!-- Header -->
   <div class="hdr">
     <h1>Project Hours Analyzer <span class="ver">v2.0</span></h1>
-    <p>5234 – Sales &amp; Design · Projects ≥ 20 hrs · All data stored in SharePoint</p>
+    <p>5234 – Sales &amp; Design · Projects ≥ 20 hrs · All data stored in SharePoint<span id="last-saved" style="margin-left:10px;font-style:italic;color:#b0aba6"></span></p>
   </div>
 
   <!-- Source files -->
@@ -257,12 +257,15 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
     <div class="card-hdr">
       <div class="card-lbl" style="flex:1;margin-bottom:0">Source Files</div>
       <button class="btn-clear" id="btn-clear-all">Clear all data</button>
+      <button id="btn-toggle-files" style="font-size:13px;background:transparent;border:none;color:#8a8682;cursor:pointer;padding:2px 6px;margin-left:4px;transition:transform .2s;line-height:1" title="Collapse">▼</button>
     </div>
-    <div id="dropzone">
-      <div class="dz-main">Drop timecard Excel files here, or click to browse</div>
-      <div class="dz-hint">Filters for tag 5234 · Multiple files supported · Re-importing a file replaces its data</div>
+    <div id="files-body">
+      <div id="dropzone">
+        <div class="dz-main">Drop timecard Excel files here, or click to browse</div>
+        <div class="dz-hint">Filters for tag 5234 · Multiple files supported · Re-importing a file replaces its data</div>
+      </div>
+      <div id="file-list"></div>
     </div>
-    <div id="file-list"></div>
   </div>
 
   <!-- Stats -->
@@ -406,6 +409,11 @@ function setStatus(msg, isErr = false, spin = true) {
   bar.classList.add('on');
 }
 
+function updateLastSaved() {
+  const el = document.getElementById('last-saved');
+  if (el) el.textContent = 'Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 // ── MSAL AUTH ─────────────────────────────────────────────────────────────────
 async function initMsal() {
   S.msalApp = new msal.PublicClientApplication({
@@ -523,6 +531,7 @@ async function saveItems(newItems) {
     });
   }
   setStatus(`Saved ${total} entries to SharePoint.`, false, false);
+  updateLastSaved();
   setTimeout(() => setStatus(''), 3000);
 }
 
@@ -580,8 +589,20 @@ async function importFile(file) {
     n.toLowerCase().includes('shift') || n.toLowerCase() === 'all shifts'
   ) || wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
-  // range:1 skips the title row (row 0), uses row 1 as headers
-  const rows = XLSX.utils.sheet_to_json(ws, { raw: true, defval: null, range: 1 });
+
+  // Auto-detect header row — scan up to row 5 for the row containing Date + Job + Tags
+  const rawRows = XLSX.utils.sheet_to_json(ws, { raw: true, defval: null, header: 1 });
+  let headerRowIdx = 0;
+  for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
+    const r = rawRows[i] || [];
+    const cells = r.map(c => String(c || '').toLowerCase());
+    if (cells.includes('date') && cells.includes('job') &&
+        (cells.includes('tags') || cells.includes('tag'))) {
+      headerRowIdx = i;
+      break;
+    }
+  }
+  const rows = XLSX.utils.sheet_to_json(ws, { raw: true, defval: null, range: headerRowIdx });
   const toSave = [];
   for (const row of rows) {
     const tags = String(row['Tags'] || row['Tag'] || '');
@@ -605,8 +626,12 @@ async function importFile(file) {
     });
   }
   if (!toSave.length) {
-    setStatus(`No 5234 entries found in "${fn}".`, true, false);
-    setTimeout(() => setStatus(''), 4000);
+    const cols = rows.length ? Object.keys(rows[0]).join(', ') : 'none';
+    setStatus(
+      `No 5234 entries found in "${fn}". ${rows.length} rows parsed. Columns: ${cols}`,
+      true, false
+    );
+    setTimeout(() => setStatus(''), 8000);
     return;
   }
   await saveItems(toSave);
@@ -1114,6 +1139,15 @@ function wireEvents() {
   document.getElementById('btn-clear-all').addEventListener('click', () =>
     clearAllData().catch(e => setStatus('Error: ' + (e.message || e), true, false))
   );
+
+  // Collapse / expand source files section
+  document.getElementById('btn-toggle-files').addEventListener('click', () => {
+    const body = document.getElementById('files-body');
+    const btn  = document.getElementById('btn-toggle-files');
+    const isCollapsed = body.style.display === 'none';
+    body.style.display = isCollapsed ? '' : 'none';
+    btn.textContent = isCollapsed ? '▼' : '▶';
+  });
 
   document.getElementById('btn-exclude').addEventListener('click', () => {
     if (!S.selJob) return;
