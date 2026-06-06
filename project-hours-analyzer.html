@@ -101,7 +101,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
 <div id="auth-screen">
   <div>
-    <div class="auth-logo">Project Hours Analyzer <span class="ver">v12.0</span></div>
+    <div class="auth-logo">Project Hours Analyzer <span class="ver">v13.0</span></div>
     <p class="auth-sub">Bellweather Design-Build · Sign in with your Microsoft account.</p>
   </div>
   <button class="btn-ms" id="btn-signin">
@@ -117,7 +117,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1>Project Hours Analyzer <span class="ver">v12.0</span></h1>
+        <h1>Project Hours Analyzer <span class="ver">v13.0</span></h1>
         <p>5234 Sales &amp; Design · 5236A Project Development · Projects ≥ 20 hrs</p>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-top:3px;flex-shrink:0;">
@@ -196,6 +196,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
       <select id="proj-nav" style="flex:1;max-width:420px;font:13px/1 'DM Sans',sans-serif;padding:6px 10px;border:1px solid #ddd9d0;border-radius:4px;background:#faf9f6;color:#1a1917;outline:none;cursor:pointer;"></select>
     </div>
     <div class="chart-wrap" id="det-wrap"><svg id="det-svg" class="chart-svg"></svg></div>
+    <div id="person-legend" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 4px;min-height:0;"></div>
     <div id="phase-info"></div>
     <div id="phase-dates" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #eceae4;">
       <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8a8682;margin-bottom:9px">Phase Start Dates</div>
@@ -237,6 +238,7 @@ const CFG = {
   scopes:       ['https://graph.microsoft.com/Sites.ReadWrite.All'],
 };
 const COST_CODES = ['5234', '5236A'];
+const PERSON_PALETTE = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
 const GP2 = 6, GP3 = 18;
 const PAL = [
   '#e53935','#1e88e5','#f57c00','#43a047','#8e24aa',
@@ -581,9 +583,13 @@ function computeProjects() {
     const p=raw[cc][canonical];
     if (wo<p.first) p.first=wo;
     const hrs=parseFloat(f.Hours)||0;
-    if (!p.rw[wo]) p.rw[wo]={hrs:0,people:new Set()};
+    if (!p.rw[wo]) p.rw[wo]={hrs:0,people:new Set(),byPerson:{}};
     p.rw[wo].hrs+=hrs;
-    if (f.Designer){p.rw[wo].people.add(f.Designer);p.allPeople.add(f.Designer);}
+    if (f.Designer){
+      p.rw[wo].people.add(f.Designer);
+      p.rw[wo].byPerson[f.Designer]=(p.rw[wo].byPerson[f.Designer]||0)+hrs;
+      p.allPeople.add(f.Designer);
+    }
     p.total+=hrs;
   }
 
@@ -594,8 +600,11 @@ function computeProjects() {
       const weeks={};
       for (const [wo,d] of Object.entries(p.rw)) {
         const rw=weekDiff(wo,p.first); if (rw<0) continue;
-        if (!weeks[rw]) weeks[rw]={hours:0,people:new Set()};
-        weeks[rw].hours+=d.hrs; d.people.forEach(x=>weeks[rw].people.add(x));
+        if (!weeks[rw]) weeks[rw]={hours:0,people:new Set(),byPerson:{}};
+        weeks[rw].hours+=d.hrs;
+        d.people.forEach(x=>weeks[rw].people.add(x));
+        for (const [person,h] of Object.entries(d.byPerson||{}))
+          weeks[rw].byPerson[person]=(weeks[rw].byPerson[person]||0)+h;
       }
       S.projectsByCost[cc][job]={weeks,total:p.total,allPeople:p.allPeople,
         span:Math.max(...Object.keys(weeks).map(Number),0),firstWeekOf:p.first};
@@ -891,26 +900,59 @@ function renderDetail(job,cc) {
   const H=210,M={t:18,r:28,b:56,l:52};
   const w=W-M.l-M.r,h=H-M.t-M.b,mW=S.maxWeekByCost[cc];
   const xSc=d3.scaleLinear().domain([0,mW]).range([0,w]);
+  const people=[...proj.allPeople].sort();
   const maxH=d3.max(Object.values(proj.weeks),d=>d.hours)||1;
-  const ySc=d3.scaleLinear().domain([0,maxH*1.2]).range([h,0]);
-  const aData=d3.range(0,mW+1).map(wk=>({wk,hrs:proj.weeks[wk]?.hours||0}));
-  const aGen=d3.area().x(d=>xSc(d.wk)).y0(ySc(0)).y1(d=>ySc(d.hrs)).curve(d3.curveCatmullRom);
-  const lGen=d3.line().x(d=>xSc(d.wk)).y(d=>ySc(d.hrs)).curve(d3.curveCatmullRom);
+  const ySc=d3.scaleLinear().domain([0,maxH*1.15]).range([h,0]);
+
+  // Build per-person stacked data for every week 0..mW
+  const pData=d3.range(0,mW+1).map(wk=>{
+    const row={wk};
+    people.forEach(p=>{row[p]=proj.weeks[wk]?.byPerson?.[p]||0;});
+    return row;
+  });
+  const pStack=d3.stack().keys(people).offset(d3.stackOffsetNone)(pData);
+  const aGen=d3.area().x(d=>xSc(d.data.wk)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1])).curve(d3.curveMonotoneX);
+
   const dsvg=d3.select('#det-svg'); dsvg.selectAll('*').remove(); dsvg.attr('width',W).attr('height',H);
   const g=dsvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
-  const pc=colorOf(job);
 
   [{cls:'pr0',x1:0,x2:ph.p2,fill:'rgba(44,74,62,.07)'},{cls:'pr1',x1:ph.p2,x2:ph.p3,fill:'rgba(44,74,62,.13)'},{cls:'pr2',x1:ph.p3,x2:mW,fill:'rgba(44,74,62,.07)'}].forEach(({cls,x1,x2,fill})=>{
     g.append('rect').attr('class',cls).attr('x',xSc(x1)).attr('y',0).attr('width',Math.max(0,xSc(x2)-xSc(x1))).attr('height',h).attr('fill',fill);
   });
   [GP2,GP3].forEach(pw=>{if(pw>mW)return;g.append('line').attr('x1',xSc(pw)).attr('y1',0).attr('x2',xSc(pw)).attr('y2',h).attr('stroke','#c0bdb8').attr('stroke-width',1).attr('stroke-dasharray','3 3').attr('pointer-events','none');});
-  g.append('path').datum(aData).attr('d',aGen).attr('fill',pc).attr('opacity',.22);
-  g.append('path').datum(aData).attr('d',lGen).attr('fill','none').attr('stroke',pc).attr('stroke-width',2);
+
+  // Stacked person bands
+  pStack.forEach((s,i)=>{
+    g.append('path').datum(s).attr('d',aGen)
+      .attr('fill',PERSON_PALETTE[i%PERSON_PALETTE.length]).attr('opacity',.82);
+  });
+  // Total outline
+  const totLine=d3.line().x(d=>xSc(d.wk)).y(d=>ySc(d.hours)).curve(d3.curveMonotoneX);
+  const totData=d3.range(0,mW+1).map(wk=>({wk,hours:proj.weeks[wk]?.hours||0}));
+  g.append('path').datum(totData).attr('d',totLine).attr('fill','none').attr('stroke','rgba(0,0,0,.18)').attr('stroke-width',1.5);
+
   g.append('line').attr('class','pl-p2').attr('x1',xSc(ph.p2)).attr('y1',0).attr('x2',xSc(ph.p2)).attr('y2',h).attr('stroke','#1a7a4a').attr('stroke-width',2).attr('pointer-events','none');
   g.append('line').attr('class','pl-p3').attr('x1',xSc(ph.p3)).attr('y1',0).attr('x2',xSc(ph.p3)).attr('y2',h).attr('stroke','#1a3a7a').attr('stroke-width',2).attr('pointer-events','none');
 
   const te=mW<=20?2:mW<=50?5:10;
   g.append('g').attr('transform',`translate(0,${h})`).call(d3.axisBottom(xSc).tickValues(d3.range(0,mW+1,te)).tickFormat(d=>`W${d}`).tickSize(-h)).call(ax=>{ax.select('.domain').remove();ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dy','1.2em');});
+
+  // Y axis
+  g.append('g').call(d3.axisLeft(ySc).ticks(4).tickFormat(d=>fh(d)).tickSize(-w))
+    .call(ax=>{ax.select('.domain').remove();ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');});
+
+  // Person legend — only shown when more than one person
+  const legEl=document.getElementById('person-legend');
+  legEl.innerHTML='';
+  if(people.length>1){
+    people.forEach((person,i)=>{
+      const col=PERSON_PALETTE[i%PERSON_PALETTE.length];
+      const chip=document.createElement('span');
+      chip.style.cssText='display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#4a4845;white-space:nowrap;';
+      chip.innerHTML=`<span style="width:10px;height:10px;border-radius:2px;background:${col};flex-shrink:0;display:inline-block"></span>${person}`;
+      legEl.appendChild(chip);
+    });
+  }
 
   addSliders(g,xSc,w,h,M,ph,mW,job,cc);
   updatePhaseInfo(job,cc);
