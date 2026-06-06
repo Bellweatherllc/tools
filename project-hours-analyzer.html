@@ -76,6 +76,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 .ph-tag{padding:5px 11px;border-radius:4px;border-left:3px solid;background:#faf9f6;line-height:1.6;}
 /* Aliases */
 #aliases-body{margin-top:4px}
+#aliases-5236A{margin-top:18px;padding-top:16px;border-top:2px solid #ddd9d0;}
 .aliases-section-lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8a8682;margin-bottom:8px;margin-top:14px;}
 .aliases-section-lbl:first-child{margin-top:0}
 .alias-intro{font-size:12px;color:#6a6865;line-height:1.6;margin-bottom:14px;}
@@ -92,7 +93,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
 <div id="auth-screen">
   <div>
-    <div class="auth-logo">Project Hours Analyzer <span class="ver">v6.0</span></div>
+    <div class="auth-logo">Project Hours Analyzer <span class="ver">v8.0</span></div>
     <p class="auth-sub">Bellweather Design-Build · Sign in with your Microsoft account.</p>
   </div>
   <button class="btn-ms" id="btn-signin">
@@ -108,7 +109,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1>Project Hours Analyzer <span class="ver">v6.0</span></h1>
+        <h1>Project Hours Analyzer <span class="ver">v8.0</span></h1>
         <p>5234 Sales &amp; Design · 5236A Project Development · Projects ≥ 20 hrs</p>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-top:3px;flex-shrink:0;">
@@ -254,6 +255,7 @@ const S = {
   srcFiles: {},
   excluded: new Set(),
   phases: {},
+  phasesSetByUser: new Set(),
   selJob: null,        // { job, costCode } | null
 };
 
@@ -720,10 +722,10 @@ function renderStream(cc){
     g.append('rect').attr('x',xSc(a)).attr('y',0).attr('width',xSc(b)-xSc(a)).attr('height',h).attr('fill',fill);
   });
 
-  // Stacked area streams — catmullRom for smooth curves
+  // Stacked area streams — monotoneX prevents end-of-series overshoot
   const area=d3.area()
     .x(d=>xSc(d.data.nx)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1]))
-    .curve(d3.curveCatmullRom);
+    .curve(d3.curveMonotoneX);
 
   const selJob=S.selJob?.costCode===cc?S.selJob.job:null;
   series.forEach(s=>{
@@ -890,7 +892,7 @@ function addSliders(g,xSc,w,h,M,ph,mW,job,cc) {
       if(dateEl&&document.activeElement!==dateEl) dateEl.value=weekToDate(proj2,fw);
       document.getElementById(`wk-${key}`).textContent=`= Week ${fw}`;
       updatePhaseInfo(job,cc);
-    }).on('end',()=>{renderStream(cc);}));
+    }).on('end',()=>{ S.phasesSetByUser.add(job); renderStream(cc); }));
   });
 }
 function updatePhaseInfo(job,cc){
@@ -972,7 +974,7 @@ function populateProjNav(currentJob, currentCC) {
     [...vis].sort().forEach(job => {
       const opt = document.createElement('option');
       opt.value = job + '|||' + cc;
-      opt.textContent = job;
+      opt.textContent = (S.phasesSetByUser.has(job) ? '● ' : '') + job;
       if (job === currentJob && cc === currentCC) opt.selected = true;
       og.appendChild(opt);
     });
@@ -1015,6 +1017,7 @@ function onPhaseDate(key){
   if(key==='p2') fw=Math.min(fw,ph[other]-1);
   else fw=Math.max(fw,ph[other]+1);
   ph[key]=fw;
+  S.phasesSetByUser.add(job);
   renderDetail(job,cc);
   renderStream(cc);
 }
@@ -1054,8 +1057,33 @@ function wireEvents() {
     saveAliasesFromUI().catch(e=>setStatus('Error: '+(e.message||e),true,false))
   );
   document.getElementById('btn-exclude').addEventListener('click',()=>{
-    if (!S.selJob)return;
-    S.excluded.add(S.selJob.job); closeDetail(); renderAll();
+    if (!S.selJob) return;
+    const {job: curJob, costCode: curCC} = S.selJob;
+    const sel = document.getElementById('proj-nav');
+    const opts = [...sel.options].filter(o => o.value.includes('|||'));
+    const curIdx = opts.findIndex(o => {
+      const [j,c] = o.value.split('|||');
+      return j === curJob && c === curCC;
+    });
+    // Look forward for next non-excluded project, fall back to backward
+    let nextJob = null, nextCC = null;
+    for (let i = curIdx + 1; i < opts.length; i++) {
+      const [j,c] = opts[i].value.split('|||');
+      if (!S.excluded.has(j)) { nextJob = j; nextCC = c; break; }
+    }
+    if (!nextJob) {
+      for (let i = curIdx - 1; i >= 0; i--) {
+        const [j,c] = opts[i].value.split('|||');
+        if (!S.excluded.has(j)) { nextJob = j; nextCC = c; break; }
+      }
+    }
+    S.excluded.add(curJob);
+    if (nextJob) {
+      selectJob(nextJob, nextCC);
+    } else {
+      closeDetail();
+      renderAll();
+    }
   });
   document.getElementById('btn-close-detail').addEventListener('click',deselectJob);
   // Phase date inputs
