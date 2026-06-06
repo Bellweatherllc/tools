@@ -222,7 +222,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 <!-- AUTH SCREEN -->
 <div id="auth-screen">
   <div>
-    <div class="auth-logo">Project Hours Analyzer <span class="ver">v2.0</span></div>
+    <div class="auth-logo">Project Hours Analyzer <span class="ver">v3.0</span></div>
     <p class="auth-sub">Bellweather Design-Build · Sign in with your Microsoft account to continue.</p>
   </div>
   <button class="btn-ms" id="btn-signin">
@@ -248,7 +248,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
   <!-- Header -->
   <div class="hdr">
-    <h1>Project Hours Analyzer <span class="ver">v2.0</span></h1>
+    <h1>Project Hours Analyzer <span class="ver">v3.0</span></h1>
     <p>5234 – Sales &amp; Design · Projects ≥ 20 hrs · All data stored in SharePoint<span id="last-saved" style="margin-left:10px;font-style:italic;color:#b0aba6"></span></p>
   </div>
 
@@ -268,14 +268,6 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
     </div>
   </div>
 
-  <!-- Stats -->
-  <div id="stats-grid">
-    <div class="sc"><div class="sc-val" id="sv-p">—</div><div class="sc-lbl">Projects</div></div>
-    <div class="sc"><div class="sc-val" id="sv-h">—</div><div class="sc-lbl">Total Hours</div></div>
-    <div class="sc"><div class="sc-val" id="sv-w">—</div><div class="sc-lbl">Max Span (wks)</div></div>
-    <div class="sc"><div class="sc-val" id="sv-d">—</div><div class="sc-lbl">Designers</div></div>
-  </div>
-
   <!-- Main chart -->
   <div class="card" id="main-card">
     <div class="card-hdr" style="margin-bottom:8px">
@@ -286,7 +278,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
     <div class="chart-area" id="main-wrap">
       <svg id="main-svg" class="chart-svg"></svg>
     </div>
-    <div id="legend"></div>
+    <div id="legend" style="display:none"></div>
   </div>
 
   <!-- Detail panel -->
@@ -605,8 +597,9 @@ async function importFile(file) {
   const rows = XLSX.utils.sheet_to_json(ws, { raw: true, defval: null, range: headerRowIdx });
   const toSave = [];
   for (const row of rows) {
-    const tags = String(row['Tags'] || row['Tag'] || '');
-    if (!tags.includes('5234')) continue;
+    // Check every column value — handles any column name that contains the 5234 code
+    const rowStr = Object.values(row).map(v => String(v || '')).join(' ');
+    if (!rowStr.includes('5234')) continue;
     const entryDate = excelToISO(row['Date']);
     if (!entryDate) continue;
     const weekOf   = toWeekOf(entryDate);
@@ -689,7 +682,6 @@ const colorOf = d3.scaleOrdinal(PAL);
 
 // ── RENDER ALL ────────────────────────────────────────────────────────────────
 function renderAll() {
-  renderStats();
   renderFiles();
   renderStream();
   if (S.selJob && S.projects[S.selJob] && !S.excluded.has(S.selJob)) {
@@ -699,20 +691,8 @@ function renderAll() {
   }
 }
 
-function renderStats() {
-  const vj  = visJobs();
-  const th  = vj.reduce((s, j) => s + S.projects[j].total, 0);
-  const ppl = new Set();
-  vj.forEach(j => S.projects[j].allPeople.forEach(p => ppl.add(p)));
-  document.getElementById('sv-p').textContent = vj.length || '—';
-  document.getElementById('sv-h').textContent = vj.length ? fh(th) : '—';
-  document.getElementById('sv-w').textContent = vj.length ? S.maxWeek : '—';
-  document.getElementById('sv-d').textContent = vj.length ? ppl.size : '—';
-  const clearBtn = document.getElementById('btn-clear-all');
-  clearBtn.style.display = S.items.length ? 'block' : 'none';
-}
-
 function renderFiles() {
+  document.getElementById('btn-clear-all').style.display = S.items.length ? 'block' : 'none';
   const el = document.getElementById('file-list');
   el.innerHTML = '';
   for (const [fn, ct] of Object.entries(S.srcFiles)) {
@@ -737,7 +717,7 @@ function renderFiles() {
   });
 }
 
-// ── STREAMGRAPH ───────────────────────────────────────────────────────────────
+// ── STACKED AREA CHART ────────────────────────────────────────────────────────
 function renderStream() {
   const vis  = visJobs();
   const msvg = d3.select('#main-svg');
@@ -746,44 +726,42 @@ function renderStream() {
   if (!vis.length) {
     emptyEl.style.display = '';
     msvg.attr('width', 0).attr('height', 0);
-    renderLegend();
     return;
   }
   emptyEl.style.display = 'none';
   colorOf.domain(Object.keys(S.projects));
 
   const W  = document.getElementById('main-wrap').clientWidth;
-  const H  = 420;
-  const M  = { t: 28, r: 28, b: 52, l: 44 };
+  const H  = 400;
+  const M  = { t: 24, r: 28, b: 52, l: 52 };
   const w  = W - M.l - M.r;
   const h  = H - M.t - M.b;
   const mW = S.maxWeek;
 
-  // Dense data — one row per week across full span
+  // Dense data — one row per week
   const data = d3.range(0, mW + 1).map(wk => {
     const row = { week: wk };
     vis.forEach(j => { row[j] = S.projects[j].weeks[wk]?.hours || 0; });
     return row;
   });
 
+  // Stacked from 0 — no wiggle, no silhouette
   const series = d3.stack()
     .keys(vis)
-    .offset(d3.stackOffsetWiggle)
-    .order(d3.stackOrderInsideOut)(data);
+    .offset(d3.stackOffsetNone)(data);
 
   const xSc  = d3.scaleLinear().domain([0, mW]).range([0, w]);
-  const yMin = d3.min(series, s => d3.min(s, d => d[0]));
   const yMax = d3.max(series, s => d3.max(s, d => d[1]));
-  const ySc  = d3.scaleLinear().domain([yMin, yMax]).range([h, 0]).nice();
+  const ySc  = d3.scaleLinear().domain([0, yMax]).range([h, 0]).nice();
 
   msvg.attr('width', W).attr('height', H);
   const g = msvg.append('g').attr('transform', `translate(${M.l},${M.t})`);
 
   // Phase background bands
   [
-    [0,      Math.min(GP2, mW),  'rgba(44,74,62,.04)'],
-    [GP2,    Math.min(GP3, mW),  'rgba(44,74,62,.07)'],
-    [GP3,    mW,                  'rgba(44,74,62,.04)'],
+    [0,   Math.min(GP2, mW), 'rgba(44,74,62,.04)'],
+    [GP2, Math.min(GP3, mW), 'rgba(44,74,62,.07)'],
+    [GP3, mW,                'rgba(44,74,62,.04)'],
   ].forEach(([a, b, fill]) => {
     if (a >= b) return;
     g.append('rect')
@@ -792,17 +770,18 @@ function renderStream() {
       .attr('fill', fill);
   });
 
-  // Streams
+  // Area generator
   const area = d3.area()
     .x(d => xSc(d.data.week))
     .y0(d => ySc(d[0]))
     .y1(d => ySc(d[1]))
     .curve(d3.curveCatmullRom);
 
+  // Draw stacked streams bottom-up
   series.forEach(s => {
-    const job  = s.key;
+    const job   = s.key;
     const isSel = S.selJob === job;
-    const op   = S.selJob ? (isSel ? 1 : 0.12) : 0.82;
+    const op    = S.selJob ? (isSel ? 1 : 0.15) : 0.82;
     g.append('path').datum(s)
       .attr('class', 'stream').attr('data-job', job)
       .attr('d', area)
@@ -844,7 +823,7 @@ function renderStream() {
       .text(lbl);
   });
 
-  // X axis
+  // X axis — week markers
   const tickEvery = mW <= 20 ? 2 : mW <= 50 ? 5 : 10;
   g.append('g')
     .attr('transform', `translate(0,${h})`)
@@ -862,7 +841,21 @@ function renderStream() {
         .attr('font-family', 'DM Mono, monospace').attr('dy', '1.1em');
     });
 
-  renderLegend();
+  // Y axis — hours
+  g.append('g')
+    .call(
+      d3.axisLeft(ySc)
+        .ticks(5)
+        .tickFormat(d => fh(d))
+        .tickSize(-w)
+    )
+    .call(ax => {
+      ax.select('.domain').remove();
+      ax.selectAll('.tick line').attr('stroke', '#eceae4').attr('stroke-dasharray', '2 2');
+      ax.selectAll('.tick text')
+        .attr('font-size', '10px').attr('fill', '#8a8682')
+        .attr('font-family', 'DM Mono, monospace').attr('dx', '-4px');
+    });
 }
 
 // ── TOOLTIP ───────────────────────────────────────────────────────────────────
