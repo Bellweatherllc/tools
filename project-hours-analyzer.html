@@ -101,7 +101,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
 <div id="auth-screen">
   <div>
-    <div class="auth-logo">Project Hours Analyzer <span class="ver">v13.0</span></div>
+    <div class="auth-logo">Project Hours Analyzer <span class="ver">v15.0</span></div>
     <p class="auth-sub">Bellweather Design-Build · Sign in with your Microsoft account.</p>
   </div>
   <button class="btn-ms" id="btn-signin">
@@ -117,7 +117,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1>Project Hours Analyzer <span class="ver">v13.0</span></h1>
+        <h1>Project Hours Analyzer <span class="ver">v15.0</span></h1>
         <p>5234 Sales &amp; Design · 5236A Project Development · Projects ≥ 20 hrs</p>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;padding-top:3px;flex-shrink:0;">
@@ -217,7 +217,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
 </div><!-- /app -->
 
-<div id="tooltip"><div class="tt-job" id="tt-job"></div><div class="tt-row"><span class="tt-lbl">Week</span><span id="tt-wk"></span></div><div class="tt-row"><span class="tt-lbl">Hours this week</span><span id="tt-hwk"></span></div><div class="tt-row"><span class="tt-lbl">Total hours</span><span id="tt-tot"></span></div><div class="tt-row"><span class="tt-lbl">Active weeks</span><span id="tt-span"></span></div><div class="tt-row"><span class="tt-lbl">Personnel</span><span id="tt-ppl"></span></div></div>
+<div id="tooltip"><div class="tt-job" id="tt-job"></div><div class="tt-row"><span class="tt-lbl">Week</span><span id="tt-wk"></span></div><div class="tt-row"><span class="tt-lbl">Hours this week</span><span id="tt-hwk"></span></div><div class="tt-row"><span class="tt-lbl">Total hours</span><span id="tt-tot"></span></div><div class="tt-row"><span class="tt-lbl">Active weeks</span><span id="tt-span"></span></div><div class="tt-row"><span class="tt-lbl" id="tt-ppl-lbl">Personnel</span><span id="tt-ppl"></span></div></div>
 
 </div>
 <script src="https://unpkg.com/@azure/msal-browser@3.28.0/lib/msal-browser.min.js"></script>
@@ -437,6 +437,9 @@ async function loadState() {
         if (parsed.merges !== undefined) {
           S.merges   = parsed.merges || {};
           S.excluded = new Set(Array.isArray(parsed.excluded) ? parsed.excluded : []);
+          const savedPhases = parsed.phases || {};
+          Object.assign(S.phases, savedPhases);
+          for (const job of Object.keys(savedPhases)) S.phasesSetByUser.add(job);
         } else {
           S.merges   = parsed;
           S.excluded = new Set();
@@ -447,7 +450,12 @@ async function loadState() {
 }
 async function persistState() {
   if (!S.metaListId) throw new Error('Meta list not available — state cannot be saved');
-  const data = JSON.stringify({ merges: S.merges, excluded: [...S.excluded] });
+  // Only persist phases the user explicitly set; auto-defaults are recomputed on load
+  const phases = {};
+  for (const job of S.phasesSetByUser) {
+    if (S.phases[job]) phases[job] = S.phases[job];
+  }
+  const data = JSON.stringify({ merges: S.merges, excluded: [...S.excluded], phases });
   if (S.metaMergesItemId) {
     await gfetch('PATCH',`/sites/${S.siteId}/lists/${S.metaListId}/items/${S.metaMergesItemId}/fields`,{StateData:data});
   } else {
@@ -843,6 +851,7 @@ function onHoverPhase(ev,job,cc,xSc,M,b1,b2,svgId){
   document.getElementById('tt-hwk').textContent=fh(phHrs)+' hrs (this phase)';
   document.getElementById('tt-tot').textContent=fh(proj.total)+' hrs (total)';
   document.getElementById('tt-span').textContent=proj.span+' wks';
+  document.getElementById('tt-ppl-lbl').textContent='Personnel';
   document.getElementById('tt-ppl').textContent=[...proj.allPeople].join(', ')||'—';
   positionTip(ev);
 }
@@ -883,12 +892,7 @@ function closeDetail(){S.selJob=null;document.getElementById('detail-panel').cla
 function renderDetail(job,cc) {
   const proj=S.projectsByCost[cc][job]; if (!proj) return;
   document.getElementById('detail-panel').classList.add('on');
-  if (!S.phases[job]) {
-    const p2=Math.max(1,Math.min(Math.round(S.maxWeekByCost[cc]/3),S.maxWeekByCost[cc]-2));
-    const p3=Math.max(p2+1,Math.min(Math.round(S.maxWeekByCost[cc]*2/3),S.maxWeekByCost[cc]-1));
-    S.phases[job]={p2,p3};
-  }
-  const ph=S.phases[job];
+  const ph=getPhases(job,cc);
   document.getElementById('dp-job').textContent=job;
   const badge=document.getElementById('dp-badge');
   badge.textContent=cc==='5234'?'Sales & Design':'Project Development';
@@ -898,7 +902,7 @@ function renderDetail(job,cc) {
 
   const W=document.getElementById('det-wrap').clientWidth;
   const H=210,M={t:18,r:28,b:56,l:52};
-  const w=W-M.l-M.r,h=H-M.t-M.b,mW=S.maxWeekByCost[cc];
+  const w=W-M.l-M.r,h=H-M.t-M.b,mW=proj.span+2;
   const xSc=d3.scaleLinear().domain([0,mW]).range([0,w]);
   const people=[...proj.allPeople].sort();
   const maxH=d3.max(Object.values(proj.weeks),d=>d.hours)||1;
@@ -921,10 +925,29 @@ function renderDetail(job,cc) {
   });
   [GP2,GP3].forEach(pw=>{if(pw>mW)return;g.append('line').attr('x1',xSc(pw)).attr('y1',0).attr('x2',xSc(pw)).attr('y2',h).attr('stroke','#c0bdb8').attr('stroke-width',1).attr('stroke-dasharray','3 3').attr('pointer-events','none');});
 
-  // Stacked person bands
+  // Stacked person bands — with per-person hover
   pStack.forEach((s,i)=>{
+    const person=s.key, col=PERSON_PALETTE[i%PERSON_PALETTE.length];
+    const personTotal=Object.values(proj.weeks).reduce((sum,w)=>sum+(w.byPerson?.[person]||0),0);
+    const personActiveWks=Object.values(proj.weeks).filter(w=>(w.byPerson?.[person]||0)>0).length;
+    const share=proj.total>0?Math.round(personTotal/proj.total*100):0;
     g.append('path').datum(s).attr('d',aGen)
-      .attr('fill',PERSON_PALETTE[i%PERSON_PALETTE.length]).attr('opacity',.82);
+      .attr('fill',col).attr('opacity',.55)
+      .on('mousemove',ev=>{
+        const rect=document.getElementById('det-svg').getBoundingClientRect();
+        const wk=Math.max(0,Math.min(mW,Math.round(xSc.invert(ev.clientX-rect.left-M.l))));
+        const wkHrs=proj.weeks[wk]?.byPerson?.[person]||0;
+        document.getElementById('tt-job').innerHTML=
+          `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${col};margin-right:5px;vertical-align:middle"></span>${person}`;
+        document.getElementById('tt-wk').textContent=`Week ${wk}`;
+        document.getElementById('tt-hwk').textContent=wkHrs>0?fh(wkHrs)+' hrs':'—';
+        document.getElementById('tt-tot').textContent=fh(personTotal)+' hrs';
+        document.getElementById('tt-span').textContent=`${personActiveWks} active wks`;
+        document.getElementById('tt-ppl-lbl').textContent='Share of total';
+        document.getElementById('tt-ppl').textContent=`${share}%`;
+        positionTip(ev);
+      })
+      .on('mouseleave',hideTip);
   });
   // Total outline
   const totLine=d3.line().x(d=>xSc(d.wk)).y(d=>ySc(d.hours)).curve(d3.curveMonotoneX);
@@ -985,7 +1008,7 @@ function addSliders(g,xSc,w,h,M,ph,mW,job,cc) {
       if(dateEl&&document.activeElement!==dateEl) dateEl.value=weekToDate(proj2,fw);
       document.getElementById(`wk-${key}`).textContent=`= Week ${fw}`;
       updatePhaseInfo(job,cc);
-    }).on('end',()=>{ S.phasesSetByUser.add(job); renderStream(); }));
+    }).on('end',()=>{ S.phasesSetByUser.add(job); persistState().catch(e=>setStatus('Phase save failed: '+(e.message||e),true,false)); renderStream(); }));
   });
 }
 function updatePhaseInfo(job,cc){
@@ -1129,13 +1152,14 @@ function onPhaseDate(key){
   const dateVal=document.getElementById(`date-${key}`).value;
   const weekNum=dateToWeek(proj,dateVal);
   if(weekNum===null||isNaN(weekNum)) return;
-  const mW=S.maxWeekByCost[cc];
+  const mW=proj.span+2;
   const other=key==='p2'?'p3':'p2';
   let fw=Math.max(1,Math.min(mW-1,weekNum));
   if(key==='p2') fw=Math.min(fw,ph[other]-1);
   else fw=Math.max(fw,ph[other]+1);
   ph[key]=fw;
   S.phasesSetByUser.add(job);
+  persistState().catch(e=>setStatus('Phase save failed: '+(e.message||e),true,false));
   renderDetail(job,cc);
   renderStream();
 }
