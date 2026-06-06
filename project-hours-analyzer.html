@@ -420,16 +420,19 @@ async function loadMerges() {
   } catch { /* meta list may not have Data column yet */ }
 }
 async function persistMerges() {
-  if (!S.metaListId) return;
-  const data = JSON.stringify(S.merges);
+  if (!S.metaListId) throw new Error('Meta list not available — aliases cannot be saved');
+  // Ensure the Data column exists (creates it if missing, ignores if already present)
   try {
-    if (S.metaMergesItemId) {
-      await gfetch('PATCH',`/sites/${S.siteId}/lists/${S.metaListId}/items/${S.metaMergesItemId}/fields`,{Data:data});
-    } else {
-      const c = await gfetch('POST',`/sites/${S.siteId}/lists/${S.metaListId}/items`,{fields:{Title:'merges',Data:data}});
-      S.metaMergesItemId = c.id;
-    }
-  } catch(e) { console.warn('Merge persist failed:',e.message); }
+    await gfetch('POST',`/sites/${S.siteId}/lists/${S.metaListId}/columns`,
+      {name:'Data',text:{allowMultipleLines:true}});
+  } catch { /* column already exists */ }
+  const data = JSON.stringify(S.merges);
+  if (S.metaMergesItemId) {
+    await gfetch('PATCH',`/sites/${S.siteId}/lists/${S.metaListId}/items/${S.metaMergesItemId}/fields`,{Data:data});
+  } else {
+    const c = await gfetch('POST',`/sites/${S.siteId}/lists/${S.metaListId}/items`,{fields:{Title:'merges',Data:data}});
+    S.metaMergesItemId = c.id;
+  }
 }
 async function saveItems(newItems) {
   const total = newItems.length;
@@ -522,7 +525,26 @@ async function importFile(file) {
     setStatus(`No 5234 or 5236A entries found across ${wb.SheetNames.length} sheets in "${fn}".`,true,false);
     setTimeout(()=>setStatus(''),8000); return;
   }
-  await saveItems(toSave); computeProjects(); renderAll();
+
+  // Deduplicate against items already in SharePoint
+  // Signature: CostCode|JobCode|EntryDate|Designer|Hours
+  const existingSigs = new Set(S.items.map(item => {
+    const f = item.fields;
+    return `${f.CostCode||''}|${f.JobCode||''}|${(f.EntryDate||'').split('T')[0]}|${f.Designer||''}|${f.Hours||0}`;
+  }));
+  const deduped = [];
+  for (const item of toSave) {
+    const sig = `${item.CostCode}|${item.JobCode}|${item.EntryDate.split('T')[0]}|${item.Designer}|${item.Hours}`;
+    if (!existingSigs.has(sig)) { deduped.push(item); existingSigs.add(sig); }
+  }
+  const dupeCount = toSave.length - deduped.length;
+  if (!deduped.length) {
+    setStatus(`All ${toSave.length} entries in "${fn}" already exist in SharePoint — nothing added.`,false,false);
+    setTimeout(()=>setStatus(''),5000); return;
+  }
+  if (dupeCount>0) setStatus(`Skipping ${dupeCount} duplicate${dupeCount>1?'s':''}, saving ${deduped.length} new entries…`);
+
+  await saveItems(deduped); computeProjects(); renderAll();
 }
 
 // ── DATA COMPUTATION ──────────────────────────────────────────────────────────
@@ -641,27 +663,28 @@ function dateToWeek(proj,isoDate){
 // Maps each project's actual weekly hours to a shared phase-normalized x-axis.
 // Phase I → [0,N], Phase II → [N,2N], Phase III → [2N,3N].
 // Actual hour values are preserved — real ebbs and flows, phase breaks aligned.
-function interpolateAtNx(proj, ph, nx, N) {
+function interpolateAtNx(proj, ph, nx, N1, N2, N3) {
   let actualWeek;
-  if (nx <= N) {
-    actualWeek = (nx / N) * Math.max(1, ph.p2);
-  } else if (nx <= 2*N) {
+  if (nx <= N1) {
+    actualWeek = (nx / N1) * Math.max(1, ph.p2);
+  } else if (nx <= N1 + N2) {
     const len = Math.max(1, ph.p3 - ph.p2);
-    actualWeek = ph.p2 + ((nx - N) / N) * len;
+    actualWeek = ph.p2 + ((nx - N1) / N2) * len;
   } else {
     const span = Math.max(ph.p3 + 1, proj.span);
     const len = Math.max(1, span - ph.p3);
-    actualWeek = ph.p3 + ((nx - 2*N) / N) * len;
+    actualWeek = ph.p3 + ((nx - N1 - N2) / N3) * len;
   }
   const f = Math.floor(actualWeek), frac = actualWeek - f;
   return (proj.weeks[f]?.hours || 0) * (1-frac) + (proj.weeks[f+1]?.hours || 0) * frac;
 }
-function buildPhaseData(cc, vis, N) {
+function buildPhaseData(cc, vis, N1, N2, N3) {
+  const total = N1 + N2 + N3;
   const rows = [];
-  for (let nx = 0; nx <= 3*N; nx++) {
+  for (let nx = 0; nx <= total; nx++) {
     const row = { nx };
     vis.forEach(job => {
-      row[job] = interpolateAtNx(S.projectsByCost[cc][job], getPhases(job, cc), nx, N);
+      row[job] = interpolateAtNx(S.projectsByCost[cc][job], getPhases(job, cc), nx, N1, N2, N3);
     });
     rows.push(row);
   }
@@ -680,11 +703,12 @@ function renderStream(cc){
   const W=document.getElementById(`main-wrap-${cc}`).clientWidth;
   const H=380,M={t:24,r:28,b:40,l:52};
   const w=W-M.l-M.r,h=H-M.t-M.b;
-  const N=30;
+  // Phase I : Phase II : Phase III = 1 : 2 : 4
+  const N1=20,N2=40,N3=80,T=N1+N2+N3;
 
-  const data=buildPhaseData(cc,vis,N);
+  const data=buildPhaseData(cc,vis,N1,N2,N3);
   const series=d3.stack().keys(vis).offset(d3.stackOffsetNone)(data);
-  const xSc=d3.scaleLinear().domain([0,3*N]).range([0,w]);
+  const xSc=d3.scaleLinear().domain([0,T]).range([0,w]);
   const yMax=d3.max(series,s=>d3.max(s,d=>d[1]))||1;
   const ySc=d3.scaleLinear().domain([0,yMax]).range([h,0]).nice();
 
@@ -692,7 +716,7 @@ function renderStream(cc){
   const g=msvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
 
   // Phase band backgrounds
-  [[0,N,'rgba(44,74,62,.04)'],[N,2*N,'rgba(44,74,62,.07)'],[2*N,3*N,'rgba(44,74,62,.04)']].forEach(([a,b,fill])=>{
+  [[0,N1,'rgba(44,74,62,.04)'],[N1,N1+N2,'rgba(44,74,62,.07)'],[N1+N2,T,'rgba(44,74,62,.04)']].forEach(([a,b,fill])=>{
     g.append('rect').attr('x',xSc(a)).attr('y',0).attr('width',xSc(b)-xSc(a)).attr('height',h).attr('fill',fill);
   });
 
@@ -706,14 +730,14 @@ function renderStream(cc){
     const job=s.key,isSel=selJob===job,op=selJob?(isSel?1:.15):.82;
     g.append('path').datum(s)
       .attr('d',area).attr('fill',colorOf(job)).attr('opacity',op).style('cursor','pointer')
-      .on('mousemove',ev=>onHoverPhase(ev,job,cc,xSc,M,N))
+      .on('mousemove',ev=>onHoverPhase(ev,job,cc,xSc,M,N1,N1+N2))
       .on('mouseleave',hideTip)
       .on('click',()=>selectJob(job,cc));
   });
 
-  // Phase divider lines (solid — actual phase boundaries)
-  [N,2*N].forEach((px,i)=>{
-    const x=xSc(px),lbl=i===0?'PHASE II':'PHASE III';
+  // Phase divider lines
+  [[N1,'PHASE II'],[N1+N2,'PHASE III']].forEach(([px,lbl])=>{
+    const x=xSc(px);
     g.append('line').attr('x1',x).attr('y1',0).attr('x2',x).attr('y2',h)
       .attr('stroke','#2c4a3e').attr('stroke-width',2).attr('pointer-events','none');
     g.append('text').attr('x',x+4).attr('y',12)
@@ -722,7 +746,7 @@ function renderStream(cc){
   });
 
   // Phase band labels centered below x-axis
-  [[N/2,'PHASE I'],[N+N/2,'PHASE II'],[2*N+N/2,'PHASE III']].forEach(([nx,lbl])=>{
+  [[N1/2,'PHASE I'],[N1+N2/2,'PHASE II'],[N1+N2+N3/2,'PHASE III']].forEach(([nx,lbl])=>{
     g.append('text').attr('x',xSc(nx)).attr('y',h+28)
       .attr('text-anchor','middle').attr('font-size','10px').attr('font-weight','700')
       .attr('font-family','DM Sans,sans-serif').attr('fill','#8a8682').attr('letter-spacing','.1em')
@@ -743,14 +767,14 @@ function renderStream(cc){
 }
 
 // ── TOOLTIP ───────────────────────────────────────────────────────────────────
-function onHoverPhase(ev,job,cc,xSc,M,N){
+function onHoverPhase(ev,job,cc,xSc,M,b1,b2){
   const proj=S.projectsByCost[cc][job]; if(!proj) return;
   const ph=getPhases(job,cc);
   const rect=document.getElementById(`main-svg-${cc}`).getBoundingClientRect();
   const nx=xSc.invert(ev.clientX-rect.left-M.l);
   let phLbl,phHrs;
-  if(nx<N)      {phLbl='Phase I';   phHrs=sumHours(proj,0,ph.p2);}
-  else if(nx<2*N){phLbl='Phase II';  phHrs=sumHours(proj,ph.p2,ph.p3);}
+  if(nx<b1)      {phLbl='Phase I';   phHrs=sumHours(proj,0,ph.p2);}
+  else if(nx<b2) {phLbl='Phase II';  phHrs=sumHours(proj,ph.p2,ph.p3);}
   else           {phLbl='Phase III'; phHrs=sumHours(proj,ph.p3,proj.span+1);}
   document.getElementById('tt-job').textContent=job;
   document.getElementById('tt-wk').textContent=phLbl;
@@ -963,11 +987,18 @@ async function saveAliasesFromUI() {
     if (val&&val!==orig) newMerges[orig]=val;
   });
   S.merges=newMerges;
-  setStatus('Saving aliases…');
-  await persistMerges();
-  computeProjects();
-  renderAll();
-  setStatus('Aliases saved.',false,false); setTimeout(()=>setStatus(''),2500);
+  setStatus('Saving aliases to SharePoint…');
+  try {
+    await persistMerges();
+    computeProjects();
+    renderAll();
+    updateLastSaved();
+    setStatus('Aliases saved.',false,false);
+    setTimeout(()=>setStatus(''),2500);
+  } catch(e) {
+    setStatus('Alias save failed: '+(e.message||e)+' — changes are in memory but not persisted.',true,false);
+    setTimeout(()=>setStatus(''),8000);
+  }
 }
 
 function onPhaseDate(key){
