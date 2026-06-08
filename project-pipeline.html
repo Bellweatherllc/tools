@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v603</title>
+<title>BW Project Pipeline — v606</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2453,7 +2453,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v603</div>
+    <div class="auth-version" id="authVersionBadge">v606</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2472,7 +2472,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v603</div>
+  <div class="proto-badge" id="versionBadge">v606</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3483,7 +3483,7 @@ function addProdProject(){
   PROJECTS.unshift({
     id:newId, name:'Slot '+_nextSlotLetter(), status:'projected', collapsed:true,
     addedAt:Date.now(), isOpenSlot:true, projType:'', projBudget:'$'+SLOT_DEFAULT_BUDGET.toLocaleString(), salesPerson:'',
-    designer:null, productionPM:null, scheduled:true, lod:2, lodReason:'',
+    designer:null, secondaryDesigner:null, productionPM:null, logisticsCoord1:'', logisticsCoord2:'', scheduled:true, lod:2, lodReason:'',
     designLane:{startWeek:sw,phases:[
       {id:newId+'-d1',name:'Phase I',durWeeks:6,hours:0,color:'#8EC5E0',linkedRight:true},
       {id:newId+'-d2',name:'Phase II',durWeeks:16,hours:0,color:'#4A8AB5',linkedRight:true},
@@ -4051,7 +4051,8 @@ function buildFcMsRow(proj, capacitySection){
     ppl.appendChild(sr);
     const dr=el('div','tt-person');
     if(des){
-      dr.innerHTML=`<span class="tt-person-role">Design</span>${des.label}`;
+      const sec=personById(proj.secondaryDesigner);
+      dr.innerHTML=`<span class="tt-person-role">Design</span>${des.label}${sec?` <span style="opacity:.65">+ ${sec.label}</span>`:''}`;
     } else if(proj.proposedDesigner){
       const propD=personById(proj.proposedDesigner);
       dr.innerHTML=propD
@@ -4062,8 +4063,10 @@ function buildFcMsRow(proj, capacitySection){
     }
     ppl.appendChild(dr);
     const pr=el('div','tt-person');
+    const lc1=proj.logisticsCoord1||'', lc2=proj.logisticsCoord2||'';
+    const lcStr=[lc1,lc2].filter(Boolean).join(', ');
     pr.innerHTML=pm
-      ?`<span class="tt-person-role">Production</span>${pm.label}`
+      ?`<span class="tt-person-role">Production</span>${pm.label}${lcStr?` <span style="opacity:.65">· ${lcStr}</span>`:''}`
       :`<span class="tt-person-role">Production</span><span class="tt-person-unassigned">Unassigned</span>`;
     ppl.appendChild(pr);
     tip.appendChild(ppl);
@@ -4744,12 +4747,9 @@ function _doRefreshRevenueRow(){
   const fmtM=v=>v>=1000000?'$'+(v/1000000).toFixed(2).replace(/\.?0+$/,'')+'M':'$'+(v/1000).toFixed(0)+'k';
   const msW=7*24*3600*1000;
 
-  // Derive the visible year from production section scroll position
-  const prodSec=document.querySelector('.section[data-s-type="production"]');
-  const prodScroll=prodSec?prodSec.querySelector('.section-scroll'):null;
-  const leftWeek=prodScroll?Math.floor(prodScroll.scrollLeft/C.weekW):0;
-  const visDate=new Date(C.startDate.getTime()+leftWeek*msW);
-  const visYear=visDate.getFullYear();
+  // Use the same year source as the calendar view year badge
+  const calFrom = CAL_VIEW?.planning?.from || CAL_VIEW?.production?.from;
+  const visYear = calFrom ? calFrom.getFullYear() : new Date().getFullYear();
   // Week range for the visible year
   const yearStart=new Date(visYear,0,1);
   const yearEnd=new Date(visYear+1,0,1);
@@ -4790,8 +4790,12 @@ function _doRefreshRevenueRow(){
     if(vals[1]) vals[1].textContent=avgPerWk>0?fmtK(avgPerWk):'—';
     // Update label to show year
     const totLbls=[...fc.querySelectorAll('.prod-rev-lbl')];
-    if(totLbls[0]) totLbls[0].textContent='Total Rev / '+visYear;
-    if(totLbls[1]) totLbls[1].textContent='Avg Rev / Proj / Week ('+visYear+')';
+    const nowYr2=new Date().getFullYear();
+    const yrClr=visYear===nowYr2?'rgba(80,200,120,.90)':'rgba(220,80,80,.85)';
+    if(totLbls[0]) totLbls[0].innerHTML='Total Rev / <span style="color:'+yrClr+'">'+visYear+'</span>';
+    if(totLbls[1]) totLbls[1].innerHTML='Avg Rev / Proj / Week (<span style="color:'+yrClr+'">'+visYear+'</span>)';
+    // Avg value: match weekly green
+    if(vals[1]) vals[1].style.color='rgba(80,200,120,.90)';
   });
   const tw=todayWeek();
   document.querySelectorAll('.prod-rev-cells').forEach(cells=>{
@@ -4961,7 +4965,7 @@ function buildProdSection(){
       totRow.appendChild(totL); totRow.appendChild(totV);
       const avgRow=el('div',''); avgRow.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:4px;';
       const avgL=el('span','prod-rev-lbl'); avgL.textContent='Avg Rev / Proj / Week'; avgL.style.color='rgba(255,215,60,.60)';
-      const avgV=el('span','prod-rev-val'); avgV.style.cssText='font-size:11px;color:rgba(255,215,60,.68);'; avgV.textContent=avgPerWk>0?fmtK(avgPerWk):'—';
+      const avgV=el('span','prod-rev-val'); avgV.style.cssText='font-size:11px;color:rgba(80,200,120,.90);'; avgV.textContent=avgPerWk>0?fmtK(avgPerWk):'—';
       avgRow.appendChild(avgL); avgRow.appendChild(avgV);
       revInner.appendChild(totRow); revInner.appendChild(avgRow);
       revFc.appendChild(revInner);
@@ -7746,6 +7750,8 @@ async function loadProjects(saved){
       const d2=matchPersonByName(f.SecondaryDesigner, DESIGNERS);
       proj.secondaryDesigner=d2?d2.id:null;
     }
+    if(f.LogisticsCoordinator1) proj.logisticsCoord1=f.LogisticsCoordinator1;
+    if(f.LogisticsCoordinator2) proj.logisticsCoord2=f.LogisticsCoordinator2;
     proj.salesPerson=f.SalesPerson||'';
     proj.shortDescription=f.ShortDescription||'';
     proj.projectDescription=f.ProjectDescription||'';
