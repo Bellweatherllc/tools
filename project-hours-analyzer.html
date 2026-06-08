@@ -125,7 +125,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v18</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v20</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -142,7 +142,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v18</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v20</span></h1>
         <div class="main-view-sel" style="margin-top:10px;margin-bottom:0">
           <button class="mvt active" data-view="designer">Designers</button>
           <button class="mvt" data-view="lc">Logistics Coordinators</button>
@@ -555,9 +555,11 @@ async function saveItems(newItems) {
         S.items.push({id:resp.body.id,fields:idMap[resp.id]});
     });
   }
-  setStatus(`Saved ${total} entries.`,false,false);
+  const breakdown=COST_CODES.filter(cc=>newItems.some(i=>i.CostCode===cc));
+  const bStr=breakdown.map(cc=>`${cc}: ${newItems.filter(i=>i.CostCode===cc).length}`).join(' · ');
+  setStatus(`Saved ${total} entries${bStr?' ('+bStr+')':'.'}`+(bStr?'.':''),false,false);
   updateLastSaved();
-  setTimeout(()=>setStatus(''),3000);
+  setTimeout(()=>setStatus(''),6000);
 }
 async function deleteBySourceFile(fn) {
   const ids=S.items.filter(i=>i.fields?.SourceFile===fn).map(i=>i.id);
@@ -607,7 +609,7 @@ async function importFile(file) {
     for (const row of rows) {
       const tagVal=String(row['Tags']||row['Tag']||row['tags']||'');
       const cc=extractCostCode(tagVal);
-      if (!COST_CODES.includes(cc)) continue;
+      if (!COST_CODES.includes(cc)) { if(tagVal&&!cc) console.log('Skipped (no code):', tagVal.slice(0,60)); else if(cc) console.log('Skipped (unknown code):', cc, tagVal.slice(0,60)); continue; }
       const entryDate=excelToISO(row['Date']); if (!entryDate) continue;
       const weekOf=toWeekOf(entryDate);
       const job=String(row['Job']||'').trim();
@@ -624,7 +626,7 @@ async function importFile(file) {
   }
 
   if (!toSave.length) {
-    setStatus(`No 5234 or 5236A entries found across ${wb.SheetNames.length} sheets in "${fn}".`,true,false);
+    setStatus(`No recognised cost-code entries (5234/5236A/5293/5238) found across ${wb.SheetNames.length} sheet(s) in "${fn}". Check browser console for skipped rows.`,true,false);
     setTimeout(()=>setStatus(''),8000); return;
   }
 
@@ -776,7 +778,7 @@ function renderCalendar(cc) {
   renderGeneralSection(cc);
 }
 function renderCalendarAxes(g,xSc,ySc,w,h,maxSpan) {
-  const te=maxSpan<=20?2:maxSpan<=50?5:maxSpan<=100?10:20;
+  const te=maxSpan<=20?1:maxSpan<=50?2:maxSpan<=100?5:10;
   g.append('line').attr('x1',0).attr('y1',h).attr('x2',w).attr('y2',h).attr('stroke','#ddd9d0').attr('stroke-width',1);
   g.append('g').attr('transform',`translate(0,${h})`).call(
     d3.axisBottom(xSc).tickValues(d3.range(0,maxSpan+1,te)).tickFormat(d=>`W${d}`).tickSize(-h)
@@ -1170,7 +1172,7 @@ function renderDetail(job,cc) {
   g.append('line').attr('class','pl-p2').attr('x1',xSc(ph.p2)).attr('y1',0).attr('x2',xSc(ph.p2)).attr('y2',h).attr('stroke','#1a7a4a').attr('stroke-width',2).attr('pointer-events','none');
   g.append('line').attr('class','pl-p3').attr('x1',xSc(ph.p3)).attr('y1',0).attr('x2',xSc(ph.p3)).attr('y2',h).attr('stroke','#1a3a7a').attr('stroke-width',2).attr('pointer-events','none');
 
-  const te=mW<=20?2:mW<=50?5:10;
+  const te=mW<=20?1:mW<=50?2:mW<=100?5:10;
   g.append('g').attr('transform',`translate(0,${h})`).call(d3.axisBottom(xSc).tickValues(d3.range(0,mW+1,te)).tickFormat(d=>`W${d}`).tickSize(-h)).call(ax=>{ax.select('.domain').remove();ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dy','1.2em');});
 
   // Y axis
