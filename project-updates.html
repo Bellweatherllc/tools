@@ -194,7 +194,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v14</div>
+    <div class="auth-version" id="authVersionBadge">v15</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -213,7 +213,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v14</div>
+  <div class="proto-badge" id="versionBadge">v15</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -539,7 +539,7 @@ function buildCard(proj,container,startOpen){
     <div class="edit-grid">
       <div class="edit-field">
         <label class="edit-lbl">Cost Change ($)</label>
-        <input class="edit-input" type="number" id="delta_${proj.id}" placeholder="+50000 or −25000" step="1000">
+        <input class="edit-input" type="number" id="delta_${proj.id}" placeholder="+50000 or −25000" step="1">
       </div>
       <div class="edit-field">
         <label class="edit-lbl">New End Date</label>
@@ -617,7 +617,7 @@ async function submitChange(projId){
   const fb=document.getElementById('fb_'+projId);
   const formEl=document.getElementById('form_'+projId);
   const btn=formEl?formEl.querySelector('.save-btn'):null;
-  const delta=parseFloat(dEl?.value)||0,newEnd=eEl?.value||'',note=(nEl?.value||'').trim();
+  const delta=Math.round(parseFloat(dEl?.value)||0),newEnd=eEl?.value||'',note=(nEl?.value||'').trim();
   if(!delta&&!newEnd&&!note){if(fb)fb.textContent='Enter a change, date, or note.';return;}
   if(btn) btn.disabled=true;
   if(fb) fb.textContent='Saving…';
@@ -629,7 +629,8 @@ async function submitChange(projId){
       Notes:note||null,EntryType:type,Reviewed:false,
     }});
     if(delta){
-      const newTotal=parseBudget(proj.estimatedValue)+cumDelta(proj.id)+delta;
+      // Round to nearest dollar — cents are meaningless for construction budgets
+      const newTotal=Math.round(parseBudget(proj.estimatedValue)+cumDelta(proj.id)+delta);
       await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId,{fields:{EstimatedProjectValue:'$'+newTotal.toLocaleString()}});
       proj.estimatedValue='$'+newTotal.toLocaleString();
     }
@@ -745,16 +746,27 @@ function cancelDeleteReview(revId){
   if(entry){delete entry.dataset.confirmingDelete;const conf=entry.querySelector('.log-inline-confirm');if(conf)conf.remove();}
 }
 async function confirmDeleteReview(revId, projId){
+  let deleted=false;
   try{
     await graphDelete(SP+'/CORE_ProjectReviews/items/'+revId);
-    reviews=reviews.filter(r=>r.spItemId!==revId);
-    const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
-    renderAll();
-    if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
-    showToast('Entry deleted.');
+    deleted=true;
   }catch(e){
-    showToast('Could not delete entry. Please try again.');
-    console.error('[delete]',e);
+    // If SP returns 200/204 but fetch still throws (e.g. no-body JSON parse), treat as success
+    if(e.message&&(e.message.includes('204')||e.message.includes('200'))){
+      deleted=true;
+    } else {
+      showToast('Could not delete entry. Please try again.');
+      console.error('[delete]',e);
+    }
+  }
+  if(deleted){
+    reviews=reviews.filter(r=>r.spItemId!==revId);
+    showToast('Entry deleted.');
+    try{
+      const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
+      renderAll();
+      if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
+    }catch(e2){console.warn('[delete renderAll]',e2);}
   }
 }
 
