@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Project Updates — CORE</title>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<style>
+/* ── Fonts ── */
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TTNormsPro-Regular.woff2') format('woff2');font-weight:400;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TTNormsPro-Medium.woff2') format('woff2');font-weight:500;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TTNormsPro-Bold.woff2') format('woff2');font-weight:700;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Italic.woff2') format('woff2');font-style:italic;}
+@font-face{font-family:'Swear Display';src:url('https://bellweatherllc.github.io/tools/fonts/SwearDisplay-BlackItalic.woff2') format('woff2');font-style:italic;font-weight:900;}
+
+/* ── Tokens ── */
+:root{
+  --navy:#1f2e3e;
+  --gold:#d8b64f;
+  --gold-light:#f9e6ae;
+  --bg:#FAF9F7;
+  --surface:#fff;
+  --border:#e4dac4;
+  --text:#282828;
+  --text-muted:#7a7a7a;
+  --text-light:#a3a3a3;
+  --green:#127432;
+  --green-light:#e8f5ee;
+  --red:#a30a0a;
+  --red-light:#fdf0f0;
+  --radius:8px;
+  --shadow:0 2px 12px rgba(31,46,62,.10);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* ── Auth overlay ── */
+#authOverlay{position:fixed;inset:0;background:var(--navy);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:9999;}
+#authOverlay.hidden{display:none;}
+#authOverlay img{width:48px;opacity:.7;}
+#authOverlay h1{font-family:'Swear Display',serif;font-style:italic;color:var(--gold);font-size:28px;letter-spacing:.02em;}
+#authOverlay p{color:rgba(255,255,255,.55);font-size:13px;}
+#authOverlay .auth-version{color:rgba(255,255,255,.25);font-size:11px;margin-top:8px;}
+.signin-btn{background:none;border:1.5px solid var(--gold);color:var(--gold);padding:12px 32px;border-radius:6px;font-family:'TT Norms Pro',sans-serif;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:background .15s,color .15s;}
+.signin-btn:hover{background:var(--gold);color:var(--navy);}
+
+/* ── Top bar ── */
+#topbar{background:var(--navy);height:44px;display:flex;align-items:center;padding:0 20px;gap:14px;position:sticky;top:0;z-index:100;}
+.topbar-logo{font-family:'Swear Display',serif;font-style:italic;color:var(--gold);font-size:17px;letter-spacing:.02em;}
+.topbar-title{color:rgba(255,255,255,.60);font-size:12px;font-weight:500;letter-spacing:.04em;}
+.topbar-sep{width:1px;height:18px;background:rgba(255,255,255,.12);}
+.version-badge{font-size:10px;color:rgba(255,255,255,.25);font-weight:600;margin-left:2px;}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px;}
+.conn-dot{width:7px;height:7px;border-radius:50%;background:#888;}
+.conn-label{font-size:11px;color:rgba(255,255,255,.45);}
+#adminToggleBtn{background:none;border:1.5px solid rgba(255,255,255,.25);color:rgba(255,255,255,.60);padding:5px 14px;border-radius:5px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:all .15s;}
+#adminToggleBtn.active{border-color:var(--gold);color:var(--gold);background:rgba(216,182,79,.10);}
+#adminToggleBtn:hover{border-color:rgba(255,255,255,.50);color:#fff;}
+
+/* ── Controls bar ── */
+#controlsBar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;gap:16px;}
+.sort-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);}
+.sort-btn{background:none;border:1px solid var(--border);padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;color:var(--text-muted);transition:all .12s;}
+.sort-btn.active{background:var(--navy);color:#fff;border-color:var(--navy);}
+#adminBanner{display:none;margin-left:auto;align-items:center;gap:6px;background:rgba(216,182,79,.12);border:1px solid rgba(216,182,79,.40);border-radius:5px;padding:4px 12px;}
+#adminBanner.visible{display:flex;}
+#adminBanner span{font-size:11px;font-weight:700;color:var(--gold);letter-spacing:.04em;}
+#projectCount{margin-left:auto;font-size:12px;color:var(--text-muted);}
+
+/* ── Main layout ── */
+#mainApp{display:flex;flex-direction:column;min-height:calc(100vh - 44px);}
+#projectsArea{padding:20px 24px;display:flex;flex-direction:column;gap:12px;max-width:900px;width:100%;}
+
+/* ── Project card ── */
+.proj-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;transition:border-color .15s;}
+.proj-card.has-unreviewed{border-color:rgba(216,182,79,.50);}
+
+.proj-card-header{padding:14px 18px;display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;}
+.proj-card-header:hover{background:rgba(31,46,62,.02);}
+.proj-chevron{font-size:10px;color:var(--text-light);transition:transform .2s;flex-shrink:0;}
+.proj-card.open .proj-chevron{transform:rotate(90deg);}
+.proj-name{font-family:'Swear Text',serif;font-style:italic;font-size:17px;color:var(--navy);flex:1;}
+.proj-header-meta{display:flex;align-items:center;gap:16px;flex-shrink:0;}
+.proj-meta-item{display:flex;flex-direction:column;align-items:flex-end;gap:1px;}
+.proj-meta-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-light);}
+.proj-meta-value{font-size:13px;font-weight:700;color:var(--text);}
+.proj-meta-value.green{color:var(--green);}
+.proj-meta-value.red{color:var(--red);}
+.unreviewed-pip{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0;}
+
+.proj-card-body{border-top:1px solid var(--border);display:none;}
+.proj-card.open .proj-card-body{display:block;}
+
+/* ── Team row ── */
+.proj-team-row{padding:10px 18px;background:rgba(31,46,62,.03);display:flex;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--border);}
+.team-member{display:flex;flex-direction:column;gap:1px;}
+.team-role{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-light);}
+.team-name{font-size:12px;font-weight:600;color:var(--navy);}
+
+/* ── Data fields ── */
+.proj-fields{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;border-bottom:1px solid var(--border);}
+.field-block{display:flex;flex-direction:column;gap:5px;}
+.field-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);}
+.field-display{font-size:18px;font-weight:700;color:var(--navy);}
+.field-display.dimmed{color:var(--text-muted);font-size:14px;}
+.field-sublabel{font-size:10px;color:var(--text-light);}
+
+/* ── Edit form ── */
+.proj-edit-form{padding:16px 18px;background:rgba(216,182,79,.04);border-bottom:1px solid var(--border);display:none;}
+.proj-edit-form.visible{display:block;}
+.edit-form-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-bottom:12px;}
+.edit-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;}
+.edit-field{display:flex;flex-direction:column;gap:5px;}
+.edit-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);}
+.edit-input{border:1.5px solid var(--border);border-radius:5px;padding:8px 10px;font-family:'TT Norms Pro',sans-serif;font-size:14px;color:var(--text);background:var(--surface);transition:border-color .12s;width:100%;}
+.edit-input:focus{outline:none;border-color:var(--gold);}
+.edit-input[type="date"]{cursor:pointer;}
+.edit-note{width:100%;border:1.5px solid var(--border);border-radius:5px;padding:8px 10px;font-family:'TT Norms Pro',sans-serif;font-size:13px;color:var(--text);background:var(--surface);resize:vertical;min-height:60px;transition:border-color .12s;}
+.edit-note:focus{outline:none;border-color:var(--gold);}
+.edit-actions{display:flex;align-items:center;gap:10px;margin-top:4px;}
+.submit-btn{background:var(--navy);color:#fff;border:none;padding:9px 22px;border-radius:5px;font-family:'TT Norms Pro',sans-serif;font-size:12px;font-weight:700;letter-spacing:.05em;cursor:pointer;transition:background .12s;}
+.submit-btn:hover{background:#2d4258;}
+.submit-btn:disabled{opacity:.45;cursor:default;}
+.cancel-btn{background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;}
+.cancel-btn:hover{border-color:var(--text-muted);}
+.save-feedback{font-size:12px;color:var(--text-muted);}
+
+/* ── Readonly nudge ── */
+.readonly-nudge{display:none;position:fixed;bottom:24px;right:24px;background:var(--navy);color:rgba(255,255,255,.85);padding:10px 16px;border-radius:6px;font-size:12px;z-index:500;box-shadow:0 4px 16px rgba(0,0,0,.25);pointer-events:none;transition:opacity .2s;}
+.readonly-nudge.show{display:block;}
+
+/* ── Change log ── */
+.proj-log{padding:14px 18px;}
+.log-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-light);margin-bottom:10px;}
+.log-empty{font-size:12px;color:var(--text-light);font-style:italic;}
+.log-entry{padding:10px 0;border-bottom:1px solid var(--border);display:grid;grid-template-columns:140px 1fr;gap:10px;}
+.log-entry:last-child{border-bottom:none;}
+.log-meta{display:flex;flex-direction:column;gap:2px;}
+.log-reviewer{font-size:11px;font-weight:700;color:var(--navy);}
+.log-date{font-size:10px;color:var(--text-light);}
+.log-content{display:flex;flex-direction:column;gap:4px;}
+.log-delta{font-size:13px;font-weight:700;}
+.log-delta.pos{color:var(--green);}
+.log-delta.neg{color:var(--red);}
+.log-enddate{font-size:12px;color:var(--text-muted);}
+.log-note{font-size:12px;color:var(--text);font-style:italic;margin-top:2px;}
+.log-reviewed-badge{display:inline-block;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:var(--green-light);color:var(--green);padding:1px 6px;border-radius:3px;margin-top:3px;}
+
+/* ── Empty / loading ── */
+.state-msg{padding:48px 24px;text-align:center;color:var(--text-muted);font-size:14px;}
+.state-msg strong{display:block;font-size:17px;color:var(--navy);margin-bottom:6px;}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 20px;border-radius:6px;font-size:13px;z-index:9999;opacity:0;pointer-events:none;transition:opacity .25s;}
+.toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<!-- Auth overlay -->
+<div id="authOverlay">
+  <div class="topbar-logo" style="font-size:32px">CORE</div>
+  <h1>Project Updates</h1>
+  <p>Sign in with your Bellweather Microsoft account</p>
+  <button class="signin-btn" onclick="doSignIn()">Sign in with Microsoft</button>
+  <div class="auth-version">v1</div>
+</div>
+
+<!-- Top bar -->
+<div id="topbar">
+  <div class="topbar-logo">CORE</div>
+  <div class="topbar-sep"></div>
+  <div class="topbar-title">PROJECT UPDATES</div>
+  <span class="version-badge">v1</span>
+  <div class="topbar-right">
+    <div class="conn-dot" id="connDot"></div>
+    <div class="conn-label" id="connLabel">Connecting…</div>
+    <div class="topbar-sep"></div>
+    <button id="adminToggleBtn" onclick="toggleAdminMode()" style="display:none">Admin Mode</button>
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="mainApp" class="hidden">
+  <!-- Controls -->
+  <div id="controlsBar">
+    <span class="sort-label">Sort</span>
+    <button class="sort-btn active" id="sortAlpha" onclick="setSort('alpha')">A → Z</button>
+    <button class="sort-btn" id="sortEnd" onclick="setSort('end')">End Date</button>
+    <div id="adminBanner">
+      <span>⚡ ADMIN MODE — changes will save immediately</span>
+    </div>
+    <span id="projectCount"></span>
+  </div>
+
+  <!-- Projects -->
+  <div id="projectsArea">
+    <div class="state-msg" id="loadingMsg"><strong>Loading projects…</strong>Fetching construction data from SharePoint.</div>
+  </div>
+</div>
+
+<!-- Readonly nudge -->
+<div class="readonly-nudge" id="readonlyNudge">Enable Admin Mode to make changes</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+// ── Config ───────────────────────────────────────────────────────────────
+const MSAL_CONFIG = {
+  auth: {
+    clientId: '84b37f0e-b149-4089-9bdc-fc654715db23',
+    authority: 'https://login.microsoftonline.com/ff0e3f46-615a-4a22-8a80-4bb83d627785',
+    redirectUri: window.location.origin + window.location.pathname,
+  },
+  cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
+};
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+const SP_BASE = 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
+const PIPELINE_EPOCH = new Date('2025-01-05T00:00:00Z'); // UTC — matches pipeline
+
+let msalApp = null;
+let accessToken = '';
+let currentUser = '';
+let isAdmin = false;
+let adminModeOn = false;
+let sortMode = 'alpha';
+
+// ── Data ─────────────────────────────────────────────────────────────────
+let projects = [];      // CORE_Projects items in construction
+let reviews = [];       // CORE_ProjectReviews items
+
+// ── Auth ─────────────────────────────────────────────────────────────────
+async function initMsal() {
+  msalApp = new msal.PublicClientApplication(MSAL_CONFIG);
+  try {
+    const resp = await msalApp.handleRedirectPromise();
+    if (resp && resp.accessToken) { accessToken = resp.accessToken; onAuthenticated(resp.account); return; }
+  } catch(e) { console.warn('[auth]', e.message); }
+  const accounts = msalApp.getAllAccounts();
+  if (accounts.length > 0) {
+    try {
+      const silent = await msalApp.acquireTokenSilent({ scopes: SCOPES, account: accounts[0] });
+      accessToken = silent.accessToken;
+      onAuthenticated(accounts[0]);
+    } catch(e) {
+      document.getElementById('authOverlay').classList.remove('hidden');
+    }
+  } else {
+    document.getElementById('authOverlay').classList.remove('hidden');
+  }
+}
+
+function doSignIn() {
+  msalApp.loginRedirect({ scopes: SCOPES });
+}
+
+async function onAuthenticated(account) {
+  currentUser = account.name || account.username || 'Unknown';
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('mainApp').classList.remove('hidden');
+  document.getElementById('connDot').style.background = '#22c55e';
+  document.getElementById('connLabel').textContent = currentUser;
+  await loadAll();
+}
+
+// ── Graph helpers ─────────────────────────────────────────────────────────
+async function graphGet(url) {
+  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!r.ok) throw new Error('Graph ' + r.status + ' ' + url);
+  return r.json();
+}
+async function graphPatch(url, body) {
+  const r = await fetch(url, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error('Graph PATCH ' + r.status);
+  return r.json();
+}
+async function graphPost(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error('Graph POST ' + r.status);
+  return r.json();
+}
+
+// ── Data loading ──────────────────────────────────────────────────────────
+async function loadAll() {
+  try {
+    // Load team members to check admin access
+    const teamData = await graphGet(SP_BASE + '/CORE_TeamMembers/items?$expand=fields&$select=id,fields&$top=200');
+    const teamMembers = (teamData.value || []);
+    const me = teamMembers.find(tm => {
+      const name = (tm.fields.EmployeeName || tm.fields.Title || '').toLowerCase();
+      return currentUser.toLowerCase().includes(name) || name.includes(currentUser.split(' ')[0].toLowerCase());
+    });
+    // ProjectUpdatesRole: any non-empty value grants admin access
+    isAdmin = me && !!(me.fields.ProjectUpdatesRole || '').trim();
+    if (isAdmin) document.getElementById('adminToggleBtn').style.display = 'inline-block';
+
+    // Load CORE_Projects — only CA-signed projects
+    const projData = await graphGet(SP_BASE + '/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
+    const allProjects = projData.value || [];
+
+    // Filter to CA-signed projects in construction
+    projects = allProjects
+      .filter(item => {
+        const f = item.fields || {};
+        const stage = (f.PipelineStage || '').toLowerCase();
+        return stage === 'ca signed' || stage === 'ca-signed';
+      })
+      .map(item => {
+        const f = item.fields || {};
+        let gantt = {};
+        try { gantt = JSON.parse(f.GanttData || '{}'); } catch(e) {}
+        // Parse production end date from GanttData
+        const prodLane = gantt.productionLane || {};
+        const prodPhases = prodLane.phases || [];
+        const lastProd = prodPhases[prodPhases.length - 1];
+        let endWeek = null;
+        if (lastProd) endWeek = (lastProd.startWeek || 0) + (lastProd.durWeeks || 0);
+        let endDate = null;
+        if (endWeek !== null) {
+          const ms = PIPELINE_EPOCH.getTime() + endWeek * 7 * 24 * 3600 * 1000;
+          endDate = new Date(ms).toISOString().slice(0, 10);
+        }
+        return {
+          spItemId: item.id,
+          id: item.id,
+          clientName: f.ClientName || '',
+          projectName: f.ProjectName || '',
+          displayName: f.ClientName || f.ProjectName || item.id,
+          estimatedValue: f.EstimatedProjectValue || '',
+          stage: f.PipelineStage || '',
+          designer: f.DesignerName || '',
+          secondaryDesigner: f.SecondaryDesigner || '',
+          pm: f.PMName || '',
+          lc1: f.LogisticsCoordinator1 || '',
+          lc2: f.LogisticsCoordinator2 || '',
+          sales: f.SalesPerson || '',
+          endDate,
+          endWeek,
+          gantt,
+        };
+      });
+
+    // Load reviews
+    const reviewData = await graphGet(
+      SP_BASE + '/CORE_ProjectReviews/items?$expand=fields&$select=id,fields&$orderby=fields/EntryDate desc&$top=500&$headers={"Prefer":"HonorNonIndexedQueriesWarningMayFailRandomly"}'
+    );
+    reviews = (reviewData.value || []).map(item => ({ spItemId: item.id, ...item.fields }));
+
+    renderProjects();
+  } catch(e) {
+    console.error('[load]', e);
+    document.getElementById('loadingMsg').innerHTML = '<strong>Error loading data</strong>' + e.message;
+  }
+}
+
+// ── Sorting ───────────────────────────────────────────────────────────────
+function setSort(mode) {
+  sortMode = mode;
+  document.getElementById('sortAlpha').classList.toggle('active', mode === 'alpha');
+  document.getElementById('sortEnd').classList.toggle('active', mode === 'end');
+  renderProjects();
+}
+
+function sortedProjects() {
+  const copy = [...projects];
+  if (sortMode === 'alpha') {
+    copy.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  } else {
+    copy.sort((a, b) => {
+      if (!a.endDate && !b.endDate) return 0;
+      if (!a.endDate) return 1;
+      if (!b.endDate) return -1;
+      return a.endDate.localeCompare(b.endDate);
+    });
+  }
+  return copy;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function parseBudget(s) {
+  return parseInt(String(s || '').replace(/[^0-9]/g, '')) || 0;
+}
+function fmtCurrency(n) {
+  if (!n) return '—';
+  if (n >= 1000000) return '$' + (n / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+  if (n >= 1000) return '$' + Math.round(n / 1000) + 'k';
+  return '$' + n;
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function fmtDateTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function projectReviews(projId) {
+  return reviews.filter(r => r.ProjectId === projId).sort((a, b) => {
+    if (!a.EntryDate || !b.EntryDate) return 0;
+    return new Date(b.EntryDate) - new Date(a.EntryDate);
+  });
+}
+
+function cumulativeDelta(projId) {
+  return projectReviews(projId)
+    .filter(r => r.CostDelta)
+    .reduce((sum, r) => sum + (parseFloat(r.CostDelta) || 0), 0);
+}
+
+function latestEndDate(proj) {
+  const projRevs = projectReviews(proj.id);
+  const withDate = projRevs.find(r => r.NewEndDate);
+  return withDate ? withDate.NewEndDate.slice(0, 10) : proj.endDate;
+}
+
+function hasUnreviewed(projId) {
+  return reviews.some(r => r.ProjectId === projId && !r.Reviewed);
+}
+
+function renderProjects() {
+  const area = document.getElementById('projectsArea');
+  const sorted = sortedProjects();
+  document.getElementById('projectCount').textContent = sorted.length + ' project' + (sorted.length !== 1 ? 's' : '') + ' in construction';
+  document.getElementById('loadingMsg').style.display = 'none';
+
+  // Preserve open state
+  const openIds = new Set([...area.querySelectorAll('.proj-card.open')].map(el => el.dataset.projId));
+
+  area.innerHTML = '';
+  if (!sorted.length) {
+    area.innerHTML = '<div class="state-msg"><strong>No projects in construction</strong>CA-signed projects will appear here.</div>';
+    return;
+  }
+
+  sorted.forEach(proj => renderCard(proj, area, openIds.has(proj.id)));
+}
+
+function renderCard(proj, container, startOpen) {
+  const delta = cumulativeDelta(proj.id);
+  const baseVal = parseBudget(proj.estimatedValue);
+  const currentVal = baseVal + delta;
+  const projRevs = projectReviews(proj.id);
+  const currentEnd = latestEndDate(proj);
+  const unreviewed = hasUnreviewed(proj.id);
+
+  const card = document.createElement('div');
+  card.className = 'proj-card' + (startOpen ? ' open' : '') + (unreviewed ? ' has-unreviewed' : '');
+  card.dataset.projId = proj.id;
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'proj-card-header';
+  hdr.innerHTML = `
+    <span class="proj-chevron">▶</span>
+    ${unreviewed ? '<div class="unreviewed-pip" title="Unreviewed changes"></div>' : ''}
+    <div class="proj-name">${proj.displayName}</div>
+    <div class="proj-header-meta">
+      <div class="proj-meta-item">
+        <span class="proj-meta-label">Est. Value</span>
+        <span class="proj-meta-value ${delta > 0 ? 'green' : delta < 0 ? 'red' : ''}">${fmtCurrency(currentVal)}</span>
+      </div>
+      <div class="proj-meta-item">
+        <span class="proj-meta-label">End Date</span>
+        <span class="proj-meta-value">${fmtDate(currentEnd)}</span>
+      </div>
+    </div>`;
+  hdr.addEventListener('click', () => {
+    card.classList.toggle('open');
+  });
+  card.appendChild(hdr);
+
+  // Body
+  const body = document.createElement('div');
+  body.className = 'proj-card-body';
+
+  // Team row
+  const teamParts = [
+    proj.sales ? { role: 'Sales', name: proj.sales } : null,
+    proj.designer ? { role: 'Design', name: proj.designer + (proj.secondaryDesigner ? ' · ' + proj.secondaryDesigner : '') } : null,
+    proj.pm ? { role: 'PM', name: proj.pm } : null,
+    proj.lc1 ? { role: 'Logistics', name: [proj.lc1, proj.lc2].filter(Boolean).join(' · ') } : null,
+  ].filter(Boolean);
+
+  if (teamParts.length) {
+    const teamRow = document.createElement('div');
+    teamRow.className = 'proj-team-row';
+    teamParts.forEach(({ role, name }) => {
+      teamRow.innerHTML += `<div class="team-member"><span class="team-role">${role}</span><span class="team-name">${name}</span></div>`;
+    });
+    body.appendChild(teamRow);
+  }
+
+  // Data fields
+  const fields = document.createElement('div');
+  fields.className = 'proj-fields';
+  fields.innerHTML = `
+    <div class="field-block">
+      <div class="field-label">Original Value</div>
+      <div class="field-display">${fmtCurrency(baseVal)}</div>
+      ${delta !== 0 ? `<div class="field-sublabel">Adjusted: ${delta > 0 ? '+' : ''}${fmtCurrency(delta)}</div>` : ''}
+    </div>
+    <div class="field-block">
+      <div class="field-label">Current Value</div>
+      <div class="field-display ${delta > 0 ? 'green' : delta < 0 ? 'red' : ''}">${fmtCurrency(currentVal)}</div>
+      <div class="field-sublabel">${projRevs.filter(r => r.CostDelta).length} adjustment${projRevs.filter(r => r.CostDelta).length !== 1 ? 's' : ''}</div>
+    </div>
+    <div class="field-block">
+      <div class="field-label">End Date</div>
+      <div class="field-display ${!currentEnd ? 'dimmed' : ''}">${fmtDate(currentEnd)}</div>
+      <div class="field-sublabel">${proj.endDate && currentEnd !== proj.endDate ? 'Original: ' + fmtDate(proj.endDate) : 'From Gantt'}</div>
+    </div>`;
+
+  // Readonly nudge listener
+  fields.addEventListener('click', () => {
+    if (!adminModeOn) showNudge();
+  });
+  body.appendChild(fields);
+
+  // Edit form (admin mode)
+  const form = document.createElement('div');
+  form.className = 'proj-edit-form' + (adminModeOn ? ' visible' : '');
+  form.id = 'form_' + proj.id;
+  form.innerHTML = `
+    <div class="edit-form-title">Log a Change</div>
+    <div class="edit-grid">
+      <div class="edit-field">
+        <label class="edit-label">Cost Change ($)</label>
+        <input class="edit-input" type="number" id="delta_${proj.id}" placeholder="+50000 or -25000" step="1000">
+      </div>
+      <div class="edit-field">
+        <label class="edit-label">New End Date</label>
+        <input class="edit-input" type="date" id="enddate_${proj.id}" value="${currentEnd || ''}">
+      </div>
+      <div class="edit-field">
+        <label class="edit-label">Note (optional)</label>
+        <input class="edit-input" type="text" id="note_${proj.id}" placeholder="Reason for change…" maxlength="280">
+      </div>
+    </div>
+    <div class="edit-actions">
+      <button class="submit-btn" onclick="submitChange('${proj.id}')">Save Change</button>
+      <span class="save-feedback" id="feedback_${proj.id}"></span>
+    </div>`;
+  body.appendChild(form);
+
+  // Change log
+  const log = document.createElement('div');
+  log.className = 'proj-log';
+  log.innerHTML = `<div class="log-title">Change History</div>`;
+
+  if (!projRevs.length) {
+    log.innerHTML += '<div class="log-empty">No changes recorded yet.</div>';
+  } else {
+    projRevs.forEach(r => {
+      const deltaVal = parseFloat(r.CostDelta) || 0;
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      let content = '';
+      if (deltaVal) content += `<div class="log-delta ${deltaVal > 0 ? 'pos' : 'neg'}">${deltaVal > 0 ? '+' : ''}${fmtCurrency(Math.abs(deltaVal))} cost ${deltaVal > 0 ? 'increase' : 'decrease'}</div>`;
+      if (r.NewEndDate) content += `<div class="log-enddate">End date → ${fmtDate(r.NewEndDate.slice(0,10))}</div>`;
+      if (r.Notes) content += `<div class="log-note">${r.Notes}</div>`;
+      if (r.Reviewed) content += `<div class="log-reviewed-badge">Reviewed</div>`;
+      entry.innerHTML = `
+        <div class="log-meta">
+          <div class="log-reviewer">${r.ReviewerName || '—'}</div>
+          <div class="log-date">${fmtDateTime(r.EntryDate)}</div>
+        </div>
+        <div class="log-content">${content || '<span style="color:var(--text-light);font-size:12px">Note only</span>'}</div>`;
+      log.appendChild(entry);
+    });
+  }
+  body.appendChild(log);
+  card.appendChild(body);
+  container.appendChild(card);
+}
+
+// ── Admin mode ────────────────────────────────────────────────────────────
+function toggleAdminMode() {
+  adminModeOn = !adminModeOn;
+  const btn = document.getElementById('adminToggleBtn');
+  btn.classList.toggle('active', adminModeOn);
+  btn.textContent = adminModeOn ? '⚡ Admin Mode On' : 'Admin Mode';
+  document.getElementById('adminBanner').classList.toggle('visible', adminModeOn);
+  // Show/hide all edit forms
+  document.querySelectorAll('.proj-edit-form').forEach(f => {
+    f.classList.toggle('visible', adminModeOn);
+  });
+}
+
+function showNudge() {
+  const n = document.getElementById('readonlyNudge');
+  n.classList.add('show');
+  setTimeout(() => n.classList.remove('show'), 2200);
+}
+
+// ── Submit ────────────────────────────────────────────────────────────────
+async function submitChange(projId) {
+  const proj = projects.find(p => p.id === projId);
+  if (!proj) return;
+
+  const deltaInput = document.getElementById('delta_' + projId);
+  const endInput = document.getElementById('enddate_' + projId);
+  const noteInput = document.getElementById('note_' + projId);
+  const feedback = document.getElementById('feedback_' + projId);
+  const btn = document.querySelector(`#form_${projId} .submit-btn`);
+
+  const delta = parseFloat(deltaInput.value) || 0;
+  const newEnd = endInput.value || '';
+  const note = noteInput.value.trim();
+
+  if (!delta && !newEnd && !note) {
+    feedback.textContent = 'Enter a cost change, new end date, or note.';
+    return;
+  }
+
+  btn.disabled = true;
+  feedback.textContent = 'Saving…';
+
+  // Determine entry type
+  let entryType = 'Note';
+  if (delta && newEnd) entryType = 'Combined';
+  else if (delta) entryType = 'Cost';
+  else if (newEnd) entryType = 'EndDate';
+
+  try {
+    // 1. Write review entry to CORE_ProjectReviews
+    await graphPost(SP_BASE + '/CORE_ProjectReviews/items', {
+      fields: {
+        ProjectId: projId,
+        ProjectName: proj.displayName,
+        ReviewerName: currentUser,
+        EntryDate: new Date().toISOString(),
+        CostDelta: delta || null,
+        NewEndDate: newEnd || null,
+        Notes: note || null,
+        EntryType: entryType,
+        Reviewed: false,
+      }
+    });
+
+    // 2. If cost delta — update EstimatedProjectValue in CORE_Projects
+    if (delta) {
+      const baseVal = parseBudget(proj.estimatedValue);
+      const existingDelta = cumulativeDelta(projId); // before adding new entry
+      const newTotal = baseVal + existingDelta + delta;
+      await graphPatch(SP_BASE + '/CORE_Projects/items/' + proj.spItemId, {
+        fields: { EstimatedProjectValue: '$' + newTotal.toLocaleString() }
+      });
+      proj.estimatedValue = '$' + newTotal.toLocaleString();
+    }
+
+    // 3. If end date changed — update GanttData production lane end
+    if (newEnd && newEnd !== proj.endDate) {
+      const newEndMs = new Date(newEnd + 'T00:00:00Z').getTime();
+      const epochMs = PIPELINE_EPOCH.getTime();
+      const newEndWeek = Math.round((newEndMs - epochMs) / (7 * 24 * 3600 * 1000));
+      // Update last production phase durWeeks
+      const gantt = JSON.parse(JSON.stringify(proj.gantt)); // deep copy
+      const prodPhases = gantt.productionLane?.phases || [];
+      if (prodPhases.length > 0) {
+        const lastPh = prodPhases[prodPhases.length - 1];
+        const startWk = lastPh.startWeek || 0;
+        lastPh.durWeeks = Math.max(1, newEndWeek - startWk);
+      }
+      await graphPatch(SP_BASE + '/CORE_Projects/items/' + proj.spItemId, {
+        fields: { GanttData: JSON.stringify(gantt) }
+      });
+      proj.gantt = gantt;
+      proj.endDate = newEnd;
+    }
+
+    // 4. Reload reviews and re-render
+    const reviewData = await graphGet(SP_BASE + '/CORE_ProjectReviews/items?$expand=fields&$select=id,fields&$orderby=fields/EntryDate desc&$top=500');
+    reviews = (reviewData.value || []).map(item => ({ spItemId: item.id, ...item.fields }));
+
+    feedback.textContent = 'Saved.';
+    deltaInput.value = '';
+    noteInput.value = '';
+
+    // Re-render this card
+    const card = document.querySelector(`.proj-card[data-proj-id="${projId}"]`);
+    const wasOpen = card?.classList.contains('open');
+    const area = document.getElementById('projectsArea');
+    renderProjects();
+    // Re-open card
+    if (wasOpen) {
+      const newCard = document.querySelector(`.proj-card[data-proj-id="${projId}"]`);
+      if (newCard) newCard.classList.add('open');
+    }
+
+    showToast('Change saved.');
+  } catch(e) {
+    console.error('[submit]', e);
+    feedback.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+initMsal();
+</script>
+</body>
+</html>
