@@ -194,7 +194,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v12</div>
+    <div class="auth-version" id="authVersionBadge">v13</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -213,7 +213,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v12</div>
+  <div class="proto-badge" id="versionBadge">v13</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -669,15 +669,24 @@ function editReview(revId, projId){
   // Replace log-body content with inline edit form
   const body=entry.querySelector('.log-body');
   const origContent=body.innerHTML;
-  body.innerHTML=`
-    <div class="log-inline-edit">
-      <input class="log-inline-input" type="text" id="edit-note-${revId}" value="${(r.Notes||'').replace(/"/g,'&quot;')}" placeholder="Note…">
-      <div class="log-inline-actions">
-        <button class="log-inline-save" onclick="saveEditReview('${revId}','${projId}')">Save</button>
-        <button class="log-inline-cancel" onclick="cancelEditReview('${revId}','${projId}')">Cancel</button>
-        <span id="edit-fb-${revId}" style="font-size:10px;color:var(--text-muted)"></span>
-      </div>
-    </div>`;
+  const editWrap=document.createElement('div');
+  editWrap.className='log-inline-edit';
+  editWrap.dataset.editRevId=revId;
+  editWrap.dataset.editProjId=projId;
+  const inp=document.createElement('input');
+  inp.className='log-inline-input';inp.type='text';
+  inp.value=r.Notes||'';inp.placeholder='Note…';
+  inp.dataset.editInput='1';
+  const actRow=document.createElement('div');actRow.className='log-inline-actions';
+  const saveBtn=document.createElement('button');saveBtn.className='log-inline-save';saveBtn.textContent='Save';
+  saveBtn.addEventListener('click',()=>saveEditReview(revId,projId,inp,saveBtn,fbSpan));
+  const cancelBtn=document.createElement('button');cancelBtn.className='log-inline-cancel';cancelBtn.textContent='Cancel';
+  cancelBtn.addEventListener('click',()=>cancelEditReview(revId,projId));
+  const fbSpan=document.createElement('span');fbSpan.style.cssText='font-size:10px;color:var(--text-muted)';
+  actRow.appendChild(saveBtn);actRow.appendChild(cancelBtn);actRow.appendChild(fbSpan);
+  editWrap.appendChild(inp);editWrap.appendChild(actRow);
+  body.innerHTML='';
+  body.appendChild(editWrap);
 }
 
 function cancelEditReview(revId, projId){
@@ -686,14 +695,12 @@ function cancelEditReview(revId, projId){
   if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
 }
 
-async function saveEditReview(revId, projId){
-  const noteEl=document.getElementById('edit-note-'+revId);
-  const fb=document.getElementById('edit-fb-'+revId);
+async function saveEditReview(revId, projId, noteEl, saveBtn, fb){
   const note=(noteEl?.value||'').trim();
   if(fb) fb.textContent='Saving…';
+  if(saveBtn) saveBtn.disabled=true;
   try{
     await graphPatch(SP+'/CORE_ProjectReviews/items/'+revId,{fields:{Notes:note||null}});
-    // Update local cache
     const r=reviews.find(rv=>rv.spItemId===revId);
     if(r) r.Notes=note||null;
     const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
@@ -702,11 +709,40 @@ async function saveEditReview(revId, projId){
     showToast('Note updated.');
   }catch(e){
     if(fb) fb.textContent='Error: '+e.message;
+    if(saveBtn) saveBtn.disabled=false;
   }
 }
 
 async function deleteReview(revId, projId){
-  if(!confirm('Delete this entry? This cannot be undone.')) return;
+  // Guard: don't try to delete optimistic/pending entries
+  if((revId||'').startsWith('pending-')){showToast('Entry not yet saved — refresh and try again.');return;}
+  // Inline confirm instead of browser alert
+  const entry=document.querySelector(`.log-entry[data-rev-id="${revId}"]`);
+  if(entry&&!entry.dataset.confirmingDelete){
+    entry.dataset.confirmingDelete='1';
+    const body=entry.querySelector('.log-body');
+    const origHtml=body.innerHTML;
+    // Build inline confirm using DOM to avoid quoting issues with revId/projId
+    const conf=document.createElement('div');
+    conf.className='log-inline-confirm';
+    conf.style.cssText='margin-top:6px;display:flex;align-items:center;gap:8px;';
+    conf.innerHTML='<span style="font-size:11px;color:#a30a0a;font-weight:600;">Delete this entry?</span>';
+    const delBtn=document.createElement('button');
+    delBtn.className='log-inline-save';delBtn.style.background='#a30a0a';delBtn.textContent='Delete';
+    delBtn.addEventListener('click',()=>confirmDeleteReview(revId,projId));
+    const cancelBtn2=document.createElement('button');
+    cancelBtn2.className='log-inline-cancel';cancelBtn2.textContent='Cancel';
+    cancelBtn2.addEventListener('click',()=>cancelDeleteReview(revId));
+    conf.appendChild(delBtn);conf.appendChild(cancelBtn2);
+    body.appendChild(conf);
+    return;
+  }
+}
+function cancelDeleteReview(revId){
+  const entry=document.querySelector('[data-rev-id="'+revId+'"]');
+  if(entry){delete entry.dataset.confirmingDelete;const conf=entry.querySelector('.log-inline-confirm');if(conf)conf.remove();}
+}
+async function confirmDeleteReview(revId, projId){
   try{
     await graphDelete(SP+'/CORE_ProjectReviews/items/'+revId);
     reviews=reviews.filter(r=>r.spItemId!==revId);
@@ -715,7 +751,8 @@ async function deleteReview(revId, projId){
     if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
     showToast('Entry deleted.');
   }catch(e){
-    alert('Delete failed: '+e.message);
+    showToast('Could not delete entry. Please try again.');
+    console.error('[delete]',e);
   }
 }
 
