@@ -62,6 +62,10 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 .view-tab{font:600 11px 'TT Norms Pro',sans-serif;padding:5px 10px;border-radius:4px;border:1px solid #ddd9d0;background:transparent;color:#8a8682;cursor:pointer;transition:all .15s;white-space:nowrap;}
 .view-tab:hover{background:#f0ede8;color:#1a1917;border-color:#c8c4bc;}
 .view-tab.active{background:#263860;color:#fff;border-color:#263860;}
+.sub-nav{display:flex;gap:3px;margin-top:5px;flex-wrap:wrap;}
+.svt{font:600 11px/1 'TT Norms Pro',sans-serif;padding:5px 12px;border-radius:4px;border:1px solid #ddd9d0;background:transparent;color:#8a8682;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.svt:hover{background:#f0ede8;color:#1a1917;border-color:#c8c4bc;}
+.svt.active{background:#3a506e;color:#fff;border-color:#3a506e;}
 .cost-badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:3px;margin-left:8px;vertical-align:middle;}
 .badge-5234{background:#e8eeeb;color:#2c4a3e}
 .badge-5236A{background:#e8edf5;color:#2c3a6e}
@@ -125,7 +129,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v22</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v23</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -142,11 +146,16 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v22</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v23</span></h1>
         <div class="main-view-sel" style="margin-top:10px;margin-bottom:0">
-          <button class="mvt active" data-view="designer">Designers</button>
-          <button class="mvt" data-view="lc">Logistics Coordinators</button>
-          <button class="mvt" data-view="pm">Project Managers</button>
+          <button class="mvt active" data-view="design">DESIGN</button>
+          <button class="mvt" data-view="development">DEVELOPMENT</button>
+          <button class="mvt" data-view="production">PRODUCTION</button>
+        </div>
+        <div class="sub-nav" id="production-sub-nav" style="display:none">
+          <button class="svt active" data-pview="pm">Project Managers</button>
+          <button class="svt" data-pview="lc">Logistics Coordinators</button>
+          <button class="svt" data-pview="both">Both</button>
         </div>
         <p id="hdr-sub" style="margin-top:5px"></p>
       </div>
@@ -201,7 +210,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="card">
     <div class="card-hdr" style="margin-bottom:8px">
       <div class="card-lbl" style="flex:1;margin-bottom:0">Hours by Phase</div>
-      <div class="view-tabs">
+      <div class="view-tabs" style="display:none">
         <button class="view-tab active" data-view="5234">Design</button>
         <button class="view-tab" data-view="5236A">Development</button>
         <button class="view-tab" data-view="both">Design + Development</button>
@@ -325,7 +334,8 @@ const S = {
   generalJobsPM: new Set(),  // 5238 jobs classified as overhead
   phases: {},
   phasesSetByUser: new Set(),
-  mainView: 'designer',      // 'designer' | 'lc' | 'pm'
+  mainView: 'design',        // 'design' | 'development' | 'production'
+  productionView: 'pm',      // 'pm' | 'lc' | 'both'
   stateLoaded: false,
   chartView: '5234',         // '5234' | '5236A' | 'both'
   selJob: null,
@@ -753,22 +763,33 @@ function buildCalendarData(cc, vis) {
 }
 
 // ── CALENDAR CHART (LC / PM) ─────────────────────────────────────────────────
-function renderCalendar(cc) {
+function allJobsByCostMulti(ccs){const s=new Set();ccs.forEach(cc=>allJobsByCost(cc).forEach(j=>s.add(j)));return[...s];}
+function generalJobsByCostMulti(ccs){const s=new Set();ccs.forEach(cc=>{if(cc==='5239'||cc==='5238')generalJobsByCost(cc).forEach(j=>s.add(j));});return[...s];}
+function buildCalendarDataMulti(ccs,vis){
+  if(!vis.length)return{rows:[],maxSpan:0};
+  const span=j=>Math.max(...ccs.map(cc=>S.projectsByCost[cc]?.[j]?.span||0));
+  const hrs=(j,wk)=>ccs.reduce((sum,cc)=>sum+(S.projectsByCost[cc]?.[j]?.weeks[wk]?.hours||0),0);
+  const maxSpan=Math.max(...vis.map(span));
+  const rows=[];
+  for(let wk=0;wk<=maxSpan;wk++){const row={wk};vis.forEach(j=>{row[j]=hrs(j,wk);});rows.push(row);}
+  return{rows,maxSpan};
+}
+function renderCalendar(ccs) {
   const msvg=d3.select('#cal-main-svg');
   msvg.selectAll('*').remove();
   const emptyEl=document.getElementById('cal-empty');
-  const vis=allJobsByCost(cc);
+  const vis=allJobsByCostMulti(ccs);
   if (!vis.length) {
     emptyEl.style.display='';
     msvg.attr('width',0).attr('height',0);
-    renderGeneralSection(cc);
+    renderGeneralSection(ccs);
     return;
   }
   emptyEl.style.display='none';
   const W=document.getElementById('cal-main-wrap').clientWidth;
   const H=380,M={t:24,r:28,b:40,l:52};
   const w=W-M.l-M.r,h=H-M.t-M.b;
-  const {rows,maxSpan}=buildCalendarData(cc,vis);
+  const {rows,maxSpan}=buildCalendarDataMulti(ccs,vis);
   const series=d3.stack().keys(vis).offset(d3.stackOffsetNone)(rows);
   const xSc=d3.scaleLinear().domain([0,maxSpan]).range([0,w]);
   const yMax=d3.max(series,s=>d3.max(s,d=>d[1]))||1;
@@ -776,16 +797,16 @@ function renderCalendar(cc) {
   msvg.attr('width',W).attr('height',H);
   const g=msvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
   const area=d3.area().x(d=>xSc(d.data.wk)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1])).curve(d3.curveMonotoneX);
-  const selJob=S.selJob?.costCode===cc?S.selJob.job:null;
+  const selJob=ccs.includes(S.selJob?.costCode)?S.selJob.job:null;
   series.forEach(s=>{
     const job=s.key,isSel=selJob===job,op=selJob?(isSel?1:.15):.82;
     g.append('path').datum(s).attr('d',area).attr('fill',colorOf(job)).attr('opacity',op).style('cursor','pointer')
-      .on('mousemove',ev=>onHoverCalendar(ev,job,cc,xSc,M,maxSpan,'cal-main-svg'))
+      .on('mousemove',ev=>onHoverCalendar(ev,job,ccs,xSc,M,maxSpan,'cal-main-svg'))
       .on('mouseleave',hideTip)
-      .on('click',()=>selectJob(job,cc));
+      .on('click',()=>{const fc=ccs.find(cc=>S.projectsByCost[cc]?.[job]);if(fc)selectJob(job,fc);});
   });
   renderCalendarAxes(g,xSc,ySc,w,h,maxSpan);
-  renderGeneralSection(cc);
+  renderGeneralSection(ccs);
 }
 function renderCalendarAxes(g,xSc,ySc,w,h,maxSpan) {
   const te=maxSpan<=20?1:maxSpan<=50?2:maxSpan<=100?5:10;
@@ -803,8 +824,8 @@ function renderCalendarAxes(g,xSc,ySc,w,h,maxSpan) {
     ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');
   });
 }
-function renderGeneralSection(cc) {
-  const genVis=generalJobsByCost(cc);
+function renderGeneralSection(ccs) {
+  const genVis=generalJobsByCostMulti(ccs);
   const genEl=document.getElementById('general-section');
   const genSvg=d3.select('#cal-gen-svg');
   genSvg.selectAll('*').remove();
@@ -813,7 +834,7 @@ function renderGeneralSection(cc) {
   const W=document.getElementById('cal-gen-wrap').clientWidth;
   const H=200,M={t:16,r:28,b:36,l:52};
   const w=W-M.l-M.r,h=H-M.t-M.b;
-  const {rows,maxSpan}=buildCalendarData(cc,genVis);
+  const {rows,maxSpan}=buildCalendarDataMulti(ccs,genVis);
   if (!rows.length){genEl.style.display='none';return;}
   const series=d3.stack().keys(genVis).offset(d3.stackOffsetNone)(rows);
   const xSc=d3.scaleLinear().domain([0,maxSpan]).range([0,w]);
@@ -822,18 +843,18 @@ function renderGeneralSection(cc) {
   genSvg.attr('width',W).attr('height',H);
   const g=genSvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
   const area=d3.area().x(d=>xSc(d.data.wk)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1])).curve(d3.curveMonotoneX);
-  const selJob=S.selJob?.costCode===cc?S.selJob.job:null;
+  const selJob=ccs.includes(S.selJob?.costCode)?S.selJob.job:null;
   series.forEach(s=>{
     const job=s.key,isSel=selJob===job,op=selJob?(isSel?1:.15):.82;
     g.append('path').datum(s).attr('d',area).attr('fill',colorOf(job)).attr('opacity',op).style('cursor','pointer')
-      .on('mousemove',ev=>onHoverCalendar(ev,job,cc,xSc,M,maxSpan,'cal-gen-svg'))
+      .on('mousemove',ev=>onHoverCalendar(ev,job,ccs,xSc,M,maxSpan,'cal-gen-svg'))
       .on('mouseleave',hideTip)
-      .on('click',()=>selectJob(job,cc));
+      .on('click',()=>{const fc=ccs.find(cc=>S.projectsByCost[cc]?.[job]);if(fc)selectJob(job,fc);});
   });
   renderCalendarAxes(g,xSc,ySc,w,h,maxSpan);
 }
-function onHoverCalendar(ev,job,cc,xSc,M,maxSpan,svgId) {
-  const proj=S.projectsByCost[cc][job]; if(!proj)return;
+function onHoverCalendar(ev,job,ccs,xSc,M,maxSpan,svgId) {
+  let proj=null; for(const cc of ccs){if(S.projectsByCost[cc]?.[job]){proj=S.projectsByCost[cc][job];break;}} if(!proj)return;
   const rect=document.getElementById(svgId).getBoundingClientRect();
   const wk=Math.max(0,Math.min(maxSpan,Math.round(xSc.invert(ev.clientX-rect.left-M.l))));
   const wd=proj.weeks[wk];
@@ -851,11 +872,13 @@ function onHoverCalendar(ev,job,cc,xSc,M,maxSpan,svgId) {
 // ── RENDER ALL ────────────────────────────────────────────────────────────────
 function renderAll() {
   renderFiles();
-  if (S.mainView==='designer') {
-    renderStream();
+  if (S.mainView==='design') {
+    S.chartView='5234'; renderStream();
+  } else if (S.mainView==='development') {
+    S.chartView='5236A'; renderStream();
   } else {
-    const cc=S.mainView==='lc'?'5239':'5238';
-    renderCalendar(cc);
+    const ccs=S.productionView==='both'?['5239','5238']:S.productionView==='lc'?['5239']:['5238'];
+    renderCalendar(ccs);
   }
   renderAliasesTable();
   if (S.selJob) {
@@ -868,9 +891,9 @@ function renderAll() {
 }
 function updateHdrSub() {
   const subs={
-    designer:'5234 · 5236A — Phase-normalized · Projects ≥ 20 hrs',
-    lc:'5239 Logistics Coordinator — Calendar-aligned · Week 0 = first entry',
-    pm:'5238 Project Manager — Calendar-aligned · Week 0 = first entry'
+    design:'5234 Sales & Design — Phase-normalized · Projects ≥ 20 hrs',
+    development:'5236A Project Development — Phase-normalized · Projects ≥ 20 hrs',
+    production:'5239 LC · 5238 PM — Calendar-aligned · Week 0 = first entry'
   };
   const el=document.getElementById('hdr-sub');
   if (el) el.textContent=subs[S.mainView]||'';
@@ -1415,8 +1438,10 @@ function populateProjNav(currentJob, currentCC) {
   const sel = document.getElementById('proj-nav');
   sel.innerHTML = '';
   let ccList;
-  if (S.mainView==='designer') ccList=['5234','5236A'];
-  else if (S.mainView==='lc') ccList=['5239'];
+  if (S.mainView==='design') ccList=['5234'];
+  else if (S.mainView==='development') ccList=['5236A'];
+  else if (S.productionView==='lc') ccList=['5239'];
+  else if (S.productionView==='both') ccList=['5239','5238'];
   else ccList=['5238'];
   ccList.forEach(cc=>{
     const vis=allJobsByCost(cc);
@@ -1428,8 +1453,10 @@ function populateProjNav(currentJob, currentCC) {
     [...allJobs].sort().forEach(job=>{
       const opt=document.createElement('option');
       opt.value=job+'|||'+cc;
+      const isDesignerView=S.mainView==='design'||S.mainView==='development';
+      const hasPhase=isDesignerView&&S.phasesSetByUser.has(job)&&S.phases[job]&&Object.keys(S.phases[job]).length>0;
       const isGen=cc==='5239'?S.generalJobsLC.has(job):cc==='5238'?S.generalJobsPM.has(job):false;
-      opt.textContent=(S.phasesSetByUser.has(job)?'● ':'')+job+(isGen?' [G]':'');
+      opt.textContent=(hasPhase?'● ':'')+job+(isGen?' [G]':'');
       if (job===currentJob&&cc===currentCC) opt.selected=true;
       og.appendChild(opt);
     });
@@ -1515,14 +1542,31 @@ function wireEvents() {
       document.querySelectorAll('.mvt').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       S.mainView=btn.dataset.view;
-      // Close detail if it belongs to a different view
+      // Close detail if it belongs to a different section
+      if (S.selJob) {
+        const role=CC_ROLE[S.selJob.costCode]; // 'designer'|'lc'|'pm'
+        const isDesignerView=S.mainView==='design'||S.mainView==='development';
+        const ok=(isDesignerView&&role==='designer')||(S.mainView==='production'&&(role==='lc'||role==='pm'));
+        if (!ok) closeDetail();
+      }
+      document.getElementById('designer-section').style.display=(S.mainView==='design'||S.mainView==='development')?'':'none';
+      document.getElementById('calendar-section').style.display=S.mainView==='production'?'':'none';
+      document.getElementById('production-sub-nav').style.display=S.mainView==='production'?'':'none';
+      updateHdrSub();
+      renderAll();
+    });
+  });
+  // Production sub-nav
+  document.querySelectorAll('.svt').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.svt').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      S.productionView=btn.dataset.pview;
       if (S.selJob) {
         const role=CC_ROLE[S.selJob.costCode];
-        if (role!==S.mainView) closeDetail();
+        const ok=(S.productionView==='pm'&&role==='pm')||(S.productionView==='lc'&&role==='lc')||S.productionView==='both';
+        if (!ok) closeDetail();
       }
-      document.getElementById('designer-section').style.display=S.mainView==='designer'?'':'none';
-      document.getElementById('calendar-section').style.display=S.mainView!=='designer'?'':'none';
-      updateHdrSub();
       renderAll();
     });
   });
@@ -1533,7 +1577,7 @@ function wireEvents() {
     const collapsed=body.style.display==='none';
     body.style.display=collapsed?'':'none';
     btn.textContent=collapsed?'▼':'▶';
-    if (collapsed) { const cc=S.mainView==='lc'?'5239':'5238'; renderCalendar(cc); }
+    if (collapsed) { const ccs=S.productionView==='both'?['5239','5238']:S.productionView==='lc'?['5239']:['5238']; renderCalendar(ccs); }
   });
   // Chart collapse toggle
   document.getElementById('btn-toggle-chart').addEventListener('click',()=>{
@@ -1612,8 +1656,8 @@ function wireEvents() {
     inp.click();
   });
   window.addEventListener('resize',()=>{
-    if(S.mainView==='designer'){renderStream();}
-    else{const cc=S.mainView==='lc'?'5239':'5238';renderCalendar(cc);}
+    if(S.mainView==='design'||S.mainView==='development'){renderStream();}
+    else if(S.mainView==='production'){const ccs=S.productionView==='both'?['5239','5238']:S.productionView==='lc'?['5239']:['5238'];renderCalendar(ccs);}
     if(S.selJob)renderDetail(S.selJob.job,S.selJob.costCode);
   });
 }
