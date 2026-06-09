@@ -200,7 +200,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v22</div>
+    <div class="auth-version" id="authVersionBadge">v23</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -219,7 +219,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v22</div>
+  <div class="proto-badge" id="versionBadge">v23</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -311,14 +311,19 @@ async function loadAll(){
     if(isAdmin) document.getElementById('adminControl').style.display='flex';
     // Build id→name map for resolving GanttData person IDs
     window._tmById={};
+    window._tmFirstToFull={};  // normalize first-name-only → full name
     teamMembers.forEach(m=>{
       const f=m.fields||{};
       const name=f.EmployeeName||f.Title||'';
+      if(!name) return;
       // Index by all possible key formats the pipeline might use
-      if(m.id) window._tmById[m.id]=name;                          // raw Graph item id
-      if(m.id) window._tmById['sp-person-'+m.id]=name;             // pipeline format: 'sp-person-{id}'
-      if(f.id) window._tmById[f.id]=name;                          // SP fields id
-      if(f.id) window._tmById['sp-person-'+f.id]=name;             // pipeline format via fields.id
+      if(m.id) window._tmById[m.id]=name;
+      if(m.id) window._tmById['sp-person-'+m.id]=name;
+      if(f.id) window._tmById[f.id]=name;
+      if(f.id) window._tmById['sp-person-'+f.id]=name;
+      // First name → full name map for normalizing PMName stored as first name only
+      const firstName=name.split(' ')[0];
+      window._tmFirstToFull[firstName.toLowerCase()]=name;
     });
 
     const pd=await graphGet(SP+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
@@ -326,8 +331,11 @@ async function loadAll(){
       .filter(item=>{
         const f=item.fields||{};
         const stage=(f.PipelineStage||'').toLowerCase().replace(/[-\s]/g,'');
-        // Exclude leads (no stage), archived, cancelled — show everything else
-        return stage&&stage!=='archived'&&stage!=='cancelled'&&stage!=='lost';
+        if(!stage||stage==='archived'||stage==='cancelled'||stage==='lost') return false;
+        // Must have a PM assigned (either SP column or GanttData)
+        let gantt={}; try{gantt=JSON.parse(f.GanttData||'{}');}catch(e){}
+        const hasPM=!!(f.PMName||(gantt.productionPM&&window._tmById&&window._tmById[gantt.productionPM]));
+        return hasPM;
       })
       .map(item=>{
         const f=item.fields||{};
@@ -345,9 +353,22 @@ async function loadAll(){
           spItemId:item.id,id:item.id,
           displayName:f.ClientName||f.ProjectName||item.id,
           estimatedValue:f.EstimatedProjectValue||'',
-          designer:f.DesignerName||(gantt.designer&&window._tmById?window._tmById[gantt.designer]:'')|| '',
+          designer:(()=>{
+            const raw=f.DesignerName||(gantt.designer&&window._tmById?window._tmById[gantt.designer]:'')||'';
+            if(raw&&!raw.includes(' ')&&window._tmFirstToFull){
+              return window._tmFirstToFull[raw.toLowerCase()]||raw;
+            }
+            return raw;
+          })(),
           secondaryDesigner:f.SecondaryDesigner||(gantt.secondaryDesigner&&window._tmById?window._tmById[gantt.secondaryDesigner]:'')|| '',
-          pm:f.PMName||(gantt.productionPM&&window._tmById?window._tmById[gantt.productionPM]:'')|| '',
+          pm:(()=>{
+            const raw=f.PMName||(gantt.productionPM&&window._tmById?window._tmById[gantt.productionPM]:'')||'';
+            // If stored as first name only, resolve to full name
+            if(raw&&!raw.includes(' ')&&window._tmFirstToFull){
+              return window._tmFirstToFull[raw.toLowerCase()]||raw;
+            }
+            return raw;
+          })(),
           lc1:f.LogisticsCoordinator1||'',lc2:f.LogisticsCoordinator2||'',
           sales:f.SalesPerson||'',endDate,gantt,
         };
