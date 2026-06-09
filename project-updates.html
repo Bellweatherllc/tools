@@ -194,7 +194,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v15</div>
+    <div class="auth-version" id="authVersionBadge">v17</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -213,7 +213,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v15</div>
+  <div class="proto-badge" id="versionBadge">v17</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -366,9 +366,9 @@ async function loadReviews(){
 function parseBudget(s){return parseInt(String(s||'').replace(/[^0-9]/g,''))||0;}
 function fmtCurrency(n){
   if(!n&&n!==0) return '—';
-  if(n>=1000000) return '$'+(n/1000000).toFixed(2).replace(/\.?0+$/,'')+'M';
-  if(n>=1000) return '$'+Math.round(n/1000)+'k';
-  return '$'+n;
+  const abs=Math.abs(n);
+  const str='$'+abs.toLocaleString('en-US');
+  return n<0?'−'+str:str;
 }
 function fmtDate(iso){
   if(!iso) return '—';
@@ -388,7 +388,7 @@ function hasUnrev(id){return reviews.some(r=>r.ProjectId===id&&!r.Reviewed);}
 // ── Render — grouped by PM ─────────────────────────────────────────────────
 function renderAll(){
   const area=document.getElementById('projectsArea');
-  document.getElementById('loadingMsg').style.display='none';
+  const _lm=document.getElementById('loadingMsg');if(_lm)_lm.style.display='none';
   document.getElementById('projCount').textContent=projects.length+' project'+(projects.length!==1?'s':'')+' in construction';
 
   const open=new Set([...area.querySelectorAll('.proj-card.open')].map(el=>el.dataset.pid));
@@ -571,9 +571,23 @@ function buildCard(proj,container,startOpen){
       if(r.Notes) content+=`<div class="log-note">${r.Notes}</div>`;
       const entry=document.createElement('div');entry.className='log-entry';entry.dataset.revId=r.spItemId||'';
       const isPending=(r.spItemId||'').startsWith('pending-');
-      const actionsHtml=isPending?'':
-        `<div class="log-actions admin-only"><button class="log-action-btn" onclick="editReview('${r.spItemId}','${proj.id}')">Edit</button><button class="log-action-btn del" onclick="deleteReview('${r.spItemId}','${proj.id}')">Delete</button></div>`;
-      entry.innerHTML=`<div class="log-meta"><div class="log-who">${r.ReviewerName||'—'}</div><div class="log-when">${fmtDT(r.EntryDate)}</div></div><div class="log-body">${content||'<span style="color:var(--text-muted);font-size:10px">Note only</span>'}${actionsHtml}</div>`;
+      const actionsHtml=''; // built via DOM below
+      entry.innerHTML=`<div class="log-meta"><div class="log-who">${r.ReviewerName||'—'}</div><div class="log-when">${fmtDT(r.EntryDate)}</div></div><div class="log-body">${content||'<span style="color:var(--text-muted);font-size:10px">Note only</span>'}</div>`;
+      // Admin actions — built via DOM, gated by adminModeOn at click time
+      if(!isPending){
+        const actDiv=document.createElement('div');
+        actDiv.className='log-actions';
+        actDiv.style.display=adminModeOn?'flex':'none';
+        actDiv.dataset.adminAction='1';
+        const editBtn=document.createElement('button');
+        editBtn.className='log-action-btn';editBtn.textContent='Edit';
+        editBtn.addEventListener('click',()=>{ if(!adminModeOn){showNudge();return;} editReview(r.spItemId,proj.id,entry); });
+        const delBtn2=document.createElement('button');
+        delBtn2.className='log-action-btn del';delBtn2.textContent='Delete';
+        delBtn2.addEventListener('click',()=>{ if(!adminModeOn){showNudge();return;} deleteReview(r.spItemId,proj.id); });
+        actDiv.appendChild(editBtn);actDiv.appendChild(delBtn2);
+        entry.querySelector('.log-body').appendChild(actDiv);
+      }
       log.appendChild(entry);
     });
   }
@@ -587,8 +601,9 @@ function toggleAdminMode(){
   adminModeOn=document.getElementById('adminCheckbox').checked;
   document.body.classList.toggle('admin-mode',adminModeOn);
   document.getElementById('adminBanner').classList.toggle('visible',adminModeOn);
-  // Show/hide edit forms — CSS handles log-actions visibility via body.admin-mode
   document.querySelectorAll('.proj-edit-form').forEach(f=>f.classList.toggle('visible',adminModeOn));
+  // Show/hide log action buttons immediately
+  document.querySelectorAll('[data-admin-action]').forEach(el=>el.style.display=adminModeOn?'flex':'none');
 }
 function showNudge(e){
   const n=document.getElementById('readonlyNudge');
@@ -617,7 +632,7 @@ async function submitChange(projId){
   const fb=document.getElementById('fb_'+projId);
   const formEl=document.getElementById('form_'+projId);
   const btn=formEl?formEl.querySelector('.save-btn'):null;
-  const delta=Math.round(parseFloat(dEl?.value)||0),newEnd=eEl?.value||'',note=(nEl?.value||'').trim();
+  const delta=parseFloat(dEl?.value)||0,newEnd=eEl?.value||'',note=(nEl?.value||'').trim();
   if(!delta&&!newEnd&&!note){if(fb)fb.textContent='Enter a change, date, or note.';return;}
   if(btn) btn.disabled=true;
   if(fb) fb.textContent='Saving…';
@@ -630,7 +645,7 @@ async function submitChange(projId){
     }});
     if(delta){
       // Round to nearest dollar — cents are meaningless for construction budgets
-      const newTotal=Math.round(parseBudget(proj.estimatedValue)+cumDelta(proj.id)+delta);
+      const newTotal=parseBudget(proj.estimatedValue)+cumDelta(proj.id)+delta;
       await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId,{fields:{EstimatedProjectValue:'$'+newTotal.toLocaleString()}});
       proj.estimatedValue='$'+newTotal.toLocaleString();
     }
@@ -663,8 +678,8 @@ async function submitChange(projId){
   }catch(e){console.error('[submit]',e);if(fb)fb.textContent='Error: '+e.message;if(btn)btn.disabled=false;}
 }
 
-function editReview(revId, projId){
-  const entry=document.querySelector(`.log-entry[data-rev-id="${revId}"]`);
+function editReview(revId, projId, entryEl){
+  const entry=entryEl||document.querySelector('[data-rev-id="'+revId+'"]');
   if(!entry) return;
   const r=reviews.find(rv=>rv.spItemId===revId);
   if(!r) return;
