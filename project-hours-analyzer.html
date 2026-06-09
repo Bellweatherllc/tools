@@ -125,7 +125,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v21</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v22</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -142,7 +142,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v21</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v22</span></h1>
         <div class="main-view-sel" style="margin-top:10px;margin-bottom:0">
           <button class="mvt active" data-view="designer">Designers</button>
           <button class="mvt" data-view="lc">Logistics Coordinators</button>
@@ -326,6 +326,7 @@ const S = {
   phases: {},
   phasesSetByUser: new Set(),
   mainView: 'designer',      // 'designer' | 'lc' | 'pm'
+  stateLoaded: false,
   chartView: '5234',         // '5234' | '5236A' | 'both'
   selJob: null,
 };
@@ -518,9 +519,11 @@ async function loadState() {
       } catch { S.merges = {}; S.excluded = new Set(); }
     }
   } catch(e) { console.warn('Could not load state:', e.message); }
+  S.stateLoaded = true;
 }
 async function persistState() {
   if (!S.metaListId) throw new Error('Meta list not available — state cannot be saved');
+  if (!S.stateLoaded) { console.warn('persistState skipped — state not yet loaded'); return; }
   // Only persist phases the user explicitly set; auto-defaults are recomputed on load
   const phases = {};
   for (const job of S.phasesSetByUser) {
@@ -590,7 +593,14 @@ async function importFile(file) {
   const fn=file.name;
   if (S.srcFiles[fn]) {
     if (!confirm(`"${fn}" already imported (${S.srcFiles[fn]} entries). Replace?`)) return;
-    await deleteBySourceFile(fn); computeProjects(); renderAll();
+    // Snapshot phases before delete — intermediate computeProjects() would
+    // prune them since designer entries are briefly absent from S.items
+    const _phSnap = JSON.parse(JSON.stringify(S.phases));
+    const _phSet  = [...S.phasesSetByUser];
+    await deleteBySourceFile(fn); computeProjects();
+    S.phases = _phSnap;
+    _phSet.forEach(j => S.phasesSetByUser.add(j));
+    renderAll();
   }
   setStatus(`Parsing "${fn}"…`,false,false);
   const buf=await file.arrayBuffer();
@@ -877,7 +887,14 @@ function renderFiles() {
   el.querySelectorAll('.btn-rm').forEach(btn=>btn.addEventListener('click',async()=>{
     const fn=btn.dataset.fn;
     if (!confirm(`Remove all ${S.srcFiles[fn]} entries for "${fn}"?`)) return;
-    await deleteBySourceFile(fn); computeProjects(); renderAll();
+    // Snapshot phases before delete — intermediate computeProjects() would
+    // prune them since designer entries are briefly absent from S.items
+    const _phSnap = JSON.parse(JSON.stringify(S.phases));
+    const _phSet  = [...S.phasesSetByUser];
+    await deleteBySourceFile(fn); computeProjects();
+    S.phases = _phSnap;
+    _phSet.forEach(j => S.phasesSetByUser.add(j));
+    renderAll();
   }));
 }
 
@@ -1169,8 +1186,10 @@ function renderDetail(job,cc) {
   const totData=d3.range(0,mW+1).map(wk=>({wk,hours:proj.weeks[wk]?.hours||0}));
   g.append('path').datum(totData).attr('d',totLine).attr('fill','none').attr('stroke','rgba(0,0,0,.18)').attr('stroke-width',1.5);
 
-  g.append('line').attr('class','pl-p2').attr('x1',xSc(ph.p2)).attr('y1',0).attr('x2',xSc(ph.p2)).attr('y2',h).attr('stroke','#1a7a4a').attr('stroke-width',2).attr('pointer-events','none');
-  g.append('line').attr('class','pl-p3').attr('x1',xSc(ph.p3)).attr('y1',0).attr('x2',xSc(ph.p3)).attr('y2',h).attr('stroke','#1a3a7a').attr('stroke-width',2).attr('pointer-events','none');
+  if (isDesigner) {
+    g.append('line').attr('class','pl-p2').attr('x1',xSc(ph.p2)).attr('y1',0).attr('x2',xSc(ph.p2)).attr('y2',h).attr('stroke','#1a7a4a').attr('stroke-width',2).attr('pointer-events','none');
+    g.append('line').attr('class','pl-p3').attr('x1',xSc(ph.p3)).attr('y1',0).attr('x2',xSc(ph.p3)).attr('y2',h).attr('stroke','#1a3a7a').attr('stroke-width',2).attr('pointer-events','none');
+  }
 
   const te=mW<=20?1:mW<=50?2:mW<=100?5:10;
   g.append('g').attr('transform',`translate(0,${h})`).call(d3.axisBottom(xSc).tickValues(d3.range(0,mW+1,te)).tickFormat(d=>`W${d}`).tickSize(-h)).call(ax=>{ax.select('.domain').remove();ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dy','1.2em');});
