@@ -292,7 +292,7 @@ select.rubric-select.status-bad{color:var(--red);}
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
     <button class="btn-signin" id="btn-signin">Sign in with Microsoft</button>
     <div class="auth-error" id="auth-error"></div>
-    <div style="margin-top:20px;font-size:11px;color:var(--text-sec);opacity:.6;">v2.4</div>
+    <div style="margin-top:20px;font-size:11px;color:var(--text-sec);opacity:.6;">v2.6</div>
   </div>
 </div>
 
@@ -309,7 +309,7 @@ select.rubric-select.status-bad{color:var(--red);}
   <div id="topbar">
     <div class="tb-left">
       <span class="tb-tool">PIP Tracker</span>
-      <span class="tb-badge" id="tb-version">v2.4</span>
+      <span class="tb-badge" id="tb-version">v2.6</span>
     </div>
     <div class="tb-right">
       <span class="tb-role" id="tb-role"></span>
@@ -1299,6 +1299,8 @@ async function onSignedIn() {
   _me = { name: acc.name, username: acc.username };
   document.getElementById('tb-user').textContent = acc.name || acc.username;
   document.getElementById('auth-overlay').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  document.getElementById('main-content').innerHTML = '<div class="loading-msg">Connecting to SharePoint…</div>';
 
   try {
     await ensureSchema();
@@ -1311,7 +1313,6 @@ async function onSignedIn() {
       return;
     }
 
-    document.getElementById('app').style.display='';
     if (_isAdmin) document.querySelectorAll('.admin-only').forEach(function(el){ el.style.display=''; });
 
     renderPeriodBar();
@@ -1321,7 +1322,7 @@ async function onSignedIn() {
     document.getElementById('next-week-btn').addEventListener('click',function(){ navigateWeek(1); });
     document.getElementById('save-btn').addEventListener('click',handleSave);
     document.querySelectorAll('.nav-tab').forEach(function(t){ t.addEventListener('click',function(){ switchView(this.dataset.view); }); });
-    document.getElementById('btn-signout').addEventListener('click',function(){ msalApp.logoutRedirect({account:getAccount()}); });
+    // btn-signout wired at load time
 
     // Initial week
     _weekDate = getMondayOf();
@@ -1333,38 +1334,38 @@ async function onSignedIn() {
     renderWeeklyForm();
 
   } catch(e) {
-    document.getElementById('main-content').innerHTML='<div class="loading-msg">Error loading: '+esc(e.message)+'</div>';
-    document.getElementById('app').style.display='';
+    document.getElementById('main-content').innerHTML =
+      '<div class="loading-msg" style="color:var(--red);">Error: ' + esc(e.message) + '</div>'
+      + '<div style="text-align:center;margin-top:16px;"><button class="btn-primary" onclick="location.reload()">Retry</button>'
+      + (e.message && e.message.indexOf('403') > -1 ? '<p style="margin-top:12px;font-size:12px;color:var(--text-sec);">This may be a permissions issue. The app needs Sites.ReadWrite.All access. Ask your admin to grant consent.</p>' : '')
+      + '</div>';
   }
 }
 
+// ── AUTH HELPERS ──────────────────────────────────────────────────────────────
+function signIn() {
+  msalApp.loginRedirect({ scopes: SCOPES });
+}
+function signOut() {
+  msalApp.logoutRedirect({ account: getAccount() });
+}
+
 window.addEventListener('load', async function() {
-  document.getElementById('btn-signin').addEventListener('click', async function() {
-    var errEl = document.getElementById('auth-error');
-    errEl.style.display = 'none';
-    if (typeof msal === 'undefined') {
-      errEl.textContent = 'Auth library failed to load. Check your network connection and try refreshing.';
-      errEl.style.display = 'block';
-      return;
-    }
-    try {
-      await msalApp.loginRedirect({ scopes: SCOPES });
-    } catch(e) {
-      errEl.textContent = 'Sign-in error: ' + (e.message || e);
-      errEl.style.display = 'block';
-    }
-  });
-  document.getElementById('btn-signout-denied').addEventListener('click',function(){
-    msalApp.logoutRedirect({ account: getAccount() });
-  });
+  document.getElementById('btn-signin').addEventListener('click', signIn);
+  document.getElementById('btn-signout').addEventListener('click', signOut);
+  document.getElementById('btn-signout-denied').addEventListener('click', signOut);
   try {
-    if (msalApp.initialize) await msalApp.initialize();
-    var r = await msalApp.handleRedirectPromise();
-    if (r || getAccount()) await onSignedIn();
+    await msalApp.initialize();
+    var redirectResult = await msalApp.handleRedirectPromise();
+    if (redirectResult) {
+      await onSignedIn();
+    } else if (getAccount()) {
+      await onSignedIn();
+    }
   } catch(e) {
-    var el=document.getElementById('auth-error');
-    el.textContent='Init error: '+e.message;
-    el.style.display='block';
+    var el = document.getElementById('auth-error');
+    el.textContent = 'Init error: ' + (e.message || e);
+    el.style.display = 'block';
   }
 });
 </script>
