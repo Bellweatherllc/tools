@@ -58,6 +58,8 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
 .admin-switch input:checked + .admin-track{background:#c53030;border-color:#c53030;}
 .admin-switch input:checked + .admin-track .admin-thumb{transform:translateX(16px);}
 body.admin-mode .admin-ctrl-label{color:rgba(255,255,255,.70);}
+.admin-only{display:none;}
+body.admin-mode .admin-only{display:flex;}
 .admin-gear{font-size:18px;line-height:1;color:rgba(255,255,255,.35);cursor:pointer;user-select:none;transition:color .18s,transform .25s;}
 body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
 /* Conn indicator */
@@ -191,7 +193,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v9</div>
+    <div class="auth-version" id="authVersionBadge">v10</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -210,7 +212,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v9</div>
+  <div class="proto-badge" id="versionBadge">v10</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -560,9 +562,8 @@ function buildCard(proj,container,startOpen){
       if(r.Notes) content+=`<div class="log-note">${r.Notes}</div>`;
       const entry=document.createElement('div');entry.className='log-entry';entry.dataset.revId=r.spItemId||'';
       const isPending=(r.spItemId||'').startsWith('pending-');
-      const actionsHtml=adminModeOn&&!isPending
-        ?`<div class="log-actions"><button class="log-action-btn" onclick="editReview('${r.spItemId}','${projId}')">Edit</button><button class="log-action-btn del" onclick="deleteReview('${r.spItemId}','${projId}')">Delete</button></div>`
-        :'';
+      const actionsHtml=isPending?'':
+        `<div class="log-actions admin-only"><button class="log-action-btn" onclick="editReview('${r.spItemId}','${projId}')">Edit</button><button class="log-action-btn del" onclick="deleteReview('${r.spItemId}','${projId}')">Delete</button></div>`;
       entry.innerHTML=`<div class="log-meta"><div class="log-who">${r.ReviewerName||'—'}</div><div class="log-when">${fmtDT(r.EntryDate)}</div></div><div class="log-body">${content||'<span style="color:var(--text-muted);font-size:10px">Note only</span>'}${actionsHtml}</div>`;
       log.appendChild(entry);
     });
@@ -577,10 +578,8 @@ function toggleAdminMode(){
   adminModeOn=document.getElementById('adminCheckbox').checked;
   document.body.classList.toggle('admin-mode',adminModeOn);
   document.getElementById('adminBanner').classList.toggle('visible',adminModeOn);
-  // Re-render so edit/delete buttons appear/disappear on log entries
-  const open=new Set([...document.querySelectorAll('.proj-card.open')].map(el=>el.dataset.pid));
-  renderAll();
-  open.forEach(pid=>{const c=document.querySelector('.proj-card[data-pid="'+pid+'"]');if(c)c.classList.add('open');});
+  // Show/hide edit forms — CSS handles log-actions visibility via body.admin-mode
+  document.querySelectorAll('.proj-edit-form').forEach(f=>f.classList.toggle('visible',adminModeOn));
 }
 function showNudge(e){
   const n=document.getElementById('readonlyNudge');
@@ -608,8 +607,7 @@ async function submitChange(projId){
   const fb=document.getElementById('fb_'+projId);
   const formEl=document.getElementById('form_'+projId);
   const btn=formEl?formEl.querySelector('.save-btn'):null;
-  if(!dEl||!nEl){console.warn('[submit] form elements missing for',projId);return;}
-  const delta=parseFloat(dEl.value)||0,newEnd=(eEl?eEl.value:'')||'',note=nEl.value.trim();
+  const delta=parseFloat(dEl?.value)||0,newEnd=eEl?.value||'',note=(nEl?.value||'').trim();
   if(!delta&&!newEnd&&!note){if(fb)fb.textContent='Enter a change, date, or note.';return;}
   if(btn) btn.disabled=true;
   if(fb) fb.textContent='Saving…';
