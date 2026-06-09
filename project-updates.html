@@ -87,14 +87,10 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
 
 /* ── PM group ── */
 .pm-group{padding-bottom:20px;}
-.pm-group-hdr{display:flex;align-items:center;gap:10px;padding:8px 0 10px;margin-bottom:8px;border-bottom:2px solid var(--border);cursor:pointer;user-select:none;}
-.pm-group-hdr:hover .pm-group-name{color:#2d4258;}
-.pm-group-chev{font-size:8px;color:var(--text-muted);transition:transform .18s;flex-shrink:0;}
-.pm-group.open .pm-group-chev{transform:rotate(90deg);}
+.pm-group-hdr{display:flex;align-items:center;gap:10px;padding:8px 0 10px;margin-bottom:8px;border-bottom:2px solid var(--border);}
 .pm-group-name{font-size:15px;font-weight:700;color:var(--navy);letter-spacing:.01em;transition:color .12s;}
 .pm-group-count{font-size:10px;color:var(--text-muted);}
 .pm-group-cards{display:flex;flex-direction:column;gap:8px;padding-left:16px;overflow:hidden;}
-.pm-group:not(.open) .pm-group-cards{display:none;}
 
 /* ── Project card — softer ── */
 
@@ -200,7 +196,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v28</div>
+    <div class="auth-version" id="authVersionBadge">v30</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -219,7 +215,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v28</div>
+  <div class="proto-badge" id="versionBadge">v30</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -330,7 +326,7 @@ function buildProjectsList(items){
       };
       return{
         spItemId:item.id,id:item.id,
-        displayName:f.ClientName||f.ProjectName||item.id,
+        displayName:f.ProjectName||f.ClientName||f.Title||item.id,
         estimatedValue:f.EstimatedProjectValue||'',
         designer:resolveName(f.DesignerName||(gantt.designer&&window._tmById?window._tmById[gantt.designer]:'')||''),
         secondaryDesigner:resolveName(f.SecondaryDesigner||(gantt.secondaryDesigner&&window._tmById?window._tmById[gantt.secondaryDesigner]:'')||''),
@@ -414,7 +410,7 @@ function fmtDT(iso){
 }
 function projRevs(id){return reviews.filter(r=>(r.ProjectID||r.ProjectId)===id).sort((a,b)=>new Date(b.EntryDate||0)-new Date(a.EntryDate||0));}
 function cumDelta(id){return projRevs(id).reduce((s,r)=>s+(parseFloat(r.CostDelta)||0),0);}
-function latestEnd(proj){const r=projRevs(proj.id).find(r=>r.NewEndDate);return r?r.NewEndDate.slice(0,10):proj.endDate;}
+function latestEnd(proj){return proj.endDate;}
 function hasUnrev(id){return reviews.some(r=>r.ProjectId===id&&!r.Reviewed);}
 
 // ── Render — grouped by PM ─────────────────────────────────────────────────
@@ -424,7 +420,6 @@ function renderAll(){
   document.getElementById('projCount').textContent=projects.length+' active project'+(projects.length!==1?'s':'');
 
   const open=new Set([...area.querySelectorAll('.proj-card.open')].map(el=>el.dataset.pid));
-  const openGroups=new Set([...area.querySelectorAll('.pm-group.open')].map(el=>el.dataset.pmKey));
   area.innerHTML='';
 
   if(!projects.length){area.innerHTML='<div class="state-msg"><strong>No projects in construction</strong>CA-signed projects appear here.</div>';return;}
@@ -445,24 +440,14 @@ function renderAll(){
 
   // Determine which PM groups should be open:
   // current user's group always open; previously-open groups stay open; others collapsed
-  const currentUserFirstName=(currentUser||'').split(' ')[0].toLowerCase();
-
   keys.forEach(pm=>{
     const grpEl=document.createElement('div');
     grpEl.className='pm-group';
     grpEl.dataset.pmKey=pm;
 
-    // Auto-open if this is the current user's group, or was previously open
-    const pmFirstName=pm.split(' ')[0].toLowerCase();
-    const isCurrentUser=pm!=='Unassigned'&&currentUserFirstName&&pmFirstName===currentUserFirstName;
-    const wasOpen=openGroups.has(pm);
-    if(isCurrentUser||wasOpen) grpEl.classList.add('open');
-
-    // Group header — clickable to collapse/expand
     const ghdr=document.createElement('div');
     ghdr.className='pm-group-hdr';
-    ghdr.innerHTML=`<span class="pm-group-chev">▶</span><span class="pm-group-name">${pm}</span><span class="pm-group-count">${groups[pm].length} project${groups[pm].length!==1?'s':''}</span>`;
-    ghdr.addEventListener('click',()=>grpEl.classList.toggle('open'));
+    ghdr.innerHTML=`<span class="pm-group-name">${pm}</span><span class="pm-group-count">${groups[pm].length} project${groups[pm].length!==1?'s':''}</span>`;
     grpEl.appendChild(ghdr);
 
     const cards=document.createElement('div');
@@ -566,7 +551,7 @@ function buildCard(proj,container,startOpen){
     <div class="field-blk">
       <div class="field-lbl">End Date</div>
       <div class="field-val ${!end?'muted':''}">${fmtDate(end)}</div>
-      <div class="field-sub">${proj.endDate&&end!==proj.endDate?'Original: '+fmtDate(proj.endDate):'From Gantt'}</div>
+      <div class="field-sub">From Gantt</div>
     </div>`;
   flds.addEventListener('click',(e)=>{if(!adminModeOn&&!e.target.closest('.proj-edit-form')) showNudge(e);});
   body.appendChild(flds);
