@@ -200,7 +200,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v25</div>
+    <div class="auth-version" id="authVersionBadge">v26</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -219,7 +219,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v25</div>
+  <div class="proto-badge" id="versionBadge">v26</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -274,6 +274,7 @@ async function onAuthenticated(account){
   document.getElementById('connDot').style.background='#22c55e';
   document.getElementById('connLabel').textContent=currentUser;
   await loadAll();
+  _startRefresh();
 }
 
 // ── Graph ─────────────────────────────────────────────────────────────────
@@ -298,6 +299,48 @@ async function graphPost(url,body){
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────
+function buildProjectsList(items){
+  return items
+    .filter(item=>{
+      const f=item.fields||{};
+      const stage=(f.PipelineStage||'').toLowerCase().replace(/[-\s]/g,'');
+      if(!stage||stage==='archived'||stage==='archive'||stage==='cancelled'||stage==='cancel'||stage==='lost') return false;
+      let gantt={}; try{gantt=JSON.parse(f.GanttData||'{}');}catch(e){}
+      const ganttStatus=(gantt.status||'').toLowerCase();
+      if(ganttStatus==='archived'||ganttStatus==='archive'||ganttStatus==='cancelled'||ganttStatus==='cancel'||ganttStatus==='lost') return false;
+      const hasPM=!!(f.PMName||(gantt.productionPM&&window._tmById&&window._tmById[gantt.productionPM]));
+      return hasPM;
+    })
+    .map(item=>{
+      const f=item.fields||{};
+      let gantt={};try{gantt=JSON.parse(f.GanttData||'{}');}catch(e){}
+      const phases=(gantt.productionLane?.phases)||[];
+      const last=phases[phases.length-1];
+      let endDate=null;
+      if(last){
+        const wk=(last.startWeek||0)+(last.durWeeks||0);
+        const ms=EPOCH_MS+wk*7*24*3600*1000;
+        const d=new Date(ms);
+        endDate=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+      }
+      const resolveName=raw=>{
+        if(!raw) return '';
+        if(!raw.includes(' ')&&window._tmFirstToFull) return window._tmFirstToFull[raw.toLowerCase()]||raw;
+        return raw;
+      };
+      return{
+        spItemId:item.id,id:item.id,
+        displayName:f.ClientName||f.ProjectName||item.id,
+        estimatedValue:f.EstimatedProjectValue||'',
+        designer:resolveName(f.DesignerName||(gantt.designer&&window._tmById?window._tmById[gantt.designer]:'')||''),
+        secondaryDesigner:resolveName(f.SecondaryDesigner||(gantt.secondaryDesigner&&window._tmById?window._tmById[gantt.secondaryDesigner]:'')||''),
+        pm:resolveName(f.PMName||(gantt.productionPM&&window._tmById?window._tmById[gantt.productionPM]:'')||''),
+        lc1:f.LogisticsCoordinator1||'',lc2:f.LogisticsCoordinator2||'',
+        sales:f.SalesPerson||'',endDate,gantt,
+      };
+    });
+}
+
 async function loadAll(){
   try{
     const td=await graphGet(SP+'/CORE_TeamMembers/items?$expand=fields&$select=id,fields&$top=200');
@@ -327,55 +370,7 @@ async function loadAll(){
     });
 
     const pd=await graphGet(SP+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
-    projects=(pd.value||[])
-      .filter(item=>{
-        const f=item.fields||{};
-        const stage=(f.PipelineStage||'').toLowerCase().replace(/[-\s]/g,'');
-        if(!stage||stage==='archived'||stage==='archive'||stage==='cancelled'||stage==='cancel'||stage==='lost') return false;
-        // Also check GanttData status — archive/cancel/pause may not update PipelineStage in SP
-        let gantt={}; try{gantt=JSON.parse(f.GanttData||'{}');}catch(e){}
-        const ganttStatus=(gantt.status||'').toLowerCase();
-        if(ganttStatus==='archived'||ganttStatus==='archive'||ganttStatus==='cancelled'||ganttStatus==='cancel'||ganttStatus==='lost') return false;
-        // Must have a PM assigned (either SP column or GanttData)
-        const hasPM=!!(f.PMName||(gantt.productionPM&&window._tmById&&window._tmById[gantt.productionPM]));
-        return hasPM;
-      })
-      .map(item=>{
-        const f=item.fields||{};
-        let gantt={};try{gantt=JSON.parse(f.GanttData||'{}');}catch(e){}
-        const phases=(gantt.productionLane?.phases)||[];
-        const last=phases[phases.length-1];
-        let endDate=null;
-        if(last){
-          const wk=(last.startWeek||0)+(last.durWeeks||0);
-          const ms=EPOCH_MS+wk*7*24*3600*1000;
-          const d=new Date(ms);
-          endDate=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
-        }
-        return{
-          spItemId:item.id,id:item.id,
-          displayName:f.ClientName||f.ProjectName||item.id,
-          estimatedValue:f.EstimatedProjectValue||'',
-          designer:(()=>{
-            const raw=f.DesignerName||(gantt.designer&&window._tmById?window._tmById[gantt.designer]:'')||'';
-            if(raw&&!raw.includes(' ')&&window._tmFirstToFull){
-              return window._tmFirstToFull[raw.toLowerCase()]||raw;
-            }
-            return raw;
-          })(),
-          secondaryDesigner:f.SecondaryDesigner||(gantt.secondaryDesigner&&window._tmById?window._tmById[gantt.secondaryDesigner]:'')|| '',
-          pm:(()=>{
-            const raw=f.PMName||(gantt.productionPM&&window._tmById?window._tmById[gantt.productionPM]:'')||'';
-            // If stored as first name only, resolve to full name
-            if(raw&&!raw.includes(' ')&&window._tmFirstToFull){
-              return window._tmFirstToFull[raw.toLowerCase()]||raw;
-            }
-            return raw;
-          })(),
-          lc1:f.LogisticsCoordinator1||'',lc2:f.LogisticsCoordinator2||'',
-          sales:f.SalesPerson||'',endDate,gantt,
-        };
-      });
+    projects=buildProjectsList(pd.value||[]);
 
     try{ await loadReviews(); }
     catch(e){ console.warn('[loadReviews] non-fatal:',e.message); reviews=[]; }
@@ -696,16 +691,16 @@ async function submitChange(projId){
     if(delta){
       // Round to nearest dollar — cents are meaningless for construction budgets
       const newTotal=parseBudget(proj.estimatedValue)+cumDelta(proj.id)+delta;
-      await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId,{fields:{EstimatedProjectValue:'$'+newTotal.toLocaleString()}});
+      await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId+'/fields',{EstimatedProjectValue:'$'+newTotal.toLocaleString()});
       proj.estimatedValue='$'+newTotal.toLocaleString();
     }
-    if(newEnd&&newEnd!==proj.endDate){
+    if(newEnd&&newEnd!==currentEnd){
       const newEndMs=Date.UTC(...newEnd.split('-').map((v,i)=>i===1?+v-1:+v));
       const newEndWk=Math.round((newEndMs-EPOCH_MS)/(7*24*3600*1000));
       const gantt=JSON.parse(JSON.stringify(proj.gantt));
       const phases=gantt.productionLane?.phases||[];
       if(phases.length){const last=phases[phases.length-1];last.durWeeks=Math.max(1,newEndWk-(last.startWeek||0));}
-      await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId,{fields:{GanttData:JSON.stringify(gantt)}});
+      await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId+'/fields',{GanttData:JSON.stringify(gantt)});
       proj.gantt=gantt;proj.endDate=newEnd;
     }
     // Optimistically add entry locally so it appears immediately
@@ -836,6 +831,25 @@ async function confirmDeleteReview(revId, projId){
 }
 
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
+
+// Refresh project data periodically so pipeline changes appear without manual reload
+let _refreshTimer=null;
+function _startRefresh(){
+  _refreshTimer=setInterval(async()=>{
+    if(document.hidden||!accessToken) return;
+    try{
+      const pd=await graphGet(SP+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
+      // Rebuild projects array preserving existing reviews
+      const newProjects=buildProjectsList(pd.value||[]);
+      if(newProjects.length) projects=newProjects;
+      renderAll();
+    }catch(e){ console.warn('[refresh]',e); }
+  },90000);
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ clearInterval(_refreshTimer); }
+  else if(accessToken) _startRefresh();
+});
 
 initMsal();
 </script>
