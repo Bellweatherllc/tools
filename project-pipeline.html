@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v609</title>
+<title>BW Project Pipeline — v611</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2453,7 +2453,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v609</div>
+    <div class="auth-version" id="authVersionBadge">v611</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2472,7 +2472,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v609</div>
+  <div class="proto-badge" id="versionBadge">v611</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -6437,6 +6437,8 @@ function onUp(){
       const personField=DRAG.capacitySection==='design'?'designer':'productionPM';
       if(proj[personField]!==DRAG.targetPerson) _dragMoved=true; // person actually changed
       proj[personField]=DRAG.targetPerson; // null = unassign
+      // Write display name back to SP column so other tools see the assignment
+      _patchPersonNameToSP(proj, personField, DRAG.targetPerson);
       const fromIdx=PROJECTS.indexOf(proj); PROJECTS.splice(fromIdx,1);
       if(DRAG.targetPerson){
         if(DRAG.targetAfterProj){ const afterIdx=PROJECTS.findIndex(p=>p.id===DRAG.targetAfterProj); PROJECTS.splice(afterIdx+1,0,proj); }
@@ -6608,6 +6610,17 @@ function projectGanttPayload(proj){
   const {name,address,status,estimatedValue,clientName,projectName,...rest}=proj;
   return rest;
 }
+// Write person display name to SP column when a project is assigned/unassigned
+function _patchPersonNameToSP(proj, personField, personId) {
+  if (!proj._spItemId) return;
+  const spField = personField === 'designer' ? 'DesignerName' : 'PMName';
+  const person = personId ? personById(personId) : null;
+  const displayName = person ? person.label : '';
+  graphPatch(BWC_SITE + '/CORE_Projects/items/' + proj._spItemId, {
+    fields: { [spField]: displayName }
+  }).catch(e => console.warn('[pipeline] SP person name patch failed:', e));
+}
+
 function markDirty(proj){
   if(proj&&proj._spItemId) _dirtyProjects.add(proj._spItemId);
 }
@@ -7833,6 +7846,29 @@ function restoreSavedState(saved){
 // sections are rebuilt (rebuildSection already preserves scroll position).
 let _lastSyncTs=null;      // ISO timestamp set after each successful load/sync
 let _bgSyncTimer=null;
+let _pmReviews=[];         // Recent CORE_ProjectReviews entries for Weekly Review panel
+
+async function _fetchPMReviews(){
+  try{
+    const token=await getToken().catch(()=>null);
+    if(!token) return;
+    // Fetch entries from the last 14 days
+    const since=new Date(Date.now()-14*24*3600*1000).toISOString();
+    const url=BWC_SITE+`/CORE_ProjectReviews/items?$expand=fields&$select=id,fields&$top=200`;
+    const r=await fetch(url,{headers:{Authorization:'Bearer '+token,'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'}});
+    if(!r.ok) return;
+    const data=await r.json();
+    _pmReviews=(data.value||[])
+      .map(item=>({...item.fields,spItemId:item.id}))
+      .filter(f=>{
+        if(!f.EntryDate) return false;
+        return new Date(f.EntryDate)>=new Date(since);
+      })
+      .sort((a,b)=>new Date(b.EntryDate)-new Date(a.EntryDate));
+  }catch(e){
+    console.warn('[pmReviews] fetch failed:',e);
+  }
+}
 let _isBgSyncing=false;
 const BG_SYNC_MS=90_000;
 
@@ -7886,6 +7922,7 @@ async function _bgSync(){
       _showSyncInd(`${patchedCount} update${patchedCount>1?'s':''} from SharePoint`);
     }
     _lastSyncTs=new Date().toISOString();
+    _fetchPMReviews(); // refresh PM review entries alongside project sync
   }catch(e){
     console.warn('[bgSync] error:',e);
   }finally{
@@ -7958,6 +7995,7 @@ if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('pro
     patchSaveHooks();
     hideAuthOverlay();
     _lastSyncTs=new Date().toISOString(); // anchor for background sync
+    _fetchPMReviews(); // load PM review entries for Weekly Review panel
     _startBgSync();
     setSaveState('saved');
     console.log('[v391] SP load complete:',PROJECTS.length,'projects,',DESIGNERS.length,'designers,',PROD_PMS.length,'PMs');
@@ -9907,6 +9945,25 @@ function generateBriefHTML(){
     if(upCA.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">CA Signings</div><div class="brief-upcoming-rows">${upCA.map(milRow).join('')}</div></div>`;
     if(upConstr.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Construction Starts</div><div class="brief-upcoming-rows">${upConstr.map(({proj,cPh,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`Construction starts ${briefFmtDate(wkToDate(cPh.startWeek))} (${tl}).`); }).join('')}</div></div>`;
     if(upOther.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Other Milestones</div><div class="brief-upcoming-rows">${upOther.map(milRow).join('')}</div></div>`;
+    html+='</div>';
+  }
+
+  // ── Production Manager Changes ──
+  if(_pmReviews.length){
+    const fmtDelta=v=>{ const n=parseFloat(v)||0; if(!n) return ''; const abs=Math.abs(n); const fmt=abs>=1000000?'$'+(abs/1000000).toFixed(2).replace(/\.?0+$/,'')+'M':abs>=1000?'$'+Math.round(abs/1000)+'k':'$'+abs; return (n>0?'+':'-')+fmt; };
+    const fmtD=iso=>{ try{ const d=new Date(iso); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return iso||''; } };
+    html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Production Manager Changes</span><span class="brief-section-sub">Last 14 days</span></div>`;
+    _pmReviews.forEach(r=>{
+      const proj=PROJECTS.find(p=>(p._spItemId===r.ProjectId||p.clientName===r.ProjectName||p.id===r.ProjectId));
+      const projName=r.ProjectName||proj?.clientName||r.ProjectId||'Unknown Project';
+      const parts=[];
+      if(r.CostDelta){ const d=fmtDelta(r.CostDelta); if(d) parts.push('Value '+d); }
+      if(r.NewEndDate) parts.push('End date → '+fmtD(r.NewEndDate));
+      if(r.Notes) parts.push(r.Notes);
+      const body=parts.join(' · ')||'Note';
+      const who=r.ReviewerName?` — ${r.ReviewerName}, ${fmtD(r.EntryDate)}`:'';
+      html+=briefRow('l-note',projName,body+who);
+    });
     html+='</div>';
   }
 
