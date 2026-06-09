@@ -292,7 +292,7 @@ select.rubric-select.status-bad{color:var(--red);}
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
     <button class="btn-signin" id="btn-signin">Sign in with Microsoft</button>
     <div class="auth-error" id="auth-error"></div>
-    <div style="margin-top:20px;font-size:11px;color:var(--text-sec);opacity:.6;">v2.6</div>
+    <div style="margin-top:20px;font-size:11px;color:var(--text-sec);opacity:.6;">v2.8</div>
   </div>
 </div>
 
@@ -309,7 +309,7 @@ select.rubric-select.status-bad{color:var(--red);}
   <div id="topbar">
     <div class="tb-left">
       <span class="tb-tool">PIP Tracker</span>
-      <span class="tb-badge" id="tb-version">v2.6</span>
+      <span class="tb-badge" id="tb-version">v2.8</span>
     </div>
     <div class="tb-right">
       <span class="tb-role" id="tb-role"></span>
@@ -357,7 +357,7 @@ var CONFIG = {
   listWeekly:         'PIP_WeeklyEntries',
   listConfig:         'PIP_Config'
 };
-var REDIRECT_URI = 'https://bellweatherllc.github.io/tools/pip-tracker.html';
+var REDIRECT_URI = window.location.origin + window.location.pathname;
 var SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
 var MILESTONES = ['30day', '60day', '90day'];
 
@@ -400,8 +400,8 @@ async function getToken() {
     var r = await msalApp.acquireTokenSilent({ scopes: SCOPES, account: acc });
     return r.accessToken;
   } catch(e) {
-    await msalApp.acquireTokenRedirect({ scopes: SCOPES, account: acc });
-    throw new Error('Redirecting…');
+    var r2 = await msalApp.acquireTokenPopup({ scopes: SCOPES, account: acc });
+    return r2.accessToken;
   }
 }
 
@@ -1343,11 +1343,19 @@ async function onSignedIn() {
 }
 
 // ── AUTH HELPERS ──────────────────────────────────────────────────────────────
-function signIn() {
-  msalApp.loginRedirect({ scopes: SCOPES });
+async function signIn() {
+  var el = document.getElementById('auth-error');
+  el.style.display = 'none';
+  try {
+    await msalApp.loginPopup({ scopes: SCOPES });
+    await onSignedIn();
+  } catch(e) {
+    el.textContent = 'Sign-in failed: ' + (e.message || e);
+    el.style.display = 'block';
+  }
 }
 function signOut() {
-  msalApp.logoutRedirect({ account: getAccount() });
+  msalApp.logoutPopup({ account: getAccount() });
 }
 
 window.addEventListener('load', async function() {
@@ -1356,16 +1364,10 @@ window.addEventListener('load', async function() {
   document.getElementById('btn-signout-denied').addEventListener('click', signOut);
   try {
     await msalApp.initialize();
-    var redirectResult = await msalApp.handleRedirectPromise();
-    if (redirectResult) {
-      await onSignedIn();
-    } else if (getAccount()) {
-      await onSignedIn();
-    }
+    if (getAccount()) await onSignedIn();
   } catch(e) {
-    var el = document.getElementById('auth-error');
-    el.textContent = 'Init error: ' + (e.message || e);
-    el.style.display = 'block';
+    // silent — user can still sign in with button
+    console.error('MSAL init error:', e);
   }
 });
 </script>
