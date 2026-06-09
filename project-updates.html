@@ -143,8 +143,10 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
 .save-feedback{font-size:10px;color:var(--text-muted);}
 
 /* Readonly nudge */
-#readonlyNudge{position:fixed;bottom:18px;right:18px;background:var(--navy);color:rgba(255,255,255,.80);padding:8px 13px;border-radius:4px;font-size:11px;z-index:500;box-shadow:0 4px 14px rgba(0,0,0,.22);pointer-events:none;display:none;}
-#readonlyNudge.show{display:block;}
+#readonlyNudge{position:fixed;background:var(--navy);color:rgba(255,255,255,.88);padding:8px 13px 8px 11px;border-radius:4px;font-size:11px;z-index:500;box-shadow:0 4px 14px rgba(0,0,0,.25);pointer-events:none;display:none;white-space:nowrap;display:none;align-items:center;gap:7px;}
+#readonlyNudge.show{display:flex;}
+#readonlyNudge .nudge-arrow{font-size:14px;animation:nudgeBounce .6s ease-in-out infinite alternate;}
+@keyframes nudgeBounce{from{transform:translateY(0)}to{transform:translateY(-3px)}}
 
 /* Log */
 .proj-log{padding:10px 14px;}
@@ -161,6 +163,16 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
 .log-delta.down{color:#a30a0a;}
 .log-end{font-size:11px;color:var(--text-sec);}
 .log-note{font-size:11px;color:var(--text);font-style:italic;}
+.log-actions{display:flex;gap:8px;margin-top:4px;}
+.log-action-btn{background:none;border:none;font-size:10px;font-weight:600;color:var(--text-muted);cursor:pointer;padding:0;letter-spacing:.03em;text-decoration:underline;text-underline-offset:2px;}
+.log-action-btn:hover{color:var(--navy);}
+.log-action-btn.del:hover{color:#a30a0a;}
+.log-inline-edit{margin-top:6px;display:flex;flex-direction:column;gap:6px;}
+.log-inline-input{border:1px solid var(--border);border-radius:3px;padding:5px 8px;font-family:'TT Norms Pro',sans-serif;font-size:12px;width:100%;transition:border-color .12s;}
+.log-inline-input:focus{outline:none;border-color:var(--gold);}
+.log-inline-actions{display:flex;gap:8px;align-items:center;}
+.log-inline-save{font-family:'TT Norms Pro',sans-serif;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--navy);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;}
+.log-inline-cancel{font-size:11px;color:var(--text-muted);cursor:pointer;background:none;border:none;}
 
 /* Toast */
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:8px 16px;border-radius:4px;font-size:11px;z-index:9999;opacity:0;pointer-events:none;transition:opacity .22s;}
@@ -179,7 +191,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v5</div>
+    <div class="auth-version" id="authVersionBadge">v8</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -198,7 +210,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v5</div>
+  <div class="proto-badge" id="versionBadge">v8</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -217,7 +229,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
   </div>
 </div>
 
-<div id="readonlyNudge">Enable Admin Mode to make changes</div>
+<div id="readonlyNudge"><span class="nudge-arrow">↑</span>Enable Admin Mode to make changes</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -266,6 +278,10 @@ async function graphPatch(url,body){
   if(!r.ok) throw new Error('PATCH '+r.status+': '+(await r.text()).slice(0,100));
   return r.json();
 }
+async function graphDelete(url){
+  const r=await fetch(url,{method:'DELETE',headers:{Authorization:'Bearer '+accessToken}});
+  if(!r.ok&&r.status!==204) throw new Error('DELETE '+r.status);
+}
 async function graphPost(url,body){
   const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok) throw new Error('POST '+r.status+': '+(await r.text()).slice(0,100));
@@ -276,13 +292,23 @@ async function graphPost(url,body){
 async function loadAll(){
   try{
     const td=await graphGet(SP+'/CORE_TeamMembers/items?$expand=fields&$select=id,fields&$top=200');
-    const me=(td.value||[]).find(m=>{
+    const teamMembers=td.value||[];
+    const me=teamMembers.find(m=>{
       const n=(m.fields.EmployeeName||m.fields.Title||'').toLowerCase();
       const u=currentUser.toLowerCase();
       return u.includes(n.split(' ')[0])||n.includes(u.split(' ')[0]);
     });
     isAdmin=!!(me&&(me.fields.ProjectUpdatesRole||'').trim());
     if(isAdmin) document.getElementById('adminControl').style.display='flex';
+    // Build id→name map for resolving GanttData person IDs
+    window._tmById={};
+    teamMembers.forEach(m=>{
+      const f=m.fields||{};
+      const name=f.EmployeeName||f.Title||'';
+      if(f.id) window._tmById[f.id]=name;
+      // Also index by the SP item id
+      window._tmById[m.id]=name;
+    });
 
     const pd=await graphGet(SP+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
     projects=(pd.value||[])
@@ -303,8 +329,10 @@ async function loadAll(){
           spItemId:item.id,id:item.id,
           displayName:f.ClientName||f.ProjectName||item.id,
           estimatedValue:f.EstimatedProjectValue||'',
-          designer:f.DesignerName||'',secondaryDesigner:f.SecondaryDesigner||'',
-          pm:f.PMName||'',lc1:f.LogisticsCoordinator1||'',lc2:f.LogisticsCoordinator2||'',
+          designer:f.DesignerName||(gantt.designer&&window._tmById?window._tmById[gantt.designer]:'')|| '',
+          secondaryDesigner:f.SecondaryDesigner||(gantt.secondaryDesigner&&window._tmById?window._tmById[gantt.secondaryDesigner]:'')|| '',
+          pm:f.PMName||(gantt.productionPM&&window._tmById?window._tmById[gantt.productionPM]:'')|| '',
+          lc1:f.LogisticsCoordinator1||'',lc2:f.LogisticsCoordinator2||'',
           sales:f.SalesPerson||'',endDate,gantt,
         };
       });
@@ -488,7 +516,7 @@ function buildCard(proj,container,startOpen){
       <div class="field-val ${!end?'muted':''}">${fmtDate(end)}</div>
       <div class="field-sub">${proj.endDate&&end!==proj.endDate?'Original: '+fmtDate(proj.endDate):'From Gantt'}</div>
     </div>`;
-  flds.addEventListener('click',()=>{if(!adminModeOn) showNudge();});
+  flds.addEventListener('click',(e)=>{if(!adminModeOn) showNudge(e);});
   body.appendChild(flds);
 
   // Edit form
@@ -530,8 +558,12 @@ function buildCard(proj,container,startOpen){
       if(dv) content+=`<div class="log-delta ${dv>0?'up':'down'}">${dv>0?'+':''}${fmtCurrency(Math.abs(dv))} ${dv>0?'increase':'decrease'}</div>`;
       if(r.NewEndDate) content+=`<div class="log-end">End date → ${fmtDate(r.NewEndDate.slice(0,10))}</div>`;
       if(r.Notes) content+=`<div class="log-note">${r.Notes}</div>`;
-      const entry=document.createElement('div');entry.className='log-entry';
-      entry.innerHTML=`<div class="log-meta"><div class="log-who">${r.ReviewerName||'—'}</div><div class="log-when">${fmtDT(r.EntryDate)}</div></div><div class="log-body">${content||'<span style="color:var(--text-muted);font-size:10px">Note only</span>'}</div>`;
+      const entry=document.createElement('div');entry.className='log-entry';entry.dataset.revId=r.spItemId||'';
+      const isPending=(r.spItemId||'').startsWith('pending-');
+      const actionsHtml=adminModeOn&&!isPending
+        ?`<div class="log-actions"><button class="log-action-btn" onclick="editReview('${r.spItemId}','${projId}')">Edit</button><button class="log-action-btn del" onclick="deleteReview('${r.spItemId}','${projId}')">Delete</button></div>`
+        :'';
+      entry.innerHTML=`<div class="log-meta"><div class="log-who">${r.ReviewerName||'—'}</div><div class="log-when">${fmtDT(r.EntryDate)}</div></div><div class="log-body">${content||'<span style="color:var(--text-muted);font-size:10px">Note only</span>'}${actionsHtml}</div>`;
       log.appendChild(entry);
     });
   }
@@ -547,9 +579,20 @@ function toggleAdminMode(){
   document.getElementById('adminBanner').classList.toggle('visible',adminModeOn);
   document.querySelectorAll('.proj-edit-form').forEach(f=>f.classList.toggle('visible',adminModeOn));
 }
-function showNudge(){
+function showNudge(e){
   const n=document.getElementById('readonlyNudge');
-  n.classList.add('show');setTimeout(()=>n.classList.remove('show'),2200);
+  if(e){
+    // Position near cursor, nudged up so it doesn't obscure the click point
+    const x=e.clientX,y=e.clientY;
+    // Keep within viewport
+    const W=window.innerWidth;
+    const nW=220; // approx width
+    n.style.left=Math.min(x+12,W-nW-8)+'px';
+    n.style.top=(y-44)+'px';
+  }
+  n.classList.add('show');
+  clearTimeout(n._hideTimer);
+  n._hideTimer=setTimeout(()=>n.classList.remove('show'),2400);
 }
 
 // ── Submit ────────────────────────────────────────────────────────────────
@@ -584,13 +627,79 @@ async function submitChange(projId){
       await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId,{fields:{GanttData:JSON.stringify(gantt)}});
       proj.gantt=gantt;proj.endDate=newEnd;
     }
-    await loadReviews();
+    // Optimistically add entry locally so it appears immediately
+    reviews.unshift({
+      spItemId:'pending-'+Date.now(),
+      ProjectID:projId,ProjectName:proj.displayName,ReviewerName:currentUser,
+      EntryDate:new Date().toISOString(),CostDelta:delta||null,NewEndDate:newEnd||null,
+      Notes:note||null,EntryType:type,Reviewed:false,
+    });
     dEl.value='';nEl.value='';if(fb)fb.textContent='Saved.';if(btn)btn.disabled=false;
     const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
     renderAll();
     if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
     showToast('Change saved.');
+    // Background refresh to replace optimistic entry with real SP item
+    loadReviews().then(()=>{ renderAll(); if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');} });
   }catch(e){console.error('[submit]',e);if(fb)fb.textContent='Error: '+e.message;if(btn)btn.disabled=false;}
+}
+
+function editReview(revId, projId){
+  const entry=document.querySelector(`.log-entry[data-rev-id="${revId}"]`);
+  if(!entry) return;
+  const r=reviews.find(rv=>rv.spItemId===revId);
+  if(!r) return;
+  // Replace log-body content with inline edit form
+  const body=entry.querySelector('.log-body');
+  const origContent=body.innerHTML;
+  body.innerHTML=`
+    <div class="log-inline-edit">
+      <input class="log-inline-input" type="text" id="edit-note-${revId}" value="${(r.Notes||'').replace(/"/g,'&quot;')}" placeholder="Note…">
+      <div class="log-inline-actions">
+        <button class="log-inline-save" onclick="saveEditReview('${revId}','${projId}')">Save</button>
+        <button class="log-inline-cancel" onclick="cancelEditReview('${revId}','${projId}')">Cancel</button>
+        <span id="edit-fb-${revId}" style="font-size:10px;color:var(--text-muted)"></span>
+      </div>
+    </div>`;
+}
+
+function cancelEditReview(revId, projId){
+  const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
+  renderAll();
+  if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
+}
+
+async function saveEditReview(revId, projId){
+  const noteEl=document.getElementById('edit-note-'+revId);
+  const fb=document.getElementById('edit-fb-'+revId);
+  const note=(noteEl?.value||'').trim();
+  if(fb) fb.textContent='Saving…';
+  try{
+    await graphPatch(SP+'/CORE_ProjectReviews/items/'+revId,{fields:{Notes:note||null}});
+    // Update local cache
+    const r=reviews.find(rv=>rv.spItemId===revId);
+    if(r) r.Notes=note||null;
+    const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
+    renderAll();
+    if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
+    showToast('Note updated.');
+  }catch(e){
+    if(fb) fb.textContent='Error: '+e.message;
+  }
+}
+
+async function deleteReview(revId, projId){
+  if(!confirm('Delete this entry? This cannot be undone.')) return;
+  try{
+    await graphDelete(SP+'/CORE_ProjectReviews/items/'+revId);
+    reviews=reviews.filter(r=>r.spItemId!==revId);
+    const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
+    renderAll();
+    if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
+    showToast('Entry deleted.');
+  }catch(e){
+    alert('Delete failed: '+e.message);
+  }
 }
 
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
