@@ -129,7 +129,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v23</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v24</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -146,11 +146,15 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
       <div>
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v23</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v24</span></h1>
         <div class="main-view-sel" style="margin-top:10px;margin-bottom:0">
           <button class="mvt active" data-view="design">DESIGN</button>
-          <button class="mvt" data-view="development">DEVELOPMENT</button>
           <button class="mvt" data-view="production">PRODUCTION</button>
+        </div>
+        <div class="sub-nav" id="design-sub-nav">
+          <button class="svt active" data-view="5234">Designers</button>
+          <button class="svt" data-view="5236A">Development</button>
+          <button class="svt" data-view="both">Design + Development</button>
         </div>
         <div class="sub-nav" id="production-sub-nav" style="display:none">
           <button class="svt active" data-pview="pm">Project Managers</button>
@@ -873,9 +877,7 @@ function onHoverCalendar(ev,job,ccs,xSc,M,maxSpan,svgId) {
 function renderAll() {
   renderFiles();
   if (S.mainView==='design') {
-    S.chartView='5234'; renderStream();
-  } else if (S.mainView==='development') {
-    S.chartView='5236A'; renderStream();
+    renderStream(); // S.chartView set by design sub-nav: '5234'|'5236A'|'both'
   } else {
     const ccs=S.productionView==='both'?['5239','5238']:S.productionView==='lc'?['5239']:['5238'];
     renderCalendar(ccs);
@@ -891,8 +893,7 @@ function renderAll() {
 }
 function updateHdrSub() {
   const subs={
-    design:'5234 Sales & Design — Phase-normalized · Projects ≥ 20 hrs',
-    development:'5236A Project Development — Phase-normalized · Projects ≥ 20 hrs',
+    design:'5234 · 5236A — Phase-normalized · Phase positions set per project',
     production:'5239 LC · 5238 PM — Calendar-aligned · Week 0 = first entry'
   };
   const el=document.getElementById('hdr-sub');
@@ -1438,8 +1439,7 @@ function populateProjNav(currentJob, currentCC) {
   const sel = document.getElementById('proj-nav');
   sel.innerHTML = '';
   let ccList;
-  if (S.mainView==='design') ccList=['5234'];
-  else if (S.mainView==='development') ccList=['5236A'];
+  if (S.mainView==='design') { if(S.chartView==='5236A')ccList=['5236A']; else if(S.chartView==='both')ccList=['5234','5236A']; else ccList=['5234']; }
   else if (S.productionView==='lc') ccList=['5239'];
   else if (S.productionView==='both') ccList=['5239','5238'];
   else ccList=['5238'];
@@ -1453,7 +1453,7 @@ function populateProjNav(currentJob, currentCC) {
     [...allJobs].sort().forEach(job=>{
       const opt=document.createElement('option');
       opt.value=job+'|||'+cc;
-      const isDesignerView=S.mainView==='design'||S.mainView==='development';
+      const isDesignerView=S.mainView==='design';
       const hasPhase=isDesignerView&&S.phasesSetByUser.has(job)&&S.phases[job]&&Object.keys(S.phases[job]).length>0;
       const isGen=cc==='5239'?S.generalJobsLC.has(job):cc==='5238'?S.generalJobsPM.has(job):false;
       opt.textContent=(hasPhase?'● ':'')+job+(isGen?' [G]':'');
@@ -1545,14 +1545,24 @@ function wireEvents() {
       // Close detail if it belongs to a different section
       if (S.selJob) {
         const role=CC_ROLE[S.selJob.costCode]; // 'designer'|'lc'|'pm'
-        const isDesignerView=S.mainView==='design'||S.mainView==='development';
+        const isDesignerView=S.mainView==='design';
         const ok=(isDesignerView&&role==='designer')||(S.mainView==='production'&&(role==='lc'||role==='pm'));
         if (!ok) closeDetail();
       }
-      document.getElementById('designer-section').style.display=(S.mainView==='design'||S.mainView==='development')?'':'none';
+      document.getElementById('designer-section').style.display=S.mainView==='design'?'':'none';
       document.getElementById('calendar-section').style.display=S.mainView==='production'?'':'none';
+      document.getElementById('design-sub-nav').style.display=S.mainView==='design'?'':'none';
       document.getElementById('production-sub-nav').style.display=S.mainView==='production'?'':'none';
       updateHdrSub();
+      renderAll();
+    });
+  });
+  // Design sub-nav
+  document.querySelectorAll('#design-sub-nav .svt').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('#design-sub-nav .svt').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      S.chartView=btn.dataset.view;
       renderAll();
     });
   });
@@ -1656,7 +1666,7 @@ function wireEvents() {
     inp.click();
   });
   window.addEventListener('resize',()=>{
-    if(S.mainView==='design'||S.mainView==='development'){renderStream();}
+    if(S.mainView==='design'){renderStream();}
     else if(S.mainView==='production'){const ccs=S.productionView==='both'?['5239','5238']:S.productionView==='lc'?['5239']:['5238'];renderCalendar(ccs);}
     if(S.selJob)renderDetail(S.selJob.job,S.selJob.costCode);
   });
