@@ -191,7 +191,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v8</div>
+    <div class="auth-version" id="authVersionBadge">v9</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -210,7 +210,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v8</div>
+  <div class="proto-badge" id="versionBadge">v9</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -577,7 +577,10 @@ function toggleAdminMode(){
   adminModeOn=document.getElementById('adminCheckbox').checked;
   document.body.classList.toggle('admin-mode',adminModeOn);
   document.getElementById('adminBanner').classList.toggle('visible',adminModeOn);
-  document.querySelectorAll('.proj-edit-form').forEach(f=>f.classList.toggle('visible',adminModeOn));
+  // Re-render so edit/delete buttons appear/disappear on log entries
+  const open=new Set([...document.querySelectorAll('.proj-card.open')].map(el=>el.dataset.pid));
+  renderAll();
+  open.forEach(pid=>{const c=document.querySelector('.proj-card[data-pid="'+pid+'"]');if(c)c.classList.add('open');});
 }
 function showNudge(e){
   const n=document.getElementById('readonlyNudge');
@@ -598,11 +601,15 @@ function showNudge(e){
 // ── Submit ────────────────────────────────────────────────────────────────
 async function submitChange(projId){
   const proj=projects.find(p=>p.id===projId);if(!proj) return;
-  const dEl=document.getElementById('delta_'+projId),eEl=document.getElementById('end_'+projId),nEl=document.getElementById('note_'+projId);
+  // Capture all values and refs BEFORE any async work — DOM may be rebuilt mid-flight
+  const dEl=document.getElementById('delta_'+projId);
+  const eEl=document.getElementById('end_'+projId);
+  const nEl=document.getElementById('note_'+projId);
   const fb=document.getElementById('fb_'+projId);
   const formEl=document.getElementById('form_'+projId);
   const btn=formEl?formEl.querySelector('.save-btn'):null;
-  const delta=parseFloat(dEl.value)||0,newEnd=eEl.value||'',note=nEl.value.trim();
+  if(!dEl||!nEl){console.warn('[submit] form elements missing for',projId);return;}
+  const delta=parseFloat(dEl.value)||0,newEnd=(eEl?eEl.value:'')||'',note=nEl.value.trim();
   if(!delta&&!newEnd&&!note){if(fb)fb.textContent='Enter a change, date, or note.';return;}
   if(btn) btn.disabled=true;
   if(fb) fb.textContent='Saving…';
@@ -634,7 +641,10 @@ async function submitChange(projId){
       EntryDate:new Date().toISOString(),CostDelta:delta||null,NewEndDate:newEnd||null,
       Notes:note||null,EntryType:type,Reviewed:false,
     });
-    dEl.value='';nEl.value='';if(fb)fb.textContent='Saved.';if(btn)btn.disabled=false;
+    // Clear inputs BEFORE renderAll destroys them
+    if(document.getElementById('delta_'+projId)) document.getElementById('delta_'+projId).value='';
+    if(document.getElementById('note_'+projId)) document.getElementById('note_'+projId).value='';
+    if(btn&&btn.isConnected) btn.disabled=false;
     const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
     renderAll();
     if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
