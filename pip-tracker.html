@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIP Tracker — Hayley Wynne</title>
+<script src="https://alcdn.msauth.net/browser/2.39.0/js/msal-browser.min.js"></script>
+<style>
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_DemiBold.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --navy:#1f2e3e;--cotton:#f5f3ee;--border:#e4dac4;--surface:#fff;
+  --text:#1f2e3e;--text-sec:#7a7a7a;
+  --green:#2a6e44;--green-bg:#eaf4ef;--green-tint:#f0f7f3;
+  --amber:#9a6010;--amber-bg:#fef6e4;
+  --red:#8c2020;--red-bg:#fbeaea;
+  --navy-tint:#f0f3f7;
+  --issue-border:#d4a878;--issue-bg:#fdf6ee;
+}
+body{font-family:'TT Norms Pro',system-ui,sans-serif;font-size:14px;line-height:1.5;background:var(--cotton);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;}
+
+/* ── Auth ──────────────────────────────────────────────────────────── */
+#auth-overlay,#access-denied{position:fixed;inset:0;background:var(--cotton);display:flex;align-items:center;justify-content:center;z-index:9999;}
+#access-denied{display:none;}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:40px 48px;text-align:center;max-width:380px;width:100%;}
+.auth-org{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--text-sec);margin-bottom:10px;}
+.auth-title{font-size:20px;font-weight:700;color:var(--navy);margin-bottom:6px;}
+.auth-sub{font-size:13px;color:var(--text-sec);margin-bottom:28px;line-height:1.6;}
+.auth-error{font-size:12px;color:var(--red);margin-top:10px;display:none;}
+.btn-signin{background:var(--navy);color:#fff;border:none;border-radius:5px;padding:11px 28px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;width:100%;}
+.btn-signin:hover{background:#2a3d52;}
+
+/* ── App chrome ────────────────────────────────────────────────────── */
+#app{display:none;}
+#topbar{background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:46px;position:sticky;top:0;z-index:100;}
+.tb-left{display:flex;align-items:center;gap:12px;}
+.tb-tool{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:.9;}
+.tb-badge{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid rgba(255,255,255,.25);border-radius:3px;padding:1px 6px;opacity:.7;}
+.tb-right{display:flex;align-items:center;gap:14px;font-size:12px;}
+.tb-user{opacity:.55;}
+.tb-role{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:1px solid rgba(255,255,255,.3);border-radius:3px;padding:1px 7px;opacity:.8;}
+.btn-signout{background:none;border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:3px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;}
+
+/* ── Period bar ────────────────────────────────────────────────────── */
+#period-bar{background:var(--navy-tint);border-bottom:1px solid var(--border);padding:8px 20px;font-size:12px;color:var(--text-sec);display:flex;align-items:center;gap:16px;}
+.period-stat{font-weight:600;color:var(--navy);}
+.period-pipe{opacity:.3;}
+.period-milestone{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;border:1px solid transparent;}
+.period-milestone.done{background:var(--green-bg);color:var(--green);border-color:#a8d4b8;}
+.period-milestone.active{background:var(--amber-bg);color:var(--amber);border-color:#e4c070;}
+.period-milestone.upcoming{background:var(--cotton);color:var(--text-sec);border-color:var(--border);}
+
+/* ── Nav tabs ──────────────────────────────────────────────────────── */
+#nav-tabs{background:var(--surface);border-bottom:1px solid var(--border);display:flex;padding:0 20px;gap:2px;}
+.nav-tab{padding:11px 16px 10px;font-size:13px;font-weight:500;color:var(--text-sec);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit;}
+.nav-tab.active{color:var(--navy);border-bottom-color:var(--navy);}
+.nav-tab:hover:not(.active){color:var(--text);}
+.nav-tab .tab-badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:1px 5px;border-radius:2px;margin-left:5px;vertical-align:middle;}
+.tab-badge.done{background:var(--green-bg);color:var(--green);}
+.tab-badge.saved{background:var(--navy-tint);color:var(--navy);}
+
+/* ── Week nav ──────────────────────────────────────────────────────── */
+#week-nav{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:14px;padding:9px 20px;}
+.week-btn{background:none;border:1px solid var(--border);border-radius:4px;padding:4px 12px;cursor:pointer;color:var(--text);font-size:13px;font-family:inherit;}
+.week-btn:hover:not(:disabled){background:var(--cotton);}
+.week-btn:disabled{opacity:.35;cursor:default;}
+#week-label{font-size:13px;font-weight:500;min-width:260px;text-align:center;}
+
+/* ── Main content ──────────────────────────────────────────────────── */
+#main-content{max-width:740px;margin:0 auto;padding:20px 20px 80px;}
+
+/* ── Section cards ─────────────────────────────────────────────────── */
+.section-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:14px;overflow:hidden;}
+.section-header{padding:12px 20px 11px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.section-value{font-family:'Swear Text',serif;font-size:13px;font-weight:500;color:var(--text-sec);letter-spacing:.01em;}
+.section-body{padding:16px 20px;display:flex;flex-direction:column;gap:18px;}
+
+/* ── Rubric items ──────────────────────────────────────────────────── */
+.rubric-q{font-size:13px;color:var(--text);line-height:1.45;margin-bottom:8px;}
+.rubric-q strong{display:block;font-weight:600;margin-bottom:1px;}
+.divider{height:1px;background:var(--border);}
+
+/* ── Radio pills ───────────────────────────────────────────────────── */
+.radio-group{display:flex;flex-wrap:wrap;gap:6px;}
+.radio-opt{padding:5px 12px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-weight:500;cursor:pointer;background:var(--cotton);user-select:none;transition:all .1s;color:var(--text-sec);}
+.radio-opt:hover{border-color:#b0a898;color:var(--text);}
+.radio-opt.sel-ok{background:var(--navy);color:#fff;border-color:var(--navy);}
+.radio-opt.sel-warn{background:var(--amber-bg);color:var(--amber);border-color:#c9960a;}
+.radio-opt.sel-bad{background:var(--red-bg);color:var(--red);border-color:#c04040;}
+.radio-opt.locked{cursor:default;opacity:.6;}
+.radio-opt.locked:hover{border-color:var(--border);color:var(--text-sec);}
+
+/* ── Issue note ────────────────────────────────────────────────────── */
+.issue-note{margin-top:8px;width:100%;border:1px solid var(--issue-border);border-radius:4px;padding:8px 10px;font-family:inherit;font-size:13px;background:var(--issue-bg);resize:vertical;min-height:60px;display:none;}
+.issue-note:focus{outline:none;border-color:#a0784a;}
+
+/* ── Dual-party notes ──────────────────────────────────────────────── */
+.notes-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;}
+.note-block{border:1px solid var(--border);border-radius:5px;overflow:hidden;}
+.note-block.manager-note{border-color:#b8c8d8;background:var(--navy-tint);}
+.note-block.employee-note{border-color:#a8d4b8;background:var(--green-tint);}
+.note-role{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:5px 10px;border-bottom:1px solid var(--border);}
+.manager-note .note-role{color:var(--navy);border-color:#b8c8d8;background:rgba(31,46,62,.06);}
+.employee-note .note-role{color:var(--green);border-color:#a8d4b8;background:rgba(42,110,68,.06);}
+.note-block textarea{width:100%;border:none;background:transparent;padding:8px 10px;font-family:inherit;font-size:13px;resize:vertical;min-height:70px;display:block;}
+.note-block textarea:focus{outline:none;}
+.note-block textarea:disabled,.note-block textarea[readonly]{opacity:.65;cursor:default;}
+
+/* ── Inputs ────────────────────────────────────────────────────────── */
+textarea.rubric-text{width:100%;border:1px solid var(--border);border-radius:4px;padding:8px 10px;font-family:inherit;font-size:13px;background:var(--surface);resize:vertical;min-height:60px;}
+textarea.rubric-text:focus{outline:none;border-color:#a0a0a0;}
+input.rubric-input{width:100%;border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-family:inherit;font-size:13px;background:var(--surface);}
+input.rubric-input:focus{outline:none;border-color:#a0a0a0;}
+select.rubric-select{width:100%;border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-family:inherit;font-size:13px;background:var(--surface);appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237a7a7a' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:24px;}
+select.rubric-select:focus{outline:none;border-color:#a0a0a0;}
+select.rubric-select.status-ok{color:var(--green);}
+select.rubric-select.status-warn{color:var(--amber);}
+select.rubric-select.status-bad{color:var(--red);}
+.field-label{display:block;font-size:12px;color:var(--text-sec);margin-bottom:4px;}
+
+/* ── Goal blocks ───────────────────────────────────────────────────── */
+.goal-block{border:1px solid var(--border);border-radius:5px;padding:12px 14px;background:var(--cotton);margin-bottom:8px;}
+.goal-lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-sec);margin-bottom:3px;}
+.goal-text{font-size:13px;color:var(--text);margin-bottom:10px;font-style:italic;}
+.goals-unset{font-size:13px;color:var(--text-sec);padding:4px 0;font-style:italic;}
+.goals-unset a{color:var(--navy);cursor:pointer;}
+
+/* ── Project rows ──────────────────────────────────────────────────── */
+.proj-row{border:1px solid var(--border);border-radius:5px;overflow:hidden;margin-bottom:8px;}
+.proj-row-header{background:var(--cotton);padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--navy);}
+.proj-row-body{padding:10px 14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.proj-field label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-sec);margin-bottom:3px;}
+.proj-field.full{grid-column:1/-1;}
+
+/* ── Milestone views ───────────────────────────────────────────────── */
+.milestone-intro{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px 20px;margin-bottom:16px;}
+.milestone-intro-title{font-family:'Swear Text',serif;font-size:18px;font-weight:500;color:var(--navy);margin-bottom:4px;}
+.milestone-intro-meta{font-size:12px;color:var(--text-sec);}
+.milestone-intro-meta strong{color:var(--text);}
+.cv-trend-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.cv-trend-label{font-size:12px;font-weight:600;color:var(--text-sec);min-width:140px;}
+.outcome-block{background:var(--cotton);border:1px solid var(--border);border-radius:5px;padding:14px 16px;margin-top:4px;}
+.outcome-block .outcome-lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-sec);margin-bottom:8px;}
+
+/* ── Save bar ──────────────────────────────────────────────────────── */
+#save-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:10px 20px;display:none;align-items:center;justify-content:space-between;z-index:50;}
+.save-status{font-size:12px;color:var(--text-sec);}
+.btn-primary{background:var(--navy);color:#fff;border:none;border-radius:5px;padding:9px 22px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
+.btn-primary:hover{background:#2a3d52;}
+.btn-primary:disabled{opacity:.45;cursor:default;}
+.btn-secondary{background:none;border:1px solid var(--border);border-radius:5px;padding:7px 16px;font-family:inherit;font-size:13px;color:var(--text);cursor:pointer;}
+.btn-secondary:hover{background:var(--cotton);}
+.btn-danger{background:none;border:1px solid #d4a0a0;border-radius:4px;padding:3px 10px;font-size:11px;color:var(--red);cursor:pointer;font-family:inherit;}
+.btn-danger:hover{background:var(--red-bg);}
+
+/* ── History ───────────────────────────────────────────────────────── */
+.hist-week{background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;}
+.hist-week-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 20px;cursor:pointer;user-select:none;}
+.hist-week-hdr:hover{background:var(--cotton);}
+.hist-week-lbl{font-size:14px;font-weight:600;color:var(--navy);}
+.hist-week-meta{font-size:12px;color:var(--text-sec);}
+.hist-body{padding:16px 20px;border-top:1px solid var(--border);display:none;}
+.hist-body.open{display:block;}
+.hist-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--border);}
+.hist-row:last-child{border-bottom:none;}
+.hist-row-label{font-size:12px;color:var(--text-sec);flex:1;}
+.hist-note{font-size:11px;color:var(--text);margin-top:3px;font-style:italic;background:var(--cotton);border-radius:3px;padding:2px 6px;}
+.hist-notes-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+.hist-note-block{border:1px solid var(--border);border-radius:4px;padding:8px 10px;}
+.hist-note-block.manager-note{background:var(--navy-tint);border-color:#b8c8d8;}
+.hist-note-block.employee-note{background:var(--green-tint);border-color:#a8d4b8;}
+.hist-note-role{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
+.manager-note .hist-note-role{color:var(--navy);}
+.employee-note .hist-note-role{color:var(--green);}
+.hist-note-text{font-size:12px;color:var(--text);white-space:pre-wrap;line-height:1.5;}
+.hist-section-lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-sec);margin:14px 0 8px;}
+.hist-proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;}
+.hist-proj{background:var(--cotton);border:1px solid var(--border);border-radius:4px;padding:8px 10px;}
+.hist-proj-name{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--navy);margin-bottom:4px;}
+.hist-refl{font-size:12px;line-height:1.45;margin-bottom:6px;}
+.hist-refl-lbl{font-weight:600;color:var(--text-sec);}
+.hist-milestone{background:var(--surface);border:2px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;}
+.hist-milestone-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 20px;cursor:pointer;user-select:none;background:var(--navy-tint);}
+.hist-milestone-hdr:hover{filter:brightness(.97);}
+.hist-milestone-lbl{font-size:14px;font-weight:700;color:var(--navy);}
+.chip{display:inline-block;font-size:11px;font-weight:600;border-radius:3px;padding:1px 7px;}
+.chip-ok{background:var(--green-bg);color:var(--green);}
+.chip-warn{background:var(--amber-bg);color:var(--amber);}
+.chip-bad{background:var(--red-bg);color:var(--red);}
+.chip-na{background:var(--cotton);color:var(--text-sec);}
+
+/* ── Settings ──────────────────────────────────────────────────────── */
+.settings-section{background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:14px;overflow:hidden;}
+.settings-hdr{padding:13px 20px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;color:var(--navy);}
+.settings-body{padding:16px 20px;}
+.pmrow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);}
+.pmrow:last-child{border-bottom:none;}
+.pmrow-name{font-size:13px;font-weight:500;}
+.pmrow-retired-note{font-size:11px;color:var(--text-sec);margin-left:8px;}
+.provision-note{font-size:12px;color:var(--text-sec);line-height:1.5;margin-bottom:12px;}
+#provision-status{font-size:12px;color:var(--text-sec);margin-top:8px;}
+
+/* ── Misc ──────────────────────────────────────────────────────────── */
+.loading-msg{text-align:center;padding:48px 20px;color:var(--text-sec);font-size:14px;}
+#toast{position:fixed;bottom:68px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:9px 20px;border-radius:5px;font-size:13px;z-index:1000;pointer-events:none;opacity:0;transition:opacity .25s;}
+#toast.show{opacity:1;}
+@media(max-width:580px){.proj-row-body,.notes-pair,.hist-notes-pair{grid-template-columns:1fr;}#main-content{padding:16px 12px 80px;}}
+</style>
+</head>
+<body>
+
+<div id="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-org">Bellweather Design-Build</div>
+    <div class="auth-title">PIP Tracker</div>
+    <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
+    <button class="btn-signin" id="btn-signin">Sign in with Microsoft</button>
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<div id="access-denied">
+  <div class="auth-card">
+    <div class="auth-org">Bellweather Design-Build</div>
+    <div class="auth-title">Access Restricted</div>
+    <p class="auth-sub">This tool is only accessible to authorized team members. Contact the design manager if you believe you should have access.</p>
+    <button class="btn-signin" id="btn-signout-denied">Sign out</button>
+  </div>
+</div>
+
+<div id="app">
+  <div id="topbar">
+    <div class="tb-left">
+      <span class="tb-tool">PIP Tracker</span>
+      <span class="tb-badge" id="tb-version">v2</span>
+    </div>
+    <div class="tb-right">
+      <span class="tb-role" id="tb-role"></span>
+      <span class="tb-user" id="tb-user"></span>
+      <button class="btn-signout" id="btn-signout">Sign out</button>
+    </div>
+  </div>
+
+  <div id="period-bar" style="display:none;"></div>
+
+  <div id="nav-tabs">
+    <button class="nav-tab active" data-view="form">Weekly</button>
+    <button class="nav-tab" data-view="m30">30-Day <span class="tab-badge" id="badge-m30"></span></button>
+    <button class="nav-tab" data-view="m60">60-Day <span class="tab-badge" id="badge-m60"></span></button>
+    <button class="nav-tab" data-view="m90">90-Day <span class="tab-badge" id="badge-m90"></span></button>
+    <button class="nav-tab" data-view="history">History</button>
+    <button class="nav-tab admin-only" data-view="settings" style="display:none;">Settings</button>
+  </div>
+
+  <div id="week-nav">
+    <button class="week-btn" id="prev-week-btn">← Prev</button>
+    <span id="week-label">Loading…</span>
+    <button class="week-btn" id="next-week-btn">Next →</button>
+  </div>
+
+  <div id="main-content"><div class="loading-msg">Loading…</div></div>
+
+  <div id="save-bar">
+    <span class="save-status" id="save-status"></span>
+    <button class="btn-primary" id="save-btn">Save</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+var CONFIG = {
+  tenantId:           'ff0e3f46-615a-4a22-8a80-4bb83d627785',
+  clientId:           '84b37f0e-b149-4089-9bdc-fc654715db23',
+  sharepointHost:     'bellweather.sharepoint.com',
+  sharepointSitePath: '/sites/BWCore',
+  listWeekly:         'PIP_WeeklyEntries',
+  listConfig:         'PIP_Config'
+};
+var REDIRECT_URI = window.location.origin + window.location.pathname;
+var SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+var MILESTONES = ['30day', '60day', '90day'];
+
+// ── MSAL ──────────────────────────────────────────────────────────────────────
+var msalApp = new msal.PublicClientApplication({
+  auth: { clientId: CONFIG.clientId, authority: 'https://login.microsoftonline.com/' + CONFIG.tenantId, redirectUri: REDIRECT_URI },
+  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false }
+});
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+var _me         = null;
+var _isAdmin    = false;
+var _isEmployee = false;
+var _siteId     = null;
+var _listIds    = { weekly: null, config: null };
+var _configItemId = null;
+var _projItemId   = null;
+var _milestoneItemIds = { '30day': null, '60day': null, '90day': null };
+var _projects   = [];
+var _config     = { goal1:'', goal2:'', periodStart:'', adminEmail:'', employeeEmail:'', allowedUsers:[] };
+var _weekDate   = null;
+var _weekItemId = null;
+var _currentEntry = {};
+var _milestones = { '30day':{}, '60day':{}, '90day':{} };
+var _currentView = 'form';
+
+var DEFAULT_PROJECTS = ['KUMAR','TRIPOLITIS','WEBSTER-MELLON','WORTMAN','ENGEL','CURRY','MERCURIO']
+  .map(function(n,i){ return {id:'p'+i, name:n, status:'Active', sortOrder:i+1, retiredDate:null}; });
+
+// ── AUTH HELPERS ──────────────────────────────────────────────────────────────
+function getAccount() {
+  var accs = msalApp.getAllAccounts();
+  return accs.length ? accs[0] : null;
+}
+
+async function getToken() {
+  var acc = getAccount();
+  if (!acc) throw new Error('Not signed in');
+  try {
+    var r = await msalApp.acquireTokenSilent({ scopes: SCOPES, account: acc });
+    return r.accessToken;
+  } catch(e) {
+    await msalApp.acquireTokenRedirect({ scopes: SCOPES, account: acc });
+    throw new Error('Redirecting…');
+  }
+}
+
+// ── GRAPH API ─────────────────────────────────────────────────────────────────
+async function graphReq(method, path, body) {
+  var token = await getToken();
+  var opts = { method: method, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  var resp = await fetch('https://graph.microsoft.com/v1.0' + path, opts);
+  if (!resp.ok) { var t = await resp.text(); throw new Error(resp.status + ' ' + t); }
+  if (resp.status === 204) return null;
+  return resp.json();
+}
+
+async function fetchListItems(listId) {
+  var all = [], url = '/sites/' + _siteId + '/lists/' + listId + '/items?$expand=fields($select=Title,StateData)&$top=100';
+  while (url) {
+    var d = await graphReq('GET', url);
+    all = all.concat(d.value || []);
+    url = d['@odata.nextLink'] ? d['@odata.nextLink'].replace('https://graph.microsoft.com/v1.0','') : null;
+  }
+  return all;
+}
+
+async function upsertItem(listId, title, data, existingId) {
+  var payload = JSON.stringify(data);
+  if (!existingId) {
+    var c = await graphReq('POST', '/sites/'+_siteId+'/lists/'+listId+'/items', {fields:{Title:title,StateData:payload}});
+    return c.id;
+  } else {
+    await graphReq('PATCH', '/sites/'+_siteId+'/lists/'+listId+'/items/'+existingId+'/fields', {StateData:payload});
+    return existingId;
+  }
+}
+
+// ── SCHEMA ────────────────────────────────────────────────────────────────────
+async function ensureSchema() {
+  var site = await graphReq('GET', '/sites/'+CONFIG.sharepointHost+':'+CONFIG.sharepointSitePath);
+  _siteId = site.id;
+  var lists = await graphReq('GET', '/sites/'+_siteId+'/lists?$select=id,displayName');
+  var lmap = {};
+  (lists.value||[]).forEach(function(l){ lmap[l.displayName] = l.id; });
+  for (var ln of [CONFIG.listWeekly, CONFIG.listConfig]) {
+    if (!lmap[ln]) {
+      var c = await graphReq('POST', '/sites/'+_siteId+'/lists', {
+        displayName: ln,
+        columns: [{name:'StateData', text:{allowMultipleLines:true,linesForEditing:10}}],
+        list: {template:'genericList'}
+      });
+      lmap[ln] = c.id;
+    }
+  }
+  _listIds.weekly = lmap[CONFIG.listWeekly];
+  _listIds.config = lmap[CONFIG.listConfig];
+}
+
+// ── DATA LAYER: CONFIG & PROJECTS ─────────────────────────────────────────────
+async function loadAll() {
+  var items = await fetchListItems(_listIds.config);
+  var byTitle = {};
+  items.forEach(function(i){ byTitle[i.fields.Title] = i; });
+
+  if (byTitle['config']) {
+    _configItemId = byTitle['config'].id;
+    try { Object.assign(_config, JSON.parse(byTitle['config'].fields.StateData)); } catch(e){}
+  }
+  if (byTitle['projects']) {
+    _projItemId = byTitle['projects'].id;
+    try { _projects = JSON.parse(byTitle['projects'].fields.StateData); } catch(e){ _projects = DEFAULT_PROJECTS.slice(); }
+  } else {
+    _projects = DEFAULT_PROJECTS.slice();
+  }
+  MILESTONES.forEach(function(m) {
+    if (byTitle[m]) {
+      _milestoneItemIds[m] = byTitle[m].id;
+      try { _milestones[m] = JSON.parse(byTitle[m].fields.StateData); } catch(e){ _milestones[m] = {}; }
+    }
+  });
+}
+
+async function saveConfig() {
+  _configItemId = await upsertItem(_listIds.config, 'config', _config, _configItemId);
+}
+async function saveProjects() {
+  _projItemId = await upsertItem(_listIds.config, 'projects', _projects, _projItemId);
+}
+async function saveMilestone(period) {
+  _milestoneItemIds[period] = await upsertItem(_listIds.config, period, _milestones[period], _milestoneItemIds[period]);
+}
+
+// ── DATA LAYER: WEEKLY ENTRIES ────────────────────────────────────────────────
+async function loadWeekEntry(weekOf) {
+  var items = await fetchListItems(_listIds.weekly);
+  var item = items.find(function(i){ return i.fields.Title === weekOf; });
+  if (!item) { _weekItemId = null; return {}; }
+  _weekItemId = item.id;
+  try { return JSON.parse(item.fields.StateData); } catch(e){ return {}; }
+}
+
+async function saveWeekEntry(weekOf, entry) {
+  _weekItemId = await upsertItem(_listIds.weekly, weekOf, entry, _weekItemId);
+}
+
+async function loadAllWeeklyEntries() {
+  var items = await fetchListItems(_listIds.weekly);
+  // filter out any sentinel keys (milestones stored elsewhere, but guard anyway)
+  return items
+    .filter(function(i){ return /^\d{4}-\d{2}-\d{2}$/.test(i.fields.Title); })
+    .map(function(i){
+      var d = {};
+      try { d = JSON.parse(i.fields.StateData); } catch(e){}
+      return { weekOf: i.fields.Title, data: d, savedBy: d.savedBy || '' };
+    })
+    .sort(function(a,b){ return b.weekOf.localeCompare(a.weekOf); });
+}
+
+// ── ROLE ──────────────────────────────────────────────────────────────────────
+function determineRole() {
+  if (!_me) return;
+  var email = (_me.username || _me.mail || '').toLowerCase();
+  _isAdmin    = (_config.adminEmail && email === _config.adminEmail.toLowerCase());
+  _isEmployee = (_config.employeeEmail && email === _config.employeeEmail.toLowerCase());
+  // Fallback: if nobody configured yet, first user gets admin
+  if (!_config.adminEmail && !_config.employeeEmail) { _isAdmin = true; }
+  document.getElementById('tb-role').textContent = _isAdmin ? 'Manager' : (_isEmployee ? 'Hayley' : 'Viewer');
+}
+
+function canAccess() {
+  if (!_me) return false;
+  if (_isAdmin || _isEmployee) return true;
+  if (!_config.adminEmail) return true; // not yet configured, allow
+  var email = (_me.username || _me.mail || '').toLowerCase();
+  return (_config.allowedUsers || []).some(function(u){ return u.toLowerCase() === email; });
+}
+
+// ── WEEK UTILITIES ────────────────────────────────────────────────────────────
+function getMondayOf(d) {
+  var date = new Date(d || new Date());
+  var day = date.getDay();
+  date.setDate(date.getDate() + ((day===0)?-6:1-day));
+  date.setHours(0,0,0,0);
+  return date;
+}
+function addDays(d,n){ var r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function weekOfISO(m){ return m.toISOString().slice(0,10); }
+function weekLabel(m){
+  var f = addDays(m,4), mo={month:'short',day:'numeric'};
+  return 'Week of '+m.toLocaleDateString('en-US',mo)+' \u2013 '+f.toLocaleDateString('en-US',Object.assign({},mo,{year:'numeric'}));
+}
+function activeProjects(){ return _projects.filter(function(p){ return p.status==='Active'; }); }
+
+// ── PERIOD BAR ────────────────────────────────────────────────────────────────
+function renderPeriodBar() {
+  var bar = document.getElementById('period-bar');
+  if (!_config.periodStart) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  var start = new Date(_config.periodStart + 'T12:00:00');
+  var now   = new Date();
+  var elapsed = Math.floor((now - start) / (1000*60*60*24));
+  var week    = Math.floor(elapsed/7)+1;
+
+  function mStatus(days) {
+    if (elapsed >= days) return 'done';
+    if (elapsed >= days-7) return 'active';
+    return 'upcoming';
+  }
+  function mLabel(label, days) {
+    var st = mStatus(days);
+    return '<span class="period-milestone '+st+'">'+label+(st==='done'?' ✓':'')+'</span>';
+  }
+
+  bar.innerHTML = '<span class="period-stat">Week '+week+' of 90-day period</span>'
+    + '<span class="period-pipe">|</span>'
+    + mLabel('30-Day',30) + mLabel('60-Day',60) + mLabel('90-Day',90)
+    + '<span style="margin-left:auto;font-size:11px;">Started '+start.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+'</span>';
+
+  // Update milestone tab badges
+  MILESTONES.forEach(function(m) {
+    var days = parseInt(m);
+    var badge = document.getElementById('badge-'+m);
+    if (!badge) return;
+    var saved = _milestones[m] && Object.keys(_milestones[m]).length;
+    badge.className = 'tab-badge';
+    if (saved) { badge.textContent='✓'; badge.classList.add('done'); }
+    else { badge.textContent=''; }
+  });
+}
+
+// ── TOAST & NAVIGATION ────────────────────────────────────────────────────────
+function showToast(msg) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(function(){ el.classList.remove('show'); }, 2800);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function switchView(view) {
+  _currentView = view;
+  document.querySelectorAll('.nav-tab').forEach(function(t){ t.classList.toggle('active', t.dataset.view===view); });
+  var isForm    = (view==='form');
+  var isMilestone = MILESTONES.some(function(m){ return view==='m'+m.replace('day',''); });
+  // Fix: milestones are m30, m60, m90
+  var isMilestoneTab = (view==='m30'||view==='m60'||view==='m90');
+  document.getElementById('week-nav').style.display  = isForm ? '' : 'none';
+  document.getElementById('save-bar').style.display  = (isForm||isMilestoneTab) ? 'flex' : 'none';
+  if (isForm)          renderWeeklyForm();
+  else if (view==='m30') renderMilestone('30day');
+  else if (view==='m60') renderMilestone('60day');
+  else if (view==='m90') renderMilestone('90day');
+  else if (view==='history')  renderHistoryView();
+  else if (view==='settings') renderSettingsView();
+}
+
+async function navigateWeek(dir) {
+  _weekDate = addDays(_weekDate, dir*7);
+  var thisMonday = weekOfISO(getMondayOf());
+  document.getElementById('week-label').textContent = weekLabel(_weekDate);
+  document.getElementById('next-week-btn').disabled = (weekOfISO(_weekDate) >= thisMonday);
+  document.getElementById('main-content').innerHTML = '<div class="loading-msg">Loading…</div>';
+  _currentEntry = await loadWeekEntry(weekOfISO(_weekDate));
+  updateSaveStatus();
+  renderWeeklyForm();
+}
+
+function updateSaveStatus() {
+  var el = document.getElementById('save-status');
+  var e  = _currentEntry;
+  if (e && e.savedAt) {
+    var d = new Date(e.savedAt);
+    el.textContent = 'Last saved '+d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' at '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})+(e.savedBy?' by '+e.savedBy:'');
+  } else {
+    el.textContent = _currentView==='form' ? 'No entry saved for this week yet' : '';
+  }
+}
+
+// ── FORM HELPERS ──────────────────────────────────────────────────────────────
+function radioGroup(fieldId, options, locked) {
+  var opts = options.map(function(p){
+    return '<div class="radio-opt'+(locked?' locked':'')+'" data-field="'+fieldId+'" data-value="'+p[0]+'"'+(locked?' title="Only the manager can edit this field."':'')+'>'+esc(p[1])+'</div>';
+  }).join('');
+  return '<div class="radio-group">'+opts+'</div><textarea class="issue-note" id="note-'+fieldId+'" placeholder="Add detail…"></textarea>';
+}
+
+function notePair(manId, empId, manVal, empVal) {
+  var manRo  = !_isAdmin;
+  var empRo  = !_isEmployee;
+  return '<div class="notes-pair">'
+    + '<div class="note-block manager-note"><div class="note-role">Manager Notes</div>'
+    + '<textarea id="'+manId+'" placeholder="Byron\'s notes…"'+(manRo?' disabled':'')+'>'+esc(manVal||'')+'</textarea></div>'
+    + '<div class="note-block employee-note"><div class="note-role">Hayley\'s Notes</div>'
+    + '<textarea id="'+empId+'" placeholder="Hayley\'s notes…"'+(empRo?' readonly':'')+'>'+esc(empVal||'')+'</textarea></div>'
+    + '</div>';
+}
+
+function sectionCard(title, body) {
+  return '<div class="section-card"><div class="section-header"><span class="section-value">'+esc(title)+'</span></div>'
+    + '<div class="section-body">'+body+'</div></div>';
+}
+
+// ── WEEKLY FORM ───────────────────────────────────────────────────────────────
+function renderWeeklyForm() {
+  var projs  = activeProjects();
+  var e      = _currentEntry || {};
+  var locked = !_isAdmin;
+
+  var sections = [
+    sectionCard('Disciplined',      buildDisciplined(e, locked)),
+    sectionCard('Humbly Confident', buildHumblyConfident(e, locked)),
+    sectionCard('Always Improving', buildAlwaysImproving(e, locked)),
+    sectionCard('Forward-Looking',  buildForwardLooking(projs, e, locked)),
+    sectionCard('Cares & Connects', buildCaresConnects(projs, e, locked)),
+    sectionCard('Session Notes',    buildSessionNotes(e))
+  ].join('');
+
+  var main = document.getElementById('main-content');
+  main.innerHTML = sections;
+  populateWeeklyForm(e, locked);
+  wireFormEvents();
+}
+
+function buildDisciplined(e, locked) {
+  return [
+    '<div class="rubric-q"><strong>Selections Entry</strong>Was every selection from the past week entered into BuilderTrend within 24 hours of the client decision?</div>'
+      + radioGroup('d_sel', [['yes','Yes'],['no','No'],['exceptions','Exceptions noted']], locked),
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Cost-Expanding Selections</strong>For any selection that increases project cost: was sales notified in writing before it was confirmed?</div>'
+      + radioGroup('d_costexp', [['yes','Yes'],['no','No'],['na','N/A — none this week']], locked),
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Direction Compliance</strong>Any instances of overriding explicit direction from the design manager regarding client-facing deliverables?</div>'
+      + radioGroup('d_dir', [['none','None'],['issue','Issue to document']], locked)
+  ].join('');
+}
+
+function buildHumblyConfident(e, locked) {
+  return [
+    '<div class="rubric-q"><strong>Client Preference Override</strong>Any instance of overriding a client\'s explicitly stated preference without a documented, client-led resolution?</div>'
+      + radioGroup('hc_pref', [['none','None'],['issue','Issue to document']], locked),
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Cost Exposure Flagged</strong>For projects trending above contracted scope: was the DM and/or sales notified before the decision was entered?</div>'
+      + radioGroup('hc_flag', [['yes','Yes'],['no','No'],['na','N/A']], locked)
+  ].join('');
+}
+
+function buildAlwaysImproving(e, locked) {
+  var ai = (e && e.alwaysImproving) || {};
+  var goalsHtml = '';
+  if (!_config.goal1 && !_config.goal2) {
+    var link = _isAdmin ? '<a id="goto-settings-link">Set them in Settings →</a>' : 'Contact Byron to configure.';
+    goalsHtml = '<div class="goals-unset">Goals not yet configured. '+link+'</div>';
+  } else {
+    if (_config.goal1) {
+      goalsHtml += '<div class="goal-block"><div class="goal-lbl">Goal 1</div><div class="goal-text">'+esc(_config.goal1)+'</div>'
+        + radioGroup('ai_g1', [['not_started','Not started'],['in_progress','In progress'],['complete','Complete']], locked)
+        + '</div>';
+    }
+    if (_config.goal2) {
+      goalsHtml += '<div class="goal-block"><div class="goal-lbl">Goal 2</div><div class="goal-text">'+esc(_config.goal2)+'</div>'
+        + radioGroup('ai_g2', [['not_started','Not started'],['in_progress','In progress'],['complete','Complete']], locked)
+        + '</div>';
+    }
+  }
+  // Self-reflection: always employee-editable
+  var rfRo = (!_isEmployee && !_isAdmin);
+  return [
+    '<div class="rubric-q"><strong>Construction Knowledge Goals</strong></div>'+goalsHtml,
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Self-Reflection</strong></div>'
+      + '<label class="field-label" style="margin-top:4px;">One thing that went well this week</label>'
+      + '<textarea class="rubric-text" id="ai_well" rows="2" placeholder="…"'+(rfRo?' disabled':'')+'>'+esc(ai.well||'')+'</textarea>'
+      + '<label class="field-label" style="margin-top:10px;">One thing I would handle differently</label>'
+      + '<textarea class="rubric-text" id="ai_diff" rows="2" placeholder="…"'+(rfRo?' disabled':'')+'>'+esc(ai.diff||'')+'</textarea>'
+  ].join('');
+}
+
+function buildForwardLooking(projs, e, locked) {
+  var fl = (e && e.forwardLooking) || {};
+  var projRows = projs.map(function(p) {
+    var pid = esc(p.name), pd = (fl.projects||{})[p.name]||{};
+    return '<div class="proj-row"><div class="proj-row-header">'+esc(p.name)+'</div>'
+      + '<div class="proj-row-body">'
+      + '<div class="proj-field"><label>Timeline</label>'
+      + '<select class="rubric-select" id="fl_tl_'+pid+'" data-metric="timeline"'+(locked?' disabled':'')+'>'\
+      + '<option value="">— select —</option><option value="on_track">On track</option><option value="at_risk">At risk</option><option value="behind">Behind</option>'
+      + '</select></div>'
+      + '<div class="proj-field"><label>Budget</label>'
+      + '<select class="rubric-select" id="fl_bud_'+pid+'" data-metric="budget"'+(locked?' disabled':'')+'>'\
+      + '<option value="">— select —</option><option value="within">Within scope</option><option value="approaching">Approaching limit</option><option value="over">Over — flagged?</option>'
+      + '</select></div>'
+      + '<div class="proj-field full"><label>Pending Decisions</label>'
+      + '<input type="text" class="rubric-input" id="fl_pd_'+pid+'" placeholder="None, or describe outstanding items"'+(locked?' disabled':'')+' value="'+esc(pd.pending||'')+'"></div>'
+      + '</div></div>';
+  }).join('');
+
+  return [
+    '<div class="rubric-q"><strong>Pending Decisions Flag</strong>Any client decision unresolved for more than 5 business days — flagged to DM?</div>'
+      + radioGroup('fl_pdflag', [['yes','Yes'],['no','No'],['na','N/A — none pending that long']], locked),
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Budget Exposure Flag</strong>Any design direction that, if approved, would push a project beyond contracted scope — flagged before the decision was entered?</div>'
+      + radioGroup('fl_budflag', [['yes','Yes'],['no','No'],['na','N/A']], locked),
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Project Status</strong></div>'
+      + (projs.length ? projRows : '<div class="goals-unset">No active projects configured.</div>'),
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Timing Judgment</strong>Any task completed at deadline that could and should have been completed earlier?</div>'
+      + radioGroup('fl_timing', [['none','None'],['yes','Yes — discuss']], locked)
+  ].join('');
+}
+
+function buildCaresConnects(projs, e, locked) {
+  var cc = (e && e.caresConnects) || {};
+  var commRows = projs.map(function(p) {
+    var pid = esc(p.name), cp = (cc.projects||{})[p.name]||{};
+    return '<div class="proj-row"><div class="proj-row-header">'+esc(p.name)+'</div>'
+      + '<div class="proj-row-body">'
+      + '<div class="proj-field"><label>Last client contact</label>'
+      + '<input type="date" class="rubric-input" id="cc_date_'+pid+'"'+(locked?' disabled':'')+' value="'+esc(cp.lastContact||'')+'"></div>'
+      + '<div class="proj-field"><label>Status summary sent?</label>'
+      + '<select class="rubric-select" id="cc_sum_'+pid+'"'+(locked?' disabled':'')+'>'\
+      + '<option value="">— select —</option><option value="yes">Yes</option><option value="no">No — gap?</option>'
+      + '</select></div>'
+      + '</div></div>';
+  }).join('');
+
+  return [
+    '<div class="rubric-q"><strong>Client Communication Cadence</strong>Each active project should have a client-facing status summary within the last 14 days.</div>'
+      + (projs.length ? commRows : '<div class="goals-unset">No active projects configured.</div>'),
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Summary Content Check</strong>Summaries should cover: decisions finalized, decisions pending + timeline, budget implications.</div>'
+      + radioGroup('cc_content', [['all_covered','All three covered'],['missing','Missing elements']], locked),
+    '<div class="divider"></div>',
+    '<div class="rubric-q"><strong>Internal Trust</strong>Any situation this week managed quietly rather than surfaced to the team?</div>'
+      + radioGroup('cc_trust', [['none','None'],['issue','Issue to document']], locked)
+  ].join('');
+}
+
+function buildSessionNotes(e) {
+  return notePair('manager_notes','employee_notes',
+    e && e.managerNotes, e && e.employeeNotes);
+}
+
+// ── WEEKLY FORM: populate & read ──────────────────────────────────────────────
+function setRadio(fieldId, val) {
+  if (!val) return;
+  var opt = document.querySelector('.radio-opt[data-field="'+fieldId+'"][data-value="'+val+'"]');
+  if (opt && !opt.classList.contains('locked')) opt.click();
+  else if (opt) {
+    // Just visually select it without triggering the click handler
+    document.querySelectorAll('.radio-opt[data-field="'+fieldId+'"]').forEach(function(o){
+      o.classList.remove('sel-ok','sel-warn','sel-bad');
+    });
+    opt.classList.add(classForValue(fieldId, val));
+    var note = document.getElementById('note-'+fieldId);
+    if (note && shouldShowNote(fieldId, val)) note.style.display='';
+  }
+}
+function setNoteText(id, val) { var el=document.getElementById(id); if(el&&val){el.value=val;el.style.display='';} }
+function setInput(id, val)    { var el=document.getElementById(id); if(el&&val!==undefined&&val!==null) el.value=val; }
+function setSelect(id, val)   { var el=document.getElementById(id); if(el&&val){el.value=val;applySelectClass(el);} }
+
+function populateWeeklyForm(e) {
+  if (!e||!Object.keys(e).length) return;
+  var d=e.disciplined||{}, hc=e.humblyConfident||{}, ai=e.alwaysImproving||{},
+      fl=e.forwardLooking||{}, cc=e.caresConnects||{};
+
+  setRadio('d_sel',d.sel);       setNoteText('note-d_sel',d.selNote);
+  setRadio('d_costexp',d.costexp); setNoteText('note-d_costexp',d.costexpNote);
+  setRadio('d_dir',d.dir);       setNoteText('note-d_dir',d.dirNote);
+  setRadio('hc_pref',hc.pref);   setNoteText('note-hc_pref',hc.prefNote);
+  setRadio('hc_flag',hc.flag);   setNoteText('note-hc_flag',hc.flagNote);
+  setRadio('ai_g1',ai.g1);
+  setRadio('ai_g2',ai.g2);
+  setInput('ai_well',ai.well);   setInput('ai_diff',ai.diff);
+  setRadio('fl_pdflag',fl.pdFlag);  setNoteText('note-fl_pdflag',fl.pdFlagNote);
+  setRadio('fl_budflag',fl.budFlag); setNoteText('note-fl_budflag',fl.budFlagNote);
+  setRadio('fl_timing',fl.timing);  setNoteText('note-fl_timing',fl.timingNote);
+  if (fl.projects) Object.keys(fl.projects).forEach(function(n){
+    var pd=fl.projects[n];
+    setSelect('fl_tl_'+n,pd.timeline); setSelect('fl_bud_'+n,pd.budget);
+  });
+  setRadio('cc_content',cc.content); setNoteText('note-cc_content',cc.contentNote);
+  setRadio('cc_trust',cc.trust);    setNoteText('note-cc_trust',cc.trustNote);
+  if (cc.projects) Object.keys(cc.projects).forEach(function(n){
+    var cp=cc.projects[n];
+    setInput('cc_date_'+n,cp.lastContact); setSelect('cc_sum_'+n,cp.summarySent);
+  });
+  setInput('manager_notes',e.managerNotes);
+  setInput('employee_notes',e.employeeNotes);
+}
+
+function getRadio(fieldId) {
+  var sel = document.querySelector('.radio-opt.sel-ok[data-field="'+fieldId+'"],.radio-opt.sel-warn[data-field="'+fieldId+'"],.radio-opt.sel-bad[data-field="'+fieldId+'"]');
+  return sel ? sel.dataset.value : '';
+}
+function getNoteText(fieldId) { var el=document.getElementById('note-'+fieldId); return el?el.value.trim():''; }
+function getInput(id)         { var el=document.getElementById(id); return el?el.value.trim():''; }
+
+function buildWeeklyEntry() {
+  var projs = activeProjects(), flp={}, ccp={};
+  projs.forEach(function(p){
+    flp[p.name]={timeline:getInput('fl_tl_'+p.name),budget:getInput('fl_bud_'+p.name),pending:getInput('fl_pd_'+p.name)};
+    ccp[p.name]={lastContact:getInput('cc_date_'+p.name),summarySent:getInput('cc_sum_'+p.name)};
+  });
+  return {
+    disciplined:     {sel:getRadio('d_sel'),selNote:getNoteText('d_sel'),costexp:getRadio('d_costexp'),costexpNote:getNoteText('d_costexp'),dir:getRadio('d_dir'),dirNote:getNoteText('d_dir')},
+    humblyConfident: {pref:getRadio('hc_pref'),prefNote:getNoteText('hc_pref'),flag:getRadio('hc_flag'),flagNote:getNoteText('hc_flag')},
+    alwaysImproving: {g1:getRadio('ai_g1'),g2:getRadio('ai_g2'),well:getInput('ai_well'),diff:getInput('ai_diff')},
+    forwardLooking:  {pdFlag:getRadio('fl_pdflag'),pdFlagNote:getNoteText('fl_pdflag'),budFlag:getRadio('fl_budflag'),budFlagNote:getNoteText('fl_budflag'),timing:getRadio('fl_timing'),timingNote:getNoteText('fl_timing'),projects:flp},
+    caresConnects:   {content:getRadio('cc_content'),contentNote:getNoteText('cc_content'),trust:getRadio('cc_trust'),trustNote:getNoteText('cc_trust'),projects:ccp},
+    managerNotes:  getInput('manager_notes'),
+    employeeNotes: getInput('employee_notes'),
+    savedBy: _me ? (_me.name||_me.username) : '',
+    savedAt: new Date().toISOString()
+  };
+}
+
+// ── MILESTONE FORMS ───────────────────────────────────────────────────────────
+var MILESTONE_LABELS = { '30day':'30-Day Check-In', '60day':'60-Day Check-In', '90day':'90-Day Final Review' };
+
+function renderMilestone(period) {
+  var m = _milestones[period] || {};
+  var label = MILESTONE_LABELS[period];
+  var locked = !_isAdmin;
+
+  // Intro
+  var introHtml = '<div class="milestone-intro">';
+  introHtml += '<div class="milestone-intro-title">'+esc(label)+'</div>';
+  if (_config.periodStart) {
+    var start = new Date(_config.periodStart+'T12:00:00');
+    var days  = parseInt(period);
+    var due   = addDays(start, days);
+    introHtml += '<div class="milestone-intro-meta">Period started <strong>'+start.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</strong> &mdash; ';
+    introHtml += period+' milestone due <strong>'+due.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</strong></div>';
+  } else {
+    introHtml += '<div class="milestone-intro-meta" style="color:var(--amber);">Period start date not configured. Set it in Settings.</div>';
+  }
+  introHtml += '</div>';
+
+  var CVS = [
+    ['disciplined',     'Disciplined'],
+    ['humblyConfident', 'Humbly Confident'],
+    ['alwaysImproving', 'Always Improving'],
+    ['forwardLooking',  'Forward-Looking'],
+    ['caresConnects',   'Cares & Connects']
+  ];
+
+  var cvCards = CVS.map(function(cv) {
+    var key = cv[0], title = cv[1];
+    var cvData = (m[key]||{});
+    var trendHtml = '<div class="cv-trend-row">'
+      + '<span class="cv-trend-label">Trend</span>'
+      + radioGroup('m_'+period+'_'+key+'_trend', [
+          ['improving','Improving'],['holding','Holding'],
+          ['concerns','Concerns Remain'],['new_concern','New Concerns']
+        ], locked)
+      + '</div>';
+    var np = notePair(
+      'm_'+period+'_'+key+'_man', 'm_'+period+'_'+key+'_emp',
+      cvData.managerNotes, cvData.employeeNotes
+    );
+    return sectionCard(title, trendHtml + np);
+  }).join('');
+
+  // Budget trend card
+  var budgetHtml = '<div class="rubric-q"><strong>Overall Budget Management Trend</strong>Across all active projects, is cost management improving, holding, or worsening relative to the PIP start?</div>'
+    + radioGroup('m_'+period+'_budget_trend', [['improving','Improving'],['holding','Holding'],['worsening','Worsening']], locked)
+    + '<label class="field-label" style="margin-top:12px;">Notes</label>'
+    + '<textarea class="rubric-text" id="m_'+period+'_budget_notes" rows="3" placeholder="Budget observations…"'+(locked?' disabled':'')+'>'+esc((m.budgetTrend||{}).notes||'')+'</textarea>';
+
+  // Communication cadence card
+  var commHtml = '<div class="rubric-q"><strong>Client Communication Cadence</strong>Has the biweekly summary rhythm been maintained across active projects?</div>'
+    + radioGroup('m_'+period+'_comm_status', [['consistent','Consistent'],['mixed','Mixed'],['sporadic','Sporadic']], locked)
+    + '<label class="field-label" style="margin-top:12px;">Notes</label>'
+    + '<textarea class="rubric-text" id="m_'+period+'_comm_notes" rows="3" placeholder="Communication observations…"'+(locked?' disabled':'')+'>'+esc((m.commCadence||{}).notes||'')+'</textarea>';
+
+  // Overall assessments
+  var overallHtml = '<div class="rubric-q"><strong>Overall Assessment</strong></div>'
+    + notePair('m_'+period+'_overall_man', 'm_'+period+'_overall_emp', m.managerAssessment, m.employeeResponse);
+
+  // 90-day outcome (admin only)
+  var outcomeHtml = '';
+  if (period === '90day') {
+    var outRo = !_isAdmin;
+    outcomeHtml = sectionCard('Outcome Determination',
+      '<div class="outcome-block"><div class="outcome-lbl">Outcome</div>'
+      + radioGroup('m_90day_outcome', [['continue','Continue'],['extended','Extended PIP'],['termination','Termination']], outRo)
+      + '</div>'
+      + '<label class="field-label" style="margin-top:14px;">Outcome Notes</label>'
+      + '<textarea class="rubric-text" id="m_90day_outcome_notes" rows="4" placeholder="Context for the outcome determination…"'+(outRo?' disabled':'')+'>'+esc(m.outcomeNotes||'')+'</textarea>'
+    );
+  }
+
+  var main = document.getElementById('main-content');
+  main.innerHTML = introHtml + cvCards
+    + sectionCard('Budget Management Trend', budgetHtml)
+    + sectionCard('Client Communication Cadence', commHtml)
+    + sectionCard('Overall Session Notes', overallHtml)
+    + outcomeHtml;
+
+  // Populate existing data
+  CVS.forEach(function(cv){
+    var key=cv[0], cvData=(m[key]||{});
+    setRadio('m_'+period+'_'+key+'_trend', cvData.trend);
+    setInput('m_'+period+'_'+key+'_man', cvData.managerNotes);
+    setInput('m_'+period+'_'+key+'_emp', cvData.employeeNotes);
+  });
+  setRadio('m_'+period+'_budget_trend', (m.budgetTrend||{}).status);
+  setRadio('m_'+period+'_comm_status', (m.commCadence||{}).status);
+  setInput('m_'+period+'_overall_man', m.managerAssessment||'');
+  setInput('m_'+period+'_overall_emp', m.employeeResponse||'');
+  if (period==='90day') {
+    setRadio('m_90day_outcome', m.outcome||'');
+    setInput('m_90day_outcome_notes', m.outcomeNotes||'');
+  }
+
+  wireFormEvents();
+
+  // Update save-status
+  var el = document.getElementById('save-status');
+  el.textContent = (m.savedAt)
+    ? 'Last saved '+(new Date(m.savedAt)).toLocaleDateString('en-US',{month:'short',day:'numeric'})+(m.savedBy?' by '+m.savedBy:'')
+    : 'Not yet saved';
+}
+
+function buildMilestoneEntry(period) {
+  var CVS = ['disciplined','humblyConfident','alwaysImproving','forwardLooking','caresConnects'];
+  var entry = {
+    budgetTrend:       {status:getRadio('m_'+period+'_budget_trend'), notes:getInput('m_'+period+'_budget_notes')},
+    commCadence:       {status:getRadio('m_'+period+'_comm_status'),  notes:getInput('m_'+period+'_comm_notes')},
+    managerAssessment: getInput('m_'+period+'_overall_man'),
+    employeeResponse:  getInput('m_'+period+'_overall_emp'),
+    savedBy: _me?(_me.name||_me.username):'',
+    savedAt: new Date().toISOString()
+  };
+  if (period==='90day') {
+    entry.outcome      = getRadio('m_90day_outcome');
+    entry.outcomeNotes = getInput('m_90day_outcome_notes');
+  }
+  CVS.forEach(function(key){
+    // Merge: admin writes managerNotes+trend, employee writes employeeNotes
+    var existing = (_milestones[period]||{})[key] || {};
+    entry[key] = {
+      trend:         _isAdmin ? getRadio('m_'+period+'_'+key+'_trend') : existing.trend,
+      managerNotes:  _isAdmin ? getInput('m_'+period+'_'+key+'_man')   : existing.managerNotes,
+      employeeNotes: _isEmployee ? getInput('m_'+period+'_'+key+'_emp') : existing.employeeNotes
+    };
+  });
+  return entry;
+}
+
+// ── FORM EVENTS ───────────────────────────────────────────────────────────────
+var SHOW_NOTE = {no:1,issue:1,behind:1,over:1,missing:1,exceptions:1};
+
+function shouldShowNote(fieldId, val) {
+  if (fieldId==='fl_timing'&&val==='yes') return true;
+  return SHOW_NOTE[val]===1;
+}
+function classForValue(fieldId, val) {
+  if (val==='none'||val==='na'||val==='not_started') return 'sel-ok';
+  if (val==='yes') return (fieldId==='fl_timing'?'sel-warn':'sel-ok');
+  if (['all_covered','on_track','within','complete','improving','consistent'].indexOf(val)>=0) return 'sel-ok';
+  if (['in_progress','at_risk','approaching','missing','exceptions','holding','mixed'].indexOf(val)>=0) return 'sel-warn';
+  if (['no','issue','behind','over','worsening','sporadic','concerns','new_concern'].indexOf(val)>=0) return 'sel-bad';
+  return 'sel-ok';
+}
+function applySelectClass(sel) {
+  sel.classList.remove('status-ok','status-warn','status-bad');
+  var v=sel.value;
+  if (v==='on_track'||v==='within') sel.classList.add('status-ok');
+  else if (v==='at_risk'||v==='approaching') sel.classList.add('status-warn');
+  else if (v==='behind'||v==='over') sel.classList.add('status-bad');
+}
+
+function wireFormEvents() {
+  document.querySelectorAll('.radio-opt:not(.locked)').forEach(function(opt){
+    opt.addEventListener('click', function(){
+      var fid=this.dataset.field, val=this.dataset.value;
+      document.querySelectorAll('.radio-opt[data-field="'+fid+'"]').forEach(function(o){ o.classList.remove('sel-ok','sel-warn','sel-bad'); });
+      this.classList.add(classForValue(fid,val));
+      var note=document.getElementById('note-'+fid);
+      if (note) note.style.display=shouldShowNote(fid,val)?'':'none';
+    });
+  });
+  document.querySelectorAll('select.rubric-select[data-metric]').forEach(function(s){
+    s.addEventListener('change',function(){ applySelectClass(this); });
+  });
+  var gl=document.getElementById('goto-settings-link');
+  if (gl) gl.addEventListener('click',function(e){ e.preventDefault(); switchView('settings'); });
+}
+
+// ── SAVE HANDLERS ─────────────────────────────────────────────────────────────
+async function handleSave() {
+  var btn=document.getElementById('save-btn'), status=document.getElementById('save-status');
+  btn.disabled=true; status.textContent='Saving…';
+  try {
+    if (_currentView==='form') {
+      var entry = buildWeeklyEntry();
+      await saveWeekEntry(weekOfISO(_weekDate), entry);
+      _currentEntry = entry;
+      updateSaveStatus();
+    } else if (_currentView==='m30'||_currentView==='m60'||_currentView==='m90') {
+      var period = _currentView.replace('m','')+'day';
+      var mEntry = buildMilestoneEntry(period);
+      // Merge with existing to protect the other party's contributions
+      Object.assign(_milestones[period], mEntry);
+      await saveMilestone(period);
+      renderPeriodBar();
+      var el=document.getElementById('save-status');
+      el.textContent='Saved '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'})+(mEntry.savedBy?' by '+mEntry.savedBy:'');
+    }
+    showToast('Saved');
+  } catch(e) {
+    status.textContent='Save failed — '+e.message;
+    showToast('Error: '+e.message);
+  } finally { btn.disabled=false; }
+}
+
+// ── HISTORY VIEW ──────────────────────────────────────────────────────────────
+async function renderHistoryView() {
+  var main=document.getElementById('main-content');
+  main.innerHTML='<div class="loading-msg">Loading history…</div>';
+  try {
+    var entries = await loadAllWeeklyEntries();
+
+    // Show saved milestones at top
+    var milHtml = MILESTONES.filter(function(m){ return _milestones[m]&&_milestones[m].savedAt; })
+      .map(function(m){
+        var md=_milestones[m];
+        return '<div class="hist-milestone"><div class="hist-milestone-hdr"><span class="hist-milestone-lbl">'+MILESTONE_LABELS[m]+'</span>'
+          +'<span style="font-size:12px;color:var(--text-sec);">'+new Date(md.savedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+'</span></div>'
+          +'<div class="hist-body" id="mhist-'+m+'"><div style="padding:4px 0 10px;font-size:12px;color:var(--text-sec);">Click to expand</div></div></div>';
+      }).join('');
+
+    if (!entries.length && !milHtml) {
+      main.innerHTML='<div class="loading-msg">No entries recorded yet.</div>';
+      return;
+    }
+
+    var weekHtml = entries.map(function(entry){
+      var d=new Date(entry.weekOf+'T12:00:00');
+      var lbl=weekLabel(getMondayOf(d));
+      return '<div class="hist-week"><div class="hist-week-hdr"><div class="hist-week-lbl">'+esc(lbl)+'</div>'
+        +'<div class="hist-week-meta">'+esc(entry.savedBy)+'</div></div>'
+        +'<div class="hist-body">'+buildHistorySummary(entry.data)+'</div></div>';
+    }).join('');
+
+    main.innerHTML = milHtml + weekHtml;
+
+    main.querySelectorAll('.hist-week-hdr,.hist-milestone-hdr').forEach(function(hdr){
+      hdr.addEventListener('click',function(){
+        var body=this.nextElementSibling;
+        body.classList.toggle('open');
+      });
+    });
+  } catch(e) {
+    main.innerHTML='<div class="loading-msg">Error: '+esc(e.message)+'</div>';
+  }
+}
+
+function chip(val) {
+  if (!val) return '<span class="chip chip-na">—</span>';
+  var ok=['yes','none','all_covered','on_track','within','complete','not_started','improving','consistent'];
+  var warn=['at_risk','approaching','missing','exceptions','in_progress','holding','mixed'];
+  var bad=['no','issue','behind','over','worsening','sporadic','concerns','new_concern'];
+  var lbl=humanLabel(val);
+  if (bad.indexOf(val)>=0)  return '<span class="chip chip-bad">'+lbl+'</span>';
+  if (warn.indexOf(val)>=0) return '<span class="chip chip-warn">'+lbl+'</span>';
+  if (ok.indexOf(val)>=0)   return '<span class="chip chip-ok">'+lbl+'</span>';
+  return '<span class="chip chip-na">'+lbl+'</span>';
+}
+function chipFL(fid,val){ if(fid==='fl_timing'&&val==='yes') return '<span class="chip chip-warn">'+humanLabel(val)+'</span>'; return chip(val); }
+function humanLabel(val) {
+  var map={yes:'Yes',no:'No',none:'None',na:'N/A',all_covered:'All covered',missing:'Missing',
+    on_track:'On track',at_risk:'At risk',behind:'Behind',within:'Within scope',approaching:'Approaching',over:'Over',
+    issue:'Issue',exceptions:'Exceptions',not_started:'Not started',in_progress:'In progress',complete:'Complete',
+    improving:'Improving',holding:'Holding',worsening:'Worsening',consistent:'Consistent',mixed:'Mixed',sporadic:'Sporadic',
+    concerns:'Concerns remain',new_concern:'New concerns',continue:'Continue',extended:'Extended PIP',termination:'Termination'};
+  return map[val]||val;
+}
+
+function buildHistorySummary(e) {
+  if (!e||!Object.keys(e).length) return '<p style="color:var(--text-sec);font-size:13px;">No data.</p>';
+  var d=e.disciplined||{},hc=e.humblyConfident||{},fl=e.forwardLooking||{},cc=e.caresConnects||{},ai=e.alwaysImproving||{};
+  var metrics=[
+    ['Selections Entry','d_sel',d.sel,d.selNote],
+    ['Cost-Expanding Process','d_costexp',d.costexp,d.costexpNote],
+    ['Direction Compliance','d_dir',d.dir,d.dirNote],
+    ['Client Preference Override','hc_pref',hc.pref,hc.prefNote],
+    ['Cost Exposure Flagged','hc_flag',hc.flag,hc.flagNote],
+    ['Pending Decisions Flag','fl_pdflag',fl.pdFlag,fl.pdFlagNote],
+    ['Budget Exposure Flag','fl_budflag',fl.budFlag,fl.budFlagNote],
+    ['Timing Judgment','fl_timing',fl.timing,fl.timingNote],
+    ['Comm Content Check','cc_content',cc.content,cc.contentNote],
+    ['Internal Trust','cc_trust',cc.trust,cc.trustNote]
+  ];
+  var mHtml=metrics.map(function(m){
+    return '<div class="hist-row"><div class="hist-row-label">'+esc(m[0])+'</div>'
+      +'<div>'+chipFL(m[1],m[2])+(m[3]?'<div class="hist-note">'+esc(m[3])+'</div>':'')+'</div></div>';
+  }).join('');
+
+  var projHtml='';
+  if (fl.projects&&Object.keys(fl.projects).length){
+    projHtml='<div class="hist-section-lbl">Project Status</div><div class="hist-proj-grid">'
+      +Object.keys(fl.projects).map(function(n){
+        var pd=fl.projects[n];
+        return '<div class="hist-proj"><div class="hist-proj-name">'+esc(n)+'</div>'+chip(pd.timeline)+' '+chip(pd.budget)
+          +(pd.pending?'<div class="hist-note" style="margin-top:4px;">'+esc(pd.pending)+'</div>':'')+'</div>';
+      }).join('')+'</div>';
+  }
+
+  var reflHtml='';
+  if (ai.well||ai.diff){
+    reflHtml='<div class="hist-section-lbl">Self-Reflection</div>';
+    if (ai.well) reflHtml+='<div class="hist-refl"><span class="hist-refl-lbl">Went well: </span>'+esc(ai.well)+'</div>';
+    if (ai.diff) reflHtml+='<div class="hist-refl"><span class="hist-refl-lbl">Handle differently: </span>'+esc(ai.diff)+'</div>';
+  }
+
+  var notesHtml='';
+  if (e.managerNotes||e.employeeNotes){
+    notesHtml='<div class="hist-section-lbl">Session Notes</div>'
+      +'<div class="hist-notes-pair">'
+      +(e.managerNotes?'<div class="hist-note-block manager-note"><div class="hist-note-role">Manager</div><div class="hist-note-text">'+esc(e.managerNotes)+'</div></div>':'')
+      +(e.employeeNotes?'<div class="hist-note-block employee-note"><div class="hist-note-role">Hayley</div><div class="hist-note-text">'+esc(e.employeeNotes)+'</div></div>':'')
+      +'</div>';
+  }
+
+  return '<div class="hist-metrics">'+mHtml+'</div>'+projHtml+reflHtml+notesHtml;
+}
+
+// ── SETTINGS VIEW ─────────────────────────────────────────────────────────────
+function renderSettingsView() {
+  var main=document.getElementById('main-content');
+  if (!_isAdmin){ main.innerHTML='<div class="loading-msg">Settings are available to the design manager only.</div>'; return; }
+
+  var ap=_projects.filter(function(p){return p.status==='Active';});
+  var rp=_projects.filter(function(p){return p.status==='Retired';});
+  var aRows=ap.length ? ap.map(function(p){
+    return '<div class="pmrow" data-id="'+esc(p.id)+'"><div class="pmrow-name">'+esc(p.name)+'</div>'
+      +'<button class="btn-danger retire-btn" data-id="'+esc(p.id)+'" data-name="'+esc(p.name)+'">Retire</button></div>';
+  }).join('') : '<div style="font-size:13px;color:var(--text-sec);padding:6px 0;">No active projects.</div>';
+
+  main.innerHTML=''
+    +'<div class="settings-section"><div class="settings-hdr">People</div><div class="settings-body">'
+    +'<div class="provision-note">Set the manager and employee email addresses to control role assignment. Use the full Microsoft 365 email.</div>'
+    +'<label class="field-label">Manager (admin) email</label>'
+    +'<input type="email" class="rubric-input" id="admin-email" value="'+esc(_config.adminEmail||'')+'" placeholder="byron@bellweatherllc.com" style="margin-bottom:10px;">'
+    +'<label class="field-label">Employee email</label>'
+    +'<input type="email" class="rubric-input" id="emp-email" value="'+esc(_config.employeeEmail||'')+'" placeholder="hayley@bellweatherllc.com" style="margin-bottom:14px;">'
+    +'<button class="btn-primary" id="save-people-btn">Save</button>'
+    +'</div></div>'
+
+    +'<div class="settings-section"><div class="settings-hdr">PIP Period</div><div class="settings-body">'
+    +'<label class="field-label">Period start date</label>'
+    +'<input type="date" class="rubric-input" id="period-input" value="'+esc(_config.periodStart||'')+'" style="max-width:200px;margin-bottom:14px;">'
+    +'<button class="btn-primary" id="save-period-btn">Save</button>'
+    +'</div></div>'
+
+    +'<div class="settings-section"><div class="settings-hdr">Construction Knowledge Goals</div><div class="settings-body">'
+    +'<label class="field-label">Goal 1</label><input type="text" class="rubric-input" id="goal1-input" value="'+esc(_config.goal1||'')+'" placeholder="Describe goal 1…" style="margin-bottom:10px;">'
+    +'<label class="field-label">Goal 2</label><input type="text" class="rubric-input" id="goal2-input" value="'+esc(_config.goal2||'')+'" placeholder="Describe goal 2…" style="margin-bottom:14px;">'
+    +'<button class="btn-primary" id="save-goals-btn">Save Goals</button>'
+    +'</div></div>'
+
+    +'<div class="settings-section"><div class="settings-hdr">Active Projects</div><div class="settings-body">'
+    +'<div id="proj-list">'+aRows+'</div>'
+    +'<div style="margin-top:14px;display:flex;gap:8px;align-items:center;">'
+    +'<input type="text" class="rubric-input" id="new-proj-input" placeholder="Project name (e.g. SMITH)" style="max-width:220px;">'
+    +'<button class="btn-primary" id="add-proj-btn">Add</button></div>'
+    +'</div></div>'
+
+    +(rp.length?'<div class="settings-section"><div class="settings-hdr">Retired Projects</div><div class="settings-body">'
+      +rp.map(function(p){ return '<div class="pmrow"><div class="pmrow-name">'+esc(p.name)+'<span class="pmrow-retired-note">Retired '+esc(p.retiredDate||'')+'</span></div></div>'; }).join('')
+      +'</div></div>':'')
+
+    +'<div class="settings-section"><div class="settings-hdr">SharePoint Setup</div><div class="settings-body">'
+    +'<div class="provision-note">Creates PIP_WeeklyEntries and PIP_Config on BWCore if they don\'t exist.</div>'
+    +'<button class="btn-secondary" id="provision-btn">Provision Lists</button>'
+    +'<div id="provision-status"></div></div></div>';
+
+  // Wire
+  document.getElementById('save-people-btn').addEventListener('click',async function(){
+    _config.adminEmail    = document.getElementById('admin-email').value.trim();
+    _config.employeeEmail = document.getElementById('emp-email').value.trim();
+    this.disabled=true;
+    try { await saveConfig(); determineRole(); showToast('People saved'); }
+    catch(e){ showToast('Error: '+e.message); } finally{ this.disabled=false; }
+  });
+  document.getElementById('save-period-btn').addEventListener('click',async function(){
+    _config.periodStart = document.getElementById('period-input').value;
+    this.disabled=true;
+    try { await saveConfig(); renderPeriodBar(); showToast('Period saved'); }
+    catch(e){ showToast('Error: '+e.message); } finally{ this.disabled=false; }
+  });
+  document.getElementById('save-goals-btn').addEventListener('click',async function(){
+    _config.goal1 = document.getElementById('goal1-input').value.trim();
+    _config.goal2 = document.getElementById('goal2-input').value.trim();
+    this.disabled=true;
+    try { await saveConfig(); showToast('Goals saved'); }
+    catch(e){ showToast('Error: '+e.message); } finally{ this.disabled=false; }
+  });
+  document.getElementById('add-proj-btn').addEventListener('click',async function(){
+    var inp=document.getElementById('new-proj-input'), n=inp.value.trim().toUpperCase();
+    if (!n) return;
+    var maxOrd=_projects.reduce(function(m,p){return Math.max(m,p.sortOrder);},0);
+    _projects.push({id:'p'+Date.now(),name:n,status:'Active',sortOrder:maxOrd+1,retiredDate:null});
+    this.disabled=true;
+    try { await saveProjects(); inp.value=''; renderSettingsView(); showToast('Added: '+n); }
+    catch(e){ showToast('Error: '+e.message); } finally{ this.disabled=false; }
+  });
+  document.querySelectorAll('.retire-btn').forEach(function(btn){
+    btn.addEventListener('click',async function(){
+      var id=this.dataset.id, name=this.dataset.name;
+      if (!confirm('Retire '+name+'?')) return;
+      _projects=_projects.map(function(p){ return p.id===id?Object.assign({},p,{status:'Retired',retiredDate:todayISO()}):p; });
+      try { await saveProjects(); renderSettingsView(); showToast('Retired: '+name); }
+      catch(e){ showToast('Error: '+e.message); }
+    });
+  });
+  document.getElementById('provision-btn').addEventListener('click',async function(){
+    var s=document.getElementById('provision-status');
+    s.textContent='Provisioning…'; this.disabled=true;
+    try {
+      await ensureSchema();
+      s.textContent='Done — lists are ready.';
+    } catch(e){ s.textContent='Error: '+e.message; } finally{ this.disabled=false; }
+  });
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function onSignedIn() {
+  var acc = getAccount();
+  if (!acc) return;
+  _me = { name: acc.name, username: acc.username };
+  document.getElementById('tb-user').textContent = acc.name || acc.username;
+  document.getElementById('auth-overlay').style.display = 'none';
+
+  try {
+    await ensureSchema();
+    await loadAll();
+    determineRole();
+
+    if (!canAccess()) {
+      document.getElementById('app').style.display='none';
+      document.getElementById('access-denied').style.display='flex';
+      return;
+    }
+
+    document.getElementById('app').style.display='';
+    if (_isAdmin) document.querySelectorAll('.admin-only').forEach(function(el){ el.style.display=''; });
+
+    renderPeriodBar();
+
+    // Wire static controls
+    document.getElementById('prev-week-btn').addEventListener('click',function(){ navigateWeek(-1); });
+    document.getElementById('next-week-btn').addEventListener('click',function(){ navigateWeek(1); });
+    document.getElementById('save-btn').addEventListener('click',handleSave);
+    document.querySelectorAll('.nav-tab').forEach(function(t){ t.addEventListener('click',function(){ switchView(this.dataset.view); }); });
+    document.getElementById('btn-signout').addEventListener('click',function(){ msalApp.logoutRedirect({account:getAccount()}); });
+
+    // Initial week
+    _weekDate = getMondayOf();
+    document.getElementById('week-label').textContent = weekLabel(_weekDate);
+    document.getElementById('next-week-btn').disabled = true;
+    _currentEntry = await loadWeekEntry(weekOfISO(_weekDate));
+    updateSaveStatus();
+    document.getElementById('save-bar').style.display='flex';
+    renderWeeklyForm();
+
+  } catch(e) {
+    document.getElementById('main-content').innerHTML='<div class="loading-msg">Error loading: '+esc(e.message)+'</div>';
+    document.getElementById('app').style.display='';
+  }
+}
+
+window.addEventListener('load', async function() {
+  document.getElementById('btn-signin').addEventListener('click',function(){
+    msalApp.loginRedirect({ scopes: SCOPES });
+  });
+  document.getElementById('btn-signout-denied').addEventListener('click',function(){
+    msalApp.logoutRedirect({ account: getAccount() });
+  });
+  try {
+    await msalApp.initialize();
+    var r = await msalApp.handleRedirectPromise();
+    if (r || getAccount()) await onSignedIn();
+  } catch(e) {
+    var el=document.getElementById('auth-error');
+    el.textContent='Init error: '+e.message;
+    el.style.display='block';
+  }
+});
+</script>
+</body>
+</html>
