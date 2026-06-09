@@ -194,7 +194,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v13</div>
+    <div class="auth-version" id="authVersionBadge">v14</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -213,7 +213,7 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v13</div>
+  <div class="proto-badge" id="versionBadge">v14</div>
   <div class="hsp"></div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
@@ -354,7 +354,7 @@ async function loadReviews(){
   try{
     const rd=await graphGet(SP+'/CORE_ProjectReviews/items?$expand=fields&$select=id,fields&$top=500',
       {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
-    reviews=(rd.value||[]).map(item=>({spItemId:item.id,...item.fields}));
+    reviews=(rd.value||[]).map(item=>({spItemId:item.id,_fieldsId:item.fields?.id,...item.fields}));
   }catch(e){
     console.warn('[loadReviews]',e.message);
     // List may not exist yet — continue with empty reviews
@@ -527,7 +527,7 @@ function buildCard(proj,container,startOpen){
       <div class="field-val ${!end?'muted':''}">${fmtDate(end)}</div>
       <div class="field-sub">${proj.endDate&&end!==proj.endDate?'Original: '+fmtDate(proj.endDate):'From Gantt'}</div>
     </div>`;
-  flds.addEventListener('click',(e)=>{if(!adminModeOn) showNudge(e);});
+  flds.addEventListener('click',(e)=>{if(!adminModeOn&&!e.target.closest('.proj-edit-form')) showNudge(e);});
   body.appendChild(flds);
 
   // Edit form
@@ -592,6 +592,7 @@ function toggleAdminMode(){
 }
 function showNudge(e){
   const n=document.getElementById('readonlyNudge');
+  if(!n) return;
   if(e){
     // Position near cursor, nudged up so it doesn't obscure the click point
     const x=e.clientX,y=e.clientY;
@@ -653,11 +654,11 @@ async function submitChange(projId){
     if(document.getElementById('note_'+projId)) document.getElementById('note_'+projId).value='';
     if(btn&&btn.isConnected) btn.disabled=false;
     const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
+    showToast('Change saved ✓');
     renderAll();
     if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');}
-    showToast('Change saved.');
     // Background refresh to replace optimistic entry with real SP item
-    loadReviews().then(()=>{ renderAll(); if(wasOpen){const c=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c)c.classList.add('open');} });
+    loadReviews().then(()=>{ renderAll(); if(wasOpen){const c2=document.querySelector('.proj-card[data-pid="'+projId+'"]');if(c2)c2.classList.add('open');} });
   }catch(e){console.error('[submit]',e);if(fb)fb.textContent='Error: '+e.message;if(btn)btn.disabled=false;}
 }
 
@@ -701,6 +702,7 @@ async function saveEditReview(revId, projId, noteEl, saveBtn, fb){
   if(saveBtn) saveBtn.disabled=true;
   try{
     await graphPatch(SP+'/CORE_ProjectReviews/items/'+revId,{fields:{Notes:note||null}});
+    // Note: revId is item.id from Graph response — correct for items/{id} endpoint
     const r=reviews.find(rv=>rv.spItemId===revId);
     if(r) r.Notes=note||null;
     const wasOpen=document.querySelector('.proj-card[data-pid="'+projId+'"]')?.classList.contains('open');
