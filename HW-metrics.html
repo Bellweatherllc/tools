@@ -315,7 +315,7 @@ select.rubric-select.status-bad{color:var(--red);}
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
     <button class="btn-signin" id="btn-signin">Sign in with Microsoft</button>
     <div class="auth-error" id="auth-error"></div>
-    <div style="margin-top:20px;font-size:11px;color:var(--text-sec);opacity:.6;">v3.2</div>
+    <div style="margin-top:20px;font-size:11px;color:var(--text-sec);opacity:.6;">v3.3</div>
   </div>
 </div>
 
@@ -332,7 +332,7 @@ select.rubric-select.status-bad{color:var(--red);}
   <div id="topbar">
     <div class="tb-left">
       <span class="tb-tool">Hayley Wynne: Quarterly Metrics</span>
-      <span class="tb-badge" id="tb-version">v3.2</span>
+      <span class="tb-badge" id="tb-version">v3.3</span>
     </div>
     <div class="tb-right">
       <span class="tb-role" id="tb-role"></span>
@@ -1466,12 +1466,14 @@ function renderSettingsView() {
     +'<label class="field-label">Employee email</label>'
     +'<input type="email" class="rubric-input" id="emp-email" value="'+esc(_config.employeeEmail||'')+'" placeholder="hayley@bellweatherllc.com" style="margin-bottom:14px;">'
     +'<button class="btn-primary" id="save-people-btn">Save</button>'
+    +'<div id="people-status" style="margin-top:10px;font-size:12px;"></div>'
     +'</div></div>'
 
     +'<div class="settings-section"><div class="settings-hdr">PIP Period</div><div class="settings-body">'
     +'<label class="field-label">Period start date</label>'
     +'<input type="date" class="rubric-input" id="period-input" value="'+esc(_config.periodStart||'')+'" style="max-width:200px;margin-bottom:14px;">'
     +'<button class="btn-primary" id="save-period-btn">Save</button>'
+    +'<div id="period-status" style="margin-top:10px;font-size:12px;"></div>'
     +'</div></div>'
 
     +'<div class="settings-section"><div class="settings-hdr">Active Projects</div><div class="settings-body">'
@@ -1487,17 +1489,51 @@ function renderSettingsView() {
 
   // Wire
   document.getElementById('save-people-btn').addEventListener('click',async function(){
-    _config.adminEmail    = document.getElementById('admin-email').value.trim();
-    _config.employeeEmail = document.getElementById('emp-email').value.trim();
-    this.disabled=true;
-    try { await saveConfig(); determineRole(); showToast('People saved'); }
-    catch(e){ showToast('Error: '+e.message); } finally{ this.disabled=false; }
+    var statusEl = document.getElementById('people-status');
+    var adminVal = document.getElementById('admin-email').value.trim();
+    var empVal   = document.getElementById('emp-email').value.trim();
+    console.log('[HW-metrics] Saving people — admin:', adminVal, 'employee:', empVal);
+    _config.adminEmail    = adminVal;
+    _config.employeeEmail = empVal;
+    this.disabled=true; statusEl.style.color='var(--text-sec)'; statusEl.textContent='Saving…';
+    try {
+      await saveConfig();
+      // Read back from SharePoint to confirm the write landed
+      var verify = await (async function(){
+        var items = await fetchListItems(_listIds.config);
+        var found = items.find(function(i){ return i.fields.Title==='config'; });
+        if (!found) return null;
+        try { return JSON.parse(found.fields.StateData); } catch(e){ return null; }
+      })();
+      if (verify && verify.adminEmail === adminVal && verify.employeeEmail === empVal) {
+        statusEl.style.color='var(--green)'; statusEl.textContent='✓ Saved and confirmed in SharePoint.';
+        console.log('[HW-metrics] People save confirmed in SharePoint:', verify);
+      } else if (verify) {
+        statusEl.style.color='var(--amber)'; statusEl.textContent='Write appeared to succeed but read-back shows different values. Check console.';
+        console.warn('[HW-metrics] Read-back mismatch. Expected:', {adminEmail:adminVal,employeeEmail:empVal}, 'Got:', verify);
+      } else {
+        statusEl.style.color='var(--amber)'; statusEl.textContent='Saved but could not verify. Refresh and recheck.';
+      }
+      determineRole();
+    } catch(e) {
+      statusEl.style.color='var(--red)'; statusEl.textContent='Error: '+e.message;
+      console.error('[HW-metrics] People save error:', e);
+    } finally { this.disabled=false; }
   });
   document.getElementById('save-period-btn').addEventListener('click',async function(){
-    _config.periodStart = document.getElementById('period-input').value;
-    this.disabled=true;
-    try { await saveConfig(); renderPeriodBar(); showToast('Period saved'); }
-    catch(e){ showToast('Error: '+e.message); } finally{ this.disabled=false; }
+    var statusEl = document.getElementById('period-status');
+    var val = document.getElementById('period-input').value;
+    console.log('[HW-metrics] Saving period start:', val);
+    _config.periodStart = val;
+    this.disabled=true; statusEl.style.color='var(--text-sec)'; statusEl.textContent='Saving…';
+    try {
+      await saveConfig();
+      statusEl.style.color='var(--green)'; statusEl.textContent='✓ Saved.';
+      renderPeriodBar();
+    } catch(e) {
+      statusEl.style.color='var(--red)'; statusEl.textContent='Error: '+e.message;
+      console.error('[HW-metrics] Period save error:', e);
+    } finally { this.disabled=false; }
   });
   document.getElementById('add-proj-btn').addEventListener('click',async function(){
     var inp=document.getElementById('new-proj-input'), n=inp.value.trim().toUpperCase();
