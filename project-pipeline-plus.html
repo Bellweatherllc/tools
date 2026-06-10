@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline Plus — v5</title>
+<title>BW Project Pipeline Plus — v9</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -441,12 +441,14 @@ body.prod-design-hidden .section[data-s-type="production"] .ms-da{display:none!i
 }
 .ms-tall.sel-glow{filter:drop-shadow(0 0 5px rgba(255,59,48,.7));outline:2px solid #ff3b30;outline-offset:2px;}
 /* ── TIER SELECTION DOTS (T1/T2/T3) ── */
-.tier-dot{position:absolute;border-radius:50%;user-select:none;pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:3;}
-.tier-dot .tier-lbl{font-size:8px;font-weight:800;color:rgba(255,255,255,.95);pointer-events:none;letter-spacing:.03em;}
-.tier-dot{background:#d96b0f;}
+/* Expanded: positioned in ms-row (height 29px) above the gantt bar */
+.tier-dot{position:absolute;border-radius:50%;user-select:none;pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:3;background:#d96b0f;width:20px;height:20px;top:4px;}
+.tier-dot .tier-lbl{font-size:7px;font-weight:800;color:rgba(255,255,255,.95);pointer-events:none;letter-spacing:.03em;}
 .admin-mode .tier-dot{cursor:grab;pointer-events:auto;}
 .admin-mode .tier-dot.dragging{cursor:grabbing;z-index:50;}
-.lanes-wrap.proj-collapsed .tier-dot{display:none;}
+/* Collapsed: visible on the collapsed band (BAND_H 28px) */
+.lanes-wrap.proj-collapsed .tier-dot{display:flex;width:16px;height:16px;top:6px;}
+.lanes-wrap.proj-collapsed .tier-dot .tier-lbl{font-size:6px;}
 .group-toggle.sel-glow-toggle{outline:2px solid rgba(255,59,48,.90);outline-offset:2px;animation:sel-pulse-soft 1.4s ease-in-out infinite;}
 @keyframes sel-pulse-soft{
   0%,100%{outline-color:rgba(255,59,48,.90);}
@@ -2460,7 +2462,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v5</div>
+    <div class="auth-version" id="authVersionBadge">v9</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2479,7 +2481,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v5</div>
+  <div class="proto-badge" id="versionBadge">v9</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2799,6 +2801,11 @@ function _captureDragPre(drag){
     if(r) phInfo={name:r.ph.name, startWeek:drag.origStartWeek??r.ph.startWeek, durWeeks:drag.origDur??r.ph.durWeeks};
   }
 
+  if(drag.type==='tier'){
+    const tier=(proj?.tiers||[]).find(t=>t.id===drag.tierId);
+    const tierInfo=tier?{id:tier.id,name:tier.name,week:drag.origWeek??tier.week}:null;
+    return{type:'tier',nm,projId:drag.projId,tierInfo,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
+  }
   let msInfo=null;
   if(drag.msId&&proj){
     const ms=proj.milestones&&proj.milestones.find(m=>m.id===drag.msId);
@@ -2864,6 +2871,14 @@ function _buildDragDesc(pre){
     const from=oldPerson?_personLabel(oldPerson):'?';
     const to=newPerson?_personLabel(newPerson):'?';
     return `${nm}: ${from} → ${to}`;
+  }
+  if(type==='tier'){
+    const _tp=PROJECTS.find(p=>p.id===projId); ensureTiers(_tp);
+    const _tier=(_tp?.tiers||[]).find(t=>t.id===pre.tierInfo?.id);
+    const _ti=pre.tierInfo;
+    if(_tier&&_ti&&_tier.week!==_ti.week)
+      return `${nm}: ${_ti.name} ${d(_ti.week)} → ${d(_tier.week)}`;
+    return `${nm}: ${_ti?.name||'tier'} moved`;
   }
   if(type==='timeoffMove') return `${oldPerson?_personLabel(oldPerson):'?'}: time off moved`;
   return `${nm}: changed`;
@@ -3752,12 +3767,14 @@ function projOfPhase(id){ const r=findPhase(id); return r?r.proj:null; }
 function findMs(id){ for(const proj of PROJECTS){ const ms=proj.milestones.find(m=>m.id===id); if(ms)return{proj,ms}; } return null; }
 function msById(id){ const r=findMs(id); return r?r.ms:null; }
 function ensureTiers(proj){
-  if(proj.tiers&&proj.tiers.length===3) return;
-  const ds=proj.designLane?.phases?.[0]?.startWeek??0;
+  // '_anchor':'ph2' marks tiers set from Phase II origin — missing or different = stale, reset
+  if(proj.tiers&&proj.tiers.length===3&&proj.tiers[0]._anchor==='ph2') return;
+  const _dPhs=(proj.designLane?.phases||[]).filter(ph=>!ph.isDesignProd);
+  const ds=(_dPhs[1]??_dPhs[0])?.startWeek??0; // week 0 = Phase II start; fallback to Phase I
   proj.tiers=[
-    {id:proj.id+'-t1',name:'T1',week:ds+4},
-    {id:proj.id+'-t2',name:'T2',week:ds+7},
-    {id:proj.id+'-t3',name:'T3',week:ds+9},
+    {id:proj.id+'-t1',name:'T1',week:ds+4,_anchor:'ph2'},
+    {id:proj.id+'-t2',name:'T2',week:ds+7,_anchor:'ph2'},
+    {id:proj.id+'-t3',name:'T3',week:ds+9,_anchor:'ph2'},
   ];
 }
 function findTier(id){ for(const proj of PROJECTS){ ensureTiers(proj); const t=proj.tiers.find(t=>t.id===id); if(t)return{proj,t}; } return null; }
@@ -4303,12 +4320,11 @@ function buildMsTall(proj,ms,headH,totalH,laneIds,grpNudgeY){
   return m;
 }
 function buildTierDot(proj,tier){
-  const d=32; // diameter — slightly smaller than C.laneH (44)
-  const cx=w2px(tier.week)+Math.round(C.weekW/2); // matches buildMsTall — C.weekW is already zoomed at call time
-  const top=C.msRowH+Math.round((C.laneH-d)/2);
+  // Size and top come from CSS (differs expanded vs collapsed); only left is set inline
+  const cx=w2px(tier.week)+Math.round(C.weekW/2);
   const dot=el('div','tier-dot');
   dot.dataset.tierId=tier.id; dot.dataset.projId=proj.id; dot.dataset.tier=tier.name;
-  dot.style.cssText=`width:${d}px;height:${d}px;left:${cx-d/2}px;top:${top}px;`;
+  dot.style.left=(cx-10)+'px'; // 10 = expanded radius (20px/2); 1px off in collapsed (16px/2=8) — acceptable
   const lbl=el('span','tier-lbl'); lbl.textContent=tier.name; dot.appendChild(lbl);
   dot.addEventListener('mouseenter',e=>tierTT(tier,e));
   dot.addEventListener('mouseleave',hideTT);
@@ -5258,9 +5274,11 @@ function refreshMs(msId){
 }
 function refreshTier(tierId){
   const r=findTier(tierId); if(!r)return;
-  const d=32;
   const _ww=_effWW(); const cx=Math.round(r.t.week*_ww)+Math.round(_ww/2);
-  document.querySelectorAll(`.tier-dot[data-tier-id="${tierId}"]`).forEach(dot=>{ dot.style.left=(cx-d/2)+'px'; });
+  document.querySelectorAll(`.tier-dot[data-tier-id="${tierId}"]`).forEach(dot=>{
+    const half=Math.round(dot.offsetWidth/2)||10;
+    dot.style.left=(cx-half)+'px';
+  });
 }
 function refreshWkNums(projId){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
@@ -6482,9 +6500,13 @@ function onMove(e){
 
   if(DRAG.type==='tier'){
     const r=findTier(DRAG.tierId); if(!r) return;
-    r.t.week=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek,DRAG.origWeek+dw));
+    const _newTierWk=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek,DRAG.origWeek+dw));
+    if(_newTierWk!==r.t.week) _dragMoved=true;
+    r.t.week=_newTierWk; r.t._anchor='ph2'; // preserve user-set position on reload
     const cx=Math.round(r.t.week*_dragWW)+Math.round(_dragWW/2);
-    document.querySelectorAll(`.tier-dot[data-tier-id="${DRAG.tierId}"]`).forEach(dot=>{ dot.style.left=(cx-16)+'px'; });
+    document.querySelectorAll(`.tier-dot[data-tier-id="${DRAG.tierId}"]`).forEach(dot=>{
+      const half=Math.round(dot.offsetWidth/2)||10; dot.style.left=(cx-half)+'px';
+    });
   }
 }
 
@@ -6649,9 +6671,12 @@ function msTT(ms,e){
   showTTraw(`<div class="tt-n">${ms.name} Milestone</div><div class="tt-d">${ds}</div><div class="tt-d">${stLabel}</div>`,e);
 }
 function tierTT(tier,e){
-  const ds=tier.week!=null?wkFri(tier.week).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'Not set';
-  const labels={'T1':'Tier 1 Selections','T2':'Tier 2 Selections','T3':'Tier 3 Selections'};
-  showTTraw(`<div class="tt-n">${labels[tier.name]||tier.name}</div><div class="tt-d">${ds}</div>`,e);
+  const fri=wkFri(tier.week);
+  const tue=new Date(fri.getTime()+4*24*3600*1000); // following Tuesday
+  const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const lbls={'T1':'Tier 1','T2':'Tier 2','T3':'Tier 3'};
+  const lbl=lbls[tier.name]||tier.name;
+  showTTraw(`<div class="tt-n">${lbl} selections due ${fmt(fri)}</div><div class="tt-d">Enter into BT by ${fmt(tue)} at 5:00 pm</div>`,e);
 }
 
 // ════════════════════════════════════════════════  SAVE INDICATOR
@@ -9537,6 +9562,7 @@ function snapshotPipeline(){
       .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
     const prodPhases=(p.productionLane?.phases||[])
       .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
+    ensureTiers(p);
     projects[p.id]={
       name:briefProjName(p),
       status:p.status||'projected',
@@ -9984,7 +10010,7 @@ function generateBriefHTML(){
           const parts=[];
           if(fromWeek!=null&&toWeek!=null&&fromWeek!==toWeek) parts.push(`start ${briefFmtDate(wkToDate(fromWeek))} → ${briefFmtDate(wkToDate(toWeek))}`);
           if(fromDur!=null&&toDur!=null&&fromDur!==toDur) parts.push(`duration ${fromDur}w → ${toDur}w`);
-          rows.push(briefAckRow(id+'-schedule','l-change',field,`${parts.join('; ')}.`));
+          rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',field,`${parts.join('; ')}.`));
         });
         (pd.assignmentChanges||[]).forEach(({field,from,to})=>rows.push(briefAckRow(id+'-assign-'+field.toLowerCase(),'l-change',field,`${from} → ${to}.`)));
         if(pd.noteChange){ const {isNew:iN,note}=pd.noteChange; rows.push(briefAckRow(id+'-note','l-note',iN?'New note':'Note updated',note)); }
