@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline Plus — v11</title>
+<title>BW Project Pipeline Plus — v13</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -442,13 +442,17 @@ body.prod-design-hidden .section[data-s-type="production"] .ms-da{display:none!i
 .ms-tall.sel-glow{filter:drop-shadow(0 0 5px rgba(255,59,48,.7));outline:2px solid #ff3b30;outline-offset:2px;}
 /* ── TIER SELECTION DOTS (T1/T2/T3) ── */
 /* Expanded: positioned in ms-row (height 29px) above the gantt bar */
-.tier-dot{position:absolute;border-radius:50%;user-select:none;pointer-events:auto;cursor:default;display:flex;align-items:center;justify-content:center;z-index:3;background:#2152a1;width:27px;height:27px;top:1px;}
+.tier-dot{position:absolute;border-radius:50%;user-select:none;pointer-events:auto;cursor:default;display:flex;align-items:center;justify-content:center;z-index:3;background:#2152a1;width:30px;height:30px;top:0px;}
 .tier-dot .tier-lbl{font-size:7px;font-weight:800;color:rgba(255,255,255,.95);pointer-events:none;letter-spacing:.03em;}
 .admin-mode .tier-dot{cursor:grab;}
 .admin-mode .tier-dot.dragging{cursor:grabbing;z-index:50;}
 /* Collapsed: visible on the collapsed band (BAND_H 28px) */
-.lanes-wrap.proj-collapsed .tier-dot{display:flex;width:26px;height:26px;top:1px;}
+.lanes-wrap.proj-collapsed .tier-dot{display:flex;width:28px;height:28px;top:0px;}
 .lanes-wrap.proj-collapsed .tier-dot .tier-lbl{font-size:6px;}
+.pd-dot{position:absolute;border-radius:50%;user-select:none;pointer-events:auto;cursor:default;display:flex;align-items:center;justify-content:center;z-index:3;background:#2152a1;width:27px;height:27px;top:1px;}
+.admin-mode .pd-dot{cursor:grab;}
+.admin-mode .pd-dot.dragging{cursor:grabbing;z-index:50;}
+.lanes-wrap.proj-collapsed .pd-dot{display:flex;width:26px;height:26px;top:1px;}
 body:not(.admin-mode) .brief-ack-btn{display:none;}
 .group-toggle.sel-glow-toggle{outline:2px solid rgba(255,59,48,.90);outline-offset:2px;animation:sel-pulse-soft 1.4s ease-in-out infinite;}
 @keyframes sel-pulse-soft{
@@ -2463,7 +2467,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v11</div>
+    <div class="auth-version" id="authVersionBadge">v13</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2482,7 +2486,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v11</div>
+  <div class="proto-badge" id="versionBadge">v13</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2802,6 +2806,11 @@ function _captureDragPre(drag){
     if(r) phInfo={name:r.ph.name, startWeek:drag.origStartWeek??r.ph.startWeek, durWeeks:drag.origDur??r.ph.durWeeks};
   }
 
+  if(drag.type==='pd'){
+    const pdInst=proj?.pencilsDown;
+    const pdInfo=pdInst?{id:pdInst.id,week:drag.origWeek??pdInst.week}:null;
+    return{type:'pd',nm,projId:drag.projId,pdInfo,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
+  }
   if(drag.type==='tier'){
     const tier=(proj?.tiers||[]).find(t=>t.id===drag.tierId);
     const tierInfo=tier?{id:tier.id,name:tier.name,week:drag.origWeek??tier.week}:null;
@@ -2872,6 +2881,12 @@ function _buildDragDesc(pre){
     const from=oldPerson?_personLabel(oldPerson):'?';
     const to=newPerson?_personLabel(newPerson):'?';
     return `${nm}: ${from} → ${to}`;
+  }
+  if(type==='pd'){
+    const _pp=PROJECTS.find(p=>p.id===projId); if(_pp) ensurePencilsDown(_pp);
+    const _pd=_pp?.pencilsDown, _pi=pre.pdInfo;
+    if(_pd&&_pi&&_pd.week!==_pi.week) return `${nm}: Pencils Down ${d(_pi.week)} → ${d(_pd.week)}`;
+    return `${nm}: Pencils Down moved`;
   }
   if(type==='tier'){
     const _tp=PROJECTS.find(p=>p.id===projId); ensureTiers(_tp);
@@ -3779,6 +3794,14 @@ function ensureTiers(proj){
   ];
 }
 function findTier(id){ for(const proj of PROJECTS){ ensureTiers(proj); const t=proj.tiers.find(t=>t.id===id); if(t)return{proj,t}; } return null; }
+function ensurePencilsDown(proj){
+  if(proj.pencilsDown&&proj.pencilsDown._anchor==='pd1') return;
+  const _dp=(proj.designLane?.phases||[]).filter(ph=>!ph.isDesignProd&&ph.durWeeks>0);
+  const _ph=_dp[1]??_dp[0];
+  const defWk=_ph?(_ph.startWeek+_ph.durWeeks):0; // end of Phase II
+  proj.pencilsDown={id:proj.id+'-pd',week:defWk,_anchor:'pd1'};
+}
+function findPD(id){ for(const proj of PROJECTS){ ensurePencilsDown(proj); if(proj.pencilsDown?.id===id)return{proj,pd:proj.pencilsDown}; } return null; }
 function laneOfInProj(proj,id){ if(proj.designLane.phases.find(p=>p.id===id))return'design'; if(id===proj.permitting.id)return'permitting'; return'production'; }
 function laneOf(id){ const r=findPhase(id); return r?laneOfInProj(r.proj,id):null; }
 function tallySection(l){ return l==='production'?'production':'design'; }
@@ -4334,7 +4357,7 @@ function buildTierDot(proj,tier){
   const cx=w2px(tier.week)+Math.round(C.weekW/2);
   const dot=el('div','tier-dot');
   dot.dataset.tierId=tier.id; dot.dataset.projId=proj.id; dot.dataset.tier=tier.name;
-  dot.style.left=(cx-14)+'px'; // 14 ≈ expanded radius (27px/2=13.5); 1px off in collapsed (26px/2=13) — acceptable
+  dot.style.left=(cx-15)+'px'; // 15 = expanded radius (30px/2); close enough for collapsed (28px/2=14)
   const lbl=el('span','tier-lbl'); lbl.textContent=tier.name; dot.appendChild(lbl);
   dot.addEventListener('mouseenter',e=>tierTT(tier,e));
   dot.addEventListener('mouseleave',hideTT);
@@ -4457,7 +4480,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   overlay.style.cssText=`width:${w2px(C.numWeeks)}px;height:${proj.collapsed?collapsedOverlayH:overlayH}px;overflow:visible;`;
   const msToRender=skipMsNames?proj.milestones.filter(ms=>!skipMsNames.includes(ms.name)):proj.milestones;
   msToRender.forEach(ms=>overlay.appendChild(buildMsTall(proj,ms,C.msRowH,proj.collapsed?collapsedOverlayH:overlayH,laneIds,grpNudgeY)));
-  if(laneIds.includes('design')){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); }
+  if(laneIds.includes('design')){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); ensurePencilsDown(proj); overlay.appendChild(buildPencilsDot(proj)); }
   const band=buildCollapsedBand(proj,[...ghostLaneIds,...laneIds]);
   wrap.appendChild(band); wrap.appendChild(overlay); return wrap;
 }
@@ -5290,6 +5313,29 @@ function refreshTier(tierId){
     dot.style.left=(cx-half)+'px';
   });
 }
+function buildPencilsDot(proj){
+  const cx=w2px(proj.pencilsDown.week)+Math.round(C.weekW/2);
+  const dot=el('div','pd-dot');
+  dot.dataset.pdId=proj.pencilsDown.id; dot.dataset.projId=proj.id;
+  dot.style.left=(cx-14)+'px';
+  dot.innerHTML=`<svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="pointer-events:none" xmlns="http://www.w3.org/2000/svg"><path d="M4 10L9 5L11 7L6 12L4 10Z" fill="white" opacity="0.85"/><path d="M9 5L10.5 3L12 4.5L11 7Z" fill="white" opacity="0.85"/><path d="M4 10L2.5 12.5L6 12Z" fill="white" opacity="0.55"/><line x1="2" y1="12" x2="12" y2="2" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.9"/></svg>`;
+  dot.addEventListener('mouseenter',e=>pdTT(proj.pencilsDown,e));
+  dot.addEventListener('mouseleave',hideTT);
+  dot.addEventListener('mousemove',moveTT);
+  return dot;
+}
+function refreshPD(pdId){
+  const r=findPD(pdId); if(!r)return;
+  const _ww=_effWW(); const cx=Math.round(r.pd.week*_ww)+Math.round(_ww/2);
+  document.querySelectorAll(`.pd-dot[data-pd-id="${pdId}"]`).forEach(dot=>{
+    const half=Math.round(dot.offsetWidth/2)||14; dot.style.left=(cx-half)+'px';
+  });
+}
+function pdTT(pd,e){
+  const fri=wkFri(pd.week);
+  const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  showTTraw(`<div class="tt-n">Pencils Down — ${fmt(fri)}</div><div class="tt-d">All design work complete by this date</div>`,e);
+}
 function refreshWkNums(projId){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
   const startW=designStartWeek(proj), endW=constructionEndWeek(proj);
@@ -5498,6 +5544,17 @@ function initDrag(){
       capture(toEl,e.pointerId); return;
     }
 
+    const pdEl=e.target.closest('.pd-dot');
+    if(pdEl&&!canEdit()) return;
+    if(pdEl){
+      e.preventDefault();
+      const pdId=pdEl.dataset.pdId, projId=pdEl.dataset.projId;
+      const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
+      ensurePencilsDown(proj);
+      DRAG={type:'pd',pdId,projId,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:proj.pencilsDown.week,minWeek:0,maxWeek:C.numWeeks-1};
+      pdEl.classList.add('dragging'); capture(pdEl,e.pointerId); return;
+    }
+
     const tierEl=e.target.closest('.tier-dot');
     if(tierEl&&!canEdit()) return;
     if(tierEl){
@@ -5529,10 +5586,11 @@ function initDrag(){
         const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
         const origStarts=allPhs.map(p=>p.startWeek);
         const origMsWeeks=proj.milestones.map(m=>m.week);
-        ensureTiers(proj);
+        ensureTiers(proj); ensurePencilsDown(proj);
         DRAG={type:'projMove',projId,startX:e.clientX,weekW:_dragWeekW(e.target),allPhs,origStarts,origMsWeeks,
               milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane,
-              tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week)};
+              tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week),
+              pencilsDown:proj.pencilsDown,origPdWeek:proj.pencilsDown.week};
         document.querySelectorAll(`.ms-tall[data-ms-id="${id}"]`).forEach(m=>m.classList.add('dragging'));
         capture(msEl,e.pointerId); return;
       }
@@ -5688,13 +5746,14 @@ function initDrag(){
         const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
         const origAllStarts=allPhs.map(p=>p.startWeek);
         const origMsWeeks=proj.milestones.map(m=>m.week);
-        ensureTiers(proj);
+        ensureTiers(proj); ensurePencilsDown(proj);
         DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts:origAllStarts,origMsWeeks,
               milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane,
-              tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week)};
+              tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week),
+              pencilsDown:proj.pencilsDown,origPdWeek:proj.pencilsDown.week};
         bar.classList.add('dragging'); capture(bar,e.pointerId); return;
       }
-      const _phaseTiers=(laneId==='design'&&chainStart===0)?(()=>{ensureTiers(proj);return{tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week)};})():{};
+      const _phaseTiers=(laneId==='design'&&chainStart===0)?(()=>{ensureTiers(proj);ensurePencilsDown(proj);return{tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week),pencilsDown:proj.pencilsDown,origPdWeek:proj.pencilsDown.week};})():{};
       DRAG={type:'phaseMove',laneId,projId,bar,startX:e.clientX,chain,origStarts,allPhs:phs,chainStart,chainEnd,cascadeLeft,designCascadeRight,designCascadeLeft,..._phaseTiers};
       bar.classList.add('dragging'); capture(bar,e.pointerId); return;
     }
@@ -6376,6 +6435,7 @@ function onMove(e){
     DRAG.prodLane.startWeek=DRAG.prodLane.phases[0].startWeek;
     if(DRAG.milestones){ DRAG.milestones.forEach((ms,i)=>{ ms.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origMsWeeks[i]+clampedDw)); refreshMs(ms.id); }); }
     if(DRAG.tiers){ DRAG.tiers.forEach((t,i)=>{ t.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origTierWeeks[i]+clampedDw)); refreshTier(t.id); }); }
+    if(DRAG.pencilsDown){ DRAG.pencilsDown.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origPdWeek+clampedDw)); refreshPD(DRAG.pencilsDown.id); }
     // Update bars in-place
     DRAG.allPhs.forEach(ph=>{
       document.querySelectorAll(`.phase-bar[data-phase-id="${ph.id}"]`).forEach(b=>{ b.style.left=_w2px(ph.startWeek)+'px'; });
@@ -6427,7 +6487,10 @@ function onMove(e){
     if(clampedDw!==0) _dragMoved=true;
     DRAG.chain.forEach((ph,i)=>{ ph.startWeek=DRAG.origStarts[i]+clampedDw; });
     if(DRAG.chainStart===0) getLane(proj,DRAG.laneId).startWeek=DRAG.chain[0].startWeek;
-    if(DRAG.laneId==='design'&&DRAG.chainStart===0&&DRAG.tiers){ DRAG.tiers.forEach((t,i)=>{ t.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origTierWeeks[i]+clampedDw)); refreshTier(t.id); }); }
+    if(DRAG.laneId==='design'&&DRAG.chainStart===0&&DRAG.tiers){
+      DRAG.tiers.forEach((t,i)=>{ t.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origTierWeeks[i]+clampedDw)); refreshTier(t.id); });
+      if(DRAG.pencilsDown){ DRAG.pencilsDown.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origPdWeek+clampedDw)); refreshPD(DRAG.pencilsDown.id); }
+    }
     // Cascade left: Construction drags Pre-con and CA milestone left with it when all touching
     if(DRAG.cascadeLeft&&clampedDw<0){
       const cl=DRAG.cascadeLeft;
@@ -6512,10 +6575,21 @@ function onMove(e){
     const r=findTier(DRAG.tierId); if(!r) return;
     const _newTierWk=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek,DRAG.origWeek+dw));
     if(_newTierWk!==r.t.week) _dragMoved=true;
-    r.t.week=_newTierWk; r.t._anchor='ph2'; // preserve user-set position on reload
+    r.t.week=_newTierWk; r.t._anchor='ph2';
     const cx=Math.round(r.t.week*_dragWW)+Math.round(_dragWW/2);
     document.querySelectorAll(`.tier-dot[data-tier-id="${DRAG.tierId}"]`).forEach(dot=>{
       const half=Math.round(dot.offsetWidth/2)||10; dot.style.left=(cx-half)+'px';
+    });
+  }
+
+  if(DRAG.type==='pd'){
+    const r=findPD(DRAG.pdId); if(!r) return;
+    const _newWk=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek,DRAG.origWeek+dw));
+    if(_newWk!==r.pd.week) _dragMoved=true;
+    r.pd.week=_newWk; r.pd._anchor='pd1';
+    const cx=Math.round(r.pd.week*_dragWW)+Math.round(_dragWW/2);
+    document.querySelectorAll(`.pd-dot[data-pd-id="${DRAG.pdId}"]`).forEach(dot=>{
+      const half=Math.round(dot.offsetWidth/2)||14; dot.style.left=(cx-half)+'px';
     });
   }
 }
@@ -6587,6 +6661,12 @@ function onUp(){
     refreshMsOpacity(DRAG.projId);
   }
   else if(DRAG.msId){ const r=findMs(DRAG.msId); if(r){refreshMsOpacity(r.proj.id);} }
+  if(DRAG.type==='pd'){
+    document.querySelectorAll(`.pd-dot[data-pd-id="${DRAG.pdId}"]`).forEach(d=>d.classList.remove('dragging'));
+    const _pp=PROJECTS.find(p=>p.id===DRAG.projId); if(_pp){ markDirty(_pp); triggerSave(_pp); }
+    document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp);
+    DRAG=null; return;
+  }
   if(DRAG.type==='tier'){
     document.querySelectorAll(`.tier-dot[data-tier-id="${DRAG.tierId}"]`).forEach(d=>d.classList.remove('dragging'));
     const _tp=PROJECTS.find(p=>p.id===DRAG.projId); if(_tp){ markDirty(_tp); triggerSave(_tp); }
@@ -6626,7 +6706,7 @@ function hideTT(){TT.classList.remove('show');}
   const TL_TARGETS='.lane-row,.tl-ms-row,.timeline-col,.person-group-tl,.unassigned-group-tl,.ms-wk-cell,.ms-overlay,.prod-rev-tl,.timeoff-block,.unassigned-placeholder-tl,.collapsed-band';
   document.addEventListener('mousemove',e=>{
     if(DRAG) return;
-    if(e.target.closest('.ms-tall')) return; // ms has own tooltip
+    if(e.target.closest('.ms-tall,.tier-dot,.pd-dot')) return; // these have own tooltips
     // Only show tooltip when over an interactive element, not empty lane space
     if(!e.target.closest('.phase-bar,.timeoff-block')){hideTT();return;}
     const ss=e.target.closest('.section-scroll');
@@ -8427,6 +8507,13 @@ document.addEventListener('pointerdown',e=>{
   if(e.target.closest('.fc-proj-tooltip')||e.target.closest('.proj-name-text')) return;
   _hideAllTips();
 },true);
+// Dismiss on mouseleave from project name or tooltip
+document.addEventListener('mouseleave',e=>{
+  if(!e.target?.closest)return;
+  if(!e.target.closest('.proj-name-text,.fc-proj-tooltip'))return;
+  const to=e.relatedTarget;
+  if(!to?.closest?.('.proj-name-text,.fc-proj-tooltip')) _hideAllTips();
+},true);
 
 // ════════════════════════════════════════════════  CALENDAR RANGE POPUP
 const CAL_POPUP=document.getElementById('calPopup');
@@ -9572,7 +9659,7 @@ function snapshotPipeline(){
       .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
     const prodPhases=(p.productionLane?.phases||[])
       .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
-    ensureTiers(p);
+    ensureTiers(p); ensurePencilsDown(p);
     projects[p.id]={
       name:briefProjName(p),
       status:p.status||'projected',
@@ -9581,6 +9668,7 @@ function snapshotPipeline(){
       notes:p.notes||'',
       milestones:(p.milestones||[]).map(m=>({id:m.id,name:m.name,status:m.status,week:m.week})),
       tiers:(p.tiers||[]).map(t=>({id:t.id,name:t.name,week:t.week})),
+      pd:p.pencilsDown?{id:p.pencilsDown.id,week:p.pencilsDown.week}:null,
       designStart:p.designLane?.phases?.[0]?.startWeek??null,
       prodStart:p.productionLane?.phases?.[0]?.startWeek??null,
       constrStart:cPh?.startWeek??null,
@@ -9676,6 +9764,14 @@ function diffPipeline(){
       if(!bm) return;
       if(bm.status!==ms.status||bm.week!==ms.week) msChanges.push({proj,ms,fromStatus:bm.status,fromWeek:bm.week});
     });
+    if(proj.pencilsDown){
+      const _dp2=(proj.designLane?.phases||[]).filter(ph=>!ph.isDesignProd&&ph.durWeeks>0);
+      const _ph2=_dp2[1]??_dp2[0];
+      const defPdWk=_ph2?(_ph2.startWeek+_ph2.durWeeks):0;
+      const snapPdWk=snap.pd?.week??defPdWk; // fallback to Phase II end default
+      if(snapPdWk!==proj.pencilsDown.week)
+        scheduleChanges.push({proj,field:'Pencils Down',fromWeek:snapPdWk,toWeek:proj.pencilsDown.week,fromDur:null,toDur:null});
+    }
     (proj.tiers||[]).forEach(tier=>{
       // If baseline pre-dates tier tracking, fall back to Phase II defaults as implicit baseline
       const _snapTiers=snap.tiers?.length?snap.tiers:(()=>{
