@@ -170,6 +170,28 @@ body { font-family: 'TT Norms Pro', -apple-system, BlinkMacSystemFont, sans-seri
 .loading { padding: 48px; text-align: center; color: var(--slate); font-size: 14px; }
 
 /* ── Toast ── */
+/* ── Module tabs ── */
+.module-tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 2px solid var(--linen); }
+.module-tab { background: none; border: none; padding: 10px 20px; font-size: 13px; font-weight: 500; font-family: 'TT Norms Pro', sans-serif; color: var(--slate); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.15s, border-color 0.15s; }
+.module-tab.active { color: var(--limestone); border-bottom-color: var(--navy); font-weight: 600; }
+.module-tab:hover:not(.active) { color: var(--limestone); }
+
+/* ── Access matrix ── */
+.access-table { width: 100%; border-collapse: collapse; background: var(--marble); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.access-table th { background: var(--linen); font-size: 11px; font-weight: 600; color: var(--slate); text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 16px; text-align: left; white-space: nowrap; }
+.access-table td { padding: 10px 16px; border-bottom: 1px solid var(--cotton); vertical-align: middle; }
+.access-table tr:last-child td { border-bottom: none; }
+.access-table tbody tr:hover td { background: var(--cotton); }
+.access-member-name { font-size: 14px; font-weight: 500; }
+.access-member-dept { font-size: 11px; color: var(--slate); font-weight: 400; margin-top: 1px; }
+.role-access-select { border: 1.5px solid var(--linen); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 500; font-family: 'TT Norms Pro', sans-serif; color: var(--limestone); background: var(--marble); cursor: pointer; outline: none; transition: border-color 0.15s, background 0.15s; min-width: 100px; }
+.role-access-select:focus { border-color: var(--navy); }
+.role-access-select.saving { opacity: 0.5; pointer-events: none; }
+.role-access-select.saved { border-color: var(--green) !important; background: var(--green-bg) !important; }
+.role-access-select[data-value="admin"] { background: rgba(38,56,96,0.07); border-color: rgba(38,56,96,0.25); color: var(--navy); font-weight: 600; }
+.role-access-select[data-value="member"] { background: var(--cotton); }
+.access-note { font-size: 12px; color: var(--slate); margin-bottom: 20px; line-height: 1.5; }
+
 .toast { position: fixed; bottom: 24px; right: 24px; background: var(--limestone); color: var(--marble); padding: 12px 20px; border-radius: var(--radius); font-size: 13px; opacity: 0; transform: translateY(8px); transition: all 0.2s; pointer-events: none; z-index: 999; }
 .toast.show { opacity: 1; transform: translateY(0); }
 </style>
@@ -181,7 +203,7 @@ body { font-family: 'TT Norms Pro', -apple-system, BlinkMacSystemFont, sans-seri
     <img class="header-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-W.svg" alt="Bellweather">
     <div class="header-divider"></div>
     <span class="header-subtitle">CORE Admin</span>
-    <span class="header-version">v4</span>
+    <span class="header-version">v5</span>
   </div>
   <div class="header-right">
     <div class="conn-indicator">
@@ -196,7 +218,7 @@ body { font-family: 'TT Norms Pro', -apple-system, BlinkMacSystemFont, sans-seri
   <div class="login-card">
     <img class="login-logo" src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather">
     <div class="login-title">CORE Admin</div>
-    <div class="login-version">v4</div>
+    <div class="login-version">v5</div>
     <div class="login-subtitle">Sign in with your Bellweather Microsoft account to manage operational data.</div>
     <button class="btn-login" onclick="login()">Sign in with Microsoft</button>
     <div class="login-error" id="loginError"></div>
@@ -265,8 +287,15 @@ body { font-family: 'TT Norms Pro', -apple-system, BlinkMacSystemFont, sans-seri
     <!-- Team Members content -->
     <div id="module-team-members" style="display:none;">
       <div class="module-page-title">Team Members</div>
-      <div class="module-page-subtitle">Manage the CORE team roster. Changes sync directly to SharePoint (CORE_TeamMembers).</div>
+      <div class="module-page-subtitle">Manage the CORE team roster and tool access. Changes sync directly to SharePoint.</div>
 
+      <div class="module-tabs">
+        <button class="module-tab active" id="tab-roster" onclick="switchTMTab('roster')">Roster</button>
+        <button class="module-tab" id="tab-access" onclick="switchTMTab('access')">Access</button>
+      </div>
+
+      <!-- Roster tab -->
+      <div id="tm-roster">
       <div class="add-form">
         <div class="add-form-field">
           <div class="add-form-label">Name</div>
@@ -308,6 +337,14 @@ body { font-family: 'TT Norms Pro', -apple-system, BlinkMacSystemFont, sans-seri
         </div>
         <div id="memberList"><div class="loading">Loading…</div></div>
       </div>
+      </div><!-- end tm-roster -->
+
+      <!-- Access tab -->
+      <div id="tm-access" style="display:none;">
+        <div class="access-note">Role assignments for each tool sync directly to SharePoint. Changes take effect immediately. Any <em>*Role</em> column added to CORE_TeamMembers will appear here automatically on next load.</div>
+        <div id="accessMatrix"><div class="loading">Loading…</div></div>
+      </div>
+
     </div>
 
   </div><!-- end view-module -->
@@ -335,6 +372,7 @@ let currentSort = 'name';
 let membersLoaded = false;
 let roleChoices = [];
 let roleFieldType = 'Choice'; // updated by loadRoleChoices; 'MultiChoice' enables multi-select writes
+let accessColumns = []; // *Role columns (excluding bare 'Role') — loaded at module open
 
 // ── Role checkbox helpers ──
 // TypeAsString === 'MultiChoice': read item.Role.results, write { results: [] }
@@ -472,7 +510,7 @@ function openModule(id) {
   document.getElementById('view-module').style.display = 'block';
   if (id === 'team-members' && !membersLoaded) {
     loadRoleChoices().catch(console.warn);
-    loadMembers();
+    loadAccessColumns().then(() => loadMembers()).catch(console.warn);
   }
 }
 
@@ -494,10 +532,94 @@ async function loadRoleChoices() {
   }
 }
 
+// ── Access columns — *Role columns excluding the bare 'Role' field ──
+async function loadAccessColumns() {
+  try {
+    const resp = await spFetch(`${listApiUrl()}/fields?$filter=Hidden eq false and ReadOnlyField eq false&$select=InternalName,Title`);
+    const data = await resp.json();
+    accessColumns = (data.value || [])
+      .filter(f => /Role$/.test(f.InternalName) && f.InternalName !== 'Role')
+      .map(f => ({
+        internalName: f.InternalName,
+        label: f.InternalName.replace(/Role$/, '').replace(/([A-Z])/g, ' $1').trim()
+      }));
+  } catch (err) {
+    console.warn('Could not load access columns:', err);
+    accessColumns = [];
+  }
+}
+
+// ── Tab switching ──
+function switchTMTab(tab) {
+  document.getElementById('tm-roster').style.display = tab === 'roster' ? 'block' : 'none';
+  document.getElementById('tm-access').style.display  = tab === 'access'  ? 'block' : 'none';
+  document.getElementById('tab-roster').classList.toggle('active', tab === 'roster');
+  document.getElementById('tab-access').classList.toggle('active', tab === 'access');
+  if (tab === 'access') renderAccessMatrix();
+}
+
+// ── Access matrix ──
+function renderAccessMatrix() {
+  const container = document.getElementById('accessMatrix');
+  if (!members.length) { container.innerHTML = '<div class="empty-state">No team members loaded.</div>'; return; }
+  if (!accessColumns.length) { container.innerHTML = '<div class="empty-state">No <em>*Role</em> access columns found on this list.</div>'; return; }
+  const active   = [...members].filter(m => m.active).sort((a,b) => a.name.localeCompare(b.name));
+  const inactive = [...members].filter(m => !m.active).sort((a,b) => a.name.localeCompare(b.name));
+  const opts = ['', 'member', 'admin'];
+  const optLabels = { '': '—', 'member': 'Member', 'admin': 'Admin' };
+  const thead = `<tr>
+    <th>Member</th>
+    ${accessColumns.map(c => `<th>${escHtml(c.label)}</th>`).join('')}
+  </tr>`;
+  const makeRow = (m) => {
+    const cells = accessColumns.map(c => {
+      const val = (m.accessRoles && m.accessRoles[c.internalName]) || '';
+      return `<td><select class="role-access-select" data-value="${escHtml(val)}"
+        onchange="setAccessRole('${m.id}','${escHtml(c.internalName)}',this)">
+        ${opts.map(o => `<option value="${o}"${val===o?' selected':''}>${optLabels[o]||o}</option>`).join('')}
+      </select></td>`;
+    }).join('');
+    const dim = m.active ? '' : ' style="opacity:0.5"';
+    return `<tr${dim}>
+      <td>
+        <div class="access-member-name">${escHtml(m.name)}</div>
+        ${m.department ? `<div class="access-member-dept">${escHtml(m.department)}</div>` : ''}
+      </td>
+      ${cells}
+    </tr>`;
+  };
+  container.innerHTML = `<table class="access-table">
+    <thead>${thead}</thead>
+    <tbody>${[...active,...inactive].map(makeRow).join('')}</tbody>
+  </table>`;
+}
+
+async function setAccessRole(memberId, colName, selectEl) {
+  const value = selectEl.value;
+  selectEl.setAttribute('data-value', value);
+  selectEl.classList.add('saving');
+  try {
+    await spFetch(`${listApiUrl()}/items(${parseInt(memberId)})`, {
+      method: 'POST',
+      headers: { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+      body: JSON.stringify({ [colName]: value || null })
+    });
+    const m = members.find(x => x.id === memberId);
+    if (m && m.accessRoles) m.accessRoles[colName] = value;
+    selectEl.classList.remove('saving');
+    selectEl.classList.add('saved');
+    setTimeout(() => selectEl.classList.remove('saved'), 1400);
+  } catch (err) {
+    selectEl.classList.remove('saving');
+    showToast('Error saving: ' + err.message);
+  }
+}
+
 // ── Team Members data ──
 async function loadMembers() {
   try {
-    const resp = await spFetch(`${listApiUrl()}/items?$select=Id,EmployeeName,Department,Role,Active,SortOrder&$orderby=SortOrder asc&$top=500`);
+    const accessSelect = accessColumns.length ? ',' + accessColumns.map(c => c.internalName).join(',') : '';
+    const resp = await spFetch(`${listApiUrl()}/items?$select=Id,EmployeeName,Department,Role,Active,SortOrder${accessSelect}&$orderby=SortOrder asc&$top=500`);
     const data = await resp.json();
     members = (data.value || []).map(item => ({
       id: String(item.Id),
@@ -505,7 +627,8 @@ async function loadMembers() {
       department: item.Department || '',
       roles: parseRoleValue(item.Role),
       active: item.Active !== false,
-      sortOrder: item.SortOrder || 0
+      sortOrder: item.SortOrder || 0,
+      accessRoles: Object.fromEntries(accessColumns.map(c => [c.internalName, item[c.internalName] || '']))
     }));
     membersLoaded = true;
     renderList();
