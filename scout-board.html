@@ -346,6 +346,7 @@ function toSpFields(p) {
     ChkGqProd:   !!p.chkGqProd,
     ChkReview:   !!p.chkReview,
     ChkGift:     !!p.chkGift,
+    ChkAllDone:  !!p.chkAllDone,
     Notes:       JSON.stringify(p.notes || [])
   };
 }
@@ -360,7 +361,7 @@ function fromSpItem(item) {
     type:        item.ProjectType  || '',
     stage:       item.Stage        || 'In progress',
     tier:        item.Tier         || 'TBD',
-    priority:    item.Priority     || 'Watch',
+    priority:    item.Priority     || 'Medium',
     scout:       item.Scout        || 'Not yet',
     caSigned:    item.CASigned     || '',
     completion:  item.Completion   || '',
@@ -373,6 +374,7 @@ function fromSpItem(item) {
     chkGqProd:   !!item.ChkGqProd,
     chkReview:   !!item.ChkReview,
     chkGift:     !!item.ChkGift,
+    chkAllDone:  !!item.ChkAllDone,
     notes:       notes
   };
 }
@@ -484,11 +486,13 @@ function displayDate(s) {
 }
 function fmtBudget(v) {
   if (!v) return '';
-  var n=parseInt(v.replace(/[^0-9]/g,''),10);
-  return isNaN(n)?v:'$'+n.toLocaleString('en-US');
+  var s=String(v).replace(/[^0-9.]/g,'');
+  var n=parseFloat(s);
+  if(isNaN(n)) return v;
+  return '$'+n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});
 }
 function stagePill(s) {
-  var m={'In progress':'pill-stage-progress','Nearing completion':'pill-stage-nearing','Ready to scout':'pill-stage-scout','Photographed':'pill-stage-photographed','Completed':'pill-stage-completed','Pass':'pill-stage-pass','Archived':'pill-stage-archived'};
+  var m={'In progress':'pill-stage-progress','Nearing completion':'pill-stage-nearing','Ready to scout':'pill-stage-scout','Photographed':'pill-stage-photographed','Completed':'pill-stage-completed','Pass':'pill-stage-pass','Archived':'pill-stage-archived','All Actions Items Completed':'pill-stage-closed'};
   return m[s]||'pill-stage-progress';
 }
 function tierPill(t) {
@@ -499,7 +503,7 @@ function tierPill(t) {
   return 'pill-tier-none';
 }
 function priPill(p) {
-  return p==='High'?'pill-priority-high':p==='Watch'?'pill-priority-watch':'pill-priority-low';
+  return p==='High'?'pill-priority-high':p==='Medium'?'pill-priority-medium':'pill-priority-low';
 }
 
 // ── Filtering ─────────────────────────────────────────────────
@@ -511,6 +515,12 @@ function getFilters() {
     sort:  (document.getElementById('sort-by')||{}).value||'ca'
   };
 }
+function isClosed(p) { return p.chkAllDone; }
+function getCAYear(p) {
+  if (!p.caSigned) return 9999;
+  var y=parseInt((p.caSigned||'').split('-')[0],10);
+  return isNaN(y)?9999:y;
+}
 function sortedFiltered(f) {
   var list = projects.filter(function(p) {
     var q=(f.q||'').toLowerCase();
@@ -520,6 +530,14 @@ function sortedFiltered(f) {
     return true;
   });
   list.sort(function(a,b) {
+    // Closed projects always at bottom
+    var ac=isClosed(a)?1:0, bc=isClosed(b)?1:0;
+    if (ac!==bc) return ac-bc;
+    // Both closed → sort by CA year desc (most recent year last = grouped by year)
+    if (ac&&bc) {
+      var ay=getCAYear(a), by=getCAYear(b);
+      if (ay!==by) return ay-by;
+    }
     if (f.sort==='alpha')    return (a.name||'').localeCompare(b.name||'');
     if (f.sort==='designer') return (a.designer||a.team||'').localeCompare(b.designer||b.team||'');
     if (f.sort==='pm')       return (a.pm||'').localeCompare(b.pm||'');
@@ -564,8 +582,8 @@ function cardHTML(p) {
   if (isExp) {
     var stages=['In progress','Nearing completion','Ready to scout','Photographed','Completed','Pass','Archived'];
     var tiers=['Professional','Video','Professional + Video','iPhone only','TBD','No photography'];
-    var scouts=['Not yet','Yes — worth it','No — pass'];
-    var priorities=['High','Watch','Low'];
+    var scouts=['Not yet','To Be Determined','Yes — worth it','No — pass'];
+    var priorities=['High','Medium','Low'];
     var notesHTML=p.notes.length
       ?p.notes.map(function(n){return '<div class="note-entry"><div class="note-meta">'+n.date+'</div><div class="note-text">'+n.text+'</div></div>';}).join('')
       :'<div class="no-notes">No notes yet — add one below.</div>';
@@ -581,13 +599,19 @@ function cardHTML(p) {
       +'</div>'
       +'<span class="checklist-label">Post-production checklist</span>'
       +'<div class="checklist">'
-      +['GQ Design Review','GQ Prod Review','Client Review','Gift Sent'].map(function(label,i){
+      +['GQ Design Review','GQ Prod Review','Google Review','Client Gift Provided'].map(function(label,i){
         var fields=['chkGqDesign','chkGqProd','chkReview','chkGift'];
         var f=fields[i];
         return '<label class="check-item'+(p[f]?' checked':'')+'" onclick="toggleCheck('+p.id+',\''+f+'\')">'
           +'<input type="checkbox"'+(p[f]?' checked':'')+' onclick="event.preventDefault()">'
           +'<span>'+label+'</span></label>';
       }).join('')
+      +(function(){
+        var f='chkAllDone';
+        return '<label class="check-item check-item-final'+(p[f]?' checked':'')+'" onclick="toggleCheck('+p.id+',\''+f+'\')">'
+          +'<input type="checkbox"'+(p[f]?' checked':'')+' onclick="event.preventDefault()">'
+          +'<span><strong>All Actions Items Completed</strong></span></label>';
+      })()
       +'</div>'
       +'<span class="notes-label">Notes ('+p.notes.length+')</span>'
       +'<div class="notes-log">'+notesHTML+'</div>'
@@ -595,18 +619,24 @@ function cardHTML(p) {
       +'</div>';
   }
 
+  var snapshotTeam=[];
+  if (p.sales||p.team) snapshotTeam.push((p.sales||p.team||''));
+  if (p.designer) snapshotTeam.push(p.designer);
+  if (p.pm) snapshotTeam.push(p.pm);
+
   return '<div class="proj-card'+(isExp?' expanded':'')+'" id="card-'+p.id+'">'
     +'<div class="card-top" onclick="toggleExpand('+p.id+')">'
     +'<div class="card-main">'
-    +'<div class="card-ca-row">'+caLabel+'<span class="ca-divider"></span><span class="proj-name">'+p.name+'</span></div>'
-    +'<div class="card-row1">'
-    +'<span class="pill '+stagePill(p.stage)+'">'+p.stage+'</span>'
-    +(p.tier&&p.tier!=='TBD'?'<span class="pill '+tierPill(p.tier)+'">'+p.tier+'</span>':'')
-    +'<span class="pill '+priPill(p.priority)+'">'+p.priority+'</span>'
-    +(p.completion?'<span class="meta-item">Est. '+p.completion+'</span>':'')
-    +(p.budget?'<span class="meta-item">'+fmtBudget(p.budget)+'</span>':'')
+    +'<div class="card-ca-row">'+caLabel+'<span class="ca-divider"></span><span class="proj-name">'+p.name+(p.type?' <span class="proj-type-inline">– '+p.type+'</span>':'')+'</span></div>'
+    +'<div class="card-snapshot">'
+    +'<div class="snap-row"><span class="snap-label">Priority</span><span class="pill '+priPill(p.priority)+'">'+p.priority+'</span></div>'
+    +'<div class="snap-row"><span class="snap-label">Status</span><span class="pill '+stagePill(p.stage)+'">'+p.stage+'</span></div>'
+    +(p.completion?'<div class="snap-row"><span class="snap-label">Est. Completion</span><span class="snap-val">'+p.completion+'</span></div>':'')
+    +(p.tier&&p.tier!=='TBD'?'<div class="snap-row"><span class="snap-label">Photo Tier</span><span class="pill '+tierPill(p.tier)+'">'+p.tier+'</span></div>':'')
+    +(snapshotTeam.length?'<div class="snap-row"><span class="snap-label">Team</span><span class="snap-val">'+snapshotTeam.join(', ')+'</span></div>':'')
+    +(p.budget?'<div class="snap-row"><span class="snap-label">Value</span><span class="snap-val">'+fmtBudget(p.budget)+'</span></div>':'')
+    +(p.caSigned?'<div class="snap-row"><span class="snap-label">CA Signed</span><span class="snap-val">'+displayDate(p.caSigned)+'</span></div>':'')
     +'</div>'
-    +(teamTags?'<div class="team-tags">'+teamTags+'</div>':'')
     +'</div>'
     +'<div class="card-actions">'
     +'<button class="icon-btn" title="Edit" onclick="event.stopPropagation();openModal('+p.id+')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>'
@@ -628,9 +658,29 @@ function renderCards() {
   var list = sortedFiltered(f);
   var pl   = document.getElementById('proj-list');
   if (!pl) return;
-  pl.innerHTML = list.length
-    ? list.map(cardHTML).join('')
-    : '<div class="empty-state">No projects match your filters.</div>';
+  if (!list.length) {
+    pl.innerHTML = '<div class="empty-state">No projects match your filters.</div>';
+  } else {
+    var activeList  = list.filter(function(p){return !isClosed(p);});
+    var closedList  = list.filter(function(p){return  isClosed(p);});
+    var html = activeList.map(cardHTML).join('');
+    if (closedList.length) {
+      // Group closed by year
+      var years={};
+      closedList.forEach(function(p){
+        var yr = getCAYear(p);
+        var label = yr===9999?'Closed':'Closed '+yr;
+        if(!years[label]) years[label]=[];
+        years[label].push(p);
+      });
+      html += '<div class="closed-divider"><span>Completed Projects</span></div>';
+      Object.keys(years).sort().forEach(function(lbl){
+        html += '<div class="closed-year-label">'+lbl+'</div>';
+        html += years[lbl].map(cardHTML).join('');
+      });
+    }
+    pl.innerHTML = html;
+  }
   var sb = document.getElementById('stats-bar');
   if (sb) sb.innerHTML = statsHTML();
 }
@@ -646,6 +696,9 @@ function fieldBlur(el) {
   if (!p) return;
   var val = (el.dataset.type==='date') ? parseDate(el.value) : el.value;
   if (el.dataset.type==='date') el.value=displayDate(val);
+  if (field==='designer' && /^steph$/i.test(val.trim())) {
+    val='Stephanie'; el.value='Stephanie';
+  }
   p[field]=val;
   saveToSP(p);
   if (field==='caSigned') renderCards();
@@ -672,11 +725,16 @@ function toggleCheck(id, field) {
   if (!p) return;
   p[field]=!p[field];
   saveToSP(p);
+  if (field==='chkAllDone') {
+    renderCards();
+    return;
+  }
   var card=document.getElementById('card-'+id);
   if (card) {
-    var fields=['chkGqDesign','chkGqProd','chkReview','chkGift'];
+    var fields=['chkGqDesign','chkGqProd','chkReview','chkGift','chkAllDone'];
     card.querySelectorAll('.check-item').forEach(function(lbl,i){
-      var f=fields[i], cb=lbl.querySelector('input[type="checkbox"]');
+      var f=fields[i]; if(!f) return;
+      var cb=lbl.querySelector('input[type="checkbox"]');
       if (p[f]){lbl.classList.add('checked');if(cb)cb.checked=true;}
       else {lbl.classList.remove('checked');if(cb)cb.checked=false;}
     });
@@ -707,11 +765,11 @@ async function deleteProject(id) {
 // ── Modal ─────────────────────────────────────────────────────
 function openModal(id) {
   var p=id?projects.find(function(x){return x.id===id;}):null;
-  var v=p||{name:'',type:'',team:'',pm:'',completion:'',budget:'',caSigned:'',stage:'In progress',tier:'TBD',priority:'Watch',scout:'Not yet'};
+  var v=p||{name:'',type:'',team:'',pm:'',completion:'',budget:'',caSigned:'',stage:'In progress',tier:'TBD',priority:'Medium',scout:'Not yet',chkAllDone:false};
   var stages=['In progress','Nearing completion','Ready to scout','Photographed','Completed','Pass','Archived'];
   var tiers=['Professional','Video','Professional + Video','iPhone only','TBD','No photography'];
   var scouts=['Not yet','Yes — worth it','No — pass'];
-  var priorities=['High','Watch','Low'];
+  var priorities=['High','Medium','Low'];
   var bd=document.createElement('div');
   bd.className='modal-backdrop'; bd.id='modal-backdrop';
   bd.addEventListener('click',function(e){if(e.target===bd)closeModal();});
@@ -722,8 +780,8 @@ function openModal(id) {
     +'<div class="modal-field"><label>CA signed date</label><input id="m-ca" type="text" value="'+displayDate(v.caSigned||'')+'" placeholder="e.g. 4/25/25"></div>'
     +'<div class="modal-field"><label>Project type</label><input id="m-type" type="text" placeholder="e.g. Whole home remodel" value="'+(v.type||'')+'"></div>'
     +'<div class="modal-field"><label>PM</label><input id="m-pm" type="text" placeholder="e.g. Seth" value="'+(v.pm||'')+'"></div>'
-    +'<div class="modal-field"><label>Sales / PC</label><input id="m-sales" type="text" placeholder="e.g. Steph" value="'+(v.sales||v.team||'')+'"></div>'
-    +'<div class="modal-field"><label>Designer</label><input id="m-designer" type="text" placeholder="e.g. Emily" value="'+(v.designer||'')+'"></div>'
+    +'<div class="modal-field"><label>Sales / PC</label><input id="m-sales" type="text" placeholder="e.g. Joey" value="'+(v.sales||v.team||'')+'"></div>'
+    +'<div class="modal-field"><label>Designer</label><input id="m-designer" type="text" placeholder="e.g. Steph" value="'+(v.designer||'')+'"></div>'
     +'<div class="modal-field"><label>Est. completion</label><input id="m-completion" type="text" placeholder="e.g. April 2025" value="'+(v.completion||'')+'"></div>'
     +'<div class="modal-field"><label>Budget / value</label><input id="m-budget" type="text" placeholder="e.g. $95,000" value="'+(v.budget||'')+'" onblur="this.value=fmtBudget(this.value)"></div>'
     +'<div class="modal-section-label">Photography assessment</div>'
@@ -748,24 +806,24 @@ function saveModal(id){
     type:       document.getElementById('m-type').value||'',
     sales:      document.getElementById('m-sales').value||'',
     team:       document.getElementById('m-sales').value||'',
-    designer:   document.getElementById('m-designer').value||'',
+    designer:   (function(){var d=document.getElementById('m-designer').value||'';return /^steph$/i.test(d.trim())?'Stephanie':d;})(),
     pm:         document.getElementById('m-pm').value||'',
     completion: document.getElementById('m-completion').value||'',
     budget:     document.getElementById('m-budget').value||'',
     stage:      document.getElementById('m-stage').value||'In progress',
     tier:       document.getElementById('m-tier').value||'TBD',
-    priority:   document.getElementById('m-priority').value||'Watch',
+    priority:   document.getElementById('m-priority').value||'Medium',
     scout:      document.getElementById('m-scout').value||'Not yet'
   };
   if (id&&id!=='null'){
     var ex=projects.find(function(x){return x.id===id;});
     if (ex){
-      var checks={chkGqDesign:ex.chkGqDesign||false,chkGqProd:ex.chkGqProd||false,chkReview:ex.chkReview||false,chkGift:ex.chkGift||false};
+      var checks={chkGqDesign:ex.chkGqDesign||false,chkGqProd:ex.chkGqProd||false,chkReview:ex.chkReview||false,chkGift:ex.chkGift||false,chkAllDone:ex.chkAllDone||false};
       Object.assign(ex,data,checks);
       closeModal(); renderCards(); saveToSP(ex);
     }
   } else {
-    var newP=Object.assign({id:Date.now(),notes:[],chkGqDesign:false,chkGqProd:false,chkReview:false,chkGift:false},data);
+    var newP=Object.assign({id:Date.now(),notes:[],chkGqDesign:false,chkGqProd:false,chkReview:false,chkGift:false,chkAllDone:false},data);
     projects.push(newP);
     closeModal(); renderCards(); saveToSP(newP);
   }
