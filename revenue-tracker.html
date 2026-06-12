@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Revenue Tracker — v3</title>
+<title>BW Revenue Tracker — v6</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -160,7 +160,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <div class="auth-card">
     <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">BW Revenue Tracker</div>
-    <div class="auth-ver">VERSION 3</div>
+    <div class="auth-ver">VERSION 6</div>
     <button class="auth-btn" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-spinner" id="authSpinner"></div>
     <div id="authStatus"></div>
@@ -173,7 +173,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bw">
   <div class="tb-div"></div>
   <span class="tb-title">Revenue Tracker</span>
-  <span class="tb-ver">v3</span>
+  <span class="tb-ver">v6</span>
   <div class="tb-right">
     <div class="save-ind" id="saveInd"><div class="si-dot"></div><span>Ready</span></div>
     <select class="year-sel" id="yearSel" onchange="renderAll()"></select>
@@ -185,6 +185,18 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <div id="loadStatus">Loading…</div>
 
 <div class="main" id="main" style="display:none;">
+  <div style="background:#fdf7e6;border:1px solid var(--border);border-left:4px solid var(--gold);border-radius:8px;padding:13px 18px;margin-bottom:18px;font-size:13px;line-height:1.5;">
+    <b>Open question for Byron, Joey &amp; Ryan:</b> this tool stores monthly WIP actuals — contract value, actual costs, percent complete, earned revenue — in the <b>CORE_Revenue</b> list on the main CORE site, where anyone with CORE access can read them (and derive job-level margin from costs vs. contract). Is that visibility right, or should this list move to OperationsSecure with the other financial data? The move is trivial on the tooling side; it just needs a decision. Remove this notice once it's settled.
+  </div>
+  <details style="background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:18px;" open>
+    <summary style="cursor:pointer;padding:13px 18px;font-family:'Swear Text',serif;font-size:15px;font-weight:500;">What this page shows &amp; where the data comes from</summary>
+    <div style="padding:0 18px 16px;font-size:13px;line-height:1.65;color:var(--text);">
+      <p>This tracker joins two independent views of the same revenue. The <b>forecast</b> is computed live, on every page load, from the Pipeline's schedule: each project's <i>EstimatedProjectValue</i> divided by its construction-phase duration gives a weekly revenue rate, spread across wherever that phase actually sits on the calendar. Nothing is stored — move a bar in the Pipeline and this forecast moves with it, so the two tools can never disagree. Solid gold is CA-signed work; the striped portion is projected (DA-signed, unsigned, or paused).</p>
+      <p style="margin-top:8px;">The <b>actuals</b> come from the monthly WIP workbook that Joey and Ryan maintain on the Operations site — the percent-complete reviews that turn QuickBooks costs into earned revenue per job. "Sync from WIP" reads that workbook directly from SharePoint, takes Ryan's (RS) sheets as the record with Joey's (JW) percent-complete stored alongside for comparison, and writes one row per job per month to the <b>CORE_Revenue</b> list. The display always reads from CORE_Revenue, never from the workbook itself, so the page stays fast and the history survives workbook reorganizations.</p>
+      <p style="margin-top:8px;">In short: <b>CORE_Projects owns what <i>will</i> happen</b> (changes are keyed in the Pipeline only); <b>CORE_Revenue owns what <i>did</i> happen</b> (written only by WIP sync, frozen thereafter); this page is where they meet. The Δ flags in the project table mark jobs where the WIP contract value has drifted from the Pipeline's — usually a change order keyed into one system but not the other.</p>
+      <p style="margin-top:10px;"><b>Recommended next steps for the architecture:</b> move CORE_Revenue to OperationsSecure once the visibility question above is settled, since costs-vs-contract exposes job margin; add the CORE <i>JobCode</i> to the WIP workbook's project rows so name-matching becomes deterministic instead of fuzzy; stand up a shared auth redirect page so each new CORE tool stops requiring its own Azure registration; build the change-order process so contract-value drift is prevented rather than flagged; and when a QuickBooks API plan materializes, it replaces the sync step here — nothing downstream changes.</p>
+    </div>
+  </details>
   <div class="cards" id="cards"></div>
 
   <h2 class="sec">Quarterly <span class="note" id="qNote"></span></h2>
@@ -228,13 +240,14 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ CONFIG
-const VERSION='v3';
+const VERSION='v6';
 const MSAL_CLIENT_ID='84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT='ff0e3f46-615a-4a22-8a80-4bb83d627785';
 const SP_SCOPES=['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/User.Read'];
 const GRAPH='https://graph.microsoft.com/v1.0';
 const BWC_LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
 const OPS_SECURE_LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/OperationsSecure:/lists';
+const REVENUE_LISTS=BWC_LISTS;   // CORE_Revenue lives on BWCore (flip to OPS_SECURE_LISTS if migrated)
 const OPS_SITE_PATH=GRAPH+'/sites/bellweather.sharepoint.com:/sites/Operations';
 const EPOCH=new Date('2025-01-05T00:00:00');   // Pipeline C.startDate — immutable
 const MS_WEEK=7*24*3600*1000;
@@ -371,7 +384,7 @@ async function loadProjects(){
   });
 }
 async function loadRevenue(){
-  const items=await graphGetAll(OPS_SECURE_LISTS+'/CORE_Revenue/items?$expand=fields&$select=id,fields');
+  const items=await graphGetAll(REVENUE_LISTS+'/CORE_Revenue/items?$expand=fields&$select=id,fields');
   REVENUE=[];
   items.forEach(item=>{
     const f=item.fields||{};
@@ -799,9 +812,9 @@ async function stepWrite(){
       const body={...item.fields, ImportBatch:batch};
       Object.keys(body).forEach(k=>{ if(body[k]===null) delete body[k]; });
       if(item.existingId)
-        await graphPatch(OPS_SECURE_LISTS+'/CORE_Revenue/items/'+item.existingId+'/fields',body);
+        await graphPatch(REVENUE_LISTS+'/CORE_Revenue/items/'+item.existingId+'/fields',body);
       else
-        await graphPost(OPS_SECURE_LISTS+'/CORE_Revenue/items',{fields:body});
+        await graphPost(REVENUE_LISTS+'/CORE_Revenue/items',{fields:body});
     }catch(e){ errs++; console.warn('write failed',item.proj,item.period,e); }
     done++;
     if(fill)fill.style.width=Math.round(done/todo.length*100)+'%';
@@ -890,8 +903,8 @@ async function boot(){
       // Most useful thing on a missing-list 404: show what lists actually exist there
       if(/itemNotFound|not found/i.test(e.message)){
         try{
-          const lists=await graphGetAll(OPS_SECURE_LISTS+'?$select=displayName');
-          revErr=new Error('CORE_Revenue not found on OperationsSecure. Lists that ARE there: '+
+          const lists=await graphGetAll(REVENUE_LISTS+'?$select=displayName');
+          revErr=new Error('CORE_Revenue not found on BWCore. Lists that ARE there: '+
             lists.map(l=>l.displayName).join(', '));
         }catch(e2){ /* keep original error */ }
       }
