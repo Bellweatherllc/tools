@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Revenue Tracker — v1</title>
+<title>BW Revenue Tracker — v2</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -160,10 +160,12 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <div class="auth-card">
     <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">BW Revenue Tracker</div>
-    <div class="auth-ver">VERSION 1</div>
+    <div class="auth-ver">VERSION 2</div>
     <button class="auth-btn" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-spinner" id="authSpinner"></div>
     <div id="authStatus"></div>
+    <div style="margin-top:22px;font-size:10px;color:rgba(255,255,255,.35);word-break:break-all;" id="redirectReadout"></div>
+    <a href="javascript:resetSignIn()" style="display:inline-block;margin-top:10px;font-size:11px;color:rgba(255,255,255,.5);">Reset sign-in state</a>
   </div>
 </div>
 
@@ -171,7 +173,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bw">
   <div class="tb-div"></div>
   <span class="tb-title">Revenue Tracker</span>
-  <span class="tb-ver">v1</span>
+  <span class="tb-ver">v2</span>
   <div class="tb-right">
     <div class="save-ind" id="saveInd"><div class="si-dot"></div><span>Ready</span></div>
     <select class="year-sel" id="yearSel" onchange="renderAll()"></select>
@@ -221,12 +223,12 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 
 <div id="toasts"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/msal-browser/2.38.3/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 'use strict';
 // ════════════════════════════════════ CONFIG
-const VERSION='v1';
+const VERSION='v2';
 const MSAL_CLIENT_ID='84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT='ff0e3f46-615a-4a22-8a80-4bb83d627785';
 const SP_SCOPES=['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/User.Read'];
@@ -250,13 +252,34 @@ const msalApp=new msal.PublicClientApplication({
          redirectUri:location.origin+location.pathname },
   cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:false }
 });
+document.addEventListener('DOMContentLoaded',()=>{ const rr=document.getElementById('redirectReadout'); if(rr) rr.textContent='Redirect URI in use: '+location.origin+location.pathname; });
 function setAuthStatus(msg,isErr){ const el=document.getElementById('authStatus'); el.textContent=msg||''; el.className=isErr?'err':''; }
+function clearMsalState(){
+  // All CORE tools share this origin's localStorage — a failed sign-in on ANY tool can
+  // strand MSAL's interaction flag and block every other tool's login.
+  let n=0;
+  [localStorage,sessionStorage].forEach(st=>{
+    for(let i=st.length-1;i>=0;i--){ const k=st.key(i); if(k&&/^msal\./i.test(k)){ st.removeItem(k); n++; } }
+  });
+  return n;
+}
+function resetSignIn(){ const n=clearMsalState(); setAuthStatus('Cleared '+n+' cached sign-in keys — reloading…'); setTimeout(()=>location.reload(),700); }
 function doSignIn(){
   const btn=document.getElementById('authSignInBtn'), sp=document.getElementById('authSpinner');
   if(btn)btn.disabled=true; if(sp)sp.style.display='block';
+  // Proactively clear a stranded interaction flag from a previous failed attempt on this origin
+  [localStorage,sessionStorage].forEach(st=>{
+    for(let i=st.length-1;i>=0;i--){ const k=st.key(i); if(k&&k.indexOf('interaction.status')>-1) st.removeItem(k); }
+  });
   setAuthStatus('Signing in…');
+  // Watchdog: loginRedirect should navigate away within seconds. If we're still here, say why that matters.
+  const watchdog=setTimeout(()=>{
+    setAuthStatus('Still here after 8s — the browser never left for Microsoft. Try "Reset sign-in state" below; if that fails, the network may be blocking login.microsoftonline.com.',true);
+    if(btn)btn.disabled=false; if(sp)sp.style.display='none';
+  },8000);
   msalApp.loginRedirect({scopes:SP_SCOPES}).catch(e=>{
-    setAuthStatus('Sign-in failed: '+e.message,true);
+    clearTimeout(watchdog);
+    setAuthStatus('Sign-in failed: '+(e.errorCode||'')+' '+e.message,true);
     if(btn)btn.disabled=false; if(sp)sp.style.display='none';
   });
 }
@@ -872,9 +895,16 @@ async function boot(){
 }
 msalApp.handleRedirectPromise().then(resp=>{
   if(resp&&resp.account) msalApp.setActiveAccount(resp.account);
-  if(msalApp.getAllAccounts().length) boot();
+  const acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
+  if(acct){ msalApp.setActiveAccount(acct); boot(); }
   else setAuthStatus('');
-}).catch(e=>setAuthStatus('Auth error: '+e.message,true));
+}).catch(e=>{
+  // Stale redirect errors from a previous failed attempt can land here.
+  // If a valid cached account exists anyway, proceed; otherwise show the real error.
+  const acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
+  if(acct){ msalApp.setActiveAccount(acct); boot(); return; }
+  setAuthStatus('Auth error: '+(e.errorCode||'')+' '+e.message,true);
+});
 </script>
 </body>
 </html>
