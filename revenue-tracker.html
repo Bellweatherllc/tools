@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BW Revenue Tracker — v1</title>
+<style>
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_DemiBold.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+
+:root{
+  --navy:#1f2e3e; --gold:#d8b64f; --gold-light:#f9e6ae;
+  --bg:#f5f3ee; --surface:#fff; --text:#1f2e3e; --text-sec:#7a7a7a;
+  --muted:#a3a3a3; --border:#e4dac4;
+  --signed:#00521b; --projected:#c8a84c; --paused:#d16d3a;
+  --ok:#3b7fa8; --warn:#d07820; --over:#ac2828;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'TT Norms Pro',-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:14px;}
+
+/* ── Auth overlay ── */
+#authOverlay{position:fixed;inset:0;background:var(--navy);z-index:1000;display:flex;align-items:center;justify-content:center;}
+.auth-card{text-align:center;max-width:340px;padding:30px;}
+.auth-card img{height:54px;margin-bottom:18px;}
+.auth-title{font-family:'Swear Text',serif;font-size:21px;color:#fff;font-weight:500;margin-bottom:4px;}
+.auth-ver{font-size:11px;color:rgba(255,255,255,.45);letter-spacing:.08em;margin-bottom:26px;}
+.auth-btn{background:var(--gold);color:var(--navy);border:none;padding:11px 34px;border-radius:6px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;}
+.auth-btn:hover{background:var(--gold-light);}
+.auth-btn:disabled{opacity:.5;cursor:default;}
+#authStatus{margin-top:16px;font-size:12px;color:rgba(255,255,255,.6);min-height:18px;}
+#authStatus.err{color:#e89090;}
+.auth-spinner{display:none;margin:14px auto 0;width:22px;height:22px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Topbar ── */
+.topbar{background:var(--navy);display:flex;align-items:center;gap:12px;padding:0 16px;height:48px;position:sticky;top:0;z-index:100;}
+.topbar img{height:22px;display:block;}
+.tb-div{width:1px;height:16px;background:rgba(255,255,255,.14);}
+.tb-title{font-family:'Swear Text',serif;font-size:14px;color:rgba(255,255,255,.9);font-weight:500;white-space:nowrap;}
+.tb-ver{font-size:10px;color:var(--navy);background:var(--gold);border-radius:9px;padding:2px 8px;font-weight:700;letter-spacing:.04em;}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.tb-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.85);padding:5px 13px;border-radius:5px;font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;}
+.tb-btn:hover{background:rgba(255,255,255,.15);}
+.tb-btn.gold{background:var(--gold);color:var(--navy);border-color:var(--gold);font-weight:600;}
+.tb-btn.gold:hover{background:var(--gold-light);}
+select.year-sel{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;padding:4px 8px;border-radius:5px;font-family:inherit;font-size:12px;cursor:pointer;}
+select.year-sel option{color:var(--text);background:#fff;}
+.save-ind{display:flex;align-items:center;gap:6px;font-size:11px;color:rgba(255,255,255,.65);min-width:74px;}
+.si-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;}
+.si-spinner{width:11px;height:11px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;}
+.acct-chip{font-size:11px;color:rgba(255,255,255,.55);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* ── Layout ── */
+.main{max-width:1240px;margin:0 auto;padding:22px 20px 60px;}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px;}
+.card .lbl{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--text-sec);margin-bottom:7px;}
+.card .val{font-family:'Swear Text',serif;font-size:24px;font-weight:500;line-height:1.1;}
+.card .sub{font-size:11px;color:var(--text-sec);margin-top:6px;}
+.card.gold-edge{border-top:3px solid var(--gold);}
+.card.navy-edge{border-top:3px solid var(--navy);}
+.card.green-edge{border-top:3px solid var(--signed);}
+
+h2.sec{font-family:'Swear Text',serif;font-size:17px;font-weight:500;margin:28px 0 12px;display:flex;align-items:center;gap:10px;}
+h2.sec .note{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:400;color:var(--text-sec);}
+
+table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.tbl th{background:var(--navy);color:rgba(255,255,255,.85);font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:9px 12px;text-align:right;white-space:nowrap;}
+.tbl th:first-child{text-align:left;}
+.tbl td{padding:8px 12px;border-top:1px solid #efe9da;font-size:13px;text-align:right;font-variant-numeric:tabular-nums;}
+.tbl td:first-child{text-align:left;font-weight:500;}
+.tbl tr.total td{font-weight:700;background:#faf8f2;border-top:2px solid var(--border);}
+.tbl .dim{color:var(--muted);}
+.tbl .pos{color:var(--signed);}
+.tbl .neg{color:var(--over);}
+
+.stage-badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:8px;color:#fff;margin-left:8px;vertical-align:1px;}
+.stage-badge.ca{background:var(--signed);}
+.stage-badge.da{background:var(--projected);color:var(--navy);}
+.stage-badge.proj{background:var(--projected);color:var(--navy);}
+.stage-badge.paused{background:var(--paused);}
+.recon-flag{display:inline-block;margin-left:7px;font-size:10px;color:var(--over);font-weight:600;cursor:help;border-bottom:1px dotted var(--over);}
+
+/* monthly bars */
+.mrow{display:grid;grid-template-columns:84px 1fr 230px;align-items:center;gap:12px;padding:5px 0;border-bottom:1px solid #efe9da;}
+.mrow .mname{font-size:12px;font-weight:600;color:var(--text-sec);}
+.mbars{display:flex;flex-direction:column;gap:3px;}
+.mbar{height:13px;border-radius:3px;min-width:2px;position:relative;}
+.mbar.fc{background:var(--gold);}
+.mbar.fc .seg-proj{position:absolute;right:0;top:0;bottom:0;background:repeating-linear-gradient(45deg,var(--gold) 0 4px,var(--gold-light) 4px 8px);border-radius:0 3px 3px 0;}
+.mbar.act{background:var(--navy);}
+.mvals{font-size:11px;color:var(--text-sec);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;}
+.legend{display:flex;gap:16px;font-size:11px;color:var(--text-sec);margin:6px 0 10px;}
+.legend span{display:flex;align-items:center;gap:5px;}
+.lg-sw{width:14px;height:10px;border-radius:2px;display:inline-block;}
+
+/* judgment panel */
+.jg-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;}
+.jg-row{display:flex;align-items:baseline;gap:14px;padding:7px 0;border-bottom:1px solid #efe9da;font-size:13px;}
+.jg-row:last-child{border-bottom:none;}
+.jg-name{font-weight:600;min-width:150px;}
+.jg-pct{font-variant-numeric:tabular-nums;color:var(--text-sec);}
+.jg-delta{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums;}
+.empty-note{color:var(--muted);font-size:12px;padding:10px 0;}
+
+/* ── Sync modal ── */
+#syncOverlay{position:fixed;inset:0;background:rgba(31,46,62,.55);z-index:500;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:40px 16px;}
+#syncOverlay.open{display:flex;}
+.sync-panel{background:var(--surface);border-radius:10px;max-width:880px;width:100%;box-shadow:0 18px 50px rgba(0,0,0,.3);}
+.sync-hdr{background:var(--navy);border-radius:10px 10px 0 0;padding:14px 20px;display:flex;align-items:center;gap:12px;}
+.sync-hdr .t{font-family:'Swear Text',serif;font-size:15px;color:#fff;font-weight:500;}
+.sync-hdr .step{font-size:11px;color:rgba(255,255,255,.55);}
+.sync-x{margin-left:auto;background:none;border:none;color:rgba(255,255,255,.6);font-size:20px;cursor:pointer;line-height:1;}
+.sync-x:hover{color:#fff;}
+.sync-body{padding:20px;max-height:64vh;overflow:auto;}
+.sync-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;align-items:center;}
+.sync-foot .info{margin-right:auto;font-size:12px;color:var(--text-sec);}
+.btn{padding:8px 20px;border-radius:6px;border:1px solid var(--border);background:#fff;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;}
+.btn:hover{background:#faf8f2;}
+.btn.primary{background:var(--navy);color:#fff;border-color:var(--navy);}
+.btn.primary:hover{background:#2a3d52;}
+.btn.primary:disabled{opacity:.45;cursor:default;}
+.sync-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.sync-tbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-sec);padding:6px 8px;border-bottom:1px solid var(--border);}
+.sync-tbl td{padding:6px 8px;border-bottom:1px solid #efe9da;}
+.sync-tbl select,.sync-tbl input[type=number]{font-family:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:#fff;}
+.sync-tbl input[type=number]{width:66px;}
+.tag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;padding:2px 7px;border-radius:8px;}
+.tag.synced{background:#e6efe8;color:var(--signed);}
+.tag.new{background:var(--gold-light);color:var(--navy);}
+.tag.skip{background:#eee;color:var(--muted);}
+.file-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:7px;margin-bottom:8px;cursor:pointer;}
+.file-opt:hover{background:#faf8f2;}
+.file-opt input{accent-color:var(--navy);}
+.file-opt .fn{font-weight:600;font-size:13px;}
+.file-opt .fm{font-size:11px;color:var(--text-sec);margin-left:auto;}
+.prog-wrap{margin:12px 0;}
+.prog-bar{height:8px;background:#eee9dc;border-radius:4px;overflow:hidden;}
+.prog-fill{height:100%;background:var(--gold);width:0%;transition:width .2s;}
+.prog-txt{font-size:11px;color:var(--text-sec);margin-top:6px;}
+
+/* toasts */
+#toasts{position:fixed;bottom:20px;right:20px;z-index:900;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--navy);color:#fff;padding:10px 16px;border-radius:7px;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;gap:9px;animation:slideIn .25s ease;max-width:380px;}
+.toast.err{background:var(--over);}
+.toast.ok .tdot{background:#4ade80;}
+.tdot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0;}
+@keyframes slideIn{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+
+#loadStatus{text-align:center;padding:60px 0;color:var(--text-sec);font-size:13px;display:none;}
+</style>
+</head>
+<body>
+
+<div id="authOverlay">
+  <div class="auth-card">
+    <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
+    <div class="auth-title">BW Revenue Tracker</div>
+    <div class="auth-ver">VERSION 1</div>
+    <button class="auth-btn" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
+    <div class="auth-spinner" id="authSpinner"></div>
+    <div id="authStatus"></div>
+  </div>
+</div>
+
+<div class="topbar" id="topbar" style="display:none;">
+  <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bw">
+  <div class="tb-div"></div>
+  <span class="tb-title">Revenue Tracker</span>
+  <span class="tb-ver">v1</span>
+  <div class="tb-right">
+    <div class="save-ind" id="saveInd"><div class="si-dot"></div><span>Ready</span></div>
+    <select class="year-sel" id="yearSel" onchange="renderAll()"></select>
+    <button class="tb-btn gold" onclick="openSync()">Sync from WIP</button>
+    <span class="acct-chip" id="acctChip"></span>
+  </div>
+</div>
+
+<div id="loadStatus">Loading…</div>
+
+<div class="main" id="main" style="display:none;">
+  <div class="cards" id="cards"></div>
+
+  <h2 class="sec">Quarterly <span class="note" id="qNote"></span></h2>
+  <div id="qWrap"></div>
+
+  <h2 class="sec">Monthly <span class="note">forecast vs earned</span></h2>
+  <div class="legend">
+    <span><span class="lg-sw" style="background:var(--gold)"></span>Forecast — signed</span>
+    <span><span class="lg-sw" style="background:repeating-linear-gradient(45deg,var(--gold) 0 4px,var(--gold-light) 4px 8px)"></span>Forecast — projected</span>
+    <span><span class="lg-sw" style="background:var(--navy)"></span>Earned (WIP actual)</span>
+  </div>
+  <div id="mWrap"></div>
+
+  <h2 class="sec">Projects <span class="note" id="pNote"></span></h2>
+  <div id="pWrap" style="overflow-x:auto;"></div>
+
+  <h2 class="sec">Percent-Complete Judgment Gap <span class="note">Joey (JW) vs Ryan (RS), latest synced period</span></h2>
+  <div class="jg-card" id="jgWrap"></div>
+</div>
+
+<div id="syncOverlay">
+  <div class="sync-panel">
+    <div class="sync-hdr">
+      <span class="t">Sync from WIP Workbook</span>
+      <span class="step" id="syncStep"></span>
+      <button class="sync-x" onclick="closeSync()">×</button>
+    </div>
+    <div class="sync-body" id="syncBody"></div>
+    <div class="sync-foot">
+      <span class="info" id="syncInfo"></span>
+      <button class="btn" onclick="closeSync()">Cancel</button>
+      <button class="btn primary" id="syncNextBtn" onclick="syncNext()">Next</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/msal-browser/2.38.3/msal-browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+'use strict';
+// ════════════════════════════════════ CONFIG
+const VERSION='v1';
+const MSAL_CLIENT_ID='84b37f0e-b149-4089-9bdc-fc654715db23';
+const MSAL_TENANT='ff0e3f46-615a-4a22-8a80-4bb83d627785';
+const SP_SCOPES=['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/User.Read'];
+const GRAPH='https://graph.microsoft.com/v1.0';
+const BWC_LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
+const OPS_SECURE_LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/OperationsSecure:/lists';
+const OPS_SITE_PATH=GRAPH+'/sites/bellweather.sharepoint.com:/sites/Operations';
+const EPOCH=new Date('2025-01-05T00:00:00');   // Pipeline C.startDate — immutable
+const MS_WEEK=7*24*3600*1000;
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ════════════════════════════════════ STATE (all remote-sourced; nothing persisted locally)
+let PROJECTS=[];        // from CORE_Projects: {spId, name, clientName, stage, status, estValue, constr:{startWeek,durWeeks}|null}
+let REVENUE=[];         // from CORE_Revenue: {spId, jobKey, wipName, period:'YYYY-MM', cat, contract, costs, pct, earned, invoiced, pctJW, earnedJW, sourceSheet}
+let FORECAST=null;      // built from PROJECTS
+let ACTUALS=null;       // built from REVENUE
+
+// ════════════════════════════════════ MSAL
+const msalApp=new msal.PublicClientApplication({
+  auth:{ clientId:MSAL_CLIENT_ID, authority:'https://login.microsoftonline.com/'+MSAL_TENANT,
+         redirectUri:location.origin+location.pathname },
+  cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:false }
+});
+function setAuthStatus(msg,isErr){ const el=document.getElementById('authStatus'); el.textContent=msg||''; el.className=isErr?'err':''; }
+function doSignIn(){
+  const btn=document.getElementById('authSignInBtn'), sp=document.getElementById('authSpinner');
+  if(btn)btn.disabled=true; if(sp)sp.style.display='block';
+  setAuthStatus('Signing in…');
+  msalApp.loginRedirect({scopes:SP_SCOPES}).catch(e=>{
+    setAuthStatus('Sign-in failed: '+e.message,true);
+    if(btn)btn.disabled=false; if(sp)sp.style.display='none';
+  });
+}
+async function getToken(){
+  const acct=msalApp.getAllAccounts()[0];
+  if(!acct) throw new Error('No account — sign in first');
+  try{ const r=await msalApp.acquireTokenSilent({scopes:SP_SCOPES,account:acct}); return r.accessToken; }
+  catch(e){ await msalApp.acquireTokenRedirect({scopes:SP_SCOPES,account:acct}); throw new Error('Redirecting for token…'); }
+}
+
+// ════════════════════════════════════ GRAPH HELPERS
+async function graphFetch(url,opts){
+  const tok=await getToken();
+  const r=await fetch(url,Object.assign({},opts,{headers:Object.assign({Authorization:'Bearer '+tok,'Content-Type':'application/json'},(opts&&opts.headers)||{})}));
+  if(!r.ok){ const t=await r.text(); throw new Error('Graph '+r.status+': '+t.slice(0,300)); }
+  return r;
+}
+async function graphGetAll(url){
+  let out=[], next=url;
+  while(next){
+    const r=await graphFetch(next); const j=await r.json();
+    out=out.concat(j.value||[]); next=j['@odata.nextLink']||null;
+  }
+  return out;
+}
+async function graphJson(url){ const r=await graphFetch(url); return r.json(); }
+async function graphPost(url,body){ const r=await graphFetch(url,{method:'POST',body:JSON.stringify(body)}); return r.json(); }
+async function graphPatch(url,body){ const r=await graphFetch(url,{method:'PATCH',body:JSON.stringify(body)}); return r.json(); }
+
+// ════════════════════════════════════ UTIL
+function parseMoney(s){ const n=parseFloat(String(s==null?'':s).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:n; }
+function fmt$(v){ if(v==null||isNaN(v))return '—'; const neg=v<0; const a=Math.round(Math.abs(v)).toLocaleString(); return (neg?'−$':'$')+a; }
+function fmtPct(v){ return v==null?'—':Math.round(v*100)+'%'; }
+function periodKey(y,m){ return y+'-'+String(m+1).padStart(2,'0'); }
+function toast(msg,kind){
+  const t=document.createElement('div'); t.className='toast '+(kind||'');
+  t.innerHTML='<span class="tdot"></span><span></span>'; t.lastChild.textContent=msg;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(),400); }, kind==='err'?7000:4000);
+}
+function setSave(state,msg){
+  const el=document.getElementById('saveInd');
+  if(state==='busy') el.innerHTML='<div class="si-spinner"></div><span>'+(msg||'Working…')+'</span>';
+  else if(state==='err') el.innerHTML='<div class="si-dot" style="background:#e07070"></div><span>'+(msg||'Error')+'</span>';
+  else el.innerHTML='<div class="si-dot"></div><span>'+(msg||'Ready')+'</span>';
+}
+function normName(s){
+  return String(s||'').toLowerCase().replace(/\(all\)/g,'').replace(/[^a-z]/g,'');
+}
+function lev(a,b){
+  if(a===b)return 0;
+  const m=a.length,n=b.length; if(!m)return n; if(!n)return m;
+  let prev=Array.from({length:n+1},(_,i)=>i);
+  for(let i=1;i<=m;i++){
+    const cur=[i];
+    for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev=cur;
+  }
+  return prev[n];
+}
+function esc(s){ const d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+
+// ════════════════════════════════════ LOAD
+async function loadProjects(){
+  const items=await graphGetAll(BWC_LISTS+'/CORE_Projects/items?$expand=fields&$select=id,fields');
+  PROJECTS=[];
+  items.forEach(item=>{
+    const f=item.fields||{};
+    const stage=f.PipelineStage||'';
+    const clientName=f.ClientName||f.Title||'Unnamed';
+    const name=f.ProjectName||clientName;
+    let gd=null;
+    if(f.GanttData){ try{ gd=JSON.parse(f.GanttData); }catch(e){ /* bad blob — skip schedule */ } }
+    const isSlot=(gd&&gd.isOpenSlot)||/^Slot\b/i.test(name);
+    const isScheduled=!!(gd&&gd.scheduled===true);
+    const isLead=!stage&&!isSlot&&!isScheduled;
+    const st=({'DA Signed':'da-signed','CA Signed':'ca-signed','Paused':'paused','Cancelled':'cancelled','Archive':'archived','Lost':'lost'})[stage]||'projected';
+    let constr=null;
+    if(gd&&gd.productionLane&&Array.isArray(gd.productionLane.phases)){
+      const ph=gd.productionLane.phases.find(p=>/^construction$/i.test(String(p.name||'').trim()));
+      if(ph&&ph.durWeeks>0) constr={startWeek:ph.startWeek,durWeeks:ph.durWeeks};
+    }
+    PROJECTS.push({
+      spId:String(item.id), name, clientName, stage, status:st,
+      estValue:parseMoney(f.EstimatedProjectValue), constr,
+      isLead, isSlot,
+      visible: st!=='archived'&&st!=='cancelled'&&st!=='lost'&&!isLead
+    });
+  });
+}
+async function loadRevenue(){
+  const items=await graphGetAll(OPS_SECURE_LISTS+'/CORE_Revenue/items?$expand=fields&$select=id,fields');
+  REVENUE=[];
+  items.forEach(item=>{
+    const f=item.fields||{};
+    if(!f.Period) return;
+    REVENUE.push({
+      spId:String(item.id),
+      jobKey:String(f.JobKey||''),
+      wipName:f.WIPJobName||'',
+      period:String(f.Period).slice(0,7),            // 'YYYY-MM' (SP returns full ISO)
+      cat:f.RevenueCategory||'Construction',
+      contract:parseMoney(f.ContractValue),
+      costs:parseMoney(f.ActualCosts),
+      pct:f.PercentComplete==null?null:Number(f.PercentComplete),
+      earned:parseMoney(f.EarnedToDate),
+      invoiced:parseMoney(f.InvoicedToDate),
+      pctJW:f.PercentCompleteJW==null?null:Number(f.PercentCompleteJW),
+      earnedJW:f.EarnedToDateJW==null?null:parseMoney(f.EarnedToDateJW),
+      sourceSheet:f.SourceSheet||''
+    });
+  });
+}
+
+// ════════════════════════════════════ FORECAST ENGINE (schedule-derived; identical math to Pipeline revenue row)
+function buildForecast(){
+  const byMonth=new Map();   // key 'YYYY-MM' -> {signed, projected}
+  const perProj=new Map();   // spId -> {byYear: Map y->amt, perWk}
+  const years=new Set();
+  PROJECTS.forEach(p=>{
+    if(!p.visible||!p.constr||!p.estValue) return;
+    const perWk=p.estValue/p.constr.durWeeks;
+    const isSigned=p.status==='ca-signed';
+    const byYear=new Map();
+    for(let i=0;i<p.constr.durWeeks&&i<520;i++){
+      const d=new Date(EPOCH.getTime()+(p.constr.startWeek+i)*MS_WEEK);
+      const y=d.getFullYear(), k=periodKey(y,d.getMonth());
+      years.add(y);
+      let m=byMonth.get(k); if(!m){m={signed:0,projected:0};byMonth.set(k,m);}
+      m[isSigned?'signed':'projected']+=perWk;
+      byYear.set(y,(byYear.get(y)||0)+perWk);
+    }
+    perProj.set(p.spId,{byYear,perWk,isSigned});
+  });
+  FORECAST={byMonth,perProj,years};
+}
+
+// ════════════════════════════════════ ACTUALS ENGINE
+function buildActuals(){
+  const bySeries=new Map();   // jobKey|category -> sorted snapshots (independent cumulative series)
+  REVENUE.forEach(r=>{
+    if(!r.jobKey) return;
+    const k=r.jobKey+'|'+r.cat;
+    let a=bySeries.get(k); if(!a){a=[];bySeries.set(k,a);}
+    a.push(r);
+  });
+  const byJob=new Map();           // jobKey -> all rows (any category)
+  const monthlyEarned=new Map();   // 'YYYY-MM' -> $ earned that month (delta of cumulative)
+  const latestByJob=new Map();     // jobKey -> latest snapshot, construction preferred
+  const years=new Set();
+  bySeries.forEach((rows,key)=>{
+    rows.sort((a,b)=>a.period<b.period?-1:1);
+    let prev=0;
+    rows.forEach(r=>{
+      const e=r.earned||(r.pct!=null?r.pct*r.contract:0);
+      const delta=e-prev; prev=e;
+      monthlyEarned.set(r.period,(monthlyEarned.get(r.period)||0)+delta);
+      years.add(Number(r.period.slice(0,4)));
+    });
+    const job=key.split('|')[0];
+    let a=byJob.get(job); if(!a){a=[];byJob.set(job,a);}
+    a.push(...rows);
+    const last=rows[rows.length-1];
+    const cur=latestByJob.get(job);
+    if(!cur||last.cat==='Construction'&&cur.cat!=='Construction'||last.cat===cur.cat&&last.period>cur.period)
+      latestByJob.set(job,last);
+  });
+  ACTUALS={byJob,monthlyEarned,latestByJob,years};
+}
+
+// ════════════════════════════════════ RENDER
+function selectedYear(){ return Number(document.getElementById('yearSel').value); }
+function populateYearSel(){
+  const ys=new Set([...FORECAST.years,...ACTUALS.years,new Date().getFullYear()]);
+  const sel=document.getElementById('yearSel'); const cur=sel.value;
+  sel.innerHTML='';
+  [...ys].sort().forEach(y=>{ const o=document.createElement('option'); o.value=y; o.textContent=y; sel.appendChild(o); });
+  sel.value=cur&&[...ys].includes(Number(cur))?cur:String(new Date().getFullYear());
+  if(!sel.value) sel.value=String([...ys].sort().pop());
+}
+function monthAgg(year){
+  const out=[];
+  for(let m=0;m<12;m++){
+    const k=periodKey(year,m);
+    const f=FORECAST.byMonth.get(k)||{signed:0,projected:0};
+    out.push({m,signed:f.signed,projected:f.projected,total:f.signed+f.projected,actual:ACTUALS.monthlyEarned.get(k)||0});
+  }
+  return out;
+}
+function renderAll(){
+  const year=selectedYear();
+  const ma=monthAgg(year);
+  const now=new Date();
+  const lastSynced=[...ACTUALS.monthlyEarned.keys()].filter(k=>k.startsWith(String(year))).sort().pop()||null;
+  const elapsedThru=lastSynced?Number(lastSynced.slice(5,7))-1:-1;  // month index of latest actual in this year
+
+  // ── cards
+  const fcSigned=ma.reduce((s,x)=>s+x.signed,0), fcProj=ma.reduce((s,x)=>s+x.projected,0);
+  const actYTD=ma.reduce((s,x)=>s+x.actual,0);
+  const fcThru=ma.filter(x=>x.m<=elapsedThru).reduce((s,x)=>s+x.total,0);
+  const varc=elapsedThru>=0?actYTD-fcThru:null;
+  document.getElementById('cards').innerHTML=
+    card('gold-edge',year+' Forecast — Total',fmt$(fcSigned+fcProj),'Signed '+fmt$(fcSigned)+' · Projected '+fmt$(fcProj))+
+    card('green-edge','Signed Forecast',fmt$(fcSigned),'CA-signed construction only')+
+    card('navy-edge','Earned '+year+' (WIP)',fmt$(actYTD),lastSynced?('synced through '+MONTHS[Number(lastSynced.slice(5,7))-1]+' '+year):'no actuals synced yet')+
+    card(varc==null?'':'navy-edge','Variance vs Forecast',varc==null?'—':((varc>=0?'+':'')+fmt$(varc).replace('−$','−$')),
+         varc==null?'sync WIP to compare':'actual minus forecast, Jan–'+MONTHS[elapsedThru]);
+
+  // ── quarterly
+  const qs=[0,1,2,3].map(q=>{
+    const mm=ma.filter(x=>x.m>=q*3&&x.m<q*3+3);
+    return {q, signed:mm.reduce((s,x)=>s+x.signed,0), projected:mm.reduce((s,x)=>s+x.projected,0),
+            actual:mm.reduce((s,x)=>s+x.actual,0), elapsed:elapsedThru>=q*3};
+  });
+  let qh='<table class="tbl"><tr><th></th>'+qs.map(x=>'<th>Q'+(x.q+1)+'</th>').join('')+'<th>'+year+'</th></tr>';
+  qh+=row('Signed forecast',qs.map(x=>fmt$(x.signed)),fmt$(fcSigned));
+  qh+=row('Projected forecast',qs.map(x=>'<span class="dim">'+fmt$(x.projected)+'</span>'),'<span class="dim">'+fmt$(fcProj)+'</span>');
+  qh+='<tr class="total"><td>Total forecast</td>'+qs.map(x=>'<td>'+fmt$(x.signed+x.projected)+'</td>').join('')+'<td>'+fmt$(fcSigned+fcProj)+'</td></tr>';
+  qh+=row('Earned (actual)',qs.map(x=>x.elapsed?fmt$(x.actual):'<span class="dim">—</span>'),elapsedThru>=0?fmt$(actYTD):'<span class="dim">—</span>');
+  qh+=row('Variance',qs.map(x=>{
+    if(!x.elapsed)return'<span class="dim">—</span>';
+    const v=x.actual-(x.signed+x.projected);
+    return '<span class="'+(v>=0?'pos':'neg')+'">'+(v>=0?'+':'')+fmt$(v)+'</span>';
+  }),'');
+  qh+='</table>';
+  document.getElementById('qWrap').innerHTML=qh;
+  document.getElementById('qNote').textContent='forecast derives live from Pipeline schedules; actuals from WIP sync';
+
+  // ── monthly bars
+  const maxV=Math.max(1,...ma.map(x=>Math.max(x.total,x.actual)));
+  document.getElementById('mWrap').innerHTML=ma.map(x=>{
+    const fw=x.total/maxV*100, aw=x.actual/maxV*100;
+    const projPctOfBar=x.total>0?(x.projected/x.total*100):0;
+    return '<div class="mrow"><span class="mname">'+MONTHS[x.m]+' '+year+'</span>'+
+      '<div class="mbars">'+
+        '<div class="mbar fc" style="width:'+fw.toFixed(2)+'%">'+(projPctOfBar>0?'<span class="seg-proj" style="width:'+projPctOfBar.toFixed(2)+'%"></span>':'')+'</div>'+
+        '<div class="mbar act" style="width:'+aw.toFixed(2)+'%;'+(x.actual===0?'opacity:.15;':'')+'"></div>'+
+      '</div>'+
+      '<span class="mvals">fc '+fmt$(x.total)+' · act '+(x.m<=elapsedThru?fmt$(x.actual):'—')+'</span></div>';
+  }).join('');
+
+  // ── projects table
+  const rows=PROJECTS.filter(p=>p.visible&&(p.constr&&p.estValue||ACTUALS.byJob.has(p.spId)));
+  rows.sort((a,b)=>{
+    const fa=(FORECAST.perProj.get(a.spId)||{byYear:new Map()}).byYear.get(year)||0;
+    const fb=(FORECAST.perProj.get(b.spId)||{byYear:new Map()}).byYear.get(year)||0;
+    return fb-fa;
+  });
+  let ph='<table class="tbl"><tr><th>Project</th><th>CORE Value</th><th>WIP Contract</th><th>% Compl</th><th>Earned to Date</th><th>Invoiced</th><th>'+year+' Forecast</th><th>$/wk</th></tr>';
+  let flagged=0;
+  rows.forEach(p=>{
+    const fc=FORECAST.perProj.get(p.spId);
+    const yr=fc?fc.byYear.get(year)||0:0;
+    const latest=ACTUALS.latestByJob.get(p.spId);
+    let recon='';
+    if(latest&&p.estValue&&Math.abs(latest.contract-p.estValue)>500){
+      flagged++;
+      recon='<span class="recon-flag" title="WIP contract '+fmt$(latest.contract)+' ≠ CORE value '+fmt$(p.estValue)+' — likely an unkeyed change order">Δ '+fmt$(latest.contract-p.estValue)+'</span>';
+    }
+    const badge=p.status==='ca-signed'?'<span class="stage-badge ca">CA</span>'
+      :p.status==='da-signed'?'<span class="stage-badge da">DA</span>'
+      :p.status==='paused'?'<span class="stage-badge paused">Paused</span>'
+      :'<span class="stage-badge proj">Proj</span>';
+    ph+='<tr><td>'+esc(p.name)+badge+recon+'</td>'+
+      '<td>'+fmt$(p.estValue||null)+'</td>'+
+      '<td>'+(latest?fmt$(latest.contract):'<span class="dim">—</span>')+'</td>'+
+      '<td>'+(latest?fmtPct(latest.pct):'<span class="dim">—</span>')+'</td>'+
+      '<td>'+(latest?fmt$(latest.earned||(latest.pct!=null?latest.pct*latest.contract:null)):'<span class="dim">—</span>')+'</td>'+
+      '<td>'+(latest?fmt$(latest.invoiced):'<span class="dim">—</span>')+'</td>'+
+      '<td>'+(yr?fmt$(yr):'<span class="dim">—</span>')+'</td>'+
+      '<td>'+(fc?fmt$(fc.perWk):'<span class="dim">—</span>')+'</td></tr>';
+  });
+  ph+='</table>';
+  document.getElementById('pWrap').innerHTML=ph;
+  document.getElementById('pNote').textContent=rows.length+' projects'+(flagged?' · '+flagged+' contract-value mismatch'+(flagged>1?'es':'')+' flagged':'');
+
+  // ── judgment gap
+  const gaps=[];
+  ACTUALS.latestByJob.forEach((r,job)=>{
+    if(r.pctJW==null||r.pct==null)return;
+    if(Math.abs(r.pctJW-r.pct)>=0.01){
+      const p=PROJECTS.find(x=>x.spId===job);
+      const dEarn=(r.earnedJW!=null?r.earnedJW:r.pctJW*r.contract)-(r.earned||r.pct*r.contract);
+      gaps.push({name:p?p.name:r.wipName,rs:r.pct,jw:r.pctJW,d:dEarn,period:r.period});
+    }
+  });
+  gaps.sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
+  document.getElementById('jgWrap').innerHTML=gaps.length?gaps.map(g=>
+    '<div class="jg-row"><span class="jg-name">'+esc(g.name)+'</span>'+
+    '<span class="jg-pct">Ryan '+fmtPct(g.rs)+' · Joey '+fmtPct(g.jw)+'</span>'+
+    '<span class="jg-pct dim">'+g.period+'</span>'+
+    '<span class="jg-delta '+(g.d>=0?'pos':'neg')+'">'+(g.d>=0?'+':'')+fmt$(g.d)+'</span></div>'
+  ).join(''):'<div class="empty-note">No divergence in the latest synced period — Joey and Ryan agree on every job, or no actuals are synced yet.</div>';
+}
+function card(cls,lbl,val,sub){ return '<div class="card '+cls+'"><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div><div class="sub">'+sub+'</div></div>'; }
+function row(lbl,cells,last){ return '<tr><td>'+lbl+'</td>'+cells.map(c=>'<td>'+c+'</td>').join('')+'<td>'+last+'</td></tr>'; }
+
+// ════════════════════════════════════ SYNC — locate → map tabs → match names → preview → write
+const SYNC={step:0,files:[],fileSel:null,wb:null,tabs:[],parsed:null,matches:null};
+
+function openSync(){ SYNC.step=0; document.getElementById('syncOverlay').classList.add('open'); syncRender(); locateWorkbooks(); }
+function closeSync(){ document.getElementById('syncOverlay').classList.remove('open'); }
+
+async function locateWorkbooks(){
+  try{
+    setSyncInfo('Searching the Operations site for WIP workbooks…');
+    const site=await graphJson(OPS_SITE_PATH);
+    const drives=await graphGetAll(GRAPH+'/sites/'+site.id+'/drives');
+    const found=[];
+    for(const d of drives){
+      try{
+        const res=await graphGetAll(GRAPH+'/drives/'+d.id+"/root/search(q='WIP')?$select=id,name,webUrl,lastModifiedDateTime,size");
+        res.forEach(it=>{
+          if(/work\s*in\s*progress/i.test(it.name)&&/\.xlsx$/i.test(it.name))
+            found.push({driveId:d.id,driveName:d.name,id:it.id,name:it.name,modified:it.lastModifiedDateTime});
+        });
+      }catch(e){ /* some drives reject search — fine */ }
+    }
+    found.sort((a,b)=>(b.modified||'').localeCompare(a.modified||''));
+    SYNC.files=found;
+    if(!found.length){ setSyncInfo(''); document.getElementById('syncBody').innerHTML='<div class="empty-note">No "WIP … Work in Progress" workbook found on the Operations site. Check that the file lives there and that you have access.</div>'; return; }
+    SYNC.fileSel=0; syncRender(); setSyncInfo('');
+  }catch(e){ setSyncInfo(''); toast('Workbook search failed: '+e.message,'err'); }
+}
+
+function setSyncInfo(t){ document.getElementById('syncInfo').textContent=t; }
+
+const MONTH_RX='jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec';
+function inferTab(name){
+  const t=name.trim().replace(/\s+/g,' ');
+  let m;
+  // "Apr-26 (JW)" / "Feb-26 (RS)"
+  if((m=t.match(new RegExp('^('+MONTH_RX+')[a-z]*\\s*-\\s*(\\d{2})\\s*\\((jw|rs)\\)$','i'))))
+    return {month:monthIdx(m[1]),year:2000+Number(m[2]),ver:m[3].toUpperCase(),conf:true};
+  // "October (JW)" / "June (RS)" / "December  (JW)"
+  if((m=t.match(new RegExp('^('+MONTH_RX+')[a-z]*\\s*\\((jw|rs)\\)$','i'))))
+    return {month:monthIdx(m[1]),year:2025,ver:m[2].toUpperCase(),conf:true};
+  // "December RS" / "November RS"
+  if((m=t.match(new RegExp('^('+MONTH_RX+')[a-z]*\\s+(jw|rs)$','i'))))
+    return {month:monthIdx(m[1]),year:2025,ver:m[2].toUpperCase(),conf:true};
+  // bare month — older history or the RS half of an early-2025 pair; not confident
+  if((m=t.match(new RegExp('^('+MONTH_RX+')[a-z]*$','i'))))
+    return {month:monthIdx(m[1]),year:2025,ver:'RS',conf:false};
+  return null;
+}
+function monthIdx(s){ return MONTHS.findIndex(m=>m.toLowerCase()===s.slice(0,3).toLowerCase()); }
+
+async function syncNext(){
+  try{
+    if(SYNC.step===0){ await stepFetchParse(); }
+    else if(SYNC.step===1){ stepCollectTabMap(); await stepMatchNames(); }
+    else if(SYNC.step===2){ stepCollectMatches(); stepPreview(); }
+    else if(SYNC.step===3){ await stepWrite(); }
+  }catch(e){ toast('Sync error: '+e.message,'err'); setSyncInfo(''); }
+}
+
+async function stepFetchParse(){
+  const f=SYNC.files[SYNC.fileSel];
+  if(!f){ toast('Pick a workbook first','err'); return; }
+  setSyncInfo('Downloading '+f.name+'…');
+  document.getElementById('syncNextBtn').disabled=true;
+  const tok=await getToken();
+  const r=await fetch(GRAPH+'/drives/'+f.driveId+'/items/'+f.id+'/content',{headers:{Authorization:'Bearer '+tok}});
+  if(!r.ok) throw new Error('File download failed: '+r.status);
+  const buf=await r.arrayBuffer();
+  setSyncInfo('Parsing workbook…');
+  SYNC.wb=XLSX.read(buf,{type:'array'});
+  const syncedSheets=new Set(REVENUE.map(x=>x.sourceSheet).filter(Boolean));
+  SYNC.tabs=SYNC.wb.SheetNames.map(n=>{
+    const inf=inferTab(n);
+    if(!inf) return null;
+    const already=syncedSheets.has(n);
+    return {name:n,month:inf.month,year:inf.year,ver:inf.ver,include:inf.conf&&!already,already,conf:inf.conf};
+  }).filter(Boolean);
+  document.getElementById('syncNextBtn').disabled=false;
+  SYNC.step=1; syncRender(); setSyncInfo('');
+}
+
+function stepCollectTabMap(){
+  SYNC.tabs.forEach((t,i)=>{
+    const inc=document.getElementById('tb-inc-'+i), mo=document.getElementById('tb-mo-'+i),
+          yr=document.getElementById('tb-yr-'+i), vr=document.getElementById('tb-vr-'+i);
+    if(inc) t.include=inc.checked;
+    if(mo) t.month=Number(mo.value);
+    if(yr) t.year=Number(yr.value);
+    if(vr) t.ver=vr.value;
+  });
+  const inc=SYNC.tabs.filter(t=>t.include);
+  if(!inc.length) throw new Error('No tabs selected');
+}
+
+// Parse one sheet → rows of {name, cat, contract, costs, pct, earned, invoiced}
+function parseSheet(sheetName){
+  const ws=SYNC.wb.Sheets[sheetName];
+  const grid=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+  // header row: contains 'PROJECT'
+  let hr=-1;
+  for(let r=0;r<Math.min(grid.length,15);r++){
+    if((grid[r]||[]).some(c=>String(c||'').trim().toUpperCase()==='PROJECT')){hr=r;break;}
+  }
+  if(hr<0) throw new Error('No PROJECT header in "'+sheetName+'"');
+  const hdr=grid[hr].map(c=>String(c||'').toLowerCase().replace(/\s+/g,' '));
+  function col(frag){ return hdr.findIndex(h=>h.includes(frag)); }
+  const cName=hdr.findIndex(h=>h.trim()==='project');
+  const cContract=col('current contract'), cCosts=col('actual costs'), cPct=col('percent compl'),
+        cEarned=col('cost & earned'), cInvoiced=col('total invoiced'),
+        cMargin=col('final margin goal'), cAdjMargin=col('adjusted margin');
+  if(cContract<0||cPct<0) throw new Error('"'+sheetName+'": expected columns not found');
+  const rows=[];
+  for(let r=hr+1;r<grid.length;r++){
+    const g=grid[r]||[];
+    const nm=String(g[cName]||'').trim();
+    if(!nm||nm==='Formulas') continue;
+    if(/^totals?$/i.test(nm)) break;
+    const contract=parseMoney(g[cContract]);
+    let pct=g[cPct]==null?null:parseFloat(g[cPct]);
+    if(pct!=null&&isNaN(pct))pct=null;
+    if(pct!=null&&pct>1.5)pct=pct/100;
+    const earned=cEarned>=0?parseMoney(g[cEarned]):0;
+    const invoiced=cInvoiced>=0?parseMoney(g[cInvoiced]):0;
+    if(!contract&&pct==null&&!earned&&!invoiced) continue;   // empty placeholder row
+    const hasMargin=(cMargin>=0&&g[cMargin]!=null)||(cAdjMargin>=0&&g[cAdjMargin]!=null);
+    rows.push({name:nm, cat:hasMargin?'Construction':'Design', contract,
+               costs:cCosts>=0?parseMoney(g[cCosts]):0, pct,
+               earned:earned||(pct!=null?pct*contract:0), invoiced});
+  }
+  return rows;
+}
+
+async function stepMatchNames(){
+  setSyncInfo('Parsing sheets…');
+  // group included tabs by period; RS is canonical, JW merges in
+  const periods=new Map();   // 'YYYY-MM' -> {rs:{tab,rows}, jw:{tab,rows}}
+  for(const t of SYNC.tabs.filter(x=>x.include)){
+    const k=periodKey(t.year,t.month);
+    let p=periods.get(k); if(!p){p={};periods.set(k,p);}
+    p[t.ver.toLowerCase()]={tab:t.name,rows:parseSheet(t.name)};
+  }
+  // drop JW-only periods with a note
+  const dropped=[];
+  periods.forEach((p,k)=>{ if(!p.rs){ dropped.push(k); periods.delete(k); } });
+  if(dropped.length) toast('Skipped '+dropped.join(', ')+' — JW sheet only, no RS to anchor','');
+  SYNC.parsed=periods;
+  // build name → project matching across all RS rows
+  const aliasMap=new Map();   // normName -> jobKey, from existing CORE_Revenue rows
+  REVENUE.forEach(r=>{ if(r.wipName&&r.jobKey) aliasMap.set(normName(r.wipName),r.jobKey); });
+  const names=new Set();
+  periods.forEach(p=>p.rs.rows.forEach(r=>names.add(r.name)));
+  const matches=new Map();   // raw name -> {jobKey|null, how}
+  names.forEach(raw=>{
+    const n=normName(raw);
+    if(aliasMap.has(n)){ matches.set(raw,{jobKey:aliasMap.get(n),how:'alias'}); return; }
+    let best=null,bestD=99;
+    PROJECTS.forEach(p=>{
+      [normName(p.clientName),normName(p.name)].forEach(cn=>{
+        if(!cn)return;
+        const d=(cn===n)?0:(cn.startsWith(n)||n.startsWith(cn))?1:lev(cn,n);
+        if(d<bestD){bestD=d;best=p;}
+      });
+    });
+    if(best&&bestD<=2) matches.set(raw,{jobKey:best.spId,how:bestD===0?'exact':'fuzzy'});
+    else matches.set(raw,{jobKey:null,how:'none'});
+  });
+  SYNC.matches=matches;
+  SYNC.step=2; syncRender(); setSyncInfo('');
+}
+
+function stepCollectMatches(){
+  SYNC.matches.forEach((m,raw)=>{
+    const sel=document.getElementById('mt-'+cssId(raw));
+    if(sel) m.jobKey=sel.value||null;
+  });
+}
+function cssId(s){ return s.replace(/[^a-zA-Z0-9]/g,'_'); }
+
+function stepPreview(){
+  // build write plan
+  const existing=new Map();   // jobKey|period|category -> revenue row
+  REVENUE.forEach(r=>existing.set(r.jobKey+'|'+r.period+'|'+r.cat,r));
+  const plan=[];
+  SYNC.parsed.forEach((p,period)=>{
+    const jwByName=new Map();
+    if(p.jw) p.jw.rows.forEach(r=>jwByName.set(normName(r.name),r));
+    p.rs.rows.forEach(r=>{
+      const m=SYNC.matches.get(r.name);
+      if(!m||!m.jobKey) return;   // skipped
+      const jw=jwByName.get(normName(r.name))||null;
+      const proj=PROJECTS.find(x=>x.spId===m.jobKey);
+      const fields={
+        Title:(proj?proj.name:r.name)+' '+period,
+        JobKey:m.jobKey, WIPJobName:r.name, Period:period+'-01',
+        RevenueCategory:r.cat, ContractValue:r.contract, ActualCosts:r.costs,
+        PercentComplete:r.pct, EarnedToDate:r.earned, InvoicedToDate:r.invoiced,
+        PercentCompleteJW:jw?jw.pct:null, EarnedToDateJW:jw?jw.earned:null,
+        SourceSheet:p.rs.tab
+      };
+      const ex=existing.get(m.jobKey+'|'+period+'|'+r.cat);
+      const changed=!ex||ex.contract!==r.contract||ex.pct!==r.pct||Math.round(ex.earned)!==Math.round(r.earned)||
+                    Math.round(ex.invoiced)!==Math.round(r.invoiced)||ex.pctJW!==(jw?jw.pct:null);
+      plan.push({fields, existingId:ex?ex.spId:null, action:ex?(changed?'update':'skip'):'create', proj:proj?proj.name:r.name, period});
+    });
+  });
+  SYNC.plan=plan;
+  SYNC.step=3; syncRender();
+}
+
+async function stepWrite(){
+  const todo=SYNC.plan.filter(x=>x.action!=='skip');
+  if(!todo.length){ toast('Nothing to write — CORE_Revenue is already current.'); closeSync(); return; }
+  const batch=new Date().toISOString();
+  const btn=document.getElementById('syncNextBtn'); btn.disabled=true;
+  setSave('busy','Writing…');
+  const fill=document.getElementById('progFill'), txt=document.getElementById('progTxt');
+  let done=0, errs=0;
+  for(const item of todo){
+    try{
+      const body={...item.fields, ImportBatch:batch};
+      Object.keys(body).forEach(k=>{ if(body[k]===null) delete body[k]; });
+      if(item.existingId)
+        await graphPatch(OPS_SECURE_LISTS+'/CORE_Revenue/items/'+item.existingId+'/fields',body);
+      else
+        await graphPost(OPS_SECURE_LISTS+'/CORE_Revenue/items',{fields:body});
+    }catch(e){ errs++; console.warn('write failed',item.proj,item.period,e); }
+    done++;
+    if(fill)fill.style.width=Math.round(done/todo.length*100)+'%';
+    if(txt)txt.textContent=done+' / '+todo.length+(errs?' ('+errs+' failed)':'');
+  }
+  setSave(errs?'err':'ok',errs?errs+' failed':'Saved');
+  toast(errs?('Sync finished with '+errs+' failures — see console'):'Sync complete: '+(todo.length-errs)+' rows written.',errs?'err':'ok');
+  closeSync();
+  setSave('busy','Refreshing…');
+  await loadRevenue(); buildActuals(); populateYearSel(); renderAll();
+  setSave('ok','Ready');
+}
+
+function syncRender(){
+  const body=document.getElementById('syncBody'), step=document.getElementById('syncStep'),
+        btn=document.getElementById('syncNextBtn');
+  btn.disabled=false;
+  if(SYNC.step===0){
+    step.textContent='Step 1 of 4 — choose workbook';
+    btn.textContent='Fetch & Parse';
+    body.innerHTML=SYNC.files.length?SYNC.files.map((f,i)=>
+      '<label class="file-opt"><input type="radio" name="wipfile" '+(i===SYNC.fileSel?'checked':'')+' onchange="SYNC.fileSel='+i+'">'+
+      '<span class="fn">'+esc(f.name)+'</span><span class="fm">'+esc(f.driveName)+' · modified '+(f.modified||'').slice(0,10)+'</span></label>'
+    ).join(''):'<div class="empty-note">Searching…</div>';
+  }
+  else if(SYNC.step===1){
+    step.textContent='Step 2 of 4 — confirm tab → period mapping';
+    btn.textContent='Next: Match Names';
+    body.innerHTML='<table class="sync-tbl"><tr><th></th><th>Tab</th><th>Month</th><th>Year</th><th>Version</th><th></th></tr>'+
+      SYNC.tabs.map((t,i)=>'<tr>'+
+        '<td><input type="checkbox" id="tb-inc-'+i+'" '+(t.include?'checked':'')+'></td>'+
+        '<td>'+esc(t.name)+'</td>'+
+        '<td><select id="tb-mo-'+i+'">'+MONTHS.map((m,mi)=>'<option value="'+mi+'" '+(mi===t.month?'selected':'')+'>'+m+'</option>').join('')+'</select></td>'+
+        '<td><input type="number" id="tb-yr-'+i+'" value="'+t.year+'"></td>'+
+        '<td><select id="tb-vr-'+i+'"><option '+(t.ver==='RS'?'selected':'')+'>RS</option><option '+(t.ver==='JW'?'selected':'')+'>JW</option></select></td>'+
+        '<td>'+(t.already?'<span class="tag synced">synced</span>':t.conf?'<span class="tag new">new</span>':'<span class="tag skip">unsure</span>')+'</td></tr>'
+      ).join('')+'</table>'+
+      '<div class="empty-note" style="margin-top:10px;">RS sheets are written as the record; JW sheets of the same period merge in as Joey\'s percent-complete for the judgment-gap view. Tabs already synced are unchecked — re-check to resync.</div>';
+  }
+  else if(SYNC.step===2){
+    step.textContent='Step 3 of 4 — match WIP job names to CORE projects';
+    btn.textContent='Next: Preview';
+    const opts='<option value="">— skip this job —</option>'+
+      PROJECTS.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.spId+'">'+esc(p.name)+(p.stage?' ('+esc(p.stage)+')':'')+'</option>').join('');
+    let h='<table class="sync-tbl"><tr><th>WIP name</th><th>Matched CORE project</th><th>How</th></tr>';
+    SYNC.matches.forEach((m,raw)=>{
+      h+='<tr><td>'+esc(raw)+'</td><td><select id="mt-'+cssId(raw)+'">'+opts+'</select></td>'+
+         '<td>'+(m.how==='alias'?'<span class="tag synced">known alias</span>':m.how==='exact'?'<span class="tag synced">exact</span>':m.how==='fuzzy'?'<span class="tag new">fuzzy</span>':'<span class="tag skip">no match</span>')+'</td></tr>';
+    });
+    h+='</table><div class="empty-note" style="margin-top:10px;">Matches you confirm here persist automatically — future syncs recognize the same WIP name.</div>';
+    body.innerHTML=h;
+    SYNC.matches.forEach((m,raw)=>{ const sel=document.getElementById('mt-'+cssId(raw)); if(sel&&m.jobKey)sel.value=m.jobKey; });
+  }
+  else if(SYNC.step===3){
+    step.textContent='Step 4 of 4 — preview & write';
+    btn.textContent='Write to CORE_Revenue';
+    const c=SYNC.plan.filter(x=>x.action==='create').length,
+          u=SYNC.plan.filter(x=>x.action==='update').length,
+          s=SYNC.plan.filter(x=>x.action==='skip').length;
+    let h='<div style="font-size:13px;margin-bottom:12px;"><b>'+c+'</b> new rows, <b>'+u+'</b> updates, <b>'+s+'</b> unchanged (skipped).</div>';
+    h+='<table class="sync-tbl"><tr><th>Project</th><th>Period</th><th>Action</th><th>Contract</th><th>% Compl</th><th>Earned</th></tr>'+
+      SYNC.plan.filter(x=>x.action!=='skip').slice(0,200).map(x=>'<tr><td>'+esc(x.proj)+'</td><td>'+x.period+'</td>'+
+        '<td><span class="tag '+(x.action==='create'?'new':'synced')+'">'+x.action+'</span></td>'+
+        '<td style="text-align:right">'+fmt$(x.fields.ContractValue)+'</td>'+
+        '<td style="text-align:right">'+fmtPct(x.fields.PercentComplete)+'</td>'+
+        '<td style="text-align:right">'+fmt$(x.fields.EarnedToDate)+'</td></tr>').join('')+'</table>';
+    h+='<div class="prog-wrap"><div class="prog-bar"><div class="prog-fill" id="progFill"></div></div><div class="prog-txt" id="progTxt"></div></div>';
+    body.innerHTML=h;
+  }
+}
+
+// ════════════════════════════════════ BOOT
+async function boot(){
+  document.getElementById('authOverlay').style.display='none';
+  document.getElementById('topbar').style.display='flex';
+  document.getElementById('loadStatus').style.display='block';
+  const acct=msalApp.getAllAccounts()[0];
+  document.getElementById('acctChip').textContent=acct?(acct.username||''):'';
+  try{
+    setSave('busy','Loading…');
+    await Promise.all([loadProjects(),loadRevenue()]);
+    buildForecast(); buildActuals(); populateYearSel(); renderAll();
+    document.getElementById('loadStatus').style.display='none';
+    document.getElementById('main').style.display='block';
+    setSave('ok','Ready');
+  }catch(e){
+    setSave('err','Load failed');
+    document.getElementById('loadStatus').textContent='Load failed: '+e.message;
+    toast('Load failed: '+e.message,'err');
+  }
+}
+msalApp.handleRedirectPromise().then(resp=>{
+  if(resp&&resp.account) msalApp.setActiveAccount(resp.account);
+  if(msalApp.getAllAccounts().length) boot();
+  else setAuthStatus('');
+}).catch(e=>setAuthStatus('Auth error: '+e.message,true));
+</script>
+</body>
+</html>
