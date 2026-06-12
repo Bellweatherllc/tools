@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Revenue Tracker — v2</title>
+<title>BW Revenue Tracker — v3</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -160,7 +160,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <div class="auth-card">
     <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">BW Revenue Tracker</div>
-    <div class="auth-ver">VERSION 2</div>
+    <div class="auth-ver">VERSION 3</div>
     <button class="auth-btn" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-spinner" id="authSpinner"></div>
     <div id="authStatus"></div>
@@ -173,7 +173,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bw">
   <div class="tb-div"></div>
   <span class="tb-title">Revenue Tracker</span>
-  <span class="tb-ver">v2</span>
+  <span class="tb-ver">v3</span>
   <div class="tb-right">
     <div class="save-ind" id="saveInd"><div class="si-dot"></div><span>Ready</span></div>
     <select class="year-sel" id="yearSel" onchange="renderAll()"></select>
@@ -228,7 +228,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ CONFIG
-const VERSION='v2';
+const VERSION='v3';
 const MSAL_CLIENT_ID='84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT='ff0e3f46-615a-4a22-8a80-4bb83d627785';
 const SP_SCOPES=['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/User.Read'];
@@ -882,11 +882,28 @@ async function boot(){
   document.getElementById('acctChip').textContent=acct?(acct.username||''):'';
   try{
     setSave('busy','Loading…');
-    await Promise.all([loadProjects(),loadRevenue()]);
+    await loadProjects();
+    let revErr=null;
+    try{ await loadRevenue(); }
+    catch(e){
+      revErr=e; REVENUE=[];
+      // Most useful thing on a missing-list 404: show what lists actually exist there
+      if(/itemNotFound|not found/i.test(e.message)){
+        try{
+          const lists=await graphGetAll(OPS_SECURE_LISTS+'?$select=displayName');
+          revErr=new Error('CORE_Revenue not found on OperationsSecure. Lists that ARE there: '+
+            lists.map(l=>l.displayName).join(', '));
+        }catch(e2){ /* keep original error */ }
+      }
+    }
     buildForecast(); buildActuals(); populateYearSel(); renderAll();
     document.getElementById('loadStatus').style.display='none';
     document.getElementById('main').style.display='block';
-    setSave('ok','Ready');
+    if(revErr){ setSave('err','No actuals'); toast(revErr.message,'err');
+      const c=document.getElementById('cards');
+      c.insertAdjacentHTML('beforebegin','<div style="background:#fdf0ef;border:1px solid #e5c0bc;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#7a2a24;">Forecast is live, but actuals could not load — '+esc(revErr.message)+'</div>');
+    }
+    else setSave('ok','Ready');
   }catch(e){
     setSave('err','Load failed');
     document.getElementById('loadStatus').textContent='Load failed: '+e.message;
