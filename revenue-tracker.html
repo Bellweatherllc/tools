@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Revenue Tracker — v6</title>
+<title>BW Revenue Tracker — v7</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -160,7 +160,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <div class="auth-card">
     <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">BW Revenue Tracker</div>
-    <div class="auth-ver">VERSION 6</div>
+    <div class="auth-ver">VERSION 7</div>
     <button class="auth-btn" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-spinner" id="authSpinner"></div>
     <div id="authStatus"></div>
@@ -173,7 +173,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <img src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bw">
   <div class="tb-div"></div>
   <span class="tb-title">Revenue Tracker</span>
-  <span class="tb-ver">v6</span>
+  <span class="tb-ver">v7</span>
   <div class="tb-right">
     <div class="save-ind" id="saveInd"><div class="si-dot"></div><span>Ready</span></div>
     <select class="year-sel" id="yearSel" onchange="renderAll()"></select>
@@ -240,7 +240,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ CONFIG
-const VERSION='v6';
+const VERSION='v7';
 const MSAL_CLIENT_ID='84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT='ff0e3f46-615a-4a22-8a80-4bb83d627785';
 const SP_SCOPES=['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/User.Read'];
@@ -321,6 +321,7 @@ async function graphGetAll(url){
 async function graphJson(url){ const r=await graphFetch(url); return r.json(); }
 async function graphPost(url,body){ const r=await graphFetch(url,{method:'POST',body:JSON.stringify(body)}); return r.json(); }
 async function graphPatch(url,body){ const r=await graphFetch(url,{method:'PATCH',body:JSON.stringify(body)}); return r.json(); }
+async function graphDelete(url){ await graphFetch(url,{method:'DELETE'}); }
 
 // ════════════════════════════════════ UTIL
 function parseMoney(s){ const n=parseFloat(String(s==null?'':s).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:n; }
@@ -747,6 +748,7 @@ async function stepMatchNames(){
     if(aliasMap.has(n)){ matches.set(raw,{jobKey:aliasMap.get(n),how:'alias'}); return; }
     let best=null,bestD=99;
     PROJECTS.forEach(p=>{
+      if(p.status==='lost') return;
       [normName(p.clientName),normName(p.name)].forEach(cn=>{
         if(!cn)return;
         const d=(cn===n)?0:(cn.startsWith(n)||n.startsWith(cn))?1:lev(cn,n);
@@ -828,6 +830,34 @@ async function stepWrite(){
   setSave('ok','Ready');
 }
 
+function armClear(){
+  const z=document.getElementById('dangerZone'); if(!z) return;
+  z.innerHTML='<div style="background:#fdf0ef;border:1px solid #e5c0bc;border-radius:7px;padding:11px 14px;display:flex;align-items:center;gap:12px;font-size:13px;color:#7a2a24;">'+
+    '<b>Permanently delete all '+REVENUE.length+' rows from CORE_Revenue?</b> This cannot be undone.'+
+    '<button class="btn" style="margin-left:auto;background:var(--over);color:#fff;border-color:var(--over);" onclick="doClearRevenue()">Delete all</button>'+
+    '<button class="btn" onclick="syncRender()">Cancel</button></div>';
+}
+async function doClearRevenue(){
+  const z=document.getElementById('dangerZone');
+  try{
+    setSave('busy','Clearing…');
+    if(z) z.innerHTML='<div class="empty-note">Fetching current rows…</div>';
+    const items=await graphGetAll(REVENUE_LISTS+'/CORE_Revenue/items?$select=id');
+    let done=0,errs=0;
+    for(const it of items){
+      try{ await graphDelete(REVENUE_LISTS+'/CORE_Revenue/items/'+it.id); }
+      catch(e){ errs++; }
+      done++;
+      if(z) z.innerHTML='<div class="empty-note">Deleting… '+done+' / '+items.length+(errs?' ('+errs+' failed)':'')+'</div>';
+    }
+    await loadRevenue(); buildActuals(); populateYearSel(); renderAll();
+    setSave(errs?'err':'ok',errs?errs+' failed':'Cleared');
+    toast(errs?('Clear finished with '+errs+' failures'):'CORE_Revenue cleared — '+(done-errs)+' rows deleted.',errs?'err':'ok');
+    syncRender();
+  }catch(e){
+    setSave('err','Clear failed'); toast('Clear failed: '+e.message,'err'); syncRender();
+  }
+}
 function syncRender(){
   const body=document.getElementById('syncBody'), step=document.getElementById('syncStep'),
         btn=document.getElementById('syncNextBtn');
@@ -835,10 +865,14 @@ function syncRender(){
   if(SYNC.step===0){
     step.textContent='Step 1 of 4 — choose workbook';
     btn.textContent='Fetch & Parse';
-    body.innerHTML=SYNC.files.length?SYNC.files.map((f,i)=>
+    body.innerHTML=(SYNC.files.length?SYNC.files.map((f,i)=>
       '<label class="file-opt"><input type="radio" name="wipfile" '+(i===SYNC.fileSel?'checked':'')+' onchange="SYNC.fileSel='+i+'">'+
       '<span class="fn">'+esc(f.name)+'</span><span class="fm">'+esc(f.driveName)+' · modified '+(f.modified||'').slice(0,10)+'</span></label>'
-    ).join(''):'<div class="empty-note">Searching…</div>';
+    ).join(''):'<div class="empty-note">Searching…</div>')+
+    '<div style="margin-top:22px;padding-top:14px;border-top:1px solid var(--border);" id="dangerZone">'+
+      '<button class="btn" style="color:var(--over);border-color:#e0b8b4;" onclick="armClear()">Clear CORE_Revenue ('+REVENUE.length+' rows)…</button>'+
+      '<span class="empty-note" style="margin-left:10px;">useful while iterating on name matching</span>'+
+    '</div>';
   }
   else if(SYNC.step===1){
     step.textContent='Step 2 of 4 — confirm tab → period mapping';
@@ -858,13 +892,13 @@ function syncRender(){
     step.textContent='Step 3 of 4 — match WIP job names to CORE projects';
     btn.textContent='Next: Preview';
     const opts='<option value="">— skip this job —</option>'+
-      PROJECTS.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.spId+'">'+esc(p.name)+(p.stage?' ('+esc(p.stage)+')':'')+'</option>').join('');
+      PROJECTS.filter(p=>p.status!=='lost').sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.spId+'">'+esc(p.name)+(p.stage?' ('+esc(p.stage)+')':'')+'</option>').join('');
     let h='<table class="sync-tbl"><tr><th>WIP name</th><th>Matched CORE project</th><th>How</th></tr>';
     SYNC.matches.forEach((m,raw)=>{
       h+='<tr><td>'+esc(raw)+'</td><td><select id="mt-'+cssId(raw)+'">'+opts+'</select></td>'+
          '<td>'+(m.how==='alias'?'<span class="tag synced">known alias</span>':m.how==='exact'?'<span class="tag synced">exact</span>':m.how==='fuzzy'?'<span class="tag new">fuzzy</span>':'<span class="tag skip">no match</span>')+'</td></tr>';
     });
-    h+='</table><div class="empty-note" style="margin-top:10px;">Matches you confirm here persist automatically — future syncs recognize the same WIP name.</div>';
+    h+='</table><div class="empty-note" style="margin-top:10px;">Matches you confirm here persist automatically — future syncs recognize the same WIP name. Older jobs that predate the Pipeline have nothing to match against and should stay on "skip" — their history will be missing from this tracker unless they\'re added to CORE_Projects.</div>';
     body.innerHTML=h;
     SYNC.matches.forEach((m,raw)=>{ const sel=document.getElementById('mt-'+cssId(raw)); if(sel&&m.jobKey)sel.value=m.jobKey; });
   }
