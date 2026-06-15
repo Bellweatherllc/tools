@@ -194,7 +194,7 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v36</div>
+    <div class="auth-version" id="authVersionBadge">v37</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -205,7 +205,7 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Project Updates</div>
-  <div class="proto-badge" id="versionBadge">v36</div>
+  <div class="proto-badge" id="versionBadge">v37</div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
     <div class="conn-label" id="connLabel">Connecting…</div>
@@ -570,7 +570,7 @@ function buildCard(proj,container,startOpen,startEditing){
       <span class="strip-lbl">Original</span>
       <span class="strip-val">${fmtCurrency(base)}</span>
       <span class="strip-sub">${delta?'Adj '+(delta>0?'+':'')+fmtCurrency(Math.abs(delta)):'No adjustments'}</span>
-      <input class="strip-input" type="number" id="delta_${proj.id}" placeholder="± adjust" step="1">
+      <input class="strip-input" type="text" id="delta_${proj.id}" placeholder="New total" inputmode="numeric">
     </div>`;
   card.appendChild(strip);
 
@@ -658,7 +658,10 @@ async function submitChange(projId){
   const fb=document.getElementById('fb_'+projId);
   const formEl=document.getElementById('form_'+projId);
   const btn=formEl?formEl.querySelector('.save-btn'):null;
-  const delta=parseFloat(dEl?.value)||0,note=(nEl?.value||'').trim();
+  const rawTotal=parseFloat((dEl?.value||'').replace(/[,$\s]/g,''))||0;
+  const currentCost=parseBudget(proj.estimatedValue)+cumDelta(proj.id);
+  const delta=rawTotal?Math.round(rawTotal-currentCost):0;
+  const note=(nEl?.value||'').trim();
   // Only treat end date as a change if it differs from the current end date
   const currentEnd=latestEnd(proj);
   const rawEnd=eEl?.value||'';
@@ -674,10 +677,8 @@ async function submitChange(projId){
       Notes:note||null,EntryType:type,Reviewed:false,
     }});
     if(delta){
-      // Round to nearest dollar — cents are meaningless for construction budgets
-      const newTotal=parseBudget(proj.estimatedValue)+cumDelta(proj.id)+delta;
-      await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId+'/fields',{EstimatedProjectValue:'$'+newTotal.toLocaleString()});
-      proj.estimatedValue='$'+newTotal.toLocaleString();
+      await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId+'/fields',{EstimatedProjectValue:'$'+rawTotal.toLocaleString()});
+      proj.estimatedValue='$'+rawTotal.toLocaleString();
     }
     if(newEnd&&newEnd!==currentEnd){
       const newEndMs=Date.UTC(...newEnd.split('-').map((v,i)=>i===1?+v-1:+v));
