@@ -207,7 +207,7 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v40</div>
+    <div class="auth-version" id="authVersionBadge">v41</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -218,7 +218,7 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Project Updates</div>
-  <div class="proto-badge" id="versionBadge">v40</div>
+  <div class="proto-badge" id="versionBadge">v41</div>
   <div class="conn-wrap">
     <div class="conn-dot" id="connDot"></div>
     <div class="conn-label" id="connLabel">Connecting…</div>
@@ -550,13 +550,16 @@ function buildCard(proj,container,startOpen,startEditing){
   });
   card.appendChild(hdr);
 
-  // ── Data strip — always visible: End Date | Original Cost ──
+  // ── Data strip — always visible: End Date | Current Total ──
+  const dateRev=revs.find(r=>r.NewEndDate);
+  const dateSubText=dateRev?(dateRev.PreviousEndDate?`Prev: ${fmtDate(dateRev.PreviousEndDate.slice(0,10))}`:'Date adjusted'):'No adjustments';
   const strip=document.createElement('div');
   strip.className='proj-data-strip';
   strip.innerHTML=`
     <div class="strip-item">
       <span class="strip-lbl">Current End Date</span>
       <span class="strip-val${!end?' muted':''}">${fmtDate(end)||'—'}</span>
+      <span class="strip-sub">${dateSubText}</span>
       <span class="strip-edit-lbl">New End Date</span>
       <input class="strip-input" type="date" id="end_${proj.id}" value="${end||''}">
     </div>
@@ -582,11 +585,7 @@ function buildCard(proj,container,startOpen,startEditing){
   });
   card.appendChild(expandRow);
 
-  // ── Body — visible only when open ──
-  const body=document.createElement('div');
-  body.className='proj-card-body';
-
-  // Edit form — notes + save (shown only when editing)
+  // ── Edit form — above HISTORY, visible only when editing ──
   const form=document.createElement('div');
   form.className='proj-edit-form';
   form.id='form_'+proj.id;
@@ -600,7 +599,11 @@ function buildCard(proj,container,startOpen,startEditing){
       <button class="save-btn" onclick="submitChange('${proj.id}')">Save Change</button>
       <span class="save-feedback" id="fb_${proj.id}"></span>
     </div>`;
-  body.appendChild(form);
+  card.appendChild(form);
+
+  // ── Body — visible only when open; contains the change log ──
+  const body=document.createElement('div');
+  body.className='proj-card-body';
 
   // Change log
   const log=document.createElement('div');
@@ -612,8 +615,18 @@ function buildCard(proj,container,startOpen,startEditing){
     revs.forEach(r=>{
       const dv=parseFloat(r.CostDelta)||0;
       let logContent='';
-      if(dv) logContent+=`<div class="log-delta ${dv>0?'up':'down'}">${dv>0?'+':''}${fmtCurrency(Math.abs(dv))} ${dv>0?'increase':'decrease'}</div>`;
-      if(r.NewEndDate) logContent+=`<div class="log-end">End date → ${fmtDate(r.NewEndDate.slice(0,10))}</div>`;
+      if(dv){
+        const prevV=r.PreviousTotalValue!=null?Number(r.PreviousTotalValue):null;
+        const costLine=prevV!=null
+          ?`${fmtCurrency(prevV)} → ${fmtCurrency(prevV+dv)}`
+          :`${dv>0?'+':''}${fmtCurrency(Math.abs(dv))} ${dv>0?'increase':'decrease'}`;
+        logContent+=`<div class="log-delta ${dv>0?'up':'down'}">${costLine}</div>`;
+      }
+      if(r.NewEndDate){
+        const prevDateStr=r.PreviousEndDate?fmtDate(r.PreviousEndDate.slice(0,10)):null;
+        const dateLine=prevDateStr?`${prevDateStr} → ${fmtDate(r.NewEndDate.slice(0,10))}`:`End date → ${fmtDate(r.NewEndDate.slice(0,10))}`;
+        logContent+=`<div class="log-end">${dateLine}</div>`;
+      }
       if(r.Notes) logContent+=`<div class="log-note">${r.Notes}</div>`;
       const entry=document.createElement('div');entry.className='log-entry';entry.dataset.revId=r.spItemId||'';
       const isPending=(r.spItemId||'').startsWith('pending-');
@@ -688,6 +701,8 @@ async function submitChange(projId){
       ProjectID:projId,ProjectName:proj.displayName,ReviewerName:currentUser,
       EntryDate:new Date().toISOString(),CostDelta:delta||null,NewEndDate:newEnd||null,
       Notes:note||null,EntryType:type,Reviewed:false,
+      PreviousTotalValue:delta?currentCost:null,
+      PreviousEndDate:newEnd?(currentEnd+'T00:00:00Z'):null,
     }});
     if(delta){
       await graphPatch(SP+'/CORE_Projects/items/'+proj.spItemId+'/fields',{EstimatedProjectValue:'$'+rawTotal.toLocaleString()});
@@ -718,6 +733,8 @@ async function submitChange(projId){
       ProjectID:projId,ProjectName:proj.displayName,ReviewerName:currentUser,
       EntryDate:new Date().toISOString(),CostDelta:delta||null,NewEndDate:newEnd||null,
       Notes:note||null,EntryType:type,Reviewed:false,
+      PreviousTotalValue:delta?currentCost:null,
+      PreviousEndDate:newEnd?currentEnd:null,
     });
     // Clear inputs BEFORE renderAll destroys them
     if(document.getElementById('delta_'+projId)) document.getElementById('delta_'+projId).value='';
