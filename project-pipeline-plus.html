@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v643</title>
+<title>BW Project Pipeline — v647</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -406,6 +406,7 @@ body.is-panning *{cursor:grabbing!important;}
 .lc-phase-row{box-sizing:border-box;}
 .lc-hrs-btn{font-size:13px;font-weight:700;color:#1E7A6A;background:rgba(30,122,106,.12);border:none;border-radius:3px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;padding:0;line-height:1;user-select:none;}
 .lc-hrs-btn:hover{background:rgba(30,122,106,.22);}
+body:not(.admin-mode) .lc-phase-bar .bar-caret-stack{opacity:0!important;pointer-events:none!important;}
 .lc-hrs-val{font-size:11px;font-weight:600;color:rgba(40,40,40,.75);min-width:30px;text-align:center;font-variant-numeric:tabular-nums;}
 .prod-section-lbl-row{display:flex;align-items:center;padding:0 8px;}
 .bar-caret-stack{display:flex;flex-direction:column;align-items:center;flex-shrink:0;gap:1px;pointer-events:auto;}
@@ -455,7 +456,7 @@ body.prod-design-hidden .section[data-s-type="production"] .ms-da{display:none!i
 .admin-mode .tier-dot{cursor:grab;}
 .admin-mode .tier-dot.dragging{cursor:grabbing;z-index:50;}
 /* Collapsed: visible on the collapsed band (BAND_H 28px) */
-.lanes-wrap.proj-collapsed .tier-dot{display:flex;width:24px;height:24px;top:0px;}
+.lanes-wrap.proj-collapsed .tier-dot{display:flex;width:24px;height:24px;top:2px;}
 .lanes-wrap.proj-collapsed .tier-dot .tier-lbl{font-size:11px;}
 .pd-dot{position:absolute;border-radius:0;user-select:none;pointer-events:auto;cursor:default;display:block;z-index:3;background:none;width:33px;height:35px;top:0px;}
 .admin-mode .pd-dot{cursor:grab;}
@@ -2481,7 +2482,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v643</div>
+    <div class="auth-version" id="authVersionBadge">v647</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2500,7 +2501,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v643</div>
+  <div class="proto-badge" id="versionBadge">v647</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4407,7 +4408,17 @@ function buildTlLcProject(proj,lcId){
   const colKey=lcId+':'+proj.id;
   const isCol=LC_PROJ_COLLAPSED.has(colKey);
   const wrap=el('div',''); wrap.style.cssText=`width:${w2px(C.numWeeks)}px;position:relative;`;
-  wrap.appendChild(buildTlMsRow(proj));
+  const _msRow=buildTlMsRow(proj);
+  if(isCol){
+    // Render phase bars directly inside the grey ms-row (like Design's collapsed band)
+    _msRow.style.position='relative';
+    phases.forEach(ph=>{
+      if(ph.startWeek===null||ph.durWeeks<=0) return;
+      const b=el('div',''); b.style.cssText=`position:absolute;top:4px;left:${w2px(ph.startWeek)}px;width:${w2px(ph.durWeeks)}px;height:${C.msRowH-8}px;background:${ph.color};border-radius:2px;opacity:.78;pointer-events:none;`;
+      _msRow.appendChild(b);
+    });
+  }
+  wrap.appendChild(_msRow);
   if(!isCol){
     const laneRow=el('div','lane-row');
     laneRow.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.laneH}px;position:relative;`;
@@ -4443,24 +4454,18 @@ function buildTlLcProject(proj,lcId){
     });
     wrap.appendChild(laneRow);
   }
-  // Collapsed band: thin phase summary when project is collapsed
-  if(isCol){
-    const cband=el('div',''); cband.style.cssText=`position:relative;width:${w2px(C.numWeeks)}px;height:8px;`;
-    phases.forEach(ph=>{
-      if(ph.startWeek===null||ph.durWeeks<=0) return;
-      const b=el('div','');
-      b.style.cssText=`position:absolute;top:1px;left:${w2px(ph.startWeek)}px;width:${w2px(ph.durWeeks)}px;height:6px;background:${ph.color};border-radius:2px;opacity:.6;`;
-      cband.appendChild(b);
-    });
-    wrap.appendChild(cband);
-  }
   // Milestone overlay (DA, CA) — height varies with collapse
-  const ovH=C.msRowH+(isCol?8:C.laneH);
+  const ovH=C.msRowH+(isCol?0:C.laneH);
   const ov=el('div','ms-overlay'); ov.dataset.projId=proj.id;
   ov.style.cssText=`width:${w2px(C.numWeeks)}px;height:${ovH}px;position:absolute;top:0;left:0;overflow:visible;`;
   proj.milestones.forEach(ms=>ov.appendChild(buildMsTall(proj,ms,C.msRowH,ovH,[],0)));
   wrap.appendChild(ov);
   return wrap;
+}
+function toggleLcProj(colKey){
+  const isNowCol=!LC_PROJ_COLLAPSED.has(colKey);
+  if(isNowCol) LC_PROJ_COLLAPSED.add(colKey); else LC_PROJ_COLLAPSED.delete(colKey);
+  rebuildSection('production'); triggerSave();
 }
 function buildTlLcTally(lcId){
   const target=getTarget(lcId)||20;
@@ -5311,11 +5316,9 @@ function buildProdSection(){
           fc_els.push(buildFcLcProjectRow(proj,lcId));
           const colKey=lcId+':'+proj.id;
           if(!LC_PROJ_COLLAPSED.has(colKey)){
-            const fcLaneSp=el('div',''); fcLaneSp.style.cssText=`height:${C.laneH}px;border-bottom:1px solid rgba(0,0,0,.04);`;
+            const fcLaneSp=el('div',''); fcLaneSp.style.cssText=`height:${C.laneH}px;border-bottom:1px solid rgba(0,0,0,.04);background:rgba(0,0,0,.013);`;
             fc_els.push(fcLaneSp);
-          } else {
-            const fcColSp=el('div',''); fcColSp.style.height='8px'; fc_els.push(fcColSp);
-          }
+          }  // collapsed: no extra FC height — ms-row handles visual
           tl_els.push(buildTlLcProject(proj,lcId));
         });
         const fcBotSp=el('div',''); fcBotSp.style.height='4px'; fc_els.push(fcBotSp);
@@ -5961,7 +5964,7 @@ function initDrag(){
       if(scroller){ document.body.classList.add('is-panning'); DRAG={type:'panScroll',startX:e.clientX,origScrollLeft:scroller.scrollLeft,scroller}; capture(colBand,e.pointerId); } return;
     }
 
-    const bar=e.target.closest('.phase-bar');
+    const bar=e.target.closest('.phase-bar:not(.lc-phase-bar)');
     if(bar&&!canEdit()) return;
     if(bar){
       const _dpPh=phaseById(bar.dataset.phaseId);
@@ -6046,7 +6049,7 @@ function initDrag(){
     const shBtn=e.target.closest('[data-open-session-history]'); if(shBtn){openSessionHistory();return;}
     const grpBtn=e.target.closest('[data-toggle-grouped]'); if(grpBtn){toggleGrouped(grpBtn.dataset.toggleGrouped);return;}
     // Click selected bar → deselect (but not if this click was the one that just selected it)
-    const clickedBar=e.target.closest('.phase-bar');
+    const clickedBar=e.target.closest('.phase-bar:not(.lc-phase-bar)');
     if(clickedBar&&!_justSelected&&SELECTED_PROJ_ID===clickedBar.dataset.projId){ clearSelection(); return; }
     const clickedMs=e.target.closest('.ms-tall');
     if(clickedMs&&!_justSelected&&SELECTED_PROJ_ID===clickedMs.dataset.projId){ clearSelection(); return; }
@@ -6110,10 +6113,9 @@ function initDrag(){
     const lcColBtn=e.target.closest('[data-toggle-lc-collapse]');
     if(lcColBtn){ const lcId=lcColBtn.dataset.toggleLcCollapse; if(PROD_LC_COLLAPSED.has(lcId)) PROD_LC_COLLAPSED.delete(lcId); else PROD_LC_COLLAPSED.add(lcId); rebuildSection('production'); triggerSave(); return; }
     const lcProjColBtn=e.target.closest('[data-toggle-lc-proj-collapse]');
-    if(lcProjColBtn){ const ck=lcProjColBtn.dataset.toggleLcProjCollapse; if(LC_PROJ_COLLAPSED.has(ck)) LC_PROJ_COLLAPSED.delete(ck); else LC_PROJ_COLLAPSED.add(ck); rebuildSection('production'); triggerSave(); return; }
+    if(lcProjColBtn){ toggleLcProj(lcProjColBtn.dataset.toggleLcProjCollapse); return; }
     const lcHrsBtn=e.target.closest('[data-lc-hrs-proj]');
     if(lcHrsBtn){
-      if(!canEdit()) return; // admin-only
       const projId=lcHrsBtn.dataset.lcHrsProj, lcId=lcHrsBtn.dataset.lcHrsLc;
       const phIdx=parseInt(lcHrsBtn.dataset.lcHrsPh), delta=parseFloat(lcHrsBtn.dataset.lcHrsDelta);
       const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
@@ -6127,7 +6129,7 @@ function initDrag(){
       if(projTotEl) projTotEl.textContent=proj.lcHours[lcId].reduce((s,v)=>s+v,0).toFixed(1)+'h';
       // Rebuild tally bar in-place (real-time update)
       const tallyEl=document.querySelector('[data-person="'+lcId+'"][data-section="lc"]');
-      if(tallyEl){ const newTally=buildTlLcTally(lcId); tallyEl.parentNode.replaceChild(newTally,tallyEl); }
+      if(tallyEl){ const _sw=C.weekW; C.weekW=Math.round(_sw*PROD_ZOOM); const nt=buildTlLcTally(lcId); C.weekW=_sw; tallyEl.parentNode.replaceChild(nt,tallyEl); }
       markDirty(proj); triggerSave(proj); return;
     }
     if(e.target.closest('[data-toggle-unassigned-collapse]')){ PROD_UNASSIGNED_COLLAPSED=!PROD_UNASSIGNED_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
