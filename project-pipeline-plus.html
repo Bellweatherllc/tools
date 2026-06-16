@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v650</title>
+<title>BW Project Pipeline — v651</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2484,7 +2484,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v650</div>
+    <div class="auth-version" id="authVersionBadge">v651</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2503,7 +2503,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v650</div>
+  <div class="proto-badge" id="versionBadge">v651</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4376,7 +4376,10 @@ function buildFcLcPersonHeader(lc,key){
   const val=el('div','fc-tally-val'); val.dataset.lcTargetVal=lc.id; val.textContent=getTarget(lc.id).toFixed(1)+'h cap';
   const pl=el('div','fc-tally-btn'); pl.textContent='+'; pl.dataset.lcTargetPerson=lc.id; pl.dataset.lcTargetDelta='0.1';
   ctrl.appendChild(mn); ctrl.appendChild(val); ctrl.appendChild(pl);
-  c.appendChild(chev); c.appendChild(lbl); c.appendChild(ctrl); return c;
+  c.appendChild(chev); c.appendChild(lbl);
+  const toBtn=el('button','timeoff-add-btn'); toBtn.textContent='Time Off';
+  toBtn.dataset.addTimeoff=lc.id; toBtn.dataset.addSection='production';
+  c.appendChild(toBtn); c.appendChild(ctrl); return c;
 }
 function buildFcLcProjectRow(proj,lcId){
   if(!proj.lcHours) proj.lcHours={};
@@ -4385,24 +4388,86 @@ function buildFcLcProjectRow(proj,lcId){
   const total=hrs[0]+hrs[1]+hrs[2];
   const colKey=lcId+':'+proj.id;
   const isCol=LC_PROJ_COLLAPSED.has(colKey);
-  const rowH=isCol?22:C.laneH;
+  const rowH=isCol?28:C.laneH;
   const row=el('div','fc-ms-row');
   row.dataset.projId=proj.id; row.dataset.capacitySection='lc';
   row.style.cssText=`height:${rowH}px;display:flex;align-items:center;background:#f5f5f5;border-top:1px solid rgba(255,255,255,.9);border-bottom:1px solid rgba(0,0,0,.06);`;
   // Drag handle
   const rhdl=el('div','prod-row-hdl'); rhdl.innerHTML=reorderSvg(); rhdl.title='Drag to reorder';
   rhdl.dataset.reorderProj=proj.id;
+  // Collapse chevron
   const chev=el('div','fc-chevron'+(isCol?' collapsed':''));
   chev.style.cssText='width:20px;height:20px;flex-shrink:0;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.40);';
   chev.textContent='▾'; chev.dataset.toggleLcProjCollapse=colKey;
+  // Project info — fc-proj-info enables CSS hover for tooltip + pencil button
+  const info=el('div','fc-proj-info');
+  const des=personById(proj.designer), pm=personById(proj.productionPM);
+  // Name + note dot
+  const nameWrap=el('div','fc-proj-name-wrap');
   const nameEl=el('div','fc-proj-name');
-  nameEl.textContent=proj.name;
-  nameEl.style.cssText='flex:1;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px;color:rgba(40,40,40,.85);';
-  const totEl=el('div','');
-  totEl.textContent=total.toFixed(1)+'h';
-  totEl.dataset.lcProjTotal=proj.id+'|'+lcId;
-  totEl.style.cssText='font-size:9px;font-weight:600;color:rgba(40,40,40,.40);padding-right:8px;flex-shrink:0;white-space:nowrap;';
-  row.appendChild(rhdl); row.appendChild(chev); row.appendChild(nameEl); row.appendChild(totEl);
+  const nt=el('span','proj-name-text'); nt.textContent=proj.name; nameEl.appendChild(nt);
+  const noteDot=el('div','fc-note-dot'+(proj.notes?' visible':''));
+  nameWrap.appendChild(nameEl); nameWrap.appendChild(noteDot);
+  info.appendChild(nameWrap);
+  // Hover tooltip
+  const tip=el('div','fc-proj-tooltip');
+  const clientName=(proj.clientName||proj.name).split(/[,\u2013\u2014-]/)[0].trim();
+  const ttNm=el('div','tt-type'); ttNm.textContent=clientName; tip.appendChild(ttNm);
+  const scopeText=proj.shortDescription||proj.projectDescription||'';
+  if(scopeText){ const sc=el('div','tt-scope'); sc.textContent=scopeText; tip.appendChild(sc); }
+  if(proj.address){ const a=el('div','tt-addr'); a.textContent=proj.address; tip.appendChild(a); }
+  if(proj.estimatedValue){ const p=el('div','tt-price'); p.textContent=proj.estimatedValue; tip.appendChild(p); }
+  const ppl=el('div','tt-people');
+  const sr=el('div','tt-person');
+  sr.innerHTML=proj.salesPerson
+    ?`<span class="tt-person-role">Sales</span>${proj.salesPerson.split(' ')[0]}`
+    :`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
+  ppl.appendChild(sr);
+  const dr=el('div','tt-person');
+  if(des){
+    const sec2=personById(proj.secondaryDesigner);
+    dr.innerHTML=`<span class="tt-person-role">Design</span>${des.label}${sec2?` <span style="opacity:.65">+ ${sec2.label}</span>`:''}`;
+  } else if(proj.proposedDesigner){
+    const propD=personById(proj.proposedDesigner);
+    dr.innerHTML=propD
+      ?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${propD.label} (proposed)</span>`
+      :`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
+  } else {
+    dr.innerHTML=`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
+  }
+  ppl.appendChild(dr);
+  const pr2=el('div','tt-person');
+  const lc1t=proj.logisticsCoord1||'', lc2t=proj.logisticsCoord2||'';
+  const lcStr2=[lc1t,lc2t].filter(Boolean).map(n=>n.split(' ')[0]).join(', ');
+  pr2.innerHTML=pm
+    ?`<span class="tt-person-role">Production</span>${pm.label}${lcStr2?` · ${lcStr2}`:''}`
+    :`<span class="tt-person-role">Production</span><span class="tt-person-unassigned">Unassigned</span>`;
+  ppl.appendChild(pr2);
+  tip.appendChild(ppl);
+  { const footer=el('div','tt-footer'); footer.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);';
+    if(proj._spItemId){
+      const mgrPill=el('button','tt-mgr-pill'); mgrPill.dataset.editMgrBtn=proj._spItemId;
+      mgrPill.innerHTML=`<svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1h3v3M11 1L6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg> MGR`;
+      footer.appendChild(mgrPill);
+    }
+    const pillsWrap=el('div',''); pillsWrap.style.cssText='display:flex;gap:4px;flex-shrink:0;align-items:center;';
+    function _mkC(cls,lbl,ttl,type){ const b=el('button','tt-circle-pill '+cls); b.textContent=lbl; b.title=ttl; b.dataset.upcomingPill=type; return b; }
+    pillsWrap.appendChild(_mkC('est-pill','EST','Estimate','est'));
+    pillsWrap.appendChild(_mkC('pb-pill','PB','Project Basis / LOD','pb'));
+    pillsWrap.appendChild(_mkC('pt-pill','PT','Permit Tracker','pt'));
+    const daTip2=el('button','fc-ms-pill-btn da-pill'); daTip2.textContent='DA'; daTip2.title='Design Agreement'; daTip2.dataset.upcomingPill='da'; daTip2.dataset.upcomingProjId=proj.id;
+    pillsWrap.appendChild(daTip2);
+    pillsWrap.appendChild(_mkC('ss-pill','SS','Selections Sheet','ss'));
+    const caTip2=el('button','fc-ms-pill-btn ca-pill'); caTip2.textContent='CA'; caTip2.title='Construction Agreement'; caTip2.dataset.upcomingPill='ca'; caTip2.dataset.upcomingProjId=proj.id;
+    pillsWrap.appendChild(caTip2);
+    footer.appendChild(pillsWrap); tip.appendChild(footer); }
+  info.appendChild(tip);
+  // Pencil / note button — absolutely positioned within fc-proj-info, same as all other rows
+  const noteBtn=el('button','fc-note-btn'+(proj.notes?' has-note pp-pencil-noted':''));
+  noteBtn.dataset.noteBtn=proj.id; noteBtn.title='Add note';
+  noteBtn.innerHTML=`<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>`;
+  info.appendChild(noteBtn);
+  row.appendChild(rhdl); row.appendChild(chev); row.appendChild(info);
   return row;
 }
 function buildTlLcProject(proj,lcId){
@@ -4410,8 +4475,8 @@ function buildTlLcProject(proj,lcId){
   const phases=lcPhases(proj);
   const colKey=lcId+':'+proj.id;
   const isCol=LC_PROJ_COLLAPSED.has(colKey);
-  // Single row — height tracks collapse state: laneH expanded, 22px collapsed
-  const rowH=isCol?22:C.laneH;
+  // Single row — height tracks collapse state: laneH expanded, 26px collapsed
+  const rowH=isCol?26:C.laneH;
   const wrap=el('div','lc-proj-tl'); wrap.style.cssText=`width:${w2px(C.numWeeks)}px;position:relative;`;
   const laneRow=el('div','lane-row');
   laneRow.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:relative;border-top:1px solid rgba(255,255,255,.9);`;
