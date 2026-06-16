@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v642</title>
+<title>BW Project Pipeline — v643</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2481,7 +2481,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v642</div>
+    <div class="auth-version" id="authVersionBadge">v643</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2500,7 +2500,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v642</div>
+  <div class="proto-badge" id="versionBadge">v643</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4344,11 +4344,13 @@ function buildTlProdPersonHeader(){
 }
 // ── LC helpers ──
 function lcPhases(proj){
-  const d1=proj.designLane?.phases?.[0];
+  const dsw=designStartWeek(proj);
   const preConPh=proj.productionLane?.phases?.find(ph=>/pre.?con/i.test(ph.name));
   const constrPh=proj.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name.trim()));
+  // Phase 1 spans from design start to pre-con start (covers all design phases)
+  const ph1Dur=preConPh&&preConPh.startWeek!=null?Math.max(0,preConPh.startWeek-dsw):(proj.designLane?.phases?.[0]?.durWeeks??0);
   return [
-    {name:'Phase 1',color:'#6BBCB0',startWeek:d1?.startWeek??null,durWeeks:d1?.durWeeks??0},
+    {name:'Phase 1',color:'#6BBCB0',startWeek:dsw,durWeeks:ph1Dur},
     {name:'Pre-Con',color:'#3A9A8A',startWeek:preConPh?.startWeek??null,durWeeks:preConPh?.durWeeks??0},
     {name:'Construction',color:'#1E7A6A',startWeek:constrPh?.startWeek??null,durWeeks:constrPh?.durWeeks??0},
   ];
@@ -4380,20 +4382,23 @@ function buildFcLcProjectRow(proj,lcId){
   const total=hrs[0]+hrs[1]+hrs[2];
   const colKey=lcId+':'+proj.id;
   const isCol=LC_PROJ_COLLAPSED.has(colKey);
-  const row=el('div','');
-  row.dataset.projId=proj.id;
+  const row=el('div','fc-ms-row');
+  row.dataset.projId=proj.id; row.dataset.capacitySection='lc';
   row.style.cssText=`height:${C.msRowH}px;display:flex;align-items:center;background:#f5f5f5;border-bottom:1px solid rgba(0,0,0,.07);`;
+  // Drag handle
+  const rhdl=el('div','prod-row-hdl'); rhdl.innerHTML=reorderSvg(); rhdl.title='Drag to reorder';
+  rhdl.dataset.reorderProj=proj.id;
   const chev=el('div','fc-chevron'+(isCol?' collapsed':''));
-  chev.style.cssText='width:20px;height:20px;flex-shrink:0;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.40);margin-left:4px;';
+  chev.style.cssText='width:20px;height:20px;flex-shrink:0;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.40);';
   chev.textContent='▾'; chev.dataset.toggleLcProjCollapse=colKey;
-  const nameEl=el('div','');
+  const nameEl=el('div','fc-proj-name');
   nameEl.textContent=proj.name;
   nameEl.style.cssText='flex:1;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px;color:rgba(40,40,40,.85);';
   const totEl=el('div','');
   totEl.textContent=total.toFixed(1)+'h';
   totEl.dataset.lcProjTotal=proj.id+'|'+lcId;
-  totEl.style.cssText='font-size:9px;font-weight:600;color:rgba(40,40,40,.40);padding-right:10px;flex-shrink:0;white-space:nowrap;';
-  row.appendChild(chev); row.appendChild(nameEl); row.appendChild(totEl);
+  totEl.style.cssText='font-size:9px;font-weight:600;color:rgba(40,40,40,.40);padding-right:8px;flex-shrink:0;white-space:nowrap;';
+  row.appendChild(rhdl); row.appendChild(chev); row.appendChild(nameEl); row.appendChild(totEl);
   return row;
 }
 function buildTlLcProject(proj,lcId){
@@ -4438,8 +4443,19 @@ function buildTlLcProject(proj,lcId){
     });
     wrap.appendChild(laneRow);
   }
+  // Collapsed band: thin phase summary when project is collapsed
+  if(isCol){
+    const cband=el('div',''); cband.style.cssText=`position:relative;width:${w2px(C.numWeeks)}px;height:8px;`;
+    phases.forEach(ph=>{
+      if(ph.startWeek===null||ph.durWeeks<=0) return;
+      const b=el('div','');
+      b.style.cssText=`position:absolute;top:1px;left:${w2px(ph.startWeek)}px;width:${w2px(ph.durWeeks)}px;height:6px;background:${ph.color};border-radius:2px;opacity:.6;`;
+      cband.appendChild(b);
+    });
+    wrap.appendChild(cband);
+  }
   // Milestone overlay (DA, CA) — height varies with collapse
-  const ovH=C.msRowH+(isCol?0:C.laneH);
+  const ovH=C.msRowH+(isCol?8:C.laneH);
   const ov=el('div','ms-overlay'); ov.dataset.projId=proj.id;
   ov.style.cssText=`width:${w2px(C.numWeeks)}px;height:${ovH}px;position:absolute;top:0;left:0;overflow:visible;`;
   proj.milestones.forEach(ms=>ov.appendChild(buildMsTall(proj,ms,C.msRowH,ovH,[],0)));
@@ -5293,6 +5309,13 @@ function buildProdSection(){
         const lcProjs=PROJECTS.filter(p=>isVisible(p)&&(p.lc1===lcId||p.lc2===lcId));
         lcProjs.forEach(proj=>{
           fc_els.push(buildFcLcProjectRow(proj,lcId));
+          const colKey=lcId+':'+proj.id;
+          if(!LC_PROJ_COLLAPSED.has(colKey)){
+            const fcLaneSp=el('div',''); fcLaneSp.style.cssText=`height:${C.laneH}px;border-bottom:1px solid rgba(0,0,0,.04);`;
+            fc_els.push(fcLaneSp);
+          } else {
+            const fcColSp=el('div',''); fcColSp.style.height='8px'; fc_els.push(fcColSp);
+          }
           tl_els.push(buildTlLcProject(proj,lcId));
         });
         const fcBotSp=el('div',''); fcBotSp.style.height='4px'; fc_els.push(fcBotSp);
@@ -5905,7 +5928,7 @@ function initDrag(){
     if(rh){
       e.preventDefault();
       const projId=rh.dataset.reorderProj;
-      const msRow=rh.closest('.fc-ms-row'), capSection=msRow?msRow.dataset.capacitySection:null;
+      const msRow=rh.closest('.fc-ms-row')||rh.closest('[data-capacity-section]'), capSection=msRow?msRow.dataset.capacitySection:null;
       if(!capSection) return;
       // Reorder only works in grouped-PM mode; flat view has no person targets to drop onto
       if(capSection==='production'&&!PROD_SHOW_PMS) return;
@@ -6090,6 +6113,7 @@ function initDrag(){
     if(lcProjColBtn){ const ck=lcProjColBtn.dataset.toggleLcProjCollapse; if(LC_PROJ_COLLAPSED.has(ck)) LC_PROJ_COLLAPSED.delete(ck); else LC_PROJ_COLLAPSED.add(ck); rebuildSection('production'); triggerSave(); return; }
     const lcHrsBtn=e.target.closest('[data-lc-hrs-proj]');
     if(lcHrsBtn){
+      if(!canEdit()) return; // admin-only
       const projId=lcHrsBtn.dataset.lcHrsProj, lcId=lcHrsBtn.dataset.lcHrsLc;
       const phIdx=parseInt(lcHrsBtn.dataset.lcHrsPh), delta=parseFloat(lcHrsBtn.dataset.lcHrsDelta);
       const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
@@ -6098,11 +6122,12 @@ function initDrag(){
       proj.lcHours[lcId][phIdx]=Math.max(0,Math.round((proj.lcHours[lcId][phIdx]+delta)*10)/10);
       const displayKey=projId+'|'+lcId+'|'+phIdx;
       const valEl=document.querySelector('[data-lc-hrs-display="'+displayKey+'"]');
-      if(valEl) valEl.textContent=proj.lcHours[lcId][phIdx].toFixed(1);
+      if(valEl) valEl.textContent=proj.lcHours[lcId][phIdx].toFixed(1)+'h/w';
       const projTotEl=document.querySelector('[data-lc-proj-total="'+projId+'|'+lcId+'"]');
       if(projTotEl) projTotEl.textContent=proj.lcHours[lcId].reduce((s,v)=>s+v,0).toFixed(1)+'h';
-      const personTotEl=document.querySelector('[data-lc-person-total="'+lcId+'"]');
-      if(personTotEl) personTotEl.textContent=lcPersonTotalHours(lcId).toFixed(1)+'h';
+      // Rebuild tally bar in-place (real-time update)
+      const tallyEl=document.querySelector('[data-person="'+lcId+'"][data-section="lc"]');
+      if(tallyEl){ const newTally=buildTlLcTally(lcId); tallyEl.parentNode.replaceChild(newTally,tallyEl); }
       markDirty(proj); triggerSave(proj); return;
     }
     if(e.target.closest('[data-toggle-unassigned-collapse]')){ PROD_UNASSIGNED_COLLAPSED=!PROD_UNASSIGNED_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
@@ -6614,10 +6639,11 @@ function onMove(e){
 
   if(DRAG.type==='projCapacityReorder'){
     DRAG.ghost.style.left=e.clientX+12+'px'; DRAG.ghost.style.top=e.clientY-14+'px';
-    const sectionEl=document.querySelector(`.section[data-s-type="${DRAG.capacitySection}"]`); if(!sectionEl)return;
-    const personHdrs=Array.from(sectionEl.querySelectorAll('.fc-tally[data-person-header]')).filter(h=>h.dataset.personHeader!=='prod-total');
+    const _sec=DRAG.capacitySection==='lc'?'production':DRAG.capacitySection;
+    const sectionEl=document.querySelector(`.section[data-s-type="${_sec}"]`); if(!sectionEl)return;
+    const personHdrs=Array.from(sectionEl.querySelectorAll('.fc-tally[data-person-header]')).filter(h=>h.dataset.personHeader!=='prod-total').filter(h=>DRAG.capacitySection==='lc'?h.dataset.personSection==='lc':h.dataset.personSection!=='lc');
     const unassignedGroup=sectionEl.querySelector('.unassigned-group-fc');
-    const projRows=Array.from(sectionEl.querySelectorAll('.fc-ms-row[data-capacity-section]')).filter(r=>!unassignedGroup||!unassignedGroup.contains(r));
+    const projRows=Array.from(sectionEl.querySelectorAll('[data-capacity-section="'+DRAG.capacitySection+'"]')).filter(r=>r.dataset.projId&&(!unassignedGroup||!unassignedGroup.contains(r)));
     const items=[...personHdrs.map(e2=>({el:e2,isHeader:true,personId:e2.dataset.personHeader})),...projRows.map(e2=>({el:e2,isHeader:false,projId:e2.dataset.projId}))].sort((a,b)=>a.el.getBoundingClientRect().top-b.el.getBoundingClientRect().top);
     const sortedHdrs=personHdrs.sort((a,b)=>a.getBoundingClientRect().top-b.getBoundingClientRect().top);
     const firstHdr=sortedHdrs[0];
@@ -6643,7 +6669,7 @@ function onMove(e){
     }
 
     // If cursor is above first person header or inside the unassigned group — unassigned target
-    const inUnassigned=unassignedGroup&&unassignedGroup.getBoundingClientRect().top<=e.clientY&&e.clientY<=unassignedGroup.getBoundingClientRect().bottom;
+    const inUnassigned=DRAG.capacitySection!=='lc'&&unassignedGroup&&unassignedGroup.getBoundingClientRect().top<=e.clientY&&e.clientY<=unassignedGroup.getBoundingClientRect().bottom;
     if((firstHdr&&e.clientY<firstHdr.getBoundingClientRect().top)||inUnassigned){
       resolveUnassignedDrop(e.clientY);
       return;
@@ -6873,7 +6899,7 @@ function onUp(){
     // ── Drop diagnostic ──
     const _dropLabel=DRAG.targetPerson?personById(DRAG.targetPerson)?.label:'(null/unassigned)';
     if(proj&&DRAG.targetPerson!==undefined){
-      const personField=DRAG.capacitySection==='design'?'designer':'productionPM';
+      const personField=DRAG.capacitySection==='design'?'designer':DRAG.capacitySection==='lc'?'lc1':'productionPM';
       if(proj[personField]!==DRAG.targetPerson) _dragMoved=true; // person actually changed
       proj[personField]=DRAG.targetPerson; // null = unassign
       // Write display name back to SP column so other tools see the assignment
@@ -6895,7 +6921,7 @@ function onUp(){
         // clear it so the rebuild respects the new PROJECTS order.
         if(CAP_SORT[DRAG.capacitySection]) CAP_SORT[DRAG.capacitySection].field=null;
       }
-      rebuildSection(DRAG.capacitySection); triggerSave(proj);
+      rebuildSection(DRAG.capacitySection==='lc'?'production':DRAG.capacitySection); triggerSave(proj);
     }
     document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp); DRAG=null; return;
   }
@@ -7079,7 +7105,7 @@ function projectGanttPayload(proj){
 // Write person display name to SP column when a project is assigned/unassigned
 function _patchPersonNameToSP(proj, personField, personId) {
   if (!proj._spItemId) return;
-  const spField = personField === 'designer' ? 'DesignerName' : 'PMName';
+  const spField = personField==='designer'?'DesignerName':personField==='lc1'?'LogisticsCoordinator1':personField==='lc2'?'LogisticsCoordinator2':'PMName';
   const person = personId ? personById(personId) : null;
   // Use fullLabel (full name) not label (first name only)
   const displayName = person ? (person.fullLabel || person.label) : '';
