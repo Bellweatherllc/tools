@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v651</title>
+<title>BW Project Pipeline — v654</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2484,7 +2484,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v651</div>
+    <div class="auth-version" id="authVersionBadge">v654</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2503,7 +2503,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v651</div>
+  <div class="proto-badge" id="versionBadge">v654</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4391,7 +4391,7 @@ function buildFcLcProjectRow(proj,lcId){
   const rowH=isCol?28:C.laneH;
   const row=el('div','fc-ms-row');
   row.dataset.projId=proj.id; row.dataset.capacitySection='lc';
-  row.style.cssText=`height:${rowH}px;display:flex;align-items:center;background:#f5f5f5;border-top:1px solid rgba(255,255,255,.9);border-bottom:1px solid rgba(0,0,0,.06);`;
+  row.style.cssText=`height:${rowH}px;display:flex;align-items:center;background:#f5f5f5;border-top:1px solid rgba(255,255,255,.9);border-bottom:1px solid rgba(0,0,0,.06);box-shadow:none;`;
   // Drag handle
   const rhdl=el('div','prod-row-hdl'); rhdl.innerHTML=reorderSvg(); rhdl.title='Drag to reorder';
   rhdl.dataset.reorderProj=proj.id;
@@ -4475,8 +4475,8 @@ function buildTlLcProject(proj,lcId){
   const phases=lcPhases(proj);
   const colKey=lcId+':'+proj.id;
   const isCol=LC_PROJ_COLLAPSED.has(colKey);
-  // Single row — height tracks collapse state: laneH expanded, 26px collapsed
-  const rowH=isCol?26:C.laneH;
+  // Single row — height matches FC row (28px collapsed, laneH expanded) for per-row alignment
+  const rowH=isCol?28:C.laneH;
   const wrap=el('div','lc-proj-tl'); wrap.style.cssText=`width:${w2px(C.numWeeks)}px;position:relative;`;
   const laneRow=el('div','lane-row');
   laneRow.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:relative;border-top:1px solid rgba(255,255,255,.9);`;
@@ -4510,12 +4510,13 @@ function buildTlLcProject(proj,lcId){
       laneRow.appendChild(bar);
     });
   } else {
-    // Collapsed: phase colour strips scaled to the 22px row height
-    const bandH=Math.round(rowH*0.46);
+    // Collapsed: band is rowH-2 at top:1px — matches buildMsTall (height:totalH-2) so milestones align
+    const bandH=rowH-2;
+    const bandTop=1;
     phases.forEach(ph=>{
       if(ph.startWeek===null||ph.durWeeks<=0) return;
       const b=el('div','');
-      b.style.cssText=`position:absolute;top:${Math.round((rowH-bandH)/2)}px;left:${w2px(ph.startWeek)}px;width:${w2px(ph.durWeeks)}px;height:${bandH}px;background:${ph.color};border-radius:3px;opacity:.78;pointer-events:none;`;
+      b.style.cssText=`position:absolute;top:${bandTop}px;left:${w2px(ph.startWeek)}px;width:${w2px(ph.durWeeks)}px;height:${bandH}px;background:${ph.color};border-radius:3px;opacity:.78;pointer-events:none;`;
       laneRow.appendChild(b);
     });
   }
@@ -8885,11 +8886,12 @@ document.addEventListener('pointerdown',e=>{
   if(upBtn){ e.stopPropagation(); _showUpcomingPop(upBtn); return; }
   if(pop&&!pop.contains(e.target)) pop.style.display='none';
 },true);
-function _showTip(info, e){
+function _showTip(info, e, anchor){
   const tip=info.querySelector('.fc-proj-tooltip'); if(!tip)return;
   // Close any other open tooltips first
   document.querySelectorAll('.fc-proj-tooltip.tt-visible').forEach(t=>{ if(t!==tip) t.classList.remove('tt-visible'); });
-  const x=e?e.clientX+14:info.getBoundingClientRect().right+8;
+  // anchor: when provided (LC rows), flush tooltip against anchor's right edge — zero gap
+  const x=anchor?anchor.getBoundingClientRect().right:e?e.clientX+14:info.getBoundingClientRect().right+8;
   const y=e?e.clientY-10:info.getBoundingClientRect().top;
   tip.style.left=x+'px'; tip.style.top=y+'px';
   tip.classList.add('tt-visible');
@@ -8909,7 +8911,9 @@ document.addEventListener('mouseenter',e=>{
   if(!nameText)return;
   const info=nameText.closest('.fc-proj-info');
   if(!info)return;
-  _showTip(info,e);
+  // LC rows: anchor tooltip to span's right edge (zero gap); others: cursor-relative
+  const isLcRow=nameText.closest('[data-capacity-section="lc"]');
+  _showTip(info, e, isLcRow?nameText:null);
 },true);
 // Dismiss on click outside tooltip and project name
 document.addEventListener('pointerdown',e=>{
