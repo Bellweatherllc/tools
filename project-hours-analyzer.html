@@ -136,6 +136,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 #det-align-row{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;}
 #btn-reset-phases{font:600 10px/1 'TT Norms Pro',sans-serif;padding:3px 9px;border-radius:4px;border:1px dashed #ddd9d0;background:transparent;color:#a3a09c;cursor:pointer;letter-spacing:.04em;}
 #btn-reset-phases:hover{color:#6b6865;border-color:#c8c4bc;}
+.badge-both{background:#e8e4dc;color:#4a4845;border-color:#c8c4bc;}
 </style>
 </head>
 <body>
@@ -145,7 +146,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v27</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v28</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -161,7 +162,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
-      <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v27</span></h1>
+      <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v28</span></h1>
       <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
         <button id="btn-data-panel" class="btn-data-panel">Files &amp; Aliases ▾</button>
         <div>
@@ -211,6 +212,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
       <div class="chart-ctrl-row" style="margin-top:10px">
         <button class="mvt active" data-view="design">Design</button>
         <button class="mvt" data-view="production">Production</button>
+        <button class="mvt" data-view="all">All</button>
       </div>
       <div class="chart-ctrl-row" id="design-sub-row">
         <button class="svt active" data-view="5234">Designers</button>
@@ -805,13 +807,13 @@ function renderCalendar(ccs) {
   msvg.attr('width',W).attr('height',H);
   const g=msvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
   const area=d3.area().x(d=>xSc(d.data.wk)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1])).curve(d3.curveMonotoneX);
-  const selJob=ccs.includes(S.selJob?.costCode)?S.selJob.job:null;
+  const selJob=S.selJob&&ccs.some(cc=>S.selJob.ccList?.includes(cc))?S.selJob.job:null;
   series.forEach(s=>{
     const job=s.key,isSel=selJob===job,op=selJob?(isSel?1:.15):.82;
     g.append('path').datum(s).attr('d',area).attr('fill',colorOf(job)).attr('opacity',op).style('cursor','pointer')
       .on('mousemove',ev=>onHoverCalendar(ev,job,ccs,xSc,M,maxSpan,'main-svg'))
       .on('mouseleave',hideTip)
-      .on('click',()=>{const fc=ccs.find(cc=>S.projectsByCost[cc]?.[job]);if(fc)selectJob(job,fc);});
+      .on('click',()=>{const visCCs=ccs.filter(cc=>S.projectsByCost[cc]?.[job]);if(visCCs.length)selectJob(job,visCCs);});
   });
   renderCalendarAxes(g,xSc,ySc,w,h,maxSpan);
   renderGeneralSection(ccs);
@@ -851,13 +853,13 @@ function renderGeneralSection(ccs) {
   genSvg.attr('width',W).attr('height',H);
   const g=genSvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
   const area=d3.area().x(d=>xSc(d.data.wk)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1])).curve(d3.curveMonotoneX);
-  const selJob=ccs.includes(S.selJob?.costCode)?S.selJob.job:null;
+  const selJob=S.selJob&&ccs.some(cc=>S.selJob.ccList?.includes(cc))?S.selJob.job:null;
   series.forEach(s=>{
     const job=s.key,isSel=selJob===job,op=selJob?(isSel?1:.15):.82;
     g.append('path').datum(s).attr('d',area).attr('fill',colorOf(job)).attr('opacity',op).style('cursor','pointer')
       .on('mousemove',ev=>onHoverCalendar(ev,job,ccs,xSc,M,maxSpan,'cal-gen-svg'))
       .on('mouseleave',hideTip)
-      .on('click',()=>{const fc=ccs.find(cc=>S.projectsByCost[cc]?.[job]);if(fc)selectJob(job,fc);});
+      .on('click',()=>{const visCCs=ccs.filter(cc=>S.projectsByCost[cc]?.[job]);if(visCCs.length)selectJob(job,visCCs);});
   });
   renderCalendarAxes(g,xSc,ySc,w,h,maxSpan);
 }
@@ -878,6 +880,35 @@ function onHoverCalendar(ev,job,ccs,xSc,M,maxSpan,svgId) {
 
 
 // ── RENDER ALL ────────────────────────────────────────────────────────────────
+// ── ACTIVE CC / COMBINE HELPERS ───────────────────────────────────────────────
+function activeCCList() {
+  if (S.mainView==='design') {
+    return S.chartView==='both'?['5234','5236A']:S.chartView==='5236A'?['5236A']:['5234'];
+  } else if (S.mainView==='production') {
+    return S.productionView==='both'?['5239','5238']:S.productionView==='lc'?['5239']:['5238'];
+  }
+  return ['5234','5236A','5239','5238']; // 'all'
+}
+function combineProjectData(job, ccList) {
+  const valid=ccList.filter(cc=>S.projectsByCost[cc]?.[job]);
+  if (!valid.length) return null;
+  if (valid.length===1) return S.projectsByCost[valid[0]][job];
+  const c={total:0,span:0,weeks:{},allPeople:new Set()};
+  valid.forEach(cc=>{
+    const p=S.projectsByCost[cc][job];
+    c.total+=p.total; c.span=Math.max(c.span,p.span);
+    Object.entries(p.weeks).forEach(([wkStr,d])=>{
+      const wk=Number(wkStr);
+      if (!c.weeks[wk]) c.weeks[wk]={hours:0,byPerson:{}};
+      c.weeks[wk].hours+=d.hours;
+      Object.entries(d.byPerson||{}).forEach(([person,hrs])=>{
+        c.weeks[wk].byPerson[person]=(c.weeks[wk].byPerson[person]||0)+hrs;
+      });
+    });
+    if (p.allPeople) p.allPeople.forEach(person=>c.allPeople.add(person));
+  });
+  return c;
+}
 function setChartNote() {
   const el=document.getElementById('chart-note');
   if (!el) return;
@@ -885,6 +916,8 @@ function setChartNote() {
     el.textContent=S.designAlign==='phase'
       ?'Phase-aligned · Phases I / II / III share equal visual width · Click to inspect'
       :'Week-aligned · Week 0 = first timecard entry · Click to inspect';
+  } else if (S.mainView==='all') {
+    el.textContent='All departments · Calendar-aligned · Week 0 = first entry · Click to inspect';
   } else {
     el.textContent='Calendar-aligned · Week 0 = first entry · Click to inspect';
   }
@@ -892,28 +925,21 @@ function setChartNote() {
 function renderAll() {
   renderFiles();
   const emptyEl=document.getElementById('chart-empty');
-  if (S.mainView==='design') {
-    if (S.designAlign==='week') {
-      const ccs=S.chartView==='both'?['5234','5236A']:S.chartView==='5236A'?['5236A']:['5234'];
-      if (emptyEl) emptyEl.textContent='No project data loaded yet.';
-      renderCalendar(ccs);
-    } else {
-      if (emptyEl) emptyEl.textContent='No projects with ≥ 20 hours yet.';
-      renderStream();
-    }
+  const ccs=activeCCList();
+  if (S.mainView==='design'&&S.designAlign==='phase') {
+    if (emptyEl) emptyEl.textContent='No projects with ≥ 20 hours yet.';
+    renderStream();
   } else {
-    const ccs=S.productionView==='both'?['5239','5238']:S.productionView==='lc'?['5239']:['5238'];
-    if (emptyEl) emptyEl.textContent='No data loaded for this role yet.';
+    if (emptyEl) emptyEl.textContent=S.mainView==='all'?'No data loaded yet.':'No data loaded for this view yet.';
     renderCalendar(ccs);
   }
   setChartNote();
   renderAliasesTable();
   if (S.selJob) {
-    const {job,costCode}=S.selJob;
-    const excSet=costCode==='5239'?S.excludedLC:costCode==='5238'?S.excludedPM:S.excluded;
-    if (S.projectsByCost[costCode]?.[job]&&!excSet.has(job)) {
-      renderDetail(job,costCode);
-    } else { closeDetail(); }
+    const {job,ccList}=S.selJob;
+    const visible=ccList.some(cc=>ccs.includes(cc)&&S.projectsByCost[cc]?.[job]);
+    if (visible) { renderDetail(job,ccList); }
+    else { closeDetail(); }
   } else {
     showEmptyDetail();
   }
@@ -1012,29 +1038,28 @@ function renderStream(){
   // Build the job list and a ccOf(key) lookup depending on view
   let keys, ccOf, vis5234, vis5236A;
   if (view === 'both') {
-    vis5234  = allJobsByCost('5234');
-    vis5236A = allJobsByCost('5236A');
-    // Namespace keys to avoid collisions when same project name appears in both
-    keys  = [...vis5234.map(j=>`5234::${j}`), ...vis5236A.map(j=>`5236A::${j}`)];
-    ccOf  = key => key.split('::')[0];
-    const jobOf = key => key.split('::').slice(1).join('::');
-    if (!keys.length) { emptyEl.style.display=''; msvg.attr('width',0).attr('height',0); return; }
+    // Combined — sum 5234 + 5236A hours at each phase position per job
+    const allJobs=[...new Set([...allJobsByCost('5234'),...allJobsByCost('5236A')])];
+    if (!allJobs.length){emptyEl.style.display='';msvg.attr('width',0).attr('height',0);return;}
     emptyEl.style.display='none';
-    const W = document.getElementById('main-wrap').clientWidth;
-    const H=380, M={t:24,r:28,b:40,l:52};
-    const w=W-M.l-M.r, h=H-M.t-M.b;
+    const W=document.getElementById('main-wrap').clientWidth;
+    const H=380,M={t:24,r:28,b:40,l:52};
+    const w=W-M.l-M.r,h=H-M.t-M.b;
     const N1=20,N2=40,N3=80,T=N1+N2+N3;
-    // Build combined phase data with namespaced keys
     const pts=[];
     for(let nx=0;nx<=T;nx++){
       const row={nx};
-      for(const k of keys){
-        const job=jobOf(k), cc=ccOf(k);
-        row[k]=interpolateAtNx(S.projectsByCost[cc][job],getPhases(job,cc),nx,N1,N2,N3);
-      }
+      allJobs.forEach(job=>{
+        let total=0;
+        ['5234','5236A'].forEach(cc=>{
+          if(S.projectsByCost[cc]?.[job])
+            total+=interpolateAtNx(S.projectsByCost[cc][job],getPhases(job,cc),nx,N1,N2,N3);
+        });
+        row[job]=total;
+      });
       pts.push(row);
     }
-    const series=d3.stack().keys(keys).offset(d3.stackOffsetNone)(pts);
+    const series=d3.stack().keys(allJobs).offset(d3.stackOffsetNone)(pts);
     const xSc=d3.scaleLinear().domain([0,T]).range([0,w]);
     const yMax=d3.max(series,s=>d3.max(s,d=>d[1]))||1;
     const ySc=d3.scaleLinear().domain([0,yMax]).range([h,0]).nice();
@@ -1044,15 +1069,17 @@ function renderStream(){
       g.append('rect').attr('x',xSc(a)).attr('y',0).attr('width',xSc(b)-xSc(a)).attr('height',h).attr('fill',fill);
     });
     const area=d3.area().x(d=>xSc(d.data.nx)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1])).curve(d3.curveMonotoneX);
-    const selKey=S.selJob?`${S.selJob.costCode}::${S.selJob.job}`:null;
+    const selJob2=S.selJob?.job||null;
     series.forEach(s=>{
-      const key=s.key, job=jobOf(key), cc=ccOf(key);
-      const isSel=selKey===key, op=selKey?(isSel?1:.15):.82;
+      const job=s.key,isSel=selJob2===job,op=selJob2?(isSel?1:.15):.82;
       g.append('path').datum(s)
         .attr('d',area).attr('fill',colorOf(job)).attr('opacity',op).style('cursor','pointer')
-        .on('mousemove',ev=>onHoverPhase(ev,job,cc,xSc,M,N1,N1+N2,'main-svg'))
+        .on('mousemove',ev=>onHoverPhase(ev,job,'5234',xSc,M,N1,N1+N2,'main-svg'))
         .on('mouseleave',hideTip)
-        .on('click',()=>selectJob(job,cc));
+        .on('click',()=>{
+          const visCCs=['5234','5236A'].filter(c=>S.projectsByCost[c]?.[job]);
+          if(visCCs.length) selectJob(job,visCCs);
+        });
     });
     renderStreamAxes(g,xSc,ySc,w,h,N1,N2,N3,T);
   } else {
@@ -1076,14 +1103,14 @@ function renderStream(){
       g.append('rect').attr('x',xSc(a)).attr('y',0).attr('width',xSc(b)-xSc(a)).attr('height',h).attr('fill',fill);
     });
     const area=d3.area().x(d=>xSc(d.data.nx)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1])).curve(d3.curveMonotoneX);
-    const selJob=S.selJob?.costCode===cc?S.selJob.job:null;
+    const selJob=S.selJob&&S.selJob.ccList?.includes(cc)?S.selJob.job:null;
     series.forEach(s=>{
       const job=s.key,isSel=selJob===job,op=selJob?(isSel?1:.15):.82;
       g.append('path').datum(s)
         .attr('d',area).attr('fill',colorOf(job)).attr('opacity',op).style('cursor','pointer')
         .on('mousemove',ev=>onHoverPhase(ev,job,cc,xSc,M,N1,N1+N2,'main-svg'))
         .on('mouseleave',hideTip)
-        .on('click',()=>selectJob(job,cc));
+        .on('click',()=>selectJob(job,[cc]));
     });
     renderStreamAxes(g,xSc,ySc,w,h,N1,N2,N3,T);
   }
@@ -1160,8 +1187,9 @@ function showEmptyDetail() {
 }
 function closeDetail(){S.selJob=null;showEmptyDetail();}
 function deselectJob(){closeDetail();renderAll();}
-function selectJob(job,cc) {
-  S.selJob={job,costCode:cc};
+function selectJob(job,ccOrList) {
+  const ccList=Array.isArray(ccOrList)?ccOrList:[ccOrList];
+  S.selJob={job,costCode:ccList[0],ccList};
   renderAll();
   setTimeout(()=>document.getElementById('detail-panel').scrollIntoView({behavior:'smooth',block:'nearest'}),60);
 }
@@ -1184,9 +1212,10 @@ function makeDetPhaseXSc(ph,mW,w) {
   };
   return fn;
 }
-function renderDetail(job,cc) {
-  const isDesigner=cc==='5234'||cc==='5236A';
-  const proj=S.projectsByCost[cc][job]; if (!proj) return;
+function renderDetail(job,ccOrList) {
+  const ccList=Array.isArray(ccOrList)?ccOrList:[ccOrList];
+  const isDesigner=ccList.every(cc=>cc==='5234'||cc==='5236A');
+  const proj=combineProjectData(job,ccList); if (!proj) return;
   document.getElementById('dp-empty').style.display='none';
   document.getElementById('dp-active').style.display='';
   // Show/hide + sync alignment toggle
@@ -1197,11 +1226,18 @@ function renderDetail(job,cc) {
       b.classList.toggle('active',b.dataset.detAlign===S.detailAlign);
     });
   }
-  const ph=getPhases(job,cc);
+  const ph=getPhases(job,ccList[0]);
   document.getElementById('dp-job').textContent=job;
   const badge=document.getElementById('dp-badge');
-  badge.textContent=CC_LABEL[cc]||cc;
-  badge.className='cost-badge badge-'+cc.replace(/\W/g,'');
+  if (ccList.length===1) {
+    badge.textContent=CC_LABEL[ccList[0]]||ccList[0];
+    badge.className='cost-badge badge-'+ccList[0].replace(/\W/g,'');
+  } else {
+    const isDes=ccList.every(cc=>cc==='5234'||cc==='5236A');
+    const isProd=ccList.every(cc=>cc==='5239'||cc==='5238');
+    badge.textContent=isDes?'Design + Development':isProd?'PM + LC':'All Departments';
+    badge.className='cost-badge badge-both';
+  }
   document.getElementById('dp-meta').textContent=`${fh(proj.total)} hrs \u00b7 ${proj.span} wks \u00b7 ${[...proj.allPeople].join(', ')}`;
   populateProjNav(job, cc);
 
@@ -1309,8 +1345,8 @@ function renderDetail(job,cc) {
   }
 
   if (isDesigner) {
-    if (!isPhaseView) addSliders(g,xSc,w,h,M,ph,mW,job,cc);
-    updatePhaseInfo(job,cc);
+    if (!isPhaseView) addSliders(g,xSc,w,h,M,ph,mW,job,ccList[0]);
+    updatePhaseInfo(job,ccList[0]);
     document.getElementById('phase-dates').style.display=isPhaseView?'none':'';
   } else {
     document.getElementById('phase-info').innerHTML='';
@@ -1479,25 +1515,16 @@ function renderExcludedRows(container, excludedSet, onRevive) {
 function populateProjNav(currentJob, currentCC) {
   const sel = document.getElementById('proj-nav');
   sel.innerHTML = '';
-  let ccList;
-  if (S.mainView==='design') { if(S.chartView==='5236A')ccList=['5236A']; else if(S.chartView==='both')ccList=['5234','5236A']; else ccList=['5234']; }
-  else if (S.productionView==='lc') ccList=['5239'];
-  else if (S.productionView==='both') ccList=['5239','5238'];
-  else ccList=['5238'];
+  const ccs = activeCCList();
 
-  // Deduplicate: one entry per canonical job, best CC = most hours
-  const jobMap=new Map();
-  ccList.forEach(cc=>{
+  // Deduplicate: one entry per canonical job, collect all visible CCs
+  const jobMap = new Map(); // job → Set of visible CCs
+  ccs.forEach(cc=>{
     const vis=allJobsByCost(cc);
     const genVis=(cc==='5239'||cc==='5238')?generalJobsByCost(cc):[];
     [...vis,...genVis].forEach(job=>{
-      if (!jobMap.has(job)){jobMap.set(job,cc);}
-      else{
-        const existing=jobMap.get(job);
-        const existHrs=S.projectsByCost[existing]?.[job]?.total||0;
-        const newHrs=S.projectsByCost[cc]?.[job]?.total||0;
-        if(newHrs>existHrs) jobMap.set(job,cc);
-      }
+      if (!jobMap.has(job)) jobMap.set(job,new Set());
+      jobMap.get(job).add(cc);
     });
   });
   if (!jobMap.size) return;
@@ -1506,11 +1533,16 @@ function populateProjNav(currentJob, currentCC) {
   const showDot=isDesignView&&S.designAlign==='phase';
 
   [...jobMap.keys()].sort().forEach(job=>{
-    const cc=jobMap.get(job);
+    const visCCs=[...jobMap.get(job)];
+    const primaryCC=visCCs.reduce((best,cc)=>{
+      const bh=S.projectsByCost[best]?.[job]?.total||0;
+      const ch=S.projectsByCost[cc]?.[job]?.total||0;
+      return ch>bh?cc:best;
+    },visCCs[0]);
     const opt=document.createElement('option');
-    opt.value=job+'|||'+cc;
+    opt.value=job+'|||'+visCCs.join(',');
     const hasPhase=showDot&&S.phasesSetByUser.has(job)&&S.phases[job]&&Object.keys(S.phases[job]).length>0;
-    const isGen=cc==='5239'?S.generalJobsLC.has(job):cc==='5238'?S.generalJobsPM.has(job):false;
+    const isGen=primaryCC==='5239'?S.generalJobsLC.has(job):primaryCC==='5238'?S.generalJobsPM.has(job):false;
     opt.textContent=(hasPhase?'● ':'')+job+(isGen?' [G]':'');
     if (job===currentJob) opt.selected=true;
     sel.appendChild(opt);
@@ -1550,8 +1582,9 @@ async function saveAliasesFromUI() {
 
 function onPhaseDate(key){
   const sj=S.selJob; if(!sj) return;
-  const {job,costCode:cc}=sj;
-  const proj=S.projectsByCost[cc][job]; if(!proj) return;
+  const {job,ccList}=sj;
+  const cc=ccList[0];
+  const proj=combineProjectData(job,ccList); if(!proj) return;
   const ph=getPhases(job,cc);
   const dateVal=document.getElementById(`date-${key}`).value;
   const weekNum=dateToWeek(proj,dateVal);
@@ -1586,23 +1619,28 @@ function wireEvents() {
     btn.textContent=isOpen?'Files & Aliases ▾':'Files & Aliases ▴';
   });
 
-  // Main view selector (Design / Production)
+  // Main view selector (Design / Production / All)
   document.querySelectorAll('.mvt').forEach(btn=>{
     btn.addEventListener('click',()=>{
       document.querySelectorAll('.mvt').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
-      S.mainView=btn.dataset.view;
-      const isDesign=S.mainView==='design';
+      const newView=btn.dataset.view;
+      S.mainView=newView;
+      const isDesign=newView==='design';
+      const isProd=newView==='production';
       // Close detail if it belongs to the other section
       if (S.selJob) {
-        const role=CC_ROLE[S.selJob.costCode];
-        const ok=(isDesign&&role==='designer')||(!isDesign&&(role==='lc'||role==='pm'));
+        const roles=new Set(S.selJob.ccList.map(cc=>CC_ROLE[cc]));
+        const isDesignerSel=[...roles].every(r=>r==='designer');
+        const ok=(newView==='all')||
+                 (isDesign&&isDesignerSel)||
+                 (isProd&&!isDesignerSel&&roles.size>0);
         if (!ok) closeDetail();
       }
       document.getElementById('design-sub-row').style.display=isDesign?'':'none';
       document.getElementById('design-align-row').style.display=isDesign?'':'none';
       document.getElementById('phase-reset-row').style.display=isDesign?'':'none';
-      document.getElementById('production-sub-row').style.display=isDesign?'none':'';
+      document.getElementById('production-sub-row').style.display=isProd?'':'none';
       renderAll();
     });
   });
@@ -1634,8 +1672,10 @@ function wireEvents() {
       btn.classList.add('active');
       S.productionView=btn.dataset.pview;
       if (S.selJob) {
-        const role=CC_ROLE[S.selJob.costCode];
-        const ok=(S.productionView==='pm'&&role==='pm')||(S.productionView==='lc'&&role==='lc')||S.productionView==='both';
+        const roles=new Set(S.selJob.ccList.map(cc=>CC_ROLE[cc]));
+        const ok=(S.productionView==='pm'&&roles.has('pm'))||
+                 (S.productionView==='lc'&&roles.has('lc'))||
+                 S.productionView==='both';
         if (!ok) closeDetail();
       }
       renderAll();
@@ -1655,7 +1695,7 @@ function wireEvents() {
   // Project navigation dropdown in detail panel
   document.getElementById('proj-nav').addEventListener('change',function(){
     const parts=this.value.split('|||');
-    if (parts.length===2) selectJob(parts[0],parts[1]);
+    if (parts.length===2) selectJob(parts[0],parts[1].split(','));
   });
 
   document.getElementById('btn-save-aliases').addEventListener('click',()=>
@@ -1664,25 +1704,30 @@ function wireEvents() {
 
   document.getElementById('btn-exclude').addEventListener('click',async()=>{
     if (!S.selJob) return;
-    const {job:curJob,costCode:curCC}=S.selJob;
+    const {job:curJob,ccList:curCCList}=S.selJob;
     const sel=document.getElementById('proj-nav');
     const opts=[...sel.options].filter(o=>o.value.includes('|||'));
-    const curIdx=opts.findIndex(o=>{const [j,c]=o.value.split('|||');return j===curJob&&c===curCC;});
-    let nextJob=null,nextCC=null;
-    for (let i=curIdx+1;i<opts.length;i++){
-      const [j,c]=opts[i].value.split('|||');
-      if (!S.excluded.has(j)){nextJob=j;nextCC=c;break;}
+    const curIdx=opts.findIndex(o=>o.value.startsWith(curJob+'|||'));
+    // Exclude from all relevant sets
+    curCCList.forEach(cc=>{
+      if(cc==='5239') S.excludedLC.add(curJob);
+      else if(cc==='5238') S.excludedPM.add(curJob);
+      else S.excluded.add(curJob);
+    });
+    const isExcluded=job=>[S.excluded,S.excludedLC,S.excludedPM].some(set=>set.has(job));
+    let nextJob=null,nextCCList=null;
+    for(let i=curIdx+1;i<opts.length;i++){
+      const [j,...rest]=opts[i].value.split('|||');
+      if(!isExcluded(j)){nextJob=j;nextCCList=rest[0].split(',');break;}
     }
-    if (!nextJob){
-      for (let i=curIdx-1;i>=0;i--){
-        const [j,c]=opts[i].value.split('|||');
-        if (!S.excluded.has(j)){nextJob=j;nextCC=c;break;}
+    if(!nextJob){
+      for(let i=curIdx-1;i>=0;i--){
+        const [j,...rest]=opts[i].value.split('|||');
+        if(!isExcluded(j)){nextJob=j;nextCCList=rest[0].split(',');break;}
       }
     }
-    const excSet=curCC==='5239'?S.excludedLC:curCC==='5238'?S.excludedPM:S.excluded;
-    excSet.add(curJob);
     persistState().catch(e=>setStatus('Exclude save failed: '+(e.message||e),true,false));
-    if (nextJob){selectJob(nextJob,nextCC);}
+    if(nextJob){selectJob(nextJob,nextCCList);}
     else{closeDetail();renderAll();}
   });
 
@@ -1694,7 +1739,7 @@ function wireEvents() {
       document.querySelectorAll('#det-align-row .svt').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       S.detailAlign=btn.dataset.detAlign;
-      if (S.selJob) renderDetail(S.selJob.job,S.selJob.costCode);
+      if (S.selJob) renderDetail(S.selJob.job,S.selJob.ccList);
     });
   });
 
@@ -1736,7 +1781,7 @@ function wireEvents() {
 
   window.addEventListener('resize',()=>{
     renderAll();
-    if (S.selJob) renderDetail(S.selJob.job,S.selJob.costCode);
+    if (S.selJob) renderDetail(S.selJob.job,S.selJob.ccList);
   });
 }
 
