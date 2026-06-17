@@ -133,6 +133,9 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 .chart-ctrl-row{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px;}
 /* ── DETAIL EMPTY STATE ── */
 #dp-empty{padding:42px 20px;text-align:center;color:#aaa9a7;font-size:13px;line-height:1.7;}
+#det-align-row{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;}
+#btn-reset-phases{font:600 10px/1 'TT Norms Pro',sans-serif;padding:3px 9px;border-radius:4px;border:1px dashed #ddd9d0;background:transparent;color:#a3a09c;cursor:pointer;letter-spacing:.04em;}
+#btn-reset-phases:hover{color:#6b6865;border-color:#c8c4bc;}
 </style>
 </head>
 <body>
@@ -142,7 +145,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v26</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v27</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -158,7 +161,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
-      <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v26</span></h1>
+      <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v27</span></h1>
       <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
         <button id="btn-data-panel" class="btn-data-panel">Files &amp; Aliases ▾</button>
         <div>
@@ -218,6 +221,9 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
         <button class="svt active" data-align="phase">By Phase</button>
         <button class="svt" data-align="week">By Week</button>
       </div>
+      <div class="chart-ctrl-row" id="phase-reset-row">
+        <button id="btn-reset-phases">Reset phase markers</button>
+      </div>
       <div class="chart-ctrl-row" id="production-sub-row" style="display:none">
         <button class="svt active" data-pview="pm">Project Managers</button>
         <button class="svt" data-pview="lc">Logistics Coordinators</button>
@@ -257,6 +263,10 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
         <label style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8a8682;white-space:nowrap;flex-shrink:0">Navigate</label>
         <select id="proj-nav" style="flex:1;max-width:420px;font:13px/1 'TT Norms Pro',sans-serif;padding:6px 10px;border:1px solid #ddd9d0;border-radius:4px;background:#faf9f6;color:#1a1917;outline:none;cursor:pointer;"></select>
+      </div>
+      <div id="det-align-row" style="display:none">
+        <button class="svt active" data-det-align="week">By Week</button>
+        <button class="svt" data-det-align="phase">By Phase</button>
       </div>
       <div class="chart-wrap" id="det-wrap"><svg id="det-svg" class="chart-svg"></svg></div>
       <div id="person-legend" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 4px;min-height:0;"></div>
@@ -335,6 +345,7 @@ const S = {
   stateLoaded: false,
   chartView: '5234',         // '5234' | '5236A' | 'both'
   designAlign: 'phase',      // 'phase' | 'week'
+  detailAlign: 'week',       // 'week' | 'phase' (detail panel chart)
   selJob: null,
 };
 
@@ -1156,28 +1167,53 @@ function selectJob(job,cc) {
 }
 
 // ── DETAIL VIEW ───────────────────────────────────────────────────────────────
+function makeDetPhaseXSc(ph,mW,w) {
+  const p2=Math.max(1,ph.p2), p3=Math.min(mW-1,Math.max(p2+1,ph.p3));
+  const T=mW, third=w/3;
+  const fn=wk=>{
+    const wk2=Math.max(0,Math.min(T,wk));
+    if(wk2<=p2) return p2>0?(wk2/p2)*third:0;
+    if(wk2<=p3){const s=p3-p2;return s>0?third+((wk2-p2)/s)*third:third;}
+    const s=T-p3;return s>0?2*third+((wk2-p3)/s)*third:2*third;
+  };
+  fn.invert=x=>{
+    const x2=Math.max(0,Math.min(w,x));
+    if(x2<=third) return p2>0?(x2/third)*p2:0;
+    if(x2<=2*third){const s=p3-p2;return s>0?p2+((x2-third)/third)*s:p2;}
+    const s=T-p3;return s>0?p3+((x2-2*third)/third)*s:p3;
+  };
+  return fn;
+}
 function renderDetail(job,cc) {
   const isDesigner=cc==='5234'||cc==='5236A';
   const proj=S.projectsByCost[cc][job]; if (!proj) return;
   document.getElementById('dp-empty').style.display='none';
   document.getElementById('dp-active').style.display='';
+  // Show/hide + sync alignment toggle
+  const detAlignRow=document.getElementById('det-align-row');
+  detAlignRow.style.display=isDesigner?'flex':'none';
+  if (isDesigner) {
+    document.querySelectorAll('#det-align-row .svt').forEach(b=>{
+      b.classList.toggle('active',b.dataset.detAlign===S.detailAlign);
+    });
+  }
   const ph=getPhases(job,cc);
   document.getElementById('dp-job').textContent=job;
   const badge=document.getElementById('dp-badge');
   badge.textContent=CC_LABEL[cc]||cc;
   badge.className='cost-badge badge-'+cc.replace(/\W/g,'');
-  document.getElementById('dp-meta').textContent=`${fh(proj.total)} hrs · ${proj.span} wks · ${[...proj.allPeople].join(', ')}`;
+  document.getElementById('dp-meta').textContent=`${fh(proj.total)} hrs \u00b7 ${proj.span} wks \u00b7 ${[...proj.allPeople].join(', ')}`;
   populateProjNav(job, cc);
 
+  const isPhaseView=isDesigner&&S.detailAlign==='phase';
   const W=document.getElementById('det-wrap').clientWidth;
   const H=210,M={t:18,r:28,b:isDesigner?56:40,l:52};
   const w=W-M.l-M.r,h=H-M.t-M.b,mW=proj.span+2;
-  const xSc=d3.scaleLinear().domain([0,mW]).range([0,w]);
+  const xSc=isPhaseView?makeDetPhaseXSc(ph,mW,w):d3.scaleLinear().domain([0,mW]).range([0,w]);
   const people=[...proj.allPeople].sort();
   const maxH=d3.max(Object.values(proj.weeks),d=>d.hours)||1;
   const ySc=d3.scaleLinear().domain([0,maxH*1.15]).range([h,0]);
 
-  // Build per-person stacked data for every week 0..mW
   const pData=d3.range(0,mW+1).map(wk=>{
     const row={wk};
     people.forEach(p=>{row[p]=proj.weeks[wk]?.byPerson?.[p]||0;});
@@ -1189,21 +1225,26 @@ function renderDetail(job,cc) {
   const dsvg=d3.select('#det-svg'); dsvg.selectAll('*').remove(); dsvg.attr('width',W).attr('height',H);
   const g=dsvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
 
-  if (isDesigner) {
-    [{cls:'pr0',x1:0,x2:ph.p2,fill:'rgba(44,74,62,.07)'},{cls:'pr1',x1:ph.p2,x2:ph.p3,fill:'rgba(44,74,62,.13)'},{cls:'pr2',x1:ph.p3,x2:mW,fill:'rgba(44,74,62,.07)'}].forEach(({cls,x1,x2,fill})=>{
-      g.append('rect').attr('class',cls).attr('x',xSc(x1)).attr('y',0).attr('width',Math.max(0,xSc(x2)-xSc(x1))).attr('height',h).attr('fill',fill);
+  // Phase shading backgrounds
+  if (isPhaseView) {
+    const third=w/3;
+    [[0,third,'rgba(44,74,62,.06)'],[third,2*third,'rgba(44,74,62,.12)'],[2*third,w,'rgba(44,74,62,.06)']].forEach(([x1,x2,fill])=>{
+      g.append('rect').attr('x',x1).attr('y',0).attr('width',x2-x1).attr('height',h).attr('fill',fill);
+    });
+  } else if (isDesigner) {
+    [[0,ph.p2,'rgba(44,74,62,.06)'],[ph.p2,ph.p3,'rgba(44,74,62,.12)'],[ph.p3,mW,'rgba(44,74,62,.06)']].forEach(([a,b,fill])=>{
+      g.append('rect').attr('x',xSc(a)).attr('y',0).attr('width',Math.max(0,xSc(b)-xSc(a))).attr('height',h).attr('fill',fill);
     });
     [GP2,GP3].forEach(pw=>{if(pw>mW)return;g.append('line').attr('x1',xSc(pw)).attr('y1',0).attr('x2',xSc(pw)).attr('y2',h).attr('stroke','#c0bdb8').attr('stroke-width',1).attr('stroke-dasharray','3 3').attr('pointer-events','none');});
   }
 
-  // Stacked person bands — with per-person hover
+  // Stacked person bands
   pStack.forEach((s,i)=>{
     const person=s.key, col=PERSON_PALETTE[i%PERSON_PALETTE.length];
-    const personTotal=Object.values(proj.weeks).reduce((sum,w)=>sum+(w.byPerson?.[person]||0),0);
-    const personActiveWks=Object.values(proj.weeks).filter(w=>(w.byPerson?.[person]||0)>0).length;
+    const personTotal=Object.values(proj.weeks).reduce((sum,wk)=>sum+(wk.byPerson?.[person]||0),0);
+    const personActiveWks=Object.values(proj.weeks).filter(wk=>(wk.byPerson?.[person]||0)>0).length;
     const share=proj.total>0?Math.round(personTotal/proj.total*100):0;
-    g.append('path').datum(s).attr('d',aGen)
-      .attr('fill',col).attr('opacity',.55)
+    g.append('path').datum(s).attr('d',aGen).attr('fill',col).attr('opacity',.55)
       .on('mousemove',ev=>{
         const rect=document.getElementById('det-svg').getBoundingClientRect();
         const wk=Math.max(0,Math.min(mW,Math.round(xSc.invert(ev.clientX-rect.left-M.l))));
@@ -1225,19 +1266,36 @@ function renderDetail(job,cc) {
   const totData=d3.range(0,mW+1).map(wk=>({wk,hours:proj.weeks[wk]?.hours||0}));
   g.append('path').datum(totData).attr('d',totLine).attr('fill','none').attr('stroke','rgba(0,0,0,.18)').attr('stroke-width',1.5);
 
+  // Phase boundary lines
   if (isDesigner) {
-    g.append('line').attr('class','pl-p2').attr('x1',xSc(ph.p2)).attr('y1',0).attr('x2',xSc(ph.p2)).attr('y2',h).attr('stroke','#1a7a4a').attr('stroke-width',2).attr('pointer-events','none');
-    g.append('line').attr('class','pl-p3').attr('x1',xSc(ph.p3)).attr('y1',0).attr('x2',xSc(ph.p3)).attr('y2',h).attr('stroke','#1a3a7a').attr('stroke-width',2).attr('pointer-events','none');
+    if (isPhaseView) {
+      const third=w/3;
+      [[third,'#1a7a4a'],[2*third,'#1a3a7a']].forEach(([x,col])=>{
+        g.append('line').attr('x1',x).attr('y1',0).attr('x2',x).attr('y2',h).attr('stroke',col).attr('stroke-width',2).attr('pointer-events','none');
+      });
+    } else {
+      g.append('line').attr('class','pl-p2').attr('x1',xSc(ph.p2)).attr('y1',0).attr('x2',xSc(ph.p2)).attr('y2',h).attr('stroke','#1a7a4a').attr('stroke-width',2).attr('pointer-events','none');
+      g.append('line').attr('class','pl-p3').attr('x1',xSc(ph.p3)).attr('y1',0).attr('x2',xSc(ph.p3)).attr('y2',h).attr('stroke','#1a3a7a').attr('stroke-width',2).attr('pointer-events','none');
+    }
   }
 
-  const te=mW<=20?1:mW<=50?2:mW<=100?5:10;
-  g.append('g').attr('transform',`translate(0,${h})`).call(d3.axisBottom(xSc).tickValues(d3.range(0,mW+1,te)).tickFormat(d=>`W${d}`).tickSize(-h)).call(ax=>{ax.select('.domain').remove();ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dy','1.2em');});
+  // X-axis
+  if (isPhaseView) {
+    const third=w/3;
+    g.append('line').attr('x1',0).attr('y1',h).attr('x2',w).attr('y2',h).attr('stroke','#ddd9d0').attr('stroke-width',1);
+    [[third/2,'PHASE I'],[third+third/2,'PHASE II'],[2*third+third/2,'PHASE III']].forEach(([x,lbl])=>{
+      g.append('text').attr('x',x).attr('y',h+22).attr('text-anchor','middle').attr('font-size','9px').attr('font-weight','700').attr('font-family','DM Sans,sans-serif').attr('fill','#8a8682').attr('letter-spacing','.1em').text(lbl);
+    });
+  } else {
+    const te=mW<=20?1:mW<=50?2:mW<=100?5:10;
+    g.append('g').attr('transform',`translate(0,${h})`).call(d3.axisBottom(xSc).tickValues(d3.range(0,mW+1,te)).tickFormat(d=>`W${d}`).tickSize(-h)).call(ax=>{ax.select('.domain').remove();ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dy','1.2em');});
+  }
 
-  // Y axis
+  // Y-axis
   g.append('g').call(d3.axisLeft(ySc).ticks(4).tickFormat(d=>fh(d)).tickSize(-w))
     .call(ax=>{ax.select('.domain').remove();ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');});
 
-  // Person legend — only shown when more than one person
+  // Person legend
   const legEl=document.getElementById('person-legend');
   legEl.innerHTML='';
   if(people.length>1){
@@ -1250,8 +1308,14 @@ function renderDetail(job,cc) {
     });
   }
 
-  if (isDesigner) { addSliders(g,xSc,w,h,M,ph,mW,job,cc); updatePhaseInfo(job,cc); }
-  else { document.getElementById('phase-info').innerHTML=''; document.getElementById('phase-dates').style.display='none'; }
+  if (isDesigner) {
+    if (!isPhaseView) addSliders(g,xSc,w,h,M,ph,mW,job,cc);
+    updatePhaseInfo(job,cc);
+    document.getElementById('phase-dates').style.display=isPhaseView?'none':'';
+  } else {
+    document.getElementById('phase-info').innerHTML='';
+    document.getElementById('phase-dates').style.display='none';
+  }
 }
 
 // ── SLIDERS ───────────────────────────────────────────────────────────────────
@@ -1420,26 +1484,39 @@ function populateProjNav(currentJob, currentCC) {
   else if (S.productionView==='lc') ccList=['5239'];
   else if (S.productionView==='both') ccList=['5239','5238'];
   else ccList=['5238'];
+
+  // Deduplicate: one entry per canonical job, best CC = most hours
+  const jobMap=new Map();
   ccList.forEach(cc=>{
     const vis=allJobsByCost(cc);
     const genVis=(cc==='5239'||cc==='5238')?generalJobsByCost(cc):[];
-    const allJobs=[...new Set([...vis,...genVis])];
-    if (!allJobs.length) return;
-    const og=document.createElement('optgroup');
-    og.label=CC_LABEL[cc]+' ('+cc+')';
-    [...allJobs].sort().forEach(job=>{
-      const opt=document.createElement('option');
-      opt.value=job+'|||'+cc;
-      const isDesignerView=S.mainView==='design';
-      const hasPhase=isDesignerView&&S.phasesSetByUser.has(job)&&S.phases[job]&&Object.keys(S.phases[job]).length>0;
-      const isGen=cc==='5239'?S.generalJobsLC.has(job):cc==='5238'?S.generalJobsPM.has(job):false;
-      opt.textContent=(hasPhase?'● ':'')+job+(isGen?' [G]':'');
-      if (job===currentJob&&cc===currentCC) opt.selected=true;
-      og.appendChild(opt);
+    [...vis,...genVis].forEach(job=>{
+      if (!jobMap.has(job)){jobMap.set(job,cc);}
+      else{
+        const existing=jobMap.get(job);
+        const existHrs=S.projectsByCost[existing]?.[job]?.total||0;
+        const newHrs=S.projectsByCost[cc]?.[job]?.total||0;
+        if(newHrs>existHrs) jobMap.set(job,cc);
+      }
     });
-    sel.appendChild(og);
+  });
+  if (!jobMap.size) return;
+
+  const isDesignView=S.mainView==='design';
+  const showDot=isDesignView&&S.designAlign==='phase';
+
+  [...jobMap.keys()].sort().forEach(job=>{
+    const cc=jobMap.get(job);
+    const opt=document.createElement('option');
+    opt.value=job+'|||'+cc;
+    const hasPhase=showDot&&S.phasesSetByUser.has(job)&&S.phases[job]&&Object.keys(S.phases[job]).length>0;
+    const isGen=cc==='5239'?S.generalJobsLC.has(job):cc==='5238'?S.generalJobsPM.has(job):false;
+    opt.textContent=(hasPhase?'● ':'')+job+(isGen?' [G]':'');
+    if (job===currentJob) opt.selected=true;
+    sel.appendChild(opt);
   });
 }
+
 async function saveAliasesFromUI() {
   const newMerges={};
   document.querySelectorAll('.alias-row').forEach(row=>{
@@ -1524,6 +1601,7 @@ function wireEvents() {
       }
       document.getElementById('design-sub-row').style.display=isDesign?'':'none';
       document.getElementById('design-align-row').style.display=isDesign?'':'none';
+      document.getElementById('phase-reset-row').style.display=isDesign?'':'none';
       document.getElementById('production-sub-row').style.display=isDesign?'none':'';
       renderAll();
     });
@@ -1609,6 +1687,32 @@ function wireEvents() {
   });
 
   document.getElementById('btn-close-detail').addEventListener('click',deselectJob);
+
+  // Detail chart alignment toggle
+  document.querySelectorAll('#det-align-row .svt').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('#det-align-row .svt').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      S.detailAlign=btn.dataset.detAlign;
+      if (S.selJob) renderDetail(S.selJob.job,S.selJob.costCode);
+    });
+  });
+
+  // Reset all phase markers
+  document.getElementById('btn-reset-phases').addEventListener('click',async()=>{
+    S.phasesSetByUser.clear();
+    S.phases={};
+    try {
+      await persistState();
+      renderAll();
+      setStatus('Phase markers reset.',false,false);
+      setTimeout(()=>setStatus(''),2500);
+    } catch(e) {
+      renderAll();
+      setStatus('Markers cleared in memory (save failed: '+(e.message||e)+')',true,false);
+      setTimeout(()=>setStatus(''),5000);
+    }
+  });
 
   // Phase date inputs
   ['p2','p3'].forEach(key=>{
