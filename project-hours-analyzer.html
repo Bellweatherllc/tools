@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v40</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v41</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -190,7 +190,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v40</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v41</span></h1>
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
           <span id="last-saved" style="font-size:11px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;"></span>
@@ -372,7 +372,7 @@ const CFG = {
 const COST_CODES = ['5234', '5236A', '5239', '5238'];
 const CC_ROLE = {'5234':'designer','5236A':'designer','5239':'lc','5238':'pm'};
 const CC_LABEL = {'5234':'Design','5236A':'Project Development','5239':'Logistics Coordinator','5238':'Project Manager'};
-const CC_MIN_HRS = {'5234':20,'5236A':20,'5239':1,'5238':1};
+const CC_MIN_HRS = {'5234':0,'5236A':0,'5239':0,'5238':0}; // no minimum — filter manually via Exclude
 const PP_DAYS = 14; // pay period length in days (14 = bi-weekly)
 const PERSON_PALETTE = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
 const GP2 = 6, GP3 = 18;
@@ -509,13 +509,22 @@ async function gfetch(method, path, body) {
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return r.status===204?null:r.json();
 }
-async function gbatch(reqs) {
+async function gbatch(reqs,_retry=0) {
   const t=await getToken();
   const r=await fetch('https://graph.microsoft.com/v1.0/$batch',{
     method:'POST',headers:{Authorization:`Bearer ${t}`,'Content-Type':'application/json'},
     body:JSON.stringify({requests:reqs}),
   });
-  if (!r.ok) throw new Error(`Batch ${r.status}`);
+  if ((r.status===429||r.status===503)&&_retry<5) {
+    const wait=(parseInt(r.headers.get('Retry-After'),10)||Math.pow(2,_retry+1)*15)*1000;
+    setStatus(`SharePoint throttled — waiting ${Math.round(wait/1000)}s… (attempt ${_retry+1}/5)`);
+    await new Promise(res=>setTimeout(res,wait));
+    return gbatch(reqs,_retry+1);
+  }
+  if (!r.ok) {
+    const body=await r.text().catch(()=>'');
+    throw new Error(`${r.status} ${body}`);
+  }
   return r.json();
 }
 
@@ -638,10 +647,31 @@ async function saveItems(newItems) {
       headers:{'Content-Type':'application/json'},body:{fields},
     }));
     const res=await gbatch(reqs);
+    const throttled429=[];
     (res.responses||[]).forEach(resp=>{
       if (resp.status===201&&resp.body?.id)
         S.items.push({id:resp.body.id,fields:idMap[resp.id]});
+      else if (resp.status===429) throttled429.push(idMap[resp.id]);
     });
+    // Retry any item-level throttled entries after a short wait
+    if (throttled429.length>0) {
+      setStatus(`Retrying ${throttled429.length} throttled items…`);
+      await new Promise(r=>setTimeout(r,20000));
+      const retryIdMap={};
+      throttled429.forEach((f,idx)=>{retryIdMap[String(idx+1)]=f;});
+      const retryReqs=throttled429.map((fields,idx)=>({
+        id:String(idx+1),method:'POST',
+        url:`/sites/${S.siteId}/lists/${S.listId}/items`,
+        headers:{'Content-Type':'application/json'},body:{fields},
+      }));
+      const retryRes=await gbatch(retryReqs).catch(()=>({responses:[]}));
+      (retryRes.responses||[]).forEach(resp=>{
+        if (resp.status===201&&resp.body?.id)
+          S.items.push({id:resp.body.id,fields:retryIdMap[resp.id]});
+      });
+    }
+    // Pause between batches to stay under rate limits
+    if (i+20<total) await new Promise(r=>setTimeout(r,500));
   }
   const breakdown=COST_CODES.filter(cc=>newItems.some(i=>i.CostCode===cc));
   const bStr=breakdown.map(cc=>`${cc}: ${newItems.filter(i=>i.CostCode===cc).length}`).join(' · ');
@@ -781,9 +811,7 @@ function computeProjects() {
 
   S.projectsByCost={'5234':{},'5236A':{},'5239':{},'5238':{}};
   for (const cc of COST_CODES) {
-    const minHrs=CC_MIN_HRS[cc];
     for (const [job,p] of Object.entries(raw[cc])) {
-      if (p.total<minHrs) continue;
       const weeks={};
       for (const [wo,d] of Object.entries(p.rw)) {
         const rw=weekDiff(wo,p.first); if (rw<0) continue;
