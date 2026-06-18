@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v34</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v35</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -189,7 +189,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
-      <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v34</span></h1>
+      <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v35</span></h1>
       <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
         <button id="btn-data-panel" class="btn-data-panel">Files &amp; Aliases ▾</button>
         <div>
@@ -289,6 +289,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
         </div>
         <div class="dp-btns">
           <button class="btn btn-exc" id="btn-exclude">Exclude from group graph</button>
+          <button class="btn-notes" id="btn-export-data" title="Copy raw entry data as CSV">↓ CSV</button>
           <button class="btn-notes" id="btn-notes" title="Notes">&#9998;</button>
           <button class="btn btn-cls" id="btn-close-detail">Close</button>
         </div>
@@ -1729,6 +1730,48 @@ function onPhaseDate(key){
   else renderAll();
 }
 
+// ── DATA EXPORT ──────────────────────────────────────────────────────────────
+function buildProjectEntriesCSV(job, ccList) {
+  // Raw imported entries for this project — matches spreadsheet rows
+  const lines=['"Entry Date","Computed Week","Week Start","Person","Hours","Cost Code","Source File"'];
+  // Collect entries sorted by date
+  const entries=[];
+  for (const {fields:f} of S.items) {
+    const cc=f?.CostCode||'5234';
+    if (!ccList.includes(cc)) continue;
+    const canonical=S.merges[f.JobCode]||f.JobCode;
+    if (canonical!==job) continue;
+    const wo=(f.WeekOf||'').split('T')[0];
+    const proj=S.projectsByCost[cc]?.[job];
+    const firstWk=proj?.firstWeekOf||null;
+    const wkNum=firstWk?weekDiff(wo,firstWk):'?';
+    const wkStart=firstWk?(()=>{
+      const d=new Date(firstWk+'T12:00:00');
+      const wkD=new Date(d.getTime()+(typeof wkNum==='number'?wkNum:0)*7*24*60*60*1000);
+      return `${wkD.getMonth()+1}/${wkD.getDate()}/${wkD.getFullYear()}`;
+    })():'';
+    const person=f.Designer||f.Name||'';
+    const hours=parseFloat(f.Hours)||0;
+    const src=f.SourceFile||'';
+    entries.push({wo,wkNum,wkStart,person,hours,cc,src});
+  }
+  // Sort by week then person then date
+  entries.sort((a,b)=>{
+    const aw=typeof a.wkNum==='number'?a.wkNum:9999;
+    const bw=typeof b.wkNum==='number'?b.wkNum:9999;
+    if(aw!==bw) return aw-bw;
+    if(a.person!==b.person) return a.person.localeCompare(b.person);
+    return a.wo.localeCompare(b.wo);
+  });
+  entries.forEach(e=>{
+    lines.push([e.wo,e.wkNum,e.wkStart,e.person,e.hours,e.cc,e.src].map(v=>`"${v}"`).join(','));
+  });
+  // Summary footer
+  const total=entries.reduce((s,e)=>s+e.hours,0);
+  lines.push(`"","","","TOTAL",${total.toFixed(1)},"",""`);
+  return lines.join('\n');
+}
+
 // ── NOTES ────────────────────────────────────────────────────────────────────
 function getAuthorName() {
   try {
@@ -2030,6 +2073,20 @@ function wireEvents() {
   });
 
   document.getElementById('btn-close-detail').addEventListener('click',deselectJob);
+
+  // CSV data export
+  document.getElementById('btn-export-data').addEventListener('click',()=>{
+    if (!S.selJob) return;
+    const csv=buildProjectEntriesCSV(S.selJob.job,S.selJob.ccList);
+    const btn=document.getElementById('btn-export-data');
+    const orig=btn.textContent;
+    const done=()=>{btn.textContent='Copied!';setTimeout(()=>{btn.textContent=orig;},2000);};
+    navigator.clipboard.writeText(csv).then(done).catch(()=>{
+      const ta=document.createElement('textarea');ta.value=csv;
+      document.body.appendChild(ta);ta.select();document.execCommand('copy');
+      document.body.removeChild(ta);done();
+    });
+  });
 
   // Pencil / notes toggle
   document.getElementById('btn-notes').addEventListener('click',()=>{
