@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v47</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v48</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -190,7 +190,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v47</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v48</span></h1>
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
           <span id="last-saved" style="font-size:11px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;"></span>
@@ -439,6 +439,7 @@ const S = {
   tcManifest: {},
   detailFilter: {view:'design', sub:'both', prod:'both'},
   streamMode: 'stacked',
+  lastJob: null,
 };
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
@@ -845,6 +846,7 @@ async function loadState() {
           S.notes = parsed.notes || {};
           if (Array.isArray(parsed.scanYears)) S.scanYears = parsed.scanYears;
           if (parsed.streamMode) S.streamMode = parsed.streamMode;
+          if (parsed.lastJob) S.lastJob = parsed.lastJob;
         } else {
           S.merges   = parsed;
           S.excluded = new Set();
@@ -865,7 +867,7 @@ async function persistState() {
   const data = JSON.stringify({ merges: S.merges, excluded: [...S.excluded],
     excludedLC:[...S.excludedLC], excludedPM:[...S.excludedPM],
     generalJobsLC:[...S.generalJobsLC], generalJobsPM:[...S.generalJobsPM], phases,
-    notes: S.notes, scanYears: S.scanYears, streamMode: S.streamMode });
+    notes: S.notes, scanYears: S.scanYears, streamMode: S.streamMode, lastJob: S.selJob?.job||null });
   if (S.metaMergesItemId) {
     await gfetch('PATCH',`/sites/${S.siteId}/lists/${S.metaListId}/items/${S.metaMergesItemId}/fields`,{StateData:data});
   } else {
@@ -1360,10 +1362,12 @@ function renderStream(){
       });
       pts.push(row);
     }
-    const series=d3.stack().keys(allJobs).offset(d3.stackOffsetNone)(pts);
+    const _offset=S.streamMode==='stream'?d3.stackOffsetSilhouette:d3.stackOffsetNone;
+    const series=d3.stack().keys(allJobs).offset(_offset)(pts);
     const xSc=d3.scaleLinear().domain([0,T]).range([0,w]);
+    const yMin=S.streamMode==='stream'?(d3.min(series,s=>d3.min(s,d=>d[0]))||0):0;
     const yMax=d3.max(series,s=>d3.max(s,d=>d[1]))||1;
-    const ySc=d3.scaleLinear().domain([0,yMax]).range([h,0]).nice();
+    const ySc=d3.scaleLinear().domain([yMin,yMax]).range([h,0]).nice();
     msvg.attr('width',W).attr('height',H);
     const g=msvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
     [[0,N1,'rgba(44,74,62,.04)'],[N1,N1+N2,'rgba(44,74,62,.07)'],[N1+N2,T,'rgba(44,74,62,.04)']].forEach(([a,b,fill])=>{
@@ -1508,14 +1512,17 @@ function autoSelectFirstProject() {
     ...Object.keys(S.projectsByCost['5238']),
   ])].sort();
   if (!allJobs.length) return;
+  const target=(S.lastJob&&allJobs.includes(S.lastJob))?S.lastJob:allJobs[0];
   S.detailFilter={view:'all',sub:'both',prod:'both'};
-  S.selJob={job:allJobs[0],costCode:'5234',ccList:['5234','5236A','5238','5239']};
+  S.selJob={job:target,costCode:'5234',ccList:['5234','5236A','5238','5239']};
   updateDetFilterUI();
 }
 function selectJob(job,ccOrList) {
   const ccList=Array.isArray(ccOrList)?ccOrList:[ccOrList];
   S.selJob={job,costCode:ccList[0],ccList};
+  S.lastJob=job;
   syncDetailFilterToMain();
+  persistState().catch(()=>{});
   renderAll();
 }
 
