@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v676</title>
+<title>BW Project Pipeline — v678</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -453,14 +453,14 @@ body.prod-design-hidden .section[data-s-type="production"] .ms-da{display:none!i
 .ms-tall.sel-glow{filter:drop-shadow(0 0 5px rgba(255,59,48,.7));outline:2px solid #ff3b30;outline-offset:2px;}
 /* ── TIER SELECTION DOTS (T1/T2/T3) ── */
 /* Expanded: positioned in ms-row (height 29px) above the gantt bar */
-.tier-dot{position:absolute;border-radius:50%;user-select:none;pointer-events:auto;cursor:default;display:flex;align-items:center;justify-content:center;z-index:3;background:#2152a1;width:36px;height:36px;top:4px;}
+.tier-dot{position:absolute;border-radius:50%;user-select:none;pointer-events:auto;cursor:default;display:flex;align-items:center;justify-content:center;z-index:3;background:#2152a1;width:36px;height:36px;top:3px;}
 .tier-dot .tier-lbl{font-size:11px;font-weight:800;color:rgba(255,255,255,.95);pointer-events:none;letter-spacing:.04em;}
 .admin-mode .tier-dot{cursor:grab;}
 .admin-mode .tier-dot.dragging{cursor:grabbing;z-index:50;}
 /* Collapsed: visible on the collapsed band (BAND_H 28px) */
 .lanes-wrap.proj-collapsed .tier-dot{display:flex;width:24px;height:24px;top:2px;}
 .lanes-wrap.proj-collapsed .tier-dot .tier-lbl{font-size:11px;}
-.pd-dot{position:absolute;border-radius:0;user-select:none;pointer-events:auto;cursor:default;display:block;z-index:3;background:none;width:33px;height:35px;top:0px;}
+.pd-dot{position:absolute;border-radius:0;user-select:none;pointer-events:auto;cursor:default;display:block;z-index:3;background:none;width:33px;height:35px;top:4px;}
 .admin-mode .pd-dot{cursor:grab;}
 .admin-mode .pd-dot.dragging{cursor:grabbing;z-index:50;}
 .lanes-wrap.proj-collapsed .pd-dot{display:block;width:27px;height:28px;top:0px;}
@@ -2508,7 +2508,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v676</div>
+    <div class="auth-version" id="authVersionBadge">v678</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2527,7 +2527,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v676</div>
+  <div class="proto-badge" id="versionBadge">v678</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -9036,55 +9036,153 @@ function closeLcWeekPopup(){ LC_WEEK_POPUP.classList.remove('open'); _lcWpOpen=f
 function openDesignerWeekPopup(designerId,week,clientX,clientY){
   const des=DESIGNERS.find(d=>d.id===designerId); if(!des) return;
   const target=getTarget(designerId);
-  const monday=wkMon(week);
-  const fmt=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  const rows=[];
-  PROJECTS.filter(p=>isVisible(p)&&p.designer===designerId).forEach(proj=>{
-    proj.designLane.phases.forEach(ph=>{
-      if(!ph.durWeeks||ph.startWeek==null) return;
-      if(week>=ph.startWeek&&week<ph.startWeek+ph.durWeeks)
-        rows.push({name:proj.name,hours:ph.hours||0,phase:ph.name});
+  const fmtShort=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const fmtFull=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  // Gather rows for a given gantt week
+  function getWeekRows(wk){
+    const rows=[];
+    PROJECTS.filter(p=>isVisible(p)&&p.designer===designerId).forEach(proj=>{
+      proj.designLane.phases.forEach(ph=>{
+        if(!ph.durWeeks||ph.startWeek==null) return;
+        if(wk<ph.startWeek||wk>=ph.startWeek+ph.durWeeks) return;
+        ensureTiers(proj); ensurePencilsDown(proj);
+        const [t1,t2,t3]=proj.tiers;
+        let tierLabel=null;
+        if(wk>=t3.week) tierLabel='T3';
+        else if(wk>=t2.week) tierLabel='T2';
+        else if(wk>=t1.week) tierLabel='T1';
+        rows.push({
+          name:proj.name, hours:ph.hours||0, phase:ph.name,
+          da:proj.milestones.find(m=>m.name==='DA'),
+          ca:proj.milestones.find(m=>m.name==='CA'),
+          tierLabel,
+          pdWeek:proj.pencilsDown?.week??null
+        });
+      });
     });
-  });
-  const total=rows.reduce((s,r)=>s+r.hours,0);
-  document.getElementById('lcWpDate').textContent='Week of '+fmt(monday);
+    return rows;
+  }
+
+  const rows1=getWeekRows(week), rows2=getWeekRows(week+1);
+  const tot1=rows1.reduce((s,r)=>s+r.hours,0), tot2=rows2.reduce((s,r)=>s+r.hours,0);
+  const d1=wkMon(week), d2=wkMon(week+1);
+
+  document.getElementById('lcWpDate').textContent=fmtShort(d1)+' & '+fmtShort(d2);
   document.getElementById('lcWpName').textContent=des.fullLabel;
   document.getElementById('lcWpTarget').textContent='Target: '+target.toFixed(1)+'h/wk';
   const projList=document.getElementById('lcWpProjects'); projList.innerHTML='';
-  if(rows.length===0){
-    const em=document.createElement('div'); em.className='lc-wp-empty';
-    em.textContent='No scheduled hours this week.'; projList.appendChild(em);
-  } else {
-    rows.forEach(row=>{
-      const item=document.createElement('div'); item.className='lc-wp-row';
-      const nm=document.createElement('span'); nm.className='lc-wp-proj-name'; nm.textContent=row.name;
-      const ph=document.createElement('span'); ph.className='lc-wp-phase'; ph.textContent=row.phase;
-      const h=document.createElement('span'); h.className='lc-wp-hours'; h.textContent=row.hours.toFixed(1)+'h';
-      item.appendChild(nm); item.appendChild(ph); item.appendChild(h); projList.appendChild(item);
-    });
-    const sep=document.createElement('div'); sep.className='lc-wp-sep'; projList.appendChild(sep);
-    const tot=document.createElement('div'); tot.className='lc-wp-total-row';
-    const tl=document.createElement('span'); tl.textContent='Total';
-    const tv=document.createElement('span'); tv.className='lc-wp-hours'; tv.textContent=total.toFixed(1)+'h';
-    tot.appendChild(tl); tot.appendChild(tv); projList.appendChild(tot);
+
+  // Small pill badge: label + background color
+  function mkPill(label,bg,textColor){
+    const p=document.createElement('span');
+    p.style.cssText='display:inline-flex;align-items:center;font-size:8px;font-weight:800;'+
+      'letter-spacing:.04em;border-radius:3px;padding:1px 5px;background:'+bg+
+      ';color:'+(textColor||'rgba(255,255,255,.92)')+';line-height:1.5;flex-shrink:0;';
+    p.textContent=label; return p;
   }
-  // build copy text
-  let copyT='Week of '+fmt(monday)+' \u2014 '+des.fullLabel+'\n';
-  copyT+='Target: '+target.toFixed(1)+'h/wk\n\n';
-  if(rows.length===0){ copyT+='No scheduled hours this week.\n'; }
-  else{
-    rows.forEach(r=>{ copyT+='\u2022 '+r.name+' ('+r.phase+'): '+r.hours.toFixed(1)+'h\n'; });
-    copyT+='\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n';
-    copyT+='Total: '+total.toFixed(1)+'h\n';
+  // Round badge for tier (circle feel)
+  function mkTierBadge(label){
+    const p=document.createElement('span');
+    p.style.cssText='display:inline-flex;align-items:center;justify-content:center;'+
+      'font-size:8px;font-weight:800;letter-spacing:.04em;border-radius:50%;'+
+      'width:17px;height:17px;background:rgba(33,82,161,.80);color:rgba(255,255,255,.92);'+
+      'flex-shrink:0;line-height:1;';
+    p.textContent=label; return p;
   }
+  // Pencil-down badge with tiny SVG
+  function mkPdBadge(){
+    const p=document.createElement('span');
+    p.style.cssText='display:inline-flex;align-items:center;gap:2px;font-size:8px;font-weight:800;'+
+      'letter-spacing:.04em;border-radius:3px;padding:1px 4px;'+
+      'background:rgba(70,60,40,.75);color:rgba(245,197,64,.90);line-height:1.5;flex-shrink:0;';
+    p.innerHTML='<svg width="8" height="8" viewBox="0 0 12 12" fill="none" style="flex-shrink:0">'+
+      '<path d="M2 2h7l1 3-4 4H2V2z" fill="rgba(245,197,64,.70)" stroke="none"/>'+
+      '<path d="M9 2l1 3" stroke="rgba(245,197,64,.90)" stroke-width="1.2" stroke-linecap="round"/>'+
+      '<line x1="5.5" y1="9" x2="5.5" y2="11.5" stroke="rgba(209,16,16,.85)" stroke-width="1.5" stroke-linecap="round"/>'+
+      '</svg>PD';
+    return p;
+  }
+
+  function buildSection(rows,weekDate,total,isFirst){
+    const wkLabel=document.createElement('div');
+    wkLabel.style.cssText='font-size:8px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;'+
+      'color:rgba(255,255,255,.38);padding:'+(isFirst?'2px':'8px')+' 0 4px;'+
+      (isFirst?'':'border-top:1px solid rgba(255,255,255,.08);margin-top:4px;');
+    wkLabel.textContent='Week of '+fmtFull(weekDate);
+    projList.appendChild(wkLabel);
+
+    if(rows.length===0){
+      const em=document.createElement('div'); em.className='lc-wp-empty';
+      em.textContent='No scheduled hours.'; projList.appendChild(em);
+    } else {
+      rows.forEach(row=>{
+        const item=document.createElement('div'); item.className='lc-wp-row';
+        item.style.flexDirection='column'; item.style.alignItems='stretch'; item.style.gap='0';
+
+        // Line 1: name · phase · hours
+        const top=document.createElement('div');
+        top.style.cssText='display:flex;align-items:baseline;gap:6px;';
+        const nm=document.createElement('span'); nm.className='lc-wp-proj-name'; nm.textContent=row.name;
+        const ph=document.createElement('span'); ph.className='lc-wp-phase'; ph.textContent=row.phase;
+        const h=document.createElement('span'); h.className='lc-wp-hours'; h.textContent=row.hours.toFixed(1)+'h';
+        top.appendChild(nm); top.appendChild(ph); top.appendChild(h);
+        item.appendChild(top);
+
+        // Line 2: status icon badges
+        const icons=document.createElement('div');
+        icons.style.cssText='display:flex;gap:4px;margin-top:3px;align-items:center;flex-wrap:wrap;';
+        // DA
+        const daSt=row.da?.status||'projected';
+        const daSigned=daSt==='da-signed'||daSt==='ca-signed';
+        icons.appendChild(mkPill('DA',daSigned?'rgba(0,82,27,.85)':'rgba(155,98,39,.80)'));
+        // CA
+        const caSigned=row.ca?.status==='ca-signed';
+        icons.appendChild(mkPill('CA',caSigned?'rgba(0,82,27,.85)':'rgba(155,98,39,.80)'));
+        // Tier
+        if(row.tierLabel) icons.appendChild(mkTierBadge(row.tierLabel));
+        // Pencils-down
+        icons.appendChild(mkPdBadge());
+        item.appendChild(icons);
+        projList.appendChild(item);
+      });
+      const sep=document.createElement('div'); sep.className='lc-wp-sep'; projList.appendChild(sep);
+      const tot=document.createElement('div'); tot.className='lc-wp-total-row';
+      const tl=document.createElement('span'); tl.textContent='Total';
+      const tv=document.createElement('span'); tv.className='lc-wp-hours'; tv.textContent=total.toFixed(1)+'h';
+      tot.appendChild(tl); tot.appendChild(tv); projList.appendChild(tot);
+    }
+  }
+
+  buildSection(rows1,d1,tot1,true);
+  buildSection(rows2,d2,tot2,false);
+
+  // Copy text
+  let copyT=des.fullLabel+'\nTarget: '+target.toFixed(1)+'h/wk\n\n';
+  [[rows1,d1,tot1],[rows2,d2,tot2]].forEach(([rows,date,tot])=>{
+    copyT+='Week of '+fmtFull(date)+':\n';
+    if(rows.length===0) copyT+='  No scheduled hours.\n';
+    else{
+      rows.forEach(r=>{
+        const da=r.da?.status||'projected', ca=r.ca?.status||'projected';
+        copyT+='  \u2022 '+r.name+' ('+r.phase+'): '+r.hours.toFixed(1)+'h';
+        copyT+='  [DA:'+da+' CA:'+ca+(r.tierLabel?' '+r.tierLabel:'')+' PD]\n';
+      });
+      copyT+='  Total: '+tot.toFixed(1)+'h\n';
+    }
+    copyT+='\n';
+  });
+
   LC_WEEK_POPUP._copyText=copyT;
   LC_WEEK_POPUP.classList.add('open'); _lcWpOpen=true;
   requestAnimationFrame(()=>{
-    const pw=LC_WEEK_POPUP.offsetWidth||280, ph=LC_WEEK_POPUP.offsetHeight||200;
-    let left=clientX-pw/2, top=clientY+10;
+    const pw=LC_WEEK_POPUP.offsetWidth||280, popH=LC_WEEK_POPUP.offsetHeight||200;
+    // Appear to the right of cursor, vertically centered; flip left if no room
+    let left=clientX+14, top=clientY-Math.round(popH/2);
+    if(left+pw>window.innerWidth-8) left=clientX-pw-14;
     if(left<8) left=8;
-    if(left+pw>window.innerWidth-8) left=window.innerWidth-pw-8;
-    if(top+ph>window.innerHeight-8) top=clientY-ph-8;
+    if(top<8) top=8;
+    if(top+popH>window.innerHeight-8) top=window.innerHeight-popH-8;
     LC_WEEK_POPUP.style.left=left+'px'; LC_WEEK_POPUP.style.top=top+'px';
   });
 }
@@ -9633,7 +9731,7 @@ document.addEventListener('click',e=>{
     const uaBody=document.getElementById('ppUnassignedBody');
     uaBody.innerHTML='';
     const unassigned=PROJECTS
-      .filter(p=>isVisible(p)&&!p.productionPM)
+      .filter(p=>isVisible(p)&&(section==='design'?false:!p.productionPM))
       .map(p=>{
         const caMs=p.milestones.find(m=>m.name==='CA');
         const caWk=caMs?caMs.week:null;
@@ -9698,7 +9796,7 @@ document.addEventListener('click',e=>{
     dBody.appendChild(colHdr);
 
     const dated=PROJECTS
-      .filter(p=>isVisible(p))
+      .filter(p=>isVisible(p)&&(section!=='design'||p.designer))
       .map(p=>{
         const daMs=p.milestones.find(m=>m.name==='DA');
         const caMs=p.milestones.find(m=>m.name==='CA');
@@ -9708,10 +9806,16 @@ document.addEventListener('click',e=>{
         const designer=DESIGNERS.find(d=>d.id===p.designer);
         const pm=PROD_PMS.find(pm2=>pm2.id===p.productionPM);
         const isSlot=/^Slot\b/i.test(p.name);
-        const isUnassigned=!p.productionPM;
-        return {proj:p, daMs, caMs, conPh, desPh, sales, designer, pm, caWk:caMs?caMs.week:9999, isSlot, isUnassigned};
+        const isUnassigned=section==='design'?!p.designer:!p.productionPM;
+        const desPh1Wk=(()=>{const _dp=p.designLane.phases.filter(ph=>!ph.isDesignProd)[0];return _dp?.startWeek??9999;})();
+        return {proj:p, daMs, caMs, conPh, desPh, sales, designer, pm, caWk:caMs?caMs.week:9999, isSlot, isUnassigned, desPh1Wk};
       })
       .sort((a,b)=>{
+        if(section==='design'){
+          const dlA=a.designer?.label||'zzz', dlB=b.designer?.label||'zzz';
+          if(dlA!==dlB) return dlA.localeCompare(dlB);
+          return a.desPh1Wk-b.desPh1Wk;
+        }
         if(a.isUnassigned!==b.isUnassigned) return a.isUnassigned?1:-1;
         return a.caWk-b.caWk;
       });
@@ -9738,9 +9842,23 @@ document.addEventListener('click',e=>{
     }
 
     const _clipSVG='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="8" height="9" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M3 11H2.5A1.5 1.5 0 011 9.5v-7A1.5 1.5 0 012.5 1h7A1.5 1.5 0 0111 2.5V3" stroke="currentColor" stroke-width="1.3"/></svg>';
-    let _lastWasAssigned=null;
+    let _lastWasAssigned=null, _lastDesignerId='__none__';
     dated.forEach(({proj,daMs,caMs,conPh,desPh,sales,designer,pm,isSlot,isUnassigned})=>{
-      if(isUnassigned&&_lastWasAssigned!==false){
+      if(section==='design'){
+        // Designer group header — one per designer, sorted by label then start date
+        const desId=proj.designer||'__unassigned__';
+        if(desId!==_lastDesignerId){
+          _lastDesignerId=desId;
+          const divider=document.createElement('div');
+          divider.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 0 4px;margin-top:4px;';
+          const line1=document.createElement('div'); line1.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
+          const lbl=document.createElement('span'); lbl.style.cssText='font-size:7.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a3a3;flex-shrink:0;';
+          lbl.textContent=designer?.label||'Unassigned';
+          const line2=document.createElement('div'); line2.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
+          divider.appendChild(line1); divider.appendChild(lbl); divider.appendChild(line2);
+          dBody.appendChild(divider);
+        }
+      } else if(isUnassigned&&_lastWasAssigned!==false){
         const divider=document.createElement('div');
         divider.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 0 4px;margin-top:4px;';
         const line1=document.createElement('div'); line1.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
