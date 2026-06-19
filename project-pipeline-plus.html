@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v683</title>
+<title>BW Project Pipeline — v685</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2508,7 +2508,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v683</div>
+    <div class="auth-version" id="authVersionBadge">v685</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2527,7 +2527,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v683</div>
+  <div class="proto-badge" id="versionBadge">v685</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -5769,6 +5769,12 @@ function setStatus(projId,ns){
   applyStatusStyles(proj); renderTally('design'); renderTally('production'); refreshMsOpacity(projId); if(typeof refreshRevenueRow==='function') refreshRevenueRow();
   if(proj.collapsed) renderCollapsedBand(projId);
   markDirty(proj); triggerSave();
+  // Persist status to PipelineStage — GanttData intentionally excludes status field
+  if(proj._spItemId){
+    const _stageMap={'da-signed':'DA Signed','ca-signed':'CA Signed','paused':'Paused','projected':'','cancelled':'Cancelled','archived':'Archive','lost':'Lost'};
+    graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{PipelineStage:_stageMap[ns]??''})
+      .catch(e=>console.warn('[pipeline] PipelineStage patch failed:',e));
+  }
 }
 // Auto-advance: da-signed → ca-signed when CA milestone date has arrived
 function autoAdvanceStatus(){
@@ -9392,7 +9398,7 @@ function openNotePopover(projId, anchorEl){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
   noteProjId=projId;
   NOTE_TITLE.textContent=proj.name;
-  NOTE_TA.value=(proj.notes||'').replace(/\n—[^\n]+$/,'').trim();
+  NOTE_TA.value=(proj.notes||'').trim(); // show full note including attribution
   NOTE_POP.classList.add('open');
   const r=anchorEl.getBoundingClientRect();
   let top=r.bottom+4, left=r.left-636;
@@ -9406,7 +9412,7 @@ function closeNotePopover(){ NOTE_POP.classList.remove('open'); noteProjId=null;
 function saveNote(){
   const proj=PROJECTS.find(p=>p.id===noteProjId); if(!proj)return;
   // Strip any existing attribution line before saving fresh
-  const raw=NOTE_TA.value.trim().replace(/\n—[^\n]+$/,'').trim();
+  const _fullTxt=NOTE_TA.value.trim(); const _attrIdx=_fullTxt.search(/\n— /); const raw=(_attrIdx>=0?_fullTxt.slice(0,_attrIdx):_fullTxt).trim();
   const author=_histUser();
   const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   proj.notes=raw?(raw+'\n— '+author+', '+dateStr):'';
@@ -10598,18 +10604,12 @@ let _briefReviewedItems = [];   // populated during generateBriefHTML, rendered 
 
 function briefAckRow(ackId,lblCls,label,text){
   const st=BRIEF_ACKS[ackId];
-  if(st==='archived'||st==='reviewed'){
-    _briefReviewedItems.push({label,text});
-    return '';
-  }
+  if(st==='archived'||st==='reviewed') return ''; // gone — no reviewed archive
   const btn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Mark Reviewed</button>`;
   return `<div class="brief-card-row"><span class="bcr-lbl ${lblCls}">${label}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${btn}</span></div>`;
 }
 function briefChangelogRow(ackId,text){
-  if(BRIEF_ACKS[ackId]==='approved'||BRIEF_ACKS[ackId]==='archived'){
-    _briefReviewedItems.push({label:'Update',text});
-    return '';
-  }
+  if(BRIEF_ACKS[ackId]==='approved'||BRIEF_ACKS[ackId]==='archived') return '';
   return `<div class="brief-card-row"><span class="bcr-lbl l-change">Change</span><span class="bcr-text">${text}</span><span class="brief-ack-btns"><button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="approved">Mark Reviewed</button></span></div>`;
 }
 function briefSubHdr(label){
@@ -10719,56 +10719,61 @@ function generateBriefHTML(){
   stalls.forEach(x=>{stallsByProj[x.proj.id]=x;});
   daNoCa.forEach(p=>daNoCaSet.add(p.id));
 
-  // Lightweight project group: name + status tag, no card chrome
+  // Lightweight project group — name + status tag + people; data-brief-grp enables orphan cleanup
   function renderProjGroup(proj, rows){
-    const id=proj.id;
     const des=proj.designer?briefPersonLabel(proj.designer)||'?':'—';
     const pm=proj.productionPM?briefPersonLabel(proj.productionPM)||'?':'—';
-    return `<div style="margin-bottom:8px;">`
+    return `<div data-brief-grp="1" style="margin-bottom:8px;">`
       +`<div style="display:flex;align-items:baseline;gap:8px;padding:5px 0 3px;border-bottom:1px solid rgba(228,218,196,.6);">`
       +`<span style="font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:var(--navy);">${briefProjName(proj)}</span>`
       +`<span class="brief-tag ${briefTagClass(proj.status)}" style="font-size:9px;">${briefStatusLabel(proj.status)}</span>`
-      +`<span style="font-size:11px;color:#a3a3a3;margin-left:auto;white-space:nowrap;">${proj.salesPerson||'—'} · ${des} · ${pm}</span>`
+      +`<span style="font-size:11px;color:#a3a3a3;margin-left:auto;white-space:nowrap;">${proj.salesPerson||'—'} \u00b7 ${des} \u00b7 ${pm}</span>`
       +`</div>${rows.join('')}</div>`;
   }
-
-  // Design-field classifier for schedule changes
   const _isDesignField=f=>/Phase\s*I|T[123]\s*Selection|Pencils\s*Down/i.test(f);
 
-  // ── NOTES ─────────────────────────────────────────────────────────
+  // ── NOTES ──────────────────────────────────────────────────────── <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;color:var(--navy);margin-right:-2px;"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>
   if(noteChanges&&noteChanges.length){
-    html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Notes</span><span class="brief-section-count" style="margin-left:8px;">${noteChanges.length}</span></div>`;
-    noteChanges.forEach(({proj,isNew,note})=>{
-      const id=proj.id;
-      html+=briefAckRow(id+'-note','l-note',briefProjName(proj),`${isNew?'New note added: ':'Updated: '}${note}`);
-    });
-    html+='</div>';
+    let noteCount=0;
+    const PENCIL_BTN=(projId)=>`<button data-note-btn="${projId}" title="Edit note" style="background:rgba(216,182,79,.12);border:1px solid rgba(216,182,79,.35);border-radius:3px;cursor:pointer;color:var(--gold);padding:2px 5px;display:flex;align-items:center;flex-shrink:0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button>`;
+    const noteRows=noteChanges.map(({proj,isNew,note})=>{
+      const ackId=proj.id+'-note';
+      if(BRIEF_ACKS[ackId]==='archived'||BRIEF_ACKS[ackId]==='reviewed') return '';
+      noteCount++;
+      const ackBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Mark Reviewed</button>`;
+      const noteHtml=note.replace(/\n/g,'<br>');
+      return `<div class="brief-card-row"><span class="bcr-lbl l-note">${briefProjName(proj)}</span><span class="bcr-text" style="white-space:pre-wrap;">${isNew?'<em style="opacity:.6;font-size:.9em;">New · </em>':''}${noteHtml}</span><span class="brief-ack-btns">${PENCIL_BTN(proj.id)}${ackBtn}</span></div>`;
+    }).filter(Boolean);
+    if(noteRows.length){
+      html+=`<div class="brief-section"><div class="brief-section-hd">` +
+        `<svg width="17" height="17" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;color:var(--navy);margin-right:-2px;"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>` +
+        `<span class="brief-section-title">Notes</span>` +
+        `<span class="brief-section-count" style="margin-left:8px;background:${noteCount?'#ac2828':'#a3a3a3'}">${noteCount}</span>` +
+        `</div>${noteRows.join('')}</div>`;
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════
   // SALES PLANNING
-  // Covers: planning-stage pipeline activity, signing milestone
-  // changes (DA·CA dates & status), project status changes,
-  // new/removed projects, stalls, overdue, DA-signed without CA date
   // ══════════════════════════════════════════════════════════════════
   {
     const planningChanges=diffPlanning();
     const baselineTs=WEEKLY_BASELINE?new Date(WEEKLY_BASELINE.ts).getTime():0;
     const planningActivity=HISTORY_STACK.filter(e=>e.ts>baselineTs&&e.planning);
-    const salesGroups=[];
+    let salesCount=0;
+    const planRows=[], salesGroups=[];
 
     removedProjs.forEach(({id,name})=>{
-      salesGroups.push(`<div style="margin-bottom:8px;">`
+      const h=briefAckRow(id+'-removed','l-warn','Removed','Removed from active pipeline.');
+      if(h) salesCount++;
+      salesGroups.push(`<div data-brief-grp="1" style="margin-bottom:8px;">`
         +`<div style="padding:5px 0 3px;border-bottom:1px solid rgba(228,218,196,.6);">`
         +`<span style="font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:var(--navy);">${name}</span>`
-        +` <span class="brief-tag t-warn" style="font-size:9px;">Removed</span></div>`
-        +briefAckRow(id+'-removed','l-warn','Removed','Removed from active pipeline.')
-        +`</div>`);
+        +` <span class="brief-tag t-warn" style="font-size:9px;">Removed</span></div>${h}</div>`);
     });
 
     PROJECTS.filter(p=>isVisible(p)).forEach(proj=>{
-      const id=proj.id;
-      const pd=diffByProj[id];
+      const id=proj.id, pd=diffByProj[id];
       const rows=[];
       if(pd?.isNew) rows.push(briefAckRow(id+'-new','l-new','New','Added to pipeline since last baseline.'));
       if(overdueByProj[id]) overdueByProj[id].forEach(({ms,weeksLate})=>
@@ -10779,130 +10784,135 @@ function generateBriefHTML(){
       if(daNoCaSet.has(id)) rows.push(briefAckRow(id+'-da-no-ca','l-warn','CA not set',
         'DA signed but no CA date scheduled.'));
       if(pd?.statusChange){ const {from,to}=pd.statusChange;
-        rows.push(briefAckRow(id+'-status','l-change','Status',`${briefStatusLabel(from)} → ${briefStatusLabel(to)}.`)); }
+        rows.push(briefAckRow(id+'-status','l-change','Status',`${briefStatusLabel(from)} \u2192 ${briefStatusLabel(to)}.`)); }
       if(pd?.msChanges) pd.msChanges.filter(x=>x.ms.name==='DA'||x.ms.name==='CA').forEach(({ms,fromStatus,fromWeek})=>{
         const parts=[];
-        if(fromStatus!==ms.status) parts.push(`status ${fromStatus} → ${ms.status}`);
+        if(fromStatus!==ms.status) parts.push(`status ${fromStatus} \u2192 ${ms.status}`);
         if(fromWeek!==ms.week&&fromWeek!=null&&ms.week!=null)
-          parts.push(`date ${briefFmtDate(wkToDate(fromWeek))} → ${briefFmtDate(wkToDate(ms.week))}`);
-        rows.push(briefAckRow(id+'-ms-'+ms.name.toLowerCase(),'l-change',ms.name,
-          `${parts.join('; ')||ms.name+' updated'}.`));
+          parts.push(`date ${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(ms.week))}`);
+        rows.push(briefAckRow(id+'-ms-'+ms.name.toLowerCase(),'l-change',ms.name,`${parts.join('; ')||ms.name+' updated'}.`));
       });
-      if(rows.length) salesGroups.push(renderProjGroup(proj,rows));
+      const active=rows.filter(Boolean); salesCount+=active.length;
+      if(active.length) salesGroups.push(renderProjGroup(proj,active));
     });
 
-    const hasSales=planningChanges.length||planningActivity.length||salesGroups.length;
+    planningChanges.forEach(c=>{
+      const ackId='plan-'+c.type+'-'+c.name.replace(/\s+/g,'-').toLowerCase().slice(0,24);
+      const lbl=c.type==='added'?'Added':c.type==='removed'?'Removed':c.type==='moved'?'Moved':'Updated';
+      const cls=c.type==='removed'?'l-warn':c.type==='added'?'l-note':c.type==='moved'?'l-change':'l-quiet';
+      const h=briefAckRow(ackId,cls,lbl,`${c.name} \u2014 ${c.detail}`); if(h){salesCount++;planRows.push(h);}
+    });
+    planningActivity.forEach(e=>{
+      const ackId='plan-act-'+e.ts;
+      const t=new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      const h=briefAckRow(ackId,'l-change','Action',`${e.desc} <span style="opacity:.45;font-size:9px;">${t}</span>`);
+      if(h){salesCount++;planRows.push(h);}
+    });
+
+    const hasSales=planRows.length||salesGroups.length;
     if(hasSales){
-      html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Sales Planning</span></div>`;
-      planningChanges.forEach(c=>{
-        const ackId='plan-'+c.type+'-'+c.name.replace(/\s+/g,'-').toLowerCase().slice(0,24);
-        const lbl=c.type==='added'?'Added':c.type==='removed'?'Removed':c.type==='moved'?'Moved':'Updated';
-        const cls=c.type==='removed'?'l-warn':c.type==='added'?'l-note':c.type==='moved'?'l-change':'l-quiet';
-        html+=briefAckRow(ackId,cls,lbl,`${c.name} — ${c.detail}`);
-      });
-      planningActivity.forEach(e=>{
-        const ackId='plan-act-'+e.ts;
-        const t=new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-        html+=briefAckRow(ackId,'l-change','Action',`${e.desc} <span style="opacity:.45;font-size:9px;">${t}</span>`);
-      });
-      if(salesGroups.length&&(planningChanges.length||planningActivity.length)) html+=`<div style="height:10px;"></div>`;
-      html+=salesGroups.join('');
-      html+='</div>';
+      html+=`<div class="brief-section"><div class="brief-section-hd">`
+        +`<span class="brief-section-title">Sales Planning</span>`
+        +`<span class="brief-section-count" style="margin-left:8px;background:${salesCount?'#ac2828':'#a3a3a3'}">${salesCount}</span>`
+        +`</div>`;
+      if(planRows.length){ html+=planRows.join(''); if(salesGroups.length) html+=`<div style="height:10px;"></div>`; }
+      html+=salesGroups.join('')+'</div>';
     }
   }
 
   // ══════════════════════════════════════════════════════════════════
   // DESIGNER PLANNING
-  // Covers: designer capacity warnings, designer assignment changes,
-  // design phase schedule changes, T selections, pencils-down moves
   // ══════════════════════════════════════════════════════════════════
   {
     const capWarnings=briefCapacityWarnings(8);
-    const designGroups=[];
+    let designCount=0;
+    const capRows=[], designGroups=[];
+
+    capWarnings.forEach(({person,peakWeek,peakLoad,target,weeksOver})=>{
+      const h=briefAckRow('cap-warn-'+person.id,'l-warn',person.label,
+        `Peak ${Math.round(peakLoad)}h vs ${target}h target, week of ${briefFmtDate(wkToDate(peakWeek))} (${weeksOver} week${weeksOver!==1?'s':''} over).`);
+      if(h){designCount++;capRows.push(h);}
+    });
+
     PROJECTS.filter(p=>isVisible(p)).forEach(proj=>{
-      const id=proj.id;
-      const pd=diffByProj[id];
+      const id=proj.id, pd=diffByProj[id];
       const rows=[];
       if(pd?.assignmentChanges) pd.assignmentChanges.filter(x=>x.field==='Designer').forEach(({from,to})=>
-        rows.push(briefAckRow(id+'-assign-des','l-change','Designer',`${from} → ${to}.`)));
+        rows.push(briefAckRow(id+'-assign-des','l-change','Designer',`${from} \u2192 ${to}.`)));
       if(pd?.scheduleChanges) pd.scheduleChanges.filter(x=>_isDesignField(x.field)).forEach(({field,fromWeek,toWeek,fromDur,toDur})=>{
         const parts=[];
         if(fromWeek!=null&&toWeek!=null&&fromWeek!==toWeek)
-          parts.push(fromDur==null?`${briefFmtDate(wkToDate(fromWeek))} → ${briefFmtDate(wkToDate(toWeek))}`
-            :`start ${briefFmtDate(wkToDate(fromWeek))} → ${briefFmtDate(wkToDate(toWeek))}`);
-        if(fromDur!=null&&toDur!=null&&fromDur!==toDur) parts.push(`duration ${fromDur}w → ${toDur}w`);
-        rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',
-          field,`${parts.join('; ')}.`));
+          parts.push(fromDur==null?`${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(toWeek))}`
+            :`start ${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(toWeek))}`);
+        if(fromDur!=null&&toDur!=null&&fromDur!==toDur) parts.push(`duration ${fromDur}w \u2192 ${toDur}w`);
+        rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',field,`${parts.join('; ')}.`));
       });
-      if(rows.length) designGroups.push(renderProjGroup(proj,rows));
+      const active=rows.filter(Boolean); designCount+=active.length;
+      if(active.length) designGroups.push(renderProjGroup(proj,active));
     });
 
-    const hasDesign=capWarnings.length||designGroups.length;
+    const hasDesign=capRows.length||designGroups.length;
     if(hasDesign){
-      html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Designer Planning</span></div>`;
-      if(capWarnings.length){
-        html+=capWarnings.map(({person,peakWeek,peakLoad,target,weeksOver})=>
-          briefAckRow('cap-warn-'+person.id,'l-warn',person.label,
-            `Peak ${Math.round(peakLoad)}h vs ${target}h target, week of ${briefFmtDate(wkToDate(peakWeek))} (${weeksOver} week${weeksOver!==1?'s':''} over).`)
-        ).join('');
-        if(designGroups.length) html+=`<div style="height:10px;"></div>`;
-      }
-      html+=designGroups.join('');
-      html+='</div>';
+      html+=`<div class="brief-section"><div class="brief-section-hd">`
+        +`<span class="brief-section-title">Designer Planning</span>`
+        +`<span class="brief-section-count" style="margin-left:8px;background:${designCount?'#ac2828':'#a3a3a3'}">${designCount}</span>`
+        +`</div>`;
+      if(capRows.length){ html+=capRows.join(''); if(designGroups.length) html+=`<div style="height:10px;"></div>`; }
+      html+=designGroups.join('')+'</div>';
     }
   }
 
   // ══════════════════════════════════════════════════════════════════
   // PRODUCTION PLANNING
-  // Covers: PM assignment changes, production schedule changes,
-  // PM WIP reviews from CORE_ProjectReviews
   // ══════════════════════════════════════════════════════════════════
   {
-    const prodGroups=[];
+    let prodCount=0;
+    const pmRows=[], prodGroups=[];
+    const fmtDelta=v=>{const n=parseFloat(v)||0;if(!n)return'';const abs=Math.abs(n);const fmt=abs>=1000000?'$'+(abs/1000000).toFixed(2).replace(/\.?0+$/,'')+'M':abs>=1000?'$'+Math.round(abs/1000)+'k':'$'+abs;return(n>0?'+':'-')+fmt;};
+    const fmtD=iso=>{try{return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return iso||'';}};
+
+    _pmReviews.forEach(r=>{
+      const proj=PROJECTS.find(p=>(p._spItemId===r.ProjectId||p.clientName===r.ProjectName||p.id===r.ProjectId));
+      const projName=r.ProjectName||proj?.clientName||r.ProjectId||'Unknown Project';
+      const parts=[];
+      if(r.CostDelta){const d=fmtDelta(r.CostDelta);if(d)parts.push('Value '+d);}
+      if(r.NewEndDate) parts.push('End date \u2192 '+fmtD(r.NewEndDate));
+      if(r.Notes) parts.push(r.Notes);
+      const who=r.ReviewerName?` \u2014 ${r.ReviewerName}, ${fmtD(r.EntryDate)}`:'';
+      const h=briefAckRow('pm-rev-'+(r.spItemId||r.EntryDate+r.ProjectId),'l-note',projName,(parts.join(' \u00b7 ')||'Note')+who);
+      if(h){prodCount++;pmRows.push(h);}
+    });
+
     PROJECTS.filter(p=>isVisible(p)).forEach(proj=>{
-      const id=proj.id;
-      const pd=diffByProj[id];
+      const id=proj.id, pd=diffByProj[id];
       const rows=[];
       if(pd?.assignmentChanges) pd.assignmentChanges.filter(x=>x.field==='PM').forEach(({from,to})=>
-        rows.push(briefAckRow(id+'-assign-pm','l-change','PM',`${from} → ${to}.`)));
+        rows.push(briefAckRow(id+'-assign-pm','l-change','PM',`${from} \u2192 ${to}.`)));
       if(pd?.scheduleChanges) pd.scheduleChanges.filter(x=>!_isDesignField(x.field)).forEach(({field,fromWeek,toWeek,fromDur,toDur})=>{
         const parts=[];
         if(fromWeek!=null&&toWeek!=null&&fromWeek!==toWeek)
-          parts.push(fromDur==null?`${briefFmtDate(wkToDate(fromWeek))} → ${briefFmtDate(wkToDate(toWeek))}`
-            :`start ${briefFmtDate(wkToDate(fromWeek))} → ${briefFmtDate(wkToDate(toWeek))}`);
-        if(fromDur!=null&&toDur!=null&&fromDur!==toDur) parts.push(`duration ${fromDur}w → ${toDur}w`);
-        rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',
-          field,`${parts.join('; ')}.`));
+          parts.push(fromDur==null?`${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(toWeek))}`
+            :`start ${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(toWeek))}`);
+        if(fromDur!=null&&toDur!=null&&fromDur!==toDur) parts.push(`duration ${fromDur}w \u2192 ${toDur}w`);
+        rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',field,`${parts.join('; ')}.`));
       });
-      if(rows.length) prodGroups.push(renderProjGroup(proj,rows));
+      const active=rows.filter(Boolean); prodCount+=active.length;
+      if(active.length) prodGroups.push(renderProjGroup(proj,active));
     });
 
-    const hasProd=prodGroups.length||_pmReviews.length;
+    const hasProd=pmRows.length||prodGroups.length;
     if(hasProd){
-      html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Production Planning</span></div>`;
-      if(_pmReviews.length){
-        const fmtDelta=v=>{const n=parseFloat(v)||0;if(!n)return'';const abs=Math.abs(n);const fmt=abs>=1000000?'$'+(abs/1000000).toFixed(2).replace(/\.?0+$/,'')+'M':abs>=1000?'$'+Math.round(abs/1000)+'k':'$'+abs;return(n>0?'+':'-')+fmt;};
-        const fmtD=iso=>{try{return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return iso||'';}};
-        _pmReviews.forEach(r=>{
-          const proj=PROJECTS.find(p=>(p._spItemId===r.ProjectId||p.clientName===r.ProjectName||p.id===r.ProjectId));
-          const projName=r.ProjectName||proj?.clientName||r.ProjectId||'Unknown Project';
-          const parts=[];
-          if(r.CostDelta){const d=fmtDelta(r.CostDelta);if(d)parts.push('Value '+d);}
-          if(r.NewEndDate) parts.push('End date → '+fmtD(r.NewEndDate));
-          if(r.Notes) parts.push(r.Notes);
-          const who=r.ReviewerName?` — ${r.ReviewerName}, ${fmtD(r.EntryDate)}`:'';
-          html+=briefAckRow('pm-rev-'+(r.spItemId||r.EntryDate+r.ProjectId),'l-note',
-            projName,(parts.join(' · ')||'Note')+who);
-        });
-        if(prodGroups.length) html+=`<div style="height:10px;"></div>`;
-      }
-      html+=prodGroups.join('');
-      html+='</div>';
+      html+=`<div class="brief-section"><div class="brief-section-hd">`
+        +`<span class="brief-section-title">Production Planning</span>`
+        +`<span class="brief-section-count" style="margin-left:8px;background:${prodCount?'#ac2828':'#a3a3a3'}">${prodCount}</span>`
+        +`</div>`;
+      if(pmRows.length){ html+=pmRows.join(''); if(prodGroups.length) html+=`<div style="height:10px;"></div>`; }
+      html+=prodGroups.join('')+'</div>';
     }
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // UPCOMING (4 weeks, signed projects only)
+  // UPCOMING — no review buttons, items always stay visible
   // ══════════════════════════════════════════════════════════════════
   const LOOK_AHEAD=4;
   const upCA=[],upOther=[],upConstr=[];
@@ -10920,19 +10930,11 @@ function generateBriefHTML(){
 
   if(upCA.length||upConstr.length||upOther.length){
     html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Upcoming \u2014 Next ${LOOK_AHEAD} Weeks</span></div>`;
-    const milRow=({proj,ms,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefAckRow('up-'+proj.id+'-'+ms.name,'l-due',briefProjName(proj),`${ms.name} \u2014 ${briefFmtDate(wkToDate(ms.week))} (${tl}).`); };
+    const milRow=({proj,ms,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`${ms.name} \u2014 ${briefFmtDate(wkToDate(ms.week))} (${tl}).`); };
     if(upCA.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">CA Signings</div><div class="brief-upcoming-rows">${upCA.map(milRow).join('')}</div></div>`;
-    if(upConstr.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Construction Starts</div><div class="brief-upcoming-rows">${upConstr.map(({proj,cPh,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefAckRow('up-'+proj.id+'-constr','l-due',briefProjName(proj),`Construction starts ${briefFmtDate(wkToDate(cPh.startWeek))} (${tl}).`); }).join('')}</div></div>`;
+    if(upConstr.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Construction Starts</div><div class="brief-upcoming-rows">${upConstr.map(({proj,cPh,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`Construction starts ${briefFmtDate(wkToDate(cPh.startWeek))} (${tl}).`); }).join('')}</div></div>`;
     if(upOther.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Other Milestones</div><div class="brief-upcoming-rows">${upOther.map(milRow).join('')}</div></div>`;
     html+='</div>';
-  }
-
-  // ── Reviewed (collapsed) ──────────────────────────────────────────
-  if(_briefReviewedItems.length){
-    html+=`<details class="brief-reviewed-details">
-      <summary>Reviewed &amp; Filed (${_briefReviewedItems.length})</summary>
-      <div>${_briefReviewedItems.map(({label,text})=>`<div class="brief-reviewed-item"><span class="brief-reviewed-lbl">${label}</span><span>${text}</span></div>`).join('')}</div>
-    </details>`;
   }
 
   return html;
@@ -10993,7 +10995,12 @@ document.addEventListener('click',e=>{
     saveBriefAcks();
     const row=ackBtn.closest('.brief-card-row');
     if(action==='archived'||action==='approved'){
-      if(row) row.remove();
+      if(row){
+        const grp=row.closest('[data-brief-grp]');
+        row.remove();
+        // Remove the group wrapper if no card rows remain
+        if(grp&&!grp.querySelector('.brief-card-row')) grp.remove();
+      }
     } else if(action==='kept'&&row){
       row.classList.add('brief-row-kept'); ackBtn.closest('.brief-ack-btns')?.remove();
     }
