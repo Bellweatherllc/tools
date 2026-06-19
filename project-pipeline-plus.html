@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v654</title>
+<title>BW Project Pipeline — v656</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2484,7 +2484,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v654</div>
+    <div class="auth-version" id="authVersionBadge">v656</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2503,7 +2503,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v654</div>
+  <div class="proto-badge" id="versionBadge">v656</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2604,10 +2604,6 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     <span class="cal-pop-lbl">View from</span>
     <input class="cal-pop-date" type="date" id="calFromDate">
   </div>
-  <div class="cal-pop-field">
-    <span class="cal-pop-lbl">Through</span>
-    <input class="cal-pop-date" type="date" id="calToDate">
-  </div>
   <div class="cal-pop-divider"></div>
   <button class="cal-pop-apply" id="calApply">Apply</button>
 </div>
@@ -2653,23 +2649,21 @@ const C = {
 };
 // ── Calendar range — stored as ISO date strings, derived directly ──
 // C.startDate is FIXED at CAL_ABS_EARLIEST — never mutated.
-// CAL_VIEW[lens].from = date to scroll to on open (per-lens)
-// CAL_VIEW[lens].to   = canvas right edge date    (per-lens; canvas uses max of all)
+// CAL_VIEW[lens].from = date to scroll to on open (per-lens; saved/restored)
+// CAL_VIEW[lens].to   = always CAL_ABS_LATEST — hardcoded, not user-overridable
 const CAL_ABS_EARLIEST = new Date('2025-01-05'); // fixed epoch
-const CAL_ABS_LATEST   = new Date('2028-01-04');
+const CAL_ABS_LATEST   = new Date('2030-01-01');
 const CAL_VIEW = {
-  production: { from: new Date(CAL_ABS_EARLIEST), to: new Date('2027-12-31') },
-  design:     { from: new Date(CAL_ABS_EARLIEST), to: new Date('2027-12-31') },
-  planning:   { from: new Date(CAL_ABS_EARLIEST), to: new Date('2027-12-31') }
+  production: { from: new Date(CAL_ABS_EARLIEST), to: new Date(CAL_ABS_LATEST) },
+  design:     { from: new Date(CAL_ABS_EARLIEST), to: new Date(CAL_ABS_LATEST) },
+  planning:   { from: new Date(CAL_ABS_EARLIEST), to: new Date(CAL_ABS_LATEST) }
 };
 
 function applyCalRange(){
   C.startDate=new Date(CAL_ABS_EARLIEST);
   const msW=7*24*3600*1000;
-  // numWeeks driven by the widest TO across all lenses
-  const maxTo=new Date(Math.max(...Object.values(CAL_VIEW).map(v=>v.to.getTime())));
-  const toDate=new Date(Math.min(maxTo.getTime(), CAL_ABS_LATEST.getTime()));
-  C.numWeeks=Math.max(8, Math.ceil((toDate.getTime()-CAL_ABS_EARLIEST.getTime())/msW));
+  // numWeeks always spans CAL_ABS_EARLIEST → CAL_ABS_LATEST; not user-overridable
+  C.numWeeks=Math.max(8, Math.ceil((CAL_ABS_LATEST.getTime()-CAL_ABS_EARLIEST.getTime())/msW));
 }
 function calFromScrollLeft(lens){
   const msW=7*24*3600*1000;
@@ -3569,7 +3563,7 @@ function addProdProject(){
     ]},
     permitting:{id:newId+'-pm',name:'Permits/Zoning',startWeek:sw,durWeeks:4,hours:6,color:'#C9A84C',linkedRight:null,trackStatus:null},
     productionLane:{startWeek:sw+26,phases:[
-      {id:newId+'-p1',name:'Pre-construction',durWeeks:6,hours:0,color:'#90C4A0',linkedRight:true},
+      {id:newId+'-p1',name:'Pre-con',durWeeks:6,hours:0,color:'#90C4A0',linkedRight:true},
       {id:newId+'-p2',name:'Construction',durWeeks:18,hours:0,color:'#4A8A60',linkedRight:null},
     ]},
     milestones:[
@@ -3757,6 +3751,15 @@ function normalizeDesignPhaseName(ph){
   }
   return false;
 }
+const PROD_PHASE_NORM=[
+  [/^pre.?construction$/i, 'Pre-con'],
+];
+function normalizeProductionPhaseName(ph){
+  for(const[re,canonical]of PROD_PHASE_NORM){
+    if(re.test(ph.name)&&ph.name!==canonical){ ph.name=canonical; return true; }
+  }
+  return false;
+}
 
 // ════════════════════════════════════════════════  PER-PHASE STARTWEEK INIT
 function initPhaseStartWeeks(proj){
@@ -3797,8 +3800,9 @@ function initPhaseStartWeeks(proj){
     phases[i].startWeek=phases[i].startWeek??pos; pos=phases[i].startWeek+phases[i].durWeeks;
   }
   const pdEnd=pos;
-  // 6. Production lane positioning
+  // 6. Production lane positioning (normalize names first)
   proj.productionLane.startWeek=proj.productionLane.startWeek??(pdEnd+1);
+  proj.productionLane.phases.forEach(ph=>{ if(normalizeProductionPhaseName(ph)) renamed=true; });
   pos=proj.productionLane.startWeek;
   proj.productionLane.phases.forEach(ph=>{ ph.startWeek=ph.startWeek??pos; pos=ph.startWeek+ph.durWeeks; });
   // 7. Phase III: start defaults to pdEnd+1 if unset; END is always tied to production end
@@ -4489,10 +4493,10 @@ function buildTlLcProject(proj,lcId){
       const bar=el('div','phase-bar lc-phase-bar');
       bar.style.cssText=`position:absolute;top:${C.barTop}px;left:${w2px(ph.startWeek)}px;width:${w2px(ph.durWeeks)}px;height:${C.barH}px;background:${ph.color};`;
       const stack=el('div','bar-caret-stack');
-      stack.style.cssText='position:absolute;left:17px;top:50%;transform:translateY(-50%);';
-      const up=el('button','bar-caret'); up.textContent='▲';
+      stack.style.cssText='position:absolute;left:5px;top:50%;transform:translateY(-50%);';
+      const up=el('button','bar-caret'); up.textContent='▲'; up.style.color='rgba(250,229,174,1)';
       up.dataset.lcHrsProj=proj.id; up.dataset.lcHrsLc=lcId; up.dataset.lcHrsPh=String(i); up.dataset.lcHrsDelta='0.1';
-      const dn=el('button','bar-caret'); dn.textContent='▼';
+      const dn=el('button','bar-caret'); dn.textContent='▼'; dn.style.color='rgba(250,229,174,1)';
       dn.dataset.lcHrsProj=proj.id; dn.dataset.lcHrsLc=lcId; dn.dataset.lcHrsPh=String(i); dn.dataset.lcHrsDelta='-0.1';
       stack.appendChild(up); stack.appendChild(dn); bar.appendChild(stack);
       const hv=el('span','bar-meta');
@@ -6415,7 +6419,7 @@ function initDrag(){
           ]},
           permitting:{id:newId+'-pm',name:'Permits/Zoning',startWeek:sw,durWeeks:4,hours:6,color:'#C9A84C',linkedRight:null,trackStatus:null},
           productionLane:{startWeek:sw+6+pdDur+1,phases:[
-            {id:newId+'-p1',name:'Pre-construction',durWeeks:6,hours:0,color:'#90C4A0',linkedRight:true},
+            {id:newId+'-p1',name:'Pre-con',durWeeks:6,hours:0,color:'#90C4A0',linkedRight:true},
             {id:newId+'-p2',name:'Construction',durWeeks:18,hours:0,color:'#4A8A60',linkedRight:null},
           ]},
           milestones:[
@@ -8213,7 +8217,7 @@ function makeDefaultSchedule(spId,name,address,status,fields){
     ]},
     permitting:{id:projId+'-pm',name:'Permits/Zoning',startWeek:sw,durWeeks:4,hours:6,color:'#C9A84C',linkedRight:null,trackStatus:null},
     productionLane:{startWeek:sw+26, phases:[
-      {id:projId+'-p1',name:'Pre-construction',durWeeks:6,hours:0,color:'#90C4A0',linkedRight:true},
+      {id:projId+'-p1',name:'Pre-con',durWeeks:6,hours:0,color:'#90C4A0',linkedRight:true},
       {id:projId+'-p2',name:'Construction',durWeeks:18,hours:0,color:'#4A8A60',linkedRight:null},
     ]},
     milestones:[
@@ -8373,6 +8377,7 @@ function restoreSavedState(saved){
   if(saved.USED_SLOTS&&Array.isArray(saved.USED_SLOTS)) USED_SLOTS=new Set(saved.USED_SLOTS);
   if(saved.PROD_PM_COLLAPSED&&Array.isArray(saved.PROD_PM_COLLAPSED)) PROD_PM_COLLAPSED=new Set(saved.PROD_PM_COLLAPSED);
   if(saved.PROD_LC_COLLAPSED&&Array.isArray(saved.PROD_LC_COLLAPSED)) PROD_LC_COLLAPSED=new Set(saved.PROD_LC_COLLAPSED);
+  if(!saved.PROD_LC_COLLAPSED){ LC_COORDS.forEach(lc=>PROD_LC_COLLAPSED.add(lc.id)); } // no saved state → default collapsed
   if(saved.LC_PROJ_COLLAPSED&&Array.isArray(saved.LC_PROJ_COLLAPSED)) LC_PROJ_COLLAPSED=new Set(saved.LC_PROJ_COLLAPSED);
   if(typeof saved.PROD_UNASSIGNED_COLLAPSED==='boolean') PROD_UNASSIGNED_COLLAPSED=saved.PROD_UNASSIGNED_COLLAPSED;
   if(typeof saved.DESIGN_UNASSIGNED_COLLAPSED==='boolean') DESIGN_UNASSIGNED_COLLAPSED=saved.DESIGN_UNASSIGNED_COLLAPSED;
@@ -8388,7 +8393,7 @@ function restoreSavedState(saved){
     ['production','design','planning'].forEach(lens=>{
       if(saved.CAL_VIEW[lens]){
         const fr=new Date(saved.CAL_VIEW[lens].from); if(!isNaN(fr)) CAL_VIEW[lens].from=fr;
-        const to=new Date(saved.CAL_VIEW[lens].to);   if(!isNaN(to)) CAL_VIEW[lens].to=to;
+        CAL_VIEW[lens].to=new Date(CAL_ABS_LATEST); // hardcoded — never restored from saved state
       }
     });
   }
@@ -8422,11 +8427,12 @@ function restoreSavedState(saved){
       else { const pmSec=order.indexOf('pm-section'); order.splice(pmSec>=0?pmSec+1:0,0,key); }
     }
   });
-  // Add any new LCs not yet in the order
+  // Add any new LCs not yet in the order (default to collapsed)
   LC_COORDS.forEach(lc=>{
     const key='lc:'+lc.id;
     if(!order.includes(key)){
       const lcSec=order.indexOf('lc-section'); order.splice(lcSec>=0?lcSec+1:order.length-1,0,key);
+      PROD_LC_COLLAPSED.add(lc.id);
     }
   });
   PROD_ROW_ORDER=order;
@@ -8954,9 +8960,6 @@ function openCalPopup(anchorEl){
   document.getElementById('calFromDate').value=_dateToVal(new Date());
   document.getElementById('calFromDate').min=_dateToVal(CAL_ABS_EARLIEST);
   document.getElementById('calFromDate').max=_dateToVal(CAL_ABS_LATEST);
-  document.getElementById('calToDate').value=_dateToVal(cv.to);
-  document.getElementById('calToDate').min=_dateToVal(CAL_ABS_EARLIEST);
-  document.getElementById('calToDate').max=_dateToVal(CAL_ABS_LATEST);
   CAL_POPUP.classList.add('open');
   _calOpen=true;
   const r=anchorEl.getBoundingClientRect();
@@ -8973,15 +8976,11 @@ function closeCalPopup(){
 function applyCalAndRebuild(){
   const lens=(_calAnchor&&_calAnchor._calLens)||'production';
   const fromVal=document.getElementById('calFromDate').value;
-  const toVal=document.getElementById('calToDate').value;
   const cv=CAL_VIEW[lens];
   if(fromVal){ const d=new Date(fromVal+'T12:00:00'); if(!isNaN(d)) cv.from=d; }
-  if(toVal){ const d=new Date(toVal+'T12:00:00'); if(!isNaN(d)) cv.to=d; }
-  // Ensure from < to
-  if(cv.from>=cv.to) cv.to=new Date(cv.from.getTime()+8*7*24*3600*1000);
-  // Sync all lenses — sections should always show the same date range
+  // Sync scroll position across all lenses
   ['production','design','planning'].forEach(l=>{
-    if(l!==lens){ CAL_VIEW[l].from=new Date(cv.from); CAL_VIEW[l].to=new Date(cv.to); }
+    if(l!==lens){ CAL_VIEW[l].from=new Date(cv.from); }
   });
   applyCalRange();
   buildAll();
