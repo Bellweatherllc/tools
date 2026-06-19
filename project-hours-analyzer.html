@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v45</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v46</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -190,7 +190,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v45</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v46</span></h1>
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
           <span id="last-saved" style="font-size:11px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;"></span>
@@ -345,17 +345,14 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
         <button class="svt" data-pview="both">Both</button>
       </div>
     </div>
+      <div class="chart-ctrl-row" id="stream-toggle-row" style="margin-top:8px;">
+        <button class="svt active" data-stream="stacked">Stacked</button>
+        <button class="svt" data-stream="stream">Stream</button>
+      </div>
     <div id="chart-body">
       <p class="chart-note" id="chart-note">Phase-aligned · Phases I / II / III share equal visual width · Click to inspect</p>
       <div id="chart-empty" class="empty-state">No projects with ≥ 20 hours yet.</div>
       <div class="chart-area" id="main-wrap"><svg id="main-svg" class="chart-svg"></svg></div>
-      <div id="general-section" style="display:none">
-        <div class="general-divider">
-          <div class="gen-section-lbl">General &amp; Overhead</div>
-          <p class="chart-note" style="margin-bottom:9px">Job codes classified as General · Mark in Files &amp; Aliases</p>
-          <div class="chart-area" id="cal-gen-wrap"><svg id="cal-gen-svg" class="chart-svg"></svg></div>
-        </div>
-      </div>
     </div>
   </div><!-- /chart-section -->
 
@@ -441,6 +438,7 @@ const S = {
   scanYears: ['2024','2025','2026'],
   tcManifest: {},
   detailFilter: {view:'design', sub:'both', prod:'both'},
+  streamMode: 'stacked',
 };
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
@@ -846,6 +844,7 @@ async function loadState() {
           for (const job of Object.keys(savedPhases)) S.phasesSetByUser.add(job);
           S.notes = parsed.notes || {};
           if (Array.isArray(parsed.scanYears)) S.scanYears = parsed.scanYears;
+          if (parsed.streamMode) S.streamMode = parsed.streamMode;
         } else {
           S.merges   = parsed;
           S.excluded = new Set();
@@ -866,7 +865,7 @@ async function persistState() {
   const data = JSON.stringify({ merges: S.merges, excluded: [...S.excluded],
     excludedLC:[...S.excludedLC], excludedPM:[...S.excludedPM],
     generalJobsLC:[...S.generalJobsLC], generalJobsPM:[...S.generalJobsPM], phases,
-    notes: S.notes, scanYears: S.scanYears });
+    notes: S.notes, scanYears: S.scanYears, streamMode: S.streamMode });
   if (S.metaMergesItemId) {
     await gfetch('PATCH',`/sites/${S.siteId}/lists/${S.metaListId}/items/${S.metaMergesItemId}/fields`,{StateData:data});
   } else {
@@ -1098,10 +1097,12 @@ function renderCalendar(ccs) {
   const H=380,M={t:24,r:28,b:40,l:52};
   const w=W-M.l-M.r,h=H-M.t-M.b;
   const {rows,maxSpan}=buildCalendarDataMulti(ccs,vis);
-  const series=d3.stack().keys(vis).offset(d3.stackOffsetNone)(rows);
+  const _offset=S.streamMode==='stream'?d3.stackOffsetWiggle:d3.stackOffsetNone;
+  const series=d3.stack().keys(vis).offset(_offset)(rows);
   const xSc=d3.scaleLinear().domain([0,maxSpan]).range([0,w]);
+  const yMin=S.streamMode==='stream'?(d3.min(series,s=>d3.min(s,d=>d[0]))||0):0;
   const yMax=d3.max(series,s=>d3.max(s,d=>d[1]))||1;
-  const ySc=d3.scaleLinear().domain([0,yMax]).range([h,0]).nice();
+  const ySc=d3.scaleLinear().domain([yMin,yMax]).range([h,0]).nice();
   msvg.attr('width',W).attr('height',H);
   const g=msvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
   const area=d3.area().x(d=>xSc(d.data.wk)).y0(d=>ySc(d[0])).y1(d=>ySc(d[1])).curve(d3.curveMonotoneX);
@@ -1112,7 +1113,6 @@ function renderCalendar(ccs) {
       .on('mouseleave',hideTip);
   });
   renderCalendarAxes(g,xSc,ySc,w,h,maxSpan);
-  renderGeneralSection(ccs);
 }
 function renderCalendarAxes(g,xSc,ySc,w,h,maxSpan) {
   const te=maxSpan<=20?1:maxSpan<=50?2:maxSpan<=100?5:10;
@@ -1378,10 +1378,12 @@ function renderStream(){
     const w=W-M.l-M.r,h=H-M.t-M.b;
     const N1=20,N2=40,N3=80,T=N1+N2+N3;
     const data=buildPhaseData(cc,vis,N1,N2,N3);
-    const series=d3.stack().keys(vis).offset(d3.stackOffsetNone)(data);
+    const _offset2=S.streamMode==='stream'?d3.stackOffsetWiggle:d3.stackOffsetNone;
+    const series=d3.stack().keys(vis).offset(_offset2)(data);
     const xSc=d3.scaleLinear().domain([0,T]).range([0,w]);
+    const yMin=S.streamMode==='stream'?(d3.min(series,s=>d3.min(s,d=>d[0]))||0):0;
     const yMax=d3.max(series,s=>d3.max(s,d=>d[1]))||1;
-    const ySc=d3.scaleLinear().domain([0,yMax]).range([h,0]).nice();
+    const ySc=d3.scaleLinear().domain([yMin,yMax]).range([h,0]).nice();
     msvg.attr('width',W).attr('height',H);
     const g=msvg.append('g').attr('transform',`translate(${M.l},${M.t})`);
     [[0,N1,'rgba(44,74,62,.04)'],[N1,N1+N2,'rgba(44,74,62,.07)'],[N1+N2,T,'rgba(44,74,62,.04)']].forEach(([a,b,fill])=>{
@@ -1413,12 +1415,14 @@ function renderStreamAxes(g,xSc,ySc,w,h,N1,N2,N3,T){
       .attr('font-family','DM Sans,sans-serif').attr('fill','#8a8682').attr('letter-spacing','.1em').text(lbl);
   });
   g.append('line').attr('x1',0).attr('y1',h).attr('x2',w).attr('y2',h).attr('stroke','#ddd9d0').attr('stroke-width',1);
-  g.append('g').call(d3.axisLeft(ySc).ticks(5).tickFormat(d=>fh(d)).tickSize(-w))
-    .call(ax=>{
-      ax.select('.domain').remove();
-      ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');
-      ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');
-    });
+  if (S.streamMode!=='stream') {
+    g.append('g').call(d3.axisLeft(ySc).ticks(5).tickFormat(d=>fh(d)).tickSize(-w))
+      .call(ax=>{
+        ax.select('.domain').remove();
+        ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');
+        ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');
+      });
+  }
 }
 
 // ── TOOLTIP ───────────────────────────────────────────────────────────────────
@@ -2461,6 +2465,16 @@ function wireEvents() {
       .catch(e=>setStatus('Rescan error: '+(e.message||e),true,false));
   });
 
+  // Stream toggle
+  document.querySelectorAll('#stream-toggle-row .svt').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      S.streamMode=btn.dataset.stream;
+      document.querySelectorAll('#stream-toggle-row .svt').forEach(b=>b.classList.toggle('active',b.dataset.stream===S.streamMode));
+      persistState().catch(()=>{});
+      renderAll();
+    });
+  });
+
   // Detail filter: primary view
   document.querySelectorAll('#det-filter-row .svt').forEach(btn=>{
     btn.addEventListener('click',()=>{
@@ -2504,6 +2518,8 @@ function showApp() {
       computeProjects();
       autoSelectFirstProject();
       updateHdrSub();
+      // Sync stream toggle UI to loaded state
+      document.querySelectorAll('#stream-toggle-row .svt').forEach(b=>b.classList.toggle('active',b.dataset.stream===S.streamMode));
       renderAll();
     } catch(e) {
       setStatus('Error: '+(e.message||e),true,false);
