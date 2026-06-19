@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v46</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v47</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -190,7 +190,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v46</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v47</span></h1>
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
           <span id="last-saved" style="font-size:11px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;"></span>
@@ -1097,7 +1097,7 @@ function renderCalendar(ccs) {
   const H=380,M={t:24,r:28,b:40,l:52};
   const w=W-M.l-M.r,h=H-M.t-M.b;
   const {rows,maxSpan}=buildCalendarDataMulti(ccs,vis);
-  const _offset=S.streamMode==='stream'?d3.stackOffsetWiggle:d3.stackOffsetNone;
+  const _offset=S.streamMode==='stream'?d3.stackOffsetSilhouette:d3.stackOffsetNone;
   const series=d3.stack().keys(vis).offset(_offset)(rows);
   const xSc=d3.scaleLinear().domain([0,maxSpan]).range([0,w]);
   const yMin=S.streamMode==='stream'?(d3.min(series,s=>d3.min(s,d=>d[0]))||0):0;
@@ -1124,11 +1124,22 @@ function renderCalendarAxes(g,xSc,ySc,w,h,maxSpan) {
     ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');
     ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dy','1.2em');
   });
-  g.append('g').call(d3.axisLeft(ySc).ticks(5).tickFormat(d=>fh(d)).tickSize(-w)).call(ax=>{
-    ax.select('.domain').remove();
-    ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');
-    ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');
-  });
+  if (S.streamMode==='stream') {
+    const cy=ySc(0);
+    g.append('line').attr('x1',0).attr('y1',cy).attr('x2',w).attr('y2',cy)
+      .attr('stroke','#c8c4bc').attr('stroke-width',1).attr('stroke-dasharray','3 3').attr('pointer-events','none');
+    g.append('g').call(d3.axisLeft(ySc).ticks(5).tickFormat(d=>fh(Math.abs(d))).tickSize(-w)).call(ax=>{
+      ax.select('.domain').remove();
+      ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');
+      ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');
+    });
+  } else {
+    g.append('g').call(d3.axisLeft(ySc).ticks(5).tickFormat(d=>fh(d)).tickSize(-w)).call(ax=>{
+      ax.select('.domain').remove();
+      ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');
+      ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');
+    });
+  }
 }
 function renderGeneralSection(ccs) {
   const genVis=generalJobsByCostMulti(ccs);
@@ -1378,7 +1389,7 @@ function renderStream(){
     const w=W-M.l-M.r,h=H-M.t-M.b;
     const N1=20,N2=40,N3=80,T=N1+N2+N3;
     const data=buildPhaseData(cc,vis,N1,N2,N3);
-    const _offset2=S.streamMode==='stream'?d3.stackOffsetWiggle:d3.stackOffsetNone;
+    const _offset2=S.streamMode==='stream'?d3.stackOffsetSilhouette:d3.stackOffsetNone;
     const series=d3.stack().keys(vis).offset(_offset2)(data);
     const xSc=d3.scaleLinear().domain([0,T]).range([0,w]);
     const yMin=S.streamMode==='stream'?(d3.min(series,s=>d3.min(s,d=>d[0]))||0):0;
@@ -1415,7 +1426,18 @@ function renderStreamAxes(g,xSc,ySc,w,h,N1,N2,N3,T){
       .attr('font-family','DM Sans,sans-serif').attr('fill','#8a8682').attr('letter-spacing','.1em').text(lbl);
   });
   g.append('line').attr('x1',0).attr('y1',h).attr('x2',w).attr('y2',h).attr('stroke','#ddd9d0').attr('stroke-width',1);
-  if (S.streamMode!=='stream') {
+  if (S.streamMode==='stream') {
+    // Center line at y=0 (silhouette midline)
+    const cy=ySc(0);
+    g.append('line').attr('x1',0).attr('y1',cy).attr('x2',w).attr('y2',cy)
+      .attr('stroke','#c8c4bc').attr('stroke-width',1).attr('stroke-dasharray','3 3').attr('pointer-events','none');
+    g.append('g').call(d3.axisLeft(ySc).ticks(5).tickFormat(d=>fh(Math.abs(d))).tickSize(-w))
+      .call(ax=>{
+        ax.select('.domain').remove();
+        ax.selectAll('.tick line').attr('stroke','#eceae4').attr('stroke-dasharray','2 2');
+        ax.selectAll('.tick text').attr('font-size','10px').attr('fill','#8a8682').attr('font-family','DM Mono,monospace').attr('dx','-4px');
+      });
+  } else {
     g.append('g').call(d3.axisLeft(ySc).ticks(5).tickFormat(d=>fh(d)).tickSize(-w))
       .call(ax=>{
         ax.select('.domain').remove();
