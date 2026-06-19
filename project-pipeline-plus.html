@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v662</title>
+<title>BW Project Pipeline — v664</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2508,7 +2508,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v662</div>
+    <div class="auth-version" id="authVersionBadge">v664</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2527,7 +2527,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v662</div>
+  <div class="proto-badge" id="versionBadge">v664</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4528,7 +4528,7 @@ function buildTlLcProject(proj,lcId){
     phases.forEach((ph,i)=>{
       if(ph.startWeek===null||ph.durWeeks<=0) return;
       const bar=el('div','phase-bar lc-phase-bar');
-      bar.style.cssText=`position:absolute;top:${C.barTop}px;left:${w2px(ph.startWeek)}px;width:${w2px(ph.durWeeks)}px;height:${C.barH}px;background:${ph.color};`;
+      bar.style.cssText=`position:absolute;top:${C.barTop-2}px;left:${w2px(ph.startWeek)}px;width:${w2px(ph.durWeeks)}px;height:${C.barH+2}px;background:${ph.color};`;
       const stack=el('div','bar-caret-stack');
       stack.style.cssText='position:absolute;left:3px;top:50%;transform:translateY(-50%);';
       const up=el('button','bar-caret'); up.textContent='▲'; up.style.color='rgba(250,229,174,1)';
@@ -6250,6 +6250,15 @@ function initDrag(){
       const rect=lcTally.getBoundingClientRect();
       const week=Math.max(0,Math.min(C.numWeeks-1,Math.floor((e.clientX-rect.left)/_tw)));
       openLcWeekPopup(lcTally.dataset.person,week,e.clientX,e.clientY);
+      return;
+    }
+    const desTally=e.target.closest('.tl-tally[data-section="design"][data-person]');
+    if(desTally){
+      const desSec=desTally.closest('.section[data-s-type="design"]');
+      const _tw=parseInt(desSec?.dataset?.weekW)||Math.round(C.weekW*PROD_ZOOM);
+      const rect=desTally.getBoundingClientRect();
+      const week=Math.max(0,Math.min(C.numWeeks-1,Math.floor((e.clientX-rect.left)/_tw)));
+      openDesignerWeekPopup(desTally.dataset.person,week,e.clientX,e.clientY);
       return;
     }
     if(e.target.closest('[data-toggle-unassigned-collapse]')){ PROD_UNASSIGNED_COLLAPSED=!PROD_UNASSIGNED_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
@@ -9101,6 +9110,61 @@ function openLcWeekPopup(lcId,week,clientX,clientY){
   });
 }
 function closeLcWeekPopup(){ LC_WEEK_POPUP.classList.remove('open'); _lcWpOpen=false; }
+function openDesignerWeekPopup(designerId,week,clientX,clientY){
+  const des=DESIGNERS.find(d=>d.id===designerId); if(!des) return;
+  const target=getTarget(designerId);
+  const monday=wkMon(week);
+  const fmt=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const rows=[];
+  PROJECTS.filter(p=>isVisible(p)&&p.designer===designerId).forEach(proj=>{
+    proj.designLane.phases.forEach(ph=>{
+      if(!ph.durWeeks||ph.startWeek==null) return;
+      if(week>=ph.startWeek&&week<ph.startWeek+ph.durWeeks)
+        rows.push({name:proj.name,hours:ph.hours||0,phase:ph.name});
+    });
+  });
+  const total=rows.reduce((s,r)=>s+r.hours,0);
+  document.getElementById('lcWpDate').textContent='Week of '+fmt(monday);
+  document.getElementById('lcWpName').textContent=des.fullLabel;
+  document.getElementById('lcWpTarget').textContent='Target: '+target.toFixed(1)+'h/wk';
+  const projList=document.getElementById('lcWpProjects'); projList.innerHTML='';
+  if(rows.length===0){
+    const em=document.createElement('div'); em.className='lc-wp-empty';
+    em.textContent='No scheduled hours this week.'; projList.appendChild(em);
+  } else {
+    rows.forEach(row=>{
+      const item=document.createElement('div'); item.className='lc-wp-row';
+      const nm=document.createElement('span'); nm.className='lc-wp-proj-name'; nm.textContent=row.name;
+      const ph=document.createElement('span'); ph.className='lc-wp-phase'; ph.textContent=row.phase;
+      const h=document.createElement('span'); h.className='lc-wp-hours'; h.textContent=row.hours.toFixed(1)+'h';
+      item.appendChild(nm); item.appendChild(ph); item.appendChild(h); projList.appendChild(item);
+    });
+    const sep=document.createElement('div'); sep.className='lc-wp-sep'; projList.appendChild(sep);
+    const tot=document.createElement('div'); tot.className='lc-wp-total-row';
+    const tl=document.createElement('span'); tl.textContent='Total';
+    const tv=document.createElement('span'); tv.className='lc-wp-hours'; tv.textContent=total.toFixed(1)+'h';
+    tot.appendChild(tl); tot.appendChild(tv); projList.appendChild(tot);
+  }
+  // build copy text
+  let copyT='Week of '+fmt(monday)+' \u2014 '+des.fullLabel+'\n';
+  copyT+='Target: '+target.toFixed(1)+'h/wk\n\n';
+  if(rows.length===0){ copyT+='No scheduled hours this week.\n'; }
+  else{
+    rows.forEach(r=>{ copyT+='\u2022 '+r.name+' ('+r.phase+'): '+r.hours.toFixed(1)+'h\n'; });
+    copyT+='\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n';
+    copyT+='Total: '+total.toFixed(1)+'h\n';
+  }
+  LC_WEEK_POPUP._copyText=copyT;
+  LC_WEEK_POPUP.classList.add('open'); _lcWpOpen=true;
+  requestAnimationFrame(()=>{
+    const pw=LC_WEEK_POPUP.offsetWidth||280, ph=LC_WEEK_POPUP.offsetHeight||200;
+    let left=clientX-pw/2, top=clientY+10;
+    if(left<8) left=8;
+    if(left+pw>window.innerWidth-8) left=window.innerWidth-pw-8;
+    if(top+ph>window.innerHeight-8) top=clientY-ph-8;
+    LC_WEEK_POPUP.style.left=left+'px'; LC_WEEK_POPUP.style.top=top+'px';
+  });
+}
 document.getElementById('lcWpClose').addEventListener('click',closeLcWeekPopup);
 document.getElementById('lcWpCopy').addEventListener('click',()=>{
   navigator.clipboard.writeText(LC_WEEK_POPUP._copyText||'').then(()=>{
