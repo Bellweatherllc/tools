@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v674</title>
+<title>BW Project Pipeline — v675</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2508,7 +2508,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v674</div>
+    <div class="auth-version" id="authVersionBadge">v675</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2527,7 +2527,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v674</div>
+  <div class="proto-badge" id="versionBadge">v675</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3961,111 +3961,98 @@ const BAND_H=28, BAND_TOP=0;
 // Lane display order (top to bottom within the band)
 const LANE_ORDER=['design','permitting','production'];
 
-function buildCollapsedBand(proj,laneIds){
-  const band=el('div','collapsed-band');
-  band.dataset.projId=proj.id;
-  if(laneIds) band.dataset.bandLanes=laneIds.join(',');
-  band.dataset.weekW=C.weekW; // capture zoomed weekW so renderCollapsedBand uses correct scale
-  band.style.cssText=`position:absolute;left:0;top:0;width:${w2px(C.numWeeks)}px;height:${BAND_H}px;z-index:0;display:none;overflow:visible;`;
-  return band;
+// populateCollapsedRow: renders collapsed band content directly into a lane-row element.
+// Used by buildProjTimeline (inline at build time) and renderCollapsedBand (surgical updates).
+function populateCollapsedRow(proj, rowEl, ww){
+  const w2px=n=>Math.round(n*ww);
+  rowEl.innerHTML='';
+  const isProjected=isUnsignedStatus(proj.status);
+  const alpha=isProjected?.34:.74;
+  function bandRgba(lane){
+    const hex=BAND_COLORS[lane];
+    const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  const allowedStr=rowEl.dataset.lane;
+  const allowedLanes=allowedStr?[allowedStr]:['design','permitting','production'];
+  const laneIntervals={design:[],permitting:[],production:[]};
+  proj.designLane.phases.filter(ph=>ph.durWeeks>0&&!/construction design/i.test(ph.name)).forEach(ph=>{
+    laneIntervals.design.push({start:ph.startWeek,end:ph.startWeek+ph.durWeeks});
+  });
+  if(proj.permitting.durWeeks>0){
+    laneIntervals.permitting.push({start:proj.permitting.startWeek,end:proj.permitting.startWeek+proj.permitting.durWeeks});
+  }
+  proj.productionLane.phases.filter(ph=>ph.durWeeks>0).forEach(ph=>{
+    laneIntervals.production.push({start:ph.startWeek,end:ph.startWeek+ph.durWeeks});
+  });
+  const boundaries=new Set();
+  const activeLanes=LANE_ORDER.filter(l=>allowedLanes.includes(l));
+  activeLanes.forEach(lane=>laneIntervals[lane].forEach(({start,end})=>{boundaries.add(start);boundaries.add(end);}));
+  if(boundaries.size===0)return;
+  const bArr=[...boundaries].sort((a,b)=>a-b);
+  function activeLanesAt(w){
+    return activeLanes.filter(lane=>laneIntervals[lane].some(iv=>w>=iv.start&&w<iv.end));
+  }
+  const segments=[];
+  for(let i=0;i<bArr.length-1;i++){
+    const startW=bArr[i],endW=bArr[i+1];
+    const lanes=activeLanesAt(startW);
+    if(lanes.length===0)continue;
+    const last=segments[segments.length-1];
+    if(last&&last.endW===startW&&last.lanes.join()===lanes.join()) last.endW=endW;
+    else segments.push({startW,endW,lanes:[...lanes]});
+  }
+  const prodPhases=proj.productionLane.phases;
+  const preConEnd=prodPhases.length>=1?prodPhases[0].startWeek+prodPhases[0].durWeeks:null;
+  const _desPhs=proj.designLane.phases.filter(ph=>!ph.isDesignProd&&ph.durWeeks>0);
+  const phaseIEnd=_desPhs.length>=2?_desPhs[0].startWeek+_desPhs[0].durWeeks:null;
+  segments.forEach(({startW,endW,lanes})=>{
+    const depth=lanes.length;
+    lanes.forEach((lane,idx)=>{
+      const sliceTop=Math.round(BAND_H*idx/depth);
+      const sliceBot=Math.round(BAND_H*(idx+1)/depth);
+      const pn='pointer-events:none;';
+      if(lane==='production'&&preConEnd!==null&&startW<preConEnd&&endW>preConEnd){
+        const x1=w2px(startW),w1=w2px(preConEnd-startW)-2;
+        if(w1>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x1}px;width:${w1}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
+        const x2=w2px(preConEnd)+1,w2=w2px(endW-preConEnd)-1;
+        if(w2>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x2}px;width:${w2}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
+      }else if(lane==='design'&&phaseIEnd!==null&&startW<phaseIEnd&&endW>phaseIEnd){
+        const x1=w2px(startW),w1=w2px(phaseIEnd-startW)-2;
+        if(w1>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x1}px;width:${w1}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
+        const x2=w2px(phaseIEnd)+1,w2=w2px(endW-phaseIEnd)-1;
+        if(w2>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x2}px;width:${w2}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
+      }else{
+        const x=w2px(startW),w=w2px(endW-startW);
+        const b=el('div','');b.style.cssText=`position:absolute;left:${x}px;width:${w}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);
+      }
+    });
+  });
+  for(let i=1;i<segments.length;i++){
+    const tick=el('div','');
+    tick.style.cssText=`position:absolute;left:${w2px(segments[i].startW)-1}px;width:2px;height:${BAND_H}px;top:${BAND_TOP}px;background:rgba(255,255,255,.65);z-index:2;pointer-events:none;`;
+    rowEl.appendChild(tick);
+  }
+  const offWeeks=new Set();
+  const des=personById(proj.designer),pm=personById(proj.productionPM);
+  if(des) des.timeOff.forEach(to=>{if(weekOverlapsLanes(proj,to.week,['design','permitting']))offWeeks.add(to.week);});
+  if(pm)  pm.timeOff.forEach(to=>{if(weekOverlapsLanes(proj,to.week,['production']))offWeeks.add(to.week);});
+  offWeeks.forEach(week=>{
+    const s=el('div','');
+    s.style.cssText=`position:absolute;left:${w2px(week)}px;width:${ww}px;height:${BAND_H}px;top:${BAND_TOP}px;background:rgba(255,255,255,.78);border:1px solid rgba(40,40,40,.12);border-radius:2px;display:flex;align-items:center;justify-content:center;pointer-events:none;`;
+    const lbl=el('span','');lbl.style.cssText='font-size:6px;font-weight:800;letter-spacing:.1em;color:rgba(40,40,40,.55);pointer-events:none;';
+    lbl.textContent='OFF';s.appendChild(lbl);rowEl.appendChild(s);
+  });
+  rowEl.style.borderBottom='1px solid rgba(255,255,255,.35)';
 }
+// renderCollapsedBand: thin wrapper for surgical updates (status change, time-off drag).
+// Repopulates collapsed .lane-row elements without a full section rebuild.
 function renderCollapsedBand(projId){
-  const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
-  document.querySelectorAll(`.collapsed-band[data-proj-id="${projId}"]`).forEach(band=>{
-    const _ww=parseInt(band.dataset.weekW)||C.weekW;
-    const w2px=n=>Math.round(n*_ww); // shadow global — use band's own weekW
-    band.innerHTML='';
-    const isProjected=isUnsignedStatus(proj.status);
-    const alpha=isProjected?.34:.74;
-    function bandRgba(lane){
-      const hex=BAND_COLORS[lane];
-      const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
-      return `rgba(${r},${g},${b},${alpha})`;
-    }
-    const allowedLanes=band.dataset.bandLanes?band.dataset.bandLanes.split(','):['design','permitting','production'];
-    // Collect all phase intervals keyed by allowed lanes
-    const laneIntervals={design:[],permitting:[],production:[]};
-    proj.designLane.phases.filter(ph=>ph.durWeeks>0&&!/construction design/i.test(ph.name)).forEach(ph=>{
-      laneIntervals.design.push({start:ph.startWeek, end:ph.startWeek+ph.durWeeks});
-    });
-    if(proj.permitting.durWeeks>0){
-      laneIntervals.permitting.push({start:proj.permitting.startWeek, end:proj.permitting.startWeek+proj.permitting.durWeeks});
-    }
-    proj.productionLane.phases.filter(ph=>ph.durWeeks>0).forEach(ph=>{
-      laneIntervals.production.push({start:ph.startWeek, end:ph.startWeek+ph.durWeeks});
-    });
-    // Sweep-line: collect all boundary weeks across all lanes
-    const boundaries=new Set();
-    const activeLanes=LANE_ORDER.filter(l=>allowedLanes.includes(l));
-    activeLanes.forEach(lane=>laneIntervals[lane].forEach(({start,end})=>{boundaries.add(start);boundaries.add(end);}));
-    if(boundaries.size===0)return;
-    const bArr=[...boundaries].sort((a,b)=>a-b);
-    // Helper: which lanes are active during [w, w+1)?
-    function activeLanesAt(w){
-      return activeLanes.filter(lane=>laneIntervals[lane].some(iv=>w>=iv.start&&w<iv.end));
-    }
-    // Walk each interval between consecutive boundaries
-    // segments: {startW, endW, lanes[]}
-    const segments=[];
-    for(let i=0;i<bArr.length-1;i++){
-      const startW=bArr[i], endW=bArr[i+1];
-      const lanes=activeLanesAt(startW);
-      if(lanes.length===0)continue;
-      const last=segments[segments.length-1];
-      // Merge with previous segment if same lane set
-      if(last&&last.endW===startW&&last.lanes.join()===lanes.join()) last.endW=endW;
-      else segments.push({startW,endW,lanes:[...lanes]});
-    }
-    // Find pre-construction / construction boundary for gap rendering
-    const prodPhases=proj.productionLane.phases;
-    const preConEnd=prodPhases.length>=1?prodPhases[0].startWeek+prodPhases[0].durWeeks:null;
-    // Find Phase I / Phase II boundary for design gap rendering
-    const _desPhs=proj.designLane.phases.filter(ph=>!ph.isDesignProd&&ph.durWeeks>0);
-    const phaseIEnd=_desPhs.length>=2?_desPhs[0].startWeek+_desPhs[0].durWeeks:null;
-
-    // Render: for each segment, divide BAND_H equally among active lanes
-    segments.forEach(({startW,endW,lanes})=>{
-      const depth=lanes.length;
-      lanes.forEach((lane,idx)=>{
-        const sliceTop=Math.round(BAND_H* idx   /depth);
-        const sliceBot=Math.round(BAND_H*(idx+1)/depth);
-        // For production lane, split at pre-con/con boundary with a 2px gap
-        if(lane==='production' && preConEnd!==null && startW<preConEnd && endW>preConEnd){
-          // Segment before gap
-          const x1=w2px(startW), w1=w2px(preConEnd-startW)-2;
-          if(w1>0){ const b=el('div',''); b.style.cssText=`position:absolute;left:${x1}px;width:${w1}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};`; band.appendChild(b); }
-          // Segment after gap
-          const x2=w2px(preConEnd)+1, w2=w2px(endW-preConEnd)-1;
-          if(w2>0){ const b=el('div',''); b.style.cssText=`position:absolute;left:${x2}px;width:${w2}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};`; band.appendChild(b); }
-        // For design lane, split at Phase I/II boundary with a 2px gap
-        } else if(lane==='design' && phaseIEnd!==null && startW<phaseIEnd && endW>phaseIEnd){
-          const x1=w2px(startW), w1=w2px(phaseIEnd-startW)-2;
-          if(w1>0){ const b=el('div',''); b.style.cssText=`position:absolute;left:${x1}px;width:${w1}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};`; band.appendChild(b); }
-          const x2=w2px(phaseIEnd)+1, w2=w2px(endW-phaseIEnd)-1;
-          if(w2>0){ const b=el('div',''); b.style.cssText=`position:absolute;left:${x2}px;width:${w2}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};`; band.appendChild(b); }
-        } else {
-          const x=w2px(startW), w=w2px(endW-startW);
-          const b=el('div',''); b.style.cssText=`position:absolute;left:${x}px;width:${w}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};`; band.appendChild(b);
-        }
-      });
-    });
-    // Tick marks at every segment boundary (where active lane set changes)
-    for(let i=1;i<segments.length;i++){
-      const tick=el('div','');
-      tick.style.cssText=`position:absolute;left:${w2px(segments[i].startW)-1}px;width:2px;height:${BAND_H}px;top:${BAND_TOP}px;background:rgba(255,255,255,.65);z-index:2;pointer-events:none;`;
-      band.appendChild(tick);
-    }
-    // Time-off overlays span the full BAND_H
-    const offWeeks=new Set();
-    const des=personById(proj.designer), pm=personById(proj.productionPM);
-    if(des) des.timeOff.forEach(to=>{ if(weekOverlapsLanes(proj,to.week,['design','permitting'])) offWeeks.add(to.week); });
-    if(pm)  pm.timeOff.forEach(to=>{ if(weekOverlapsLanes(proj,to.week,['production'])) offWeeks.add(to.week); });
-    offWeeks.forEach(week=>{
-      const s=el('div','');
-      s.style.cssText=`position:absolute;left:${w2px(week)}px;width:${_ww}px;height:${BAND_H}px;top:${BAND_TOP}px;background:rgba(255,255,255,.78);border:1px solid rgba(40,40,40,.12);border-radius:2px;display:flex;align-items:center;justify-content:center;`;
-      const lbl=el('span',''); lbl.style.cssText='font-size:6px;font-weight:800;letter-spacing:.1em;color:rgba(40,40,40,.55);pointer-events:none;';
-      lbl.textContent='OFF'; s.appendChild(lbl); band.appendChild(s);
-    });
+  const proj=PROJECTS.find(p=>p.id===projId); if(!proj||!proj.collapsed)return;
+  document.querySelectorAll(`.lanes-wrap[data-proj-id="${projId}"].proj-collapsed .lane-row`).forEach(row=>{
+    const secEl=row.closest('.section');
+    const ww=parseInt(secEl?.dataset.weekW)||C.weekW;
+    populateCollapsedRow(proj,row,ww);
   });
 }
 
@@ -4136,7 +4123,11 @@ function reorderSvg(){
   return '<svg width="12" height="16" viewBox="0 0 12 16" fill="none"><rect y="2" width="12" height="2" rx="1" fill="currentColor"/><rect y="7" width="12" height="2" rx="1" fill="currentColor"/><rect y="12" width="12" height="2" rx="1" fill="currentColor"/></svg>';
 }
 function buildFcMsRow(proj, capacitySection){
-  const row=el('div','fc-ms-row'); row.style.height=C.msRowH+'px';
+  const row=el('div','fc-ms-row');
+  const rowH=proj.collapsed?BAND_H:C.laneH;
+  row.style.height=rowH+'px';
+  row.style.borderTop='none';
+  row.style.borderBottom='1px solid rgba(0,0,0,.06)';
   row.dataset.projId=proj.id;
   if(capacitySection) row.dataset.capacitySection=capacitySection;
   if(proj.collapsed) row.classList.add('is-collapsed');
@@ -4673,7 +4664,7 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
   const bar=el('div','phase-bar');
   bar.dataset.phaseId=ph.id; bar.dataset.lane=laneId; bar.dataset.projId=proj.id;
   bar.style.left=w2px(ph.startWeek)+'px'; bar.style.width=w2px(ph.durWeeks)+'px';
-  bar.style.top=C.barTop+'px'; bar.style.height=C.barH+'px';
+  bar.style.top='0px'; bar.style.height=C.laneH+'px'; bar.style.borderBottom='1px solid rgba(255,255,255,.35)';
   bar.style.background=barBg(proj,ph);
   if(proj.status==='paused')bar.classList.add('status-paused');
   if(proj.status==='cancelled')bar.classList.add('status-cancelled');
@@ -4751,43 +4742,38 @@ function populateBars(row,proj,laneId,includeControls,showJunctions,isGhost){
 }
 
 function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,grpNudgeY,skipMsNames,ghostLaneIds){
+  // grpNudgeY ignored in unified model (parameter kept for call-site compat)
   ovTimeoff=ovTimeoff||[]; ghostLaneIds=ghostLaneIds||[];
-  grpNudgeY=grpNudgeY||0;
-  const msRow=buildTlMsRow(proj);
-  const lanesBlock=el('div','proj-lanes-tl'); lanesBlock.dataset.projId=proj.id;
-  if(proj.collapsed)lanesBlock.style.display='none';
-  let laneH=0; const laneRowMap={};
-  // Ghost lanes first (design phases shown in production context)
-  ghostLaneIds.forEach(lid=>{
-    const r=buildLaneRow(proj,lid,includeControls,showJunctions,true);
-    r.classList.add('ghost');
-    lanesBlock.appendChild(r); laneH+=C.laneH; laneRowMap['ghost-'+lid]=r;
-  });
-  laneIds.forEach(lid=>{
-    const r=buildLaneRow(proj,lid,includeControls,showJunctions);
-    lanesBlock.appendChild(r); laneH+=C.laneH; laneRowMap[lid]=r;
-  });
-  ovTimeoff.forEach(({id,week,personId,laneTypes})=>{
-    const targets=laneTypes||laneIds;
-    targets.forEach(lt=>{
-      const row=laneRowMap[lt]; if(!row)return;
-      if(!laneRowHasBarAtWeek(row,week))return;
-      row.appendChild(buildOvStrip({id,week},personId));
+  const rowH=proj.collapsed?BAND_H:C.laneH;
+  // Single lane-row — height matches collapsed/expanded state
+  const laneRow=el('div','lane-row'); laneRow.dataset.projId=proj.id;
+  if(laneIds.length===1) laneRow.dataset.lane=laneIds[0]; // for refreshLane queries
+  laneRow.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:relative;`;
+  if(!proj.collapsed){
+    // Expanded: today stripe + phase bars
+    const tw=todayWeek();
+    if(tw>=0&&tw<C.numWeeks){ const s=el('div','today-stripe'); s.style.cssText=`left:${w2px(tw)}px;width:${C.weekW}px;`; laneRow.appendChild(s); }
+    laneIds.forEach(lid=>populateBars(laneRow,proj,lid,includeControls,showJunctions));
+    // Time-off overlays (expanded only)
+    if(ovTimeoff.length) ovTimeoff.forEach(({id,week,personId})=>{
+      if(laneRowHasBarAtWeek(laneRow,week)) laneRow.appendChild(buildOvStrip({id,week},personId));
     });
-  });
+  } else {
+    // Collapsed: band content rendered inline — no separate collapsed-band element needed
+    populateCollapsedRow(proj,laneRow,C.weekW);
+  }
   const wrap=el('div','lanes-wrap'); wrap.dataset.projId=proj.id;
   wrap.style.cssText=`width:${w2px(C.numWeeks)}px;position:relative;overflow:visible;`;
-  wrap.appendChild(msRow); wrap.appendChild(lanesBlock);
-  const overlayH=C.msRowH+laneH;
-  const collapsedOverlayH=C.msRowH;
+  if(proj.collapsed) wrap.classList.add('proj-collapsed');
+  wrap.appendChild(laneRow);
+  // ms-overlay: position:absolute over the single lane-row
   const overlay=el('div','ms-overlay'); overlay.dataset.projId=proj.id;
-  overlay.dataset.expandedH=overlayH; overlay.dataset.collapsedH=collapsedOverlayH;
-  overlay.style.cssText=`width:${w2px(C.numWeeks)}px;height:${proj.collapsed?collapsedOverlayH:overlayH}px;overflow:visible;`;
+  overlay.dataset.expandedH=C.laneH; overlay.dataset.collapsedH=BAND_H;
+  overlay.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:absolute;top:0;left:0;overflow:visible;`;
   const msToRender=skipMsNames?proj.milestones.filter(ms=>!skipMsNames.includes(ms.name)):proj.milestones;
-  msToRender.forEach(ms=>overlay.appendChild(buildMsTall(proj,ms,C.msRowH,proj.collapsed?collapsedOverlayH:overlayH,laneIds,grpNudgeY)));
+  msToRender.forEach(ms=>{ const mEl=buildMsTall(proj,ms,rowH,rowH,[],0); mEl.style.top='0px'; overlay.appendChild(mEl); });
   if(laneIds.includes('design')){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); ensurePencilsDown(proj); overlay.appendChild(buildPencilsDot(proj)); }
-  const band=buildCollapsedBand(proj,[...ghostLaneIds,...laneIds]);
-  wrap.appendChild(band); wrap.appendChild(overlay); return wrap;
+  wrap.appendChild(overlay); return wrap;
 }
 
 // ════════════════════════════════════════════════  SECTION BUILDERS
@@ -4843,10 +4829,9 @@ function buildPersonSep(){
 }
 function calcPersonGroupH(person, section){
   const field=DESIGNERS.find(d=>d.id===person.id)?'designer':'productionPM';
-  const nLanes=section==='design'?2:1;
+  // Unified model: one lane-row per project; height is BAND_H collapsed, C.laneH expanded
   return PROJECTS.filter(p=>isVisible(p)&&p[field]===person.id).reduce((sum,proj)=>{
-    if(proj.collapsed) return sum+C.msRowH+4;
-    return sum+C.msRowH+nLanes*C.laneH;
+    return sum+(proj.collapsed?BAND_H:C.laneH);
   },0)+8; // +8 for 4px top + 4px bottom inner spacers
 }
 function refreshTimeoffOverlayH(personId, section){
@@ -5020,7 +5005,7 @@ function buildDesignSection(){
   fc.appendChild(fcUnSep);
   const fcGrp=el('div','unassigned-group-fc'); fcGrp.classList.toggle('has-projects',unassigned.length>0);
   if(!DESIGN_UNASSIGNED_COLLAPSED){
-    if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'design')); fcGrp.appendChild(buildFcLanesBlock(proj,['Design'],[])); }); }
+    if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'design')); }); }
     else { fcGrp.appendChild(el('div','unassigned-placeholder-fc')); }
   }
   fc.appendChild(fcGrp);
@@ -5032,7 +5017,7 @@ function buildDesignSection(){
     // Flat view FC: all assigned projects without headers
     const[fs]=buildPersonSep(); fc.appendChild(fs);
     capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer),'design').forEach(proj=>{
-      fc.appendChild(buildFcMsRow(proj,'design')); fc.appendChild(buildFcLanesBlock(proj,['Design'],[]));
+      fc.appendChild(buildFcMsRow(proj,'design'));
     });
   } else {
   orderedDesigners.forEach(person=>{
@@ -5047,7 +5032,7 @@ function buildDesignSection(){
     if(!DESIGN_COLLAPSED.has(person.id)){
       const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer===person.id),'design');
       const fcTopSpD=el('div',''); fcTopSpD.style.height='4px'; fc.appendChild(fcTopSpD);
-      projs.forEach(proj=>{ fc.appendChild(buildFcMsRow(proj,'design')); fc.appendChild(buildFcLanesBlock(proj,['Design'],[])); });
+      projs.forEach(proj=>{ fc.appendChild(buildFcMsRow(proj,'design')); });
       const fcBotSpD=el('div',''); fcBotSpD.style.height='4px'; fc.appendChild(fcBotSpD);
     }
   });
@@ -5255,7 +5240,7 @@ function buildProdSection(){
         if(key!==firstPmKey) return {fc_els,tl_els};
         const[fcSep,tlSep]=buildPersonSep(); fc_els.push(fcSep); tl_els.push(tlSep);
         const allProjs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.productionPM),'production');
-        allProjs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,[''],[])); });
+        allProjs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); });
         const flatGrp=el('div','person-group-tl'); flatGrp.dataset.section='production';
         allProjs.forEach(proj=>flatGrp.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,-9,null,[])));
         tl_els.push(flatGrp);
@@ -5273,7 +5258,7 @@ function buildProdSection(){
       const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.productionPM===pmId),'production');
       if(!collapsed){
         const fcTopSp=el('div',''); fcTopSp.style.height='4px'; fc_els.push(fcTopSp);
-        projs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); fc_els.push(buildFcLanesBlock(proj,[''],[])); });
+        projs.forEach(proj=>{ fc_els.push(buildFcMsRow(proj,'production')); });
         const fcBotSp=el('div',''); fcBotSp.style.height='4px'; fc_els.push(fcBotSp);
       }
       tl_els.push(buildTlProdPersonHeader());
@@ -5309,7 +5294,7 @@ function buildProdSection(){
       fc_els.push(fcUnHdr);
       if(!PROD_UNASSIGNED_COLLAPSED){
         const fcGrp=el('div','unassigned-group-fc'); fcGrp.classList.toggle('has-projects',unassigned.length>0);
-        if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'production')); fcGrp.appendChild(buildFcLanesBlock(proj,[''],[])); }); }
+        if(unassigned.length>0){ unassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'production')); }); }
         else { fcGrp.appendChild(el('div','unassigned-placeholder-fc')); }
         fc_els.push(fcGrp);
       }
@@ -5589,36 +5574,11 @@ function toggleCollapse(projId){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
   proj.collapsed=!proj.collapsed;
   if(proj.collapsed&&SELECTED_PROJ_ID===proj.id) clearSelection();
-  const disp=proj.collapsed?'none':'';
-  document.querySelectorAll(`.proj-lanes-fc[data-proj-id="${projId}"]`).forEach(b=>b.style.display=disp);
-  document.querySelectorAll(`.proj-lanes-tl[data-proj-id="${projId}"]`).forEach(b=>b.style.display=disp);
-  document.querySelectorAll(`.lanes-wrap[data-proj-id="${projId}"]`).forEach(w=>w.classList.toggle('proj-collapsed',proj.collapsed));
-  document.querySelectorAll(`[data-chevron="${projId}"]`).forEach(c=>c.classList.toggle('collapsed',proj.collapsed));
-  document.querySelectorAll(`.fc-ms-row[data-proj-id="${projId}"]`).forEach(r=>r.classList.toggle('is-collapsed',proj.collapsed));
-  document.querySelectorAll(`.ms-overlay[data-proj-id="${projId}"]`).forEach(ov=>{
-    const h=proj.collapsed?parseInt(ov.dataset.collapsedH):parseInt(ov.dataset.expandedH);
-    ov.style.height=h+'px';
-    ov.querySelectorAll('.ms-tall').forEach(m=>{
-      m.style.height=(h-2)+'px';
-      const segs=m.querySelectorAll('.ms-seg'), tab=m.querySelector('[data-mstab]');
-      if(proj.collapsed){
-        segs.forEach(sg=>sg.style.display='none');
-        if(tab) tab.style.display='none';
-      } else {
-        segs.forEach(sg=>sg.style.display='');
-        if(tab){ tab.style.display=''; const headH=parseInt(m.dataset.headH); tab.style.top=(headH+segs.length*34)+'px'; tab.style.height='0px'; }
-      }
-    });
-  });
-  document.querySelectorAll(`.collapsed-band[data-proj-id="${projId}"]`).forEach(b=>{
-    b.style.display=proj.collapsed?'':'none';
-    if(proj.collapsed)renderCollapsedBand(projId);
-  });
-  document.querySelectorAll(`.tl-ms-row[data-proj-id="${projId}"]`).forEach(r=>r.classList.toggle('band-mode',proj.collapsed));
-  const desId=proj.designer, pmId=proj.productionPM;
-  if(desId) refreshTimeoffOverlayH(desId,'design');
-  if(pmId)  refreshTimeoffOverlayH(pmId,'production');
-  triggerSave(proj); // markDirty so collapsed state is patched on SP
+  // Unified model: collapsed state is baked into buildProjTimeline/buildFcMsRow at render time.
+  // Rebuild both sections so all visible instances update (same pattern as toggleLcProj).
+  rebuildSection('production');
+  rebuildSection('design');
+  triggerSave(proj);
 }
 
 // ════════════════════════════════════════════════  REFRESH
@@ -6047,23 +6007,14 @@ function initDrag(){
       capture(rh,e.pointerId); return;
     }
 
-    const lRow=e.target.closest('.lane-row,.tl-ms-row');
+    const lRow=e.target.closest('.lane-row');
     if(lRow&&!e.target.closest('.phase-bar,.ms-tall,.resize-hdl,.resize-hdl-left')){
-      // Date strip always pan-scrolls — drag only initiates from bars and milestones
+      // Lane-row pan scroll — handles both expanded rows and collapsed rows (band divs have pointer-events:none)
       e.preventDefault();
       const scroller=lRow.closest('.split-pane')||lRow.closest('.section-scroll')||document.querySelector('.outer-scroll');
       document.body.classList.add('is-panning');
       DRAG={type:'panScroll',startX:e.clientX,origScrollLeft:scroller.scrollLeft,scroller};
       capture(lRow,e.pointerId); return;
-    }
-
-    // Collapsed-band drag — replaces the tl-ms-row path when band has pointer-events
-    const colBand=e.target.closest('.collapsed-band');
-    if(colBand){
-      // Collapsed mode = navigation only; never edit regardless of admin state
-      e.preventDefault();
-      const scroller=colBand.closest('.split-pane')||colBand.closest('.section-scroll')||document.querySelector('.outer-scroll');
-      if(scroller){ document.body.classList.add('is-panning'); DRAG={type:'panScroll',startX:e.clientX,origScrollLeft:scroller.scrollLeft,scroller}; capture(colBand,e.pointerId); } return;
     }
 
     const bar=e.target.closest('.phase-bar:not(.lc-phase-bar)');
@@ -7131,7 +7082,7 @@ function hideTT(){TT.classList.remove('show');}
 (function(){
   const DAY_N=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const MO_N=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const TL_TARGETS='.lane-row,.tl-ms-row,.timeline-col,.person-group-tl,.unassigned-group-tl,.ms-wk-cell,.ms-overlay,.prod-rev-tl,.timeoff-block,.unassigned-placeholder-tl,.collapsed-band';
+  const TL_TARGETS='.lane-row,.timeline-col,.person-group-tl,.unassigned-group-tl,.ms-wk-cell,.ms-overlay,.prod-rev-tl,.timeoff-block,.unassigned-placeholder-tl';
   document.addEventListener('mousemove',e=>{
     if(DRAG) return;
     const _msTallEl=e.target.closest('.ms-tall');
@@ -7995,20 +7946,7 @@ function rebuildSection(sType){
     });
     newSec.querySelectorAll(`.tl-tally[data-person="${pid}"][data-section="${sec}"]`).forEach(t=>t.classList.add('person-screened'));
   });
-  PROJECTS.forEach(proj=>{
-    if(!proj.collapsed)return;
-    newSec.querySelectorAll(`.ms-overlay[data-proj-id="${proj.id}"]`).forEach(ov=>{
-      ov.querySelectorAll('.ms-tall').forEach(m=>{
-        m.querySelectorAll('.ms-seg').forEach(sg=>sg.style.display='none');
-        const tab=m.querySelector('[data-mstab]');
-        if(tab) tab.style.display='none';
-      });
-    });
-    renderCollapsedBand(proj.id);
-    newSec.querySelectorAll(`.collapsed-band[data-proj-id="${proj.id}"]`).forEach(b=>b.style.display='');
-    newSec.querySelectorAll(`.tl-ms-row[data-proj-id="${proj.id}"]`).forEach(r=>r.classList.add('band-mode'));
-    newSec.querySelectorAll(`.lanes-wrap[data-proj-id="${proj.id}"]`).forEach(w=>w.classList.add('proj-collapsed'));
-  });
+  // Unified model: collapsed state is baked in at build time — no post-build restoration needed.
   // Refresh production panel if open
   if(typeof renderProdPanel==='function') renderProdPanel();
 }
@@ -8061,21 +7999,7 @@ function buildAll(){
     });
     document.querySelectorAll(`.tl-tally[data-person="${pid}"][data-section="${sec}"]`).forEach(t=>t.classList.add('person-screened'));
   });
-  // Reapply collapsed visual state
-  PROJECTS.forEach(proj=>{
-    if(!proj.collapsed)return;
-    document.querySelectorAll(`.ms-overlay[data-proj-id="${proj.id}"]`).forEach(ov=>{
-      ov.querySelectorAll('.ms-tall').forEach(m=>{
-        m.querySelectorAll('.ms-seg').forEach(sg=>sg.style.display='none');
-        const tab=m.querySelector('[data-mstab]');
-        if(tab) tab.style.display='none';
-      });
-    });
-    renderCollapsedBand(proj.id);
-    document.querySelectorAll(`.collapsed-band[data-proj-id="${proj.id}"]`).forEach(b=>b.style.display='');
-    document.querySelectorAll(`.tl-ms-row[data-proj-id="${proj.id}"]`).forEach(r=>r.classList.add('band-mode'));
-    document.querySelectorAll(`.lanes-wrap[data-proj-id="${proj.id}"]`).forEach(w=>w.classList.add('proj-collapsed'));
-  });
+  // Unified model: collapsed state is baked in at build time — no post-build restoration needed.
 }
 // ════════════════════════════════════════════════  MSAL / AUTH
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
