@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v689</title>
+<title>BW Project Pipeline — v691</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -178,8 +178,16 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 }
 .note-popover.open{display:flex;}
 .note-popover-title{font-family:'Swear Text',serif;font-size:11px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.note-pop-history{
+  max-height:110px;overflow-y:auto;
+  font-family:'TT Norms Pro',sans-serif;font-size:11px;color:var(--navy);
+  background:rgba(0,0,0,.025);border:1px solid var(--bdr);border-radius:5px;
+  padding:6px 8px;line-height:1.55;
+}
+.note-attr{font-size:9.5px;color:rgba(0,0,0,.38);font-style:italic;}
+.note-new-label{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(0,0,0,.28);padding-top:2px;}
 .note-popover textarea{
-  width:100%;height:90px;resize:vertical;
+  width:100%;height:72px;resize:vertical;
   font-family:'TT Norms Pro',sans-serif;font-size:11px;color:var(--navy);
   border:1px solid var(--bdr);border-radius:5px;padding:6px 8px;
   outline:none;background:#FAFAF8;line-height:1.45;
@@ -1342,6 +1350,13 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 }
 .brief-sub-hdr:first-child{margin-top:0;}
 .brief-ack-btns{display:flex;gap:4px;flex-shrink:0;margin-left:auto;}
+.brief-bug-pencil{
+  background:transparent;border:1px solid transparent;border-radius:3px;
+  cursor:pointer;color:rgba(0,0,0,.30);padding:2px 4px;
+  display:flex;align-items:center;flex-shrink:0;line-height:1;
+  transition:color .12s,border-color .12s,background .12s;
+}
+.brief-bug-pencil:hover{color:var(--navy);border-color:rgba(0,0,0,.18);background:rgba(0,0,0,.04);}
 .brief-ack-btn{
   font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
   padding:3px 10px;border-radius:3px;cursor:pointer;border:1px solid transparent;white-space:nowrap;
@@ -2513,7 +2528,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v689</div>
+    <div class="auth-version" id="authVersionBadge">v691</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2532,7 +2547,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v689</div>
+  <div class="proto-badge" id="versionBadge">v691</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2599,6 +2614,8 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     <div class="note-popover-title" id="notePopTitle"></div>
     <div style="font-size:9.5px;color:rgba(0,0,0,.38);font-style:italic;margin-top:1px;">Your name and timestamp are automatically recorded.</div>
   </div>
+  <div id="notePopHistory" class="note-pop-history" style="display:none;"></div>
+  <div class="note-new-label" id="noteNewLabel" style="display:none;">Add to this note</div>
   <textarea id="notePopTA" placeholder="Add a note…"></textarea>
   <div id="notePopAttr" style="font-size:10px;color:rgba(0,0,0,.45);padding:1px 2px;display:none;"></div>
   <div class="note-popover-footer">
@@ -9424,17 +9441,39 @@ function openNotePopover(projId, anchorEl){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
   noteProjId=projId;
   NOTE_TITLE.textContent=proj.name;
-  // Show content only — attribution shown as read-only label so textarea is freely editable
-  const _rawNote=proj.notes||'';
-  const _attrMatch=_rawNote.match(/\n— (.+)$/);
-  NOTE_TA.value=_rawNote.replace(/\n— .+$/,'').trim();
+  // Show existing entries as read-only history; textarea is for new additions only
+  const existing=(proj.notes||'').trim();
+  const histEl=document.getElementById('notePopHistory');
+  const lblEl=document.getElementById('noteNewLabel');
+  if(histEl){
+    if(existing){
+      const html=existing
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/\n— ([^\n]+)/g,'<br><span class="note-attr">— $1</span>')
+        .replace(/\n\n/g,'<br><br>')
+        .replace(/\n/g,'<br>');
+      histEl.innerHTML=html;
+      histEl.style.display='block';
+      if(lblEl) lblEl.style.display='block';
+    } else {
+      histEl.innerHTML=''; histEl.style.display='none';
+      if(lblEl) lblEl.style.display='none';
+    }
+  }
+  NOTE_TA.value='';
+  // Show attribution preview so the user sees what will be recorded
   const _attrEl=document.getElementById('notePopAttr');
-  if(_attrEl){ if(_attrMatch){ _attrEl.textContent='— '+_attrMatch[1]; _attrEl.style.display='block'; } else { _attrEl.style.display='none'; } }
+  if(_attrEl){
+    const _author=_histUser();
+    const _ds=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    _attrEl.textContent='— '+_author+', '+_ds;
+    _attrEl.style.display='block';
+  }
   NOTE_POP.classList.add('open');
   const r=anchorEl.getBoundingClientRect();
   let top=r.bottom+4, left=r.left-636;
   if(left<8) left=8;
-  if(top+180>window.innerHeight) top=r.top-180-4;
+  if(top+280>window.innerHeight) top=r.top-280-4;
   NOTE_POP.style.top=top+'px';
   NOTE_POP.style.left=left+'px';
   setTimeout(()=>NOTE_TA.focus(),30);
@@ -9442,11 +9481,13 @@ function openNotePopover(projId, anchorEl){
 function closeNotePopover(){ NOTE_POP.classList.remove('open'); noteProjId=null; }
 function saveNote(){
   const proj=PROJECTS.find(p=>p.id===noteProjId); if(!proj)return;
-  // Strip any existing attribution line before saving fresh
-  const raw=NOTE_TA.value.trim(); // textarea shows content only; attribution label is separate
+  const newText=NOTE_TA.value.trim();
+  if(!newText){ closeNotePopover(); return; } // nothing new — just close
   const author=_histUser();
   const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  proj.notes=raw?(raw+'\n— '+author+', '+dateStr):'';
+  const newEntry=newText+'\n— '+author+', '+dateStr;
+  const existing=(proj.notes||'').trim();
+  proj.notes=existing ? existing+'\n\n'+newEntry : newEntry;
   document.querySelectorAll(`.fc-note-btn[data-note-btn="${proj.id}"]`).forEach(btn=>{
     btn.classList.toggle('has-note',!!proj.notes);
     btn.classList.toggle('pp-pencil-noted',!!proj.notes);
@@ -9474,6 +9515,10 @@ function openPlanningNotePopover(ppId, anchorEl){
   notePlanningId=ppId; noteProjId=null;
   NOTE_TITLE.textContent=pp.name;
   NOTE_TA.value=pp.notes||'';
+  // Hide history elements — planning notes are simple single-field
+  const _h=document.getElementById('notePopHistory'); if(_h){_h.style.display='none';_h.innerHTML='';}
+  const _l=document.getElementById('noteNewLabel'); if(_l) _l.style.display='none';
+  const _a=document.getElementById('notePopAttr'); if(_a) _a.style.display='none';
   NOTE_POP.classList.add('open');
   const r=anchorEl.getBoundingClientRect();
   let top=r.bottom+4, left=r.left-180;
@@ -10731,7 +10776,7 @@ function generateBriefHTML(){
       </div>
     </div>
     ${openItems.length ? openItems.map((b,i)=>`<div class="brief-card-row" data-bug-id="${b.id}"><span class="bcr-lbl ${typeCls(b.type)}">${typeLbl(b.type)}</span><span class="bcr-text">${b.title}${(b.author||b.createdAt)?`<span style="opacity:.45;font-size:10px;margin-left:6px;">\u2014 ${b.author||'?'}${b.createdAt?`, `+(new Date(b.createdAt)).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+(new Date(b.createdAt)).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>`:''}}`
-    +`<span style="display:flex;gap:2px;flex-shrink:0;align-items:center;"><button class="brief-ack-btn" data-bug-move-up="${b.id}" title="Move up" style="padding:1px 5px;${i===0?'visibility:hidden':''}">↑</button><button class="brief-ack-btn" data-bug-move-down="${b.id}" title="Move down" style="padding:1px 5px;${i===openItems.length-1?'visibility:hidden':''}">↓</button> <button class="brief-ack-btn brief-ack-mark" data-close-bug="${b.id}">Resolve</button></span></div>`).join('')
+    +`<span style="display:flex;gap:2px;flex-shrink:0;align-items:center;"><button class="brief-bug-pencil" data-bug-edit="${b.id}" title="Edit"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button><button class="brief-ack-btn" data-bug-move-up="${b.id}" title="Move up" style="padding:1px 5px;${i===0?'visibility:hidden':''}">↑</button><button class="brief-ack-btn" data-bug-move-down="${b.id}" title="Move down" style="padding:1px 5px;${i===openItems.length-1?'visibility:hidden':''}">↓</button> <button class="brief-ack-btn brief-ack-mark" data-close-bug="${b.id}">Resolve</button></span></div>`).join('')
     : `<div class="brief-card-row"><span class="bcr-lbl l-quiet">\u2014</span><span class="bcr-text quiet">Nothing logged yet.</span></div>`}
   </div>`;
 
@@ -10772,7 +10817,7 @@ function generateBriefHTML(){
       if(BRIEF_ACKS[ackId]==='archived'||BRIEF_ACKS[ackId]==='reviewed') return '';
       noteCount++;
       const ackBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Mark Reviewed</button>`;
-      const noteHtml=note.replace(/\n/g,'<br>');
+      const noteHtml=note.replace(/\n/g,'<br>').replace(/(<br>)(— [^<]+)/g,'$1<span style="color:rgba(0,0,0,.32);font-size:9.5px;font-style:italic;">$2</span>');
       return `<div class="brief-card-row"><span class="bcr-lbl l-note">${briefProjName(proj)}</span><span class="bcr-text" style="white-space:pre-wrap;">${isNew?'<em style="opacity:.6;font-size:.9em;">New · </em>':''}${noteHtml}</span><span class="brief-ack-btns">${PENCIL_BTN(proj.id)}${ackBtn}</span></div>`;
     }).filter(Boolean);
     if(noteRows.length){
@@ -11067,6 +11112,32 @@ document.addEventListener('click',e=>{
     saveBriefBugs();
     const body=document.getElementById('briefBody');
     if(body) body.innerHTML=generateBriefHTML();
+    return;
+  }
+
+  // Edit bug/request text inline
+  const _editBugBtn=e.target.closest('[data-bug-edit]');
+  if(_editBugBtn){
+    const bugId=_editBugBtn.dataset.bugEdit;
+    const bug=BRIEF_BUGS.find(b=>b.id===bugId); if(!bug)return;
+    const row=_editBugBtn.closest('.brief-card-row');
+    const textEl=row?.querySelector('.bcr-text'); if(!row||!textEl)return;
+    const inp=document.createElement('input');
+    inp.type='text'; inp.value=bug.title;
+    inp.style.cssText='flex:1;font-size:14px;padding:2px 7px;border:1px solid var(--navy);border-radius:3px;font-family:inherit;color:var(--navy);outline:none;min-width:0;';
+    textEl.replaceWith(inp); inp.focus(); inp.select();
+    let _bgSaved=false;
+    const _saveBugEdit=()=>{
+      if(_bgSaved)return; _bgSaved=true;
+      const v=inp.value.trim(); if(v) bug.title=v;
+      saveBriefBugs();
+      const body=document.getElementById('briefBody'); if(body) body.innerHTML=generateBriefHTML();
+    };
+    inp.addEventListener('keydown',ev=>{
+      if(ev.key==='Enter'){ev.preventDefault();_saveBugEdit();}
+      if(ev.key==='Escape'){_bgSaved=true;const body=document.getElementById('briefBody');if(body)body.innerHTML=generateBriefHTML();}
+    });
+    inp.addEventListener('blur',_saveBugEdit);
     return;
   }
 
