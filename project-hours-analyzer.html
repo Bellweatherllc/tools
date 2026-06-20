@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v50</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v51</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -190,7 +190,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v50</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v51</span></h1>
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
           <span id="last-saved" style="font-size:11px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;"></span>
@@ -382,9 +382,41 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 <script src="https://unpkg.com/@azure/msal-browser@3.28.0/lib/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
-<script src="https://bellweatherllc.github.io/tools/lib/phase-profiles.js"></script>
 <script>
 'use strict';
+
+// ── PHASE LOAD PROFILES (inlined — calibrated June 2026 from 3-yr timecard aggregate) ──
+const BELLWEATHER_PHASE_PROFILES = (() => {
+  // Phase I: Gaussian bell on floor. Peaks ~t=0.64 (~wk 4 of 6).
+  function phaseI(t) {
+    return 624.509 + 300.681 * Math.exp(-Math.pow((t - 0.6436) / 0.3461, 2));
+  }
+  // Phase II: Bimodal — early kickoff spike + sustained main effort. Peaks ~t=0.62.
+  function phaseII(t) {
+    return Math.min(1400, 461.162
+      + 152.986 * Math.exp(-Math.pow((t - 0.1747) / 0.2000, 2))
+      + 900.000 * Math.exp(-Math.pow((t - 0.6157) / 0.4963, 2)));
+  }
+  // Phase III: Gamma-shaped early burst + sustained low floor (~142 hrs). Peaks ~t=0.05.
+  function phaseIII(t) {
+    const ts = Math.max(t, 1e-5);
+    const shape = Math.pow(ts / 0.1604, 0.3000) * Math.exp(-ts / 0.1604);
+    const norm  = Math.pow(0.3000, 0.3000) * Math.exp(-0.3000);
+    return Math.max(0, 543.288 * (shape / norm) + 142.126);
+  }
+  // Distribute totalHours across numWeeks using a profile shape. Returns integer array.
+  function distributeHours(totalHours, numWeeks, profileFn) {
+    if (numWeeks < 1 || totalHours <= 0) return Array(Math.max(0, numWeeks)).fill(0);
+    const weights = Array.from({length: numWeeks}, (_, i) =>
+      Math.max(0, profileFn((i + 0.5) / numWeeks)));
+    const sum = weights.reduce((a, b) => a + b, 0);
+    if (sum === 0) return Array(numWeeks).fill(0);
+    const dist = weights.map(w => Math.round(w / sum * totalHours));
+    dist[dist.length - 1] += totalHours - dist.reduce((a, b) => a + b, 0);
+    return dist;
+  }
+  return {phaseI, phaseII, phaseIII, distributeHours};
+})();
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const CFG = {
@@ -1699,10 +1731,9 @@ function renderDetail(job,_ignored) {
   }
 
   // ── LOAD PROFILE OVERLAY ──────────────────────────────────────────────────
-  // Visible in Design view, Both sub-filter only (profiles are calibrated to
-  // combined 5234 + 5236A). Shows predicted week-by-week distribution scaled
-  // to actual phase totals — works in both By Week and By Phase modes.
-  if (isDesigner && S.showLoadProfile && typeof BELLWEATHER_PHASE_PROFILES !== 'undefined') {
+  // Shows predicted week-by-week distribution scaled to actual phase totals.
+  // Works in both By Week and By Phase modes.
+  if (isDesigner && S.showLoadProfile) {
     const BP = BELLWEATHER_PHASE_PROFILES;
     const hrsSum = (a, b) => { let t=0; for(let w=a;w<b;w++) t+=proj.weeks[w]?.hours||0; return t; };
     const p1w   = Math.max(1, ph.p2);
@@ -1785,7 +1816,7 @@ function renderDetail(job,_ignored) {
     legEl.appendChild(totChip);
   }
   // Profile overlay legend entry
-  if (isDesigner && S.showLoadProfile && typeof BELLWEATHER_PHASE_PROFILES !== 'undefined') {
+  if (isDesigner && S.showLoadProfile) {
     const profChip = document.createElement('span');
     profChip.style.cssText='display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#8a8682;white-space:nowrap;margin-top:2px;';
     profChip.innerHTML=`<svg width="22" height="10" style="flex-shrink:0;overflow:visible"><line x1="0" y1="5" x2="22" y2="5" stroke="#d8b64f" stroke-width="2" stroke-dasharray="5 3" opacity="0.85"/></svg>Load profile (predicted)`;
