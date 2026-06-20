@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v48</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v49</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -190,7 +190,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v48</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v49</span></h1>
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
           <span id="last-saved" style="font-size:11px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;"></span>
@@ -381,6 +381,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 <script src="https://unpkg.com/@azure/msal-browser@3.28.0/lib/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://bellweatherllc.github.io/tools/lib/phase-profiles.js"></script>
 <script>
 'use strict';
 
@@ -1693,6 +1694,35 @@ function renderDetail(job,_ignored) {
     }
   }
 
+  // ── LOAD PROFILE OVERLAY ──────────────────────────────────────────────────
+  // Visible in Design view, Both sub-filter only (profiles are calibrated to
+  // combined 5234 + 5236A). Shows predicted week-by-week distribution scaled
+  // to actual phase totals — works in both By Week and By Phase modes.
+  if (isDesigner && S.detailFilter.sub === 'both' && typeof BELLWEATHER_PHASE_PROFILES !== 'undefined') {
+    const BP = BELLWEATHER_PHASE_PROFILES;
+    const hrsSum = (a, b) => { let t=0; for(let w=a;w<b;w++) t+=proj.weeks[w]?.hours||0; return t; };
+    const p1w   = Math.max(1, ph.p2);
+    const p2w   = Math.max(1, ph.p3 - ph.p2);
+    const p3w   = Math.max(1, proj.span - ph.p3 + 1);
+    const p1pred = BP.distributeHours(hrsSum(0,      ph.p2),        p1w, BP.phaseI);
+    const p2pred = BP.distributeHours(hrsSum(ph.p2,  ph.p3),        p2w, BP.phaseII);
+    const p3pred = BP.distributeHours(hrsSum(ph.p3,  proj.span + 1), p3w, BP.phaseIII);
+    const predPts = [
+      ...p1pred.map((h,i) => ({wk: i,         h: Math.max(0, h)})),
+      ...p2pred.map((h,i) => ({wk: ph.p2 + i, h: Math.max(0, h)})),
+      ...p3pred.map((h,i) => ({wk: ph.p3 + i, h: Math.max(0, h)})),
+    ];
+    g.append('path')
+      .datum(predPts)
+      .attr('d', d3.line().x(d=>xSc(d.wk)).y(d=>ySc(d.h)).curve(d3.curveMonotoneX))
+      .attr('fill', 'none')
+      .attr('stroke', '#d8b64f')
+      .attr('stroke-width', 2)
+      .attr('stroke-dasharray', '5 3')
+      .attr('opacity', 0.85)
+      .attr('pointer-events', 'none');
+  }
+
   // X-axis
   if (isPhaseView) {
     const third=w/3;
@@ -1749,6 +1779,13 @@ function renderDetail(job,_ignored) {
     totChip.style.cssText='display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#1a1917;white-space:nowrap;border-top:1px solid #eceae4;padding-top:5px;width:100%;margin-top:3px;';
     totChip.innerHTML=`<span style="width:10px;height:10px;flex-shrink:0;display:inline-block"></span>Total<span style="color:#4a4845;font-family:'DM Mono',monospace;font-size:10px">${fh(proj.total)}</span>`;
     legEl.appendChild(totChip);
+  }
+  // Profile overlay legend entry
+  if (isDesigner && S.detailFilter.sub === 'both' && typeof BELLWEATHER_PHASE_PROFILES !== 'undefined') {
+    const profChip = document.createElement('span');
+    profChip.style.cssText='display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#8a8682;white-space:nowrap;margin-top:2px;';
+    profChip.innerHTML=`<svg width="22" height="10" style="flex-shrink:0;overflow:visible"><line x1="0" y1="5" x2="22" y2="5" stroke="#d8b64f" stroke-width="2" stroke-dasharray="5 3" opacity="0.85"/></svg>Load profile (predicted)`;
+    legEl.appendChild(profChip);
   }
 
   if (isDesigner) {
