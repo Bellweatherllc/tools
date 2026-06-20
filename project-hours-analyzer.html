@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v54</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v55</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -190,7 +190,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v54</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v55</span></h1>
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
           <span id="last-saved" style="font-size:11px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;"></span>
@@ -295,9 +295,9 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
         <button class="svt" id="btn-profile-toggle" style="margin-left:6px;border-style:dashed">Load Profile</button>
         <span id="profile-strength-wrap" style="display:inline-flex;align-items:center;gap:5px;margin-left:10px;font-size:11px;color:#8a8682;">
           <span style="white-space:nowrap">Strength</span>
-          <input type="range" id="profile-strength" min="2" max="7" step="0.25" value="3"
+          <input type="range" id="profile-strength" min="2" max="7" step="0.25" value="5"
             style="width:72px;cursor:pointer;accent-color:#d8b64f;vertical-align:middle;">
-          <span id="profile-strength-val" style="font-family:'DM Mono',monospace;font-size:10px;color:#4a4845;min-width:28px">3×</span>
+          <span id="profile-strength-val" style="font-family:'DM Mono',monospace;font-size:10px;color:#4a4845;min-width:28px">5×</span>
         </span>
       </div>
       <div class="chart-wrap" id="det-wrap"><svg id="det-svg" class="chart-svg"></svg></div>
@@ -491,8 +491,8 @@ const S = {
   tcManifest: {},
   detailFilter: {view:'design', sub:'both', prod:'both'},
   showLoadProfile: true,
-  profileStrength: 3,
-  knownJobs: new Set(),
+  profileStrength: 5,
+  knownFiles: new Set(),
   streamMode: 'stacked',
   lastJob: null,
 };
@@ -902,7 +902,7 @@ async function loadState() {
           if (Array.isArray(parsed.scanYears)) S.scanYears = parsed.scanYears;
           if (parsed.streamMode) S.streamMode = parsed.streamMode;
           if (parsed.lastJob) S.lastJob = parsed.lastJob;
-          if (Array.isArray(parsed.knownJobs)) S.knownJobs = new Set(parsed.knownJobs);
+          if (Array.isArray(parsed.knownFiles)) S.knownFiles = new Set(parsed.knownFiles);
         } else {
           S.merges   = parsed;
           S.excluded = new Set();
@@ -924,7 +924,7 @@ async function persistState() {
     excludedLC:[...S.excludedLC], excludedPM:[...S.excludedPM],
     generalJobsLC:[...S.generalJobsLC], generalJobsPM:[...S.generalJobsPM], phases,
     notes: S.notes, scanYears: S.scanYears, streamMode: S.streamMode,
-    lastJob: S.selJob?.job||null, knownJobs: [...S.knownJobs] });
+    lastJob: S.selJob?.job||null, knownFiles: [...S.knownFiles] });
   if (S.metaMergesItemId) {
     await gfetch('PATCH',`/sites/${S.siteId}/lists/${S.metaListId}/items/${S.metaMergesItemId}/fields`,{StateData:data});
   } else {
@@ -1029,35 +1029,41 @@ async function importFile(file) {
 // ── DATA COMPUTATION ──────────────────────────────────────────────────────────
 // ── NEW TIMECARD ALERT ────────────────────────────────────────────────────────
 function checkNewTimecards() {
-  // Collect design jobs (5234 + 5236A) with ≥ 20 hrs total
-  const current = new Set();
-  ['5234','5236A'].forEach(cc => {
-    Object.entries(S.projectsByCost[cc]||{}).forEach(([job,proj]) => {
-      if ((proj.total||0) >= 20) current.add(job);
+  const currentPaths = new Set(Object.keys(S.tcManifest));
+
+  // Files not seen in any previous session
+  const newPaths = [...currentPaths].filter(p => !S.knownFiles.has(p));
+
+  // Mark all current files as known so they won't re-alert next session
+  currentPaths.forEach(p => S.knownFiles.add(p));
+
+  if (newPaths.length === 0) return;
+
+  // Persist updated knownFiles
+  persistState().catch(() => {});
+
+  // Collect design job codes that appear in the new files
+  const designJobs = new Set();
+  newPaths.forEach(path => {
+    const cache = S.tcManifest[path];
+    if (!cache?.entries) return;
+    cache.entries.forEach(e => {
+      if (e.CostCode === '5234' || e.CostCode === '5236A') {
+        const canonical = S.merges[e.JobCode] || e.JobCode;
+        if (canonical) designJobs.add(canonical);
+      }
     });
   });
 
-  // New = not previously known AND no user-set phase markers yet
-  const newJobs = [...current]
-    .filter(j => !S.knownJobs.has(j) && !S.phasesSetByUser.has(j))
-    .sort();
-
-  // Mark all current jobs (and already-phased jobs) as known going forward
-  current.forEach(j => S.knownJobs.add(j));
-  S.phasesSetByUser.forEach(j => S.knownJobs.add(j));
-
-  if (newJobs.length === 0) return;
-
-  // Persist so same jobs don't re-alert next session
-  persistState().catch(() => {});
+  if (designJobs.size === 0) return;
 
   // Populate and show the alert
-  const alertEl  = document.getElementById('new-tc-alert');
-  const jobsEl   = document.getElementById('new-tc-jobs');
+  const alertEl = document.getElementById('new-tc-alert');
+  const jobsEl  = document.getElementById('new-tc-jobs');
   if (!alertEl || !jobsEl) return;
 
   jobsEl.innerHTML = '';
-  newJobs.forEach(job => {
+  [...designJobs].sort().forEach(job => {
     const btn = document.createElement('button');
     btn.style.cssText = "font:600 11px 'TT Norms Pro',sans-serif;padding:4px 10px;border-radius:4px;border:1px solid #d8b64f;background:#fef8e0;color:#7a5a00;cursor:pointer;white-space:nowrap;transition:background .12s;";
     btn.textContent = job;
