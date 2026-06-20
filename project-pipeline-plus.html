@@ -446,6 +446,10 @@ body.prod-design-hidden .section[data-s-type="production"] .phase-bar.is-design-
 body.prod-design-hidden .section[data-s-type="production"] .ms-da{display:none!important;}
 .bar-caret{width:32px;height:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;background:transparent;padding:0;pointer-events:auto;font-size:15px;line-height:1;font-weight:900;flex-shrink:0;}
 .bar-meta{font-size:13px;font-weight:700;letter-spacing:.01em;flex-shrink:0;pointer-events:none;white-space:nowrap;}
+/* ── Design phase hours input — replaces ▲/▼ caret controls ── */
+.phase-hrs-input{position:absolute;left:4px;top:50%;transform:translateY(-50%);width:66px;height:26px;background:rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.22);border-radius:4px;font-size:12px;font-weight:700;font-family:inherit;text-align:center;padding:0;cursor:text;outline:none;transition:border-color .12s,background .12s;-moz-appearance:textfield;}
+.phase-hrs-input::-webkit-inner-spin-button,.phase-hrs-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.phase-hrs-input:focus{background:rgba(0,0,0,.32);border-color:rgba(255,255,255,.55);}
 .bar-name-group{display:flex;align-items:baseline;gap:5px;flex:1;min-width:0;overflow:hidden;}
 .bar-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;pointer-events:none;}
 
@@ -4634,19 +4638,30 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
   const txtC=projSt?'rgba(40,40,40,1)':'rgba(255,255,255,1)';
   const metaC=projSt?'rgba(92,44,0,1)':'rgba(250,229,174,1)';
   if(includeControls){
-    const stack=el('div','bar-caret-stack');
-    stack.style.cssText='position:absolute;left:3px;top:50%;transform:translateY(-50%);';
     if(laneId==='design'){
-      // Design phases: adjust totalHours in 0.5h steps
-      const _thStr=h=>h%1===0?h+'h':(Math.round(h*10)/10)+'h';
-      const up=el('button','bar-caret'); up.textContent='▲'; up.dataset.totalPhaseId=ph.id; up.dataset.totalDelta='0.5'; up.style.color=metaC;
-      const dn=el('button','bar-caret'); dn.textContent='▼'; dn.dataset.totalPhaseId=ph.id; dn.dataset.totalDelta='-0.5'; dn.style.color=metaC;
-      stack.appendChild(up); stack.appendChild(dn); bar.appendChild(stack);
-      const hv=el('span','bar-meta'); hv.dataset.totalHrsId=ph.id; hv.textContent=_thStr(ph.totalHours||0);
-      hv.style.cssText=`position:absolute;left:38px;width:52px;top:50%;transform:translateY(-50%);font-size:13px;color:${metaC};white-space:nowrap;overflow:hidden;`;
-      bar.appendChild(hv);
+      // Design phases: editable total-hours input (type in hours directly, snaps to 0.5)
+      const inp=document.createElement('input');
+      inp.type='number'; inp.className='phase-hrs-input';
+      inp.dataset.totalHrsId=ph.id;
+      inp.value=ph.totalHours||0;
+      inp.min='0'; inp.step='0.5'; inp.placeholder='0';
+      inp.style.color=metaC;
+      // Snap to nearest 0.5 on commit, then save
+      const commit=()=>{
+        const raw=parseFloat(inp.value);
+        const snapped=Math.max(0,isNaN(raw)?0:Math.round(raw*2)/2);
+        inp.value=snapped;
+        setTotalHours(ph.id,snapped);
+      };
+      inp.addEventListener('blur',commit);
+      inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){inp.blur();}else if(e.key==='Escape'){inp.value=ph.totalHours||0;inp.blur();} });
+      inp.addEventListener('focus',()=>inp.select());
+      inp.addEventListener('pointerdown',e=>e.stopPropagation()); // prevent drag
+      bar.appendChild(inp);
     } else {
-      // Permitting (and any other non-design lane): adjust hours (avg weekly) as before
+      // Permitting (and other non-design lanes): keep ▲/▼ avg-weekly buttons
+      const stack=el('div','bar-caret-stack');
+      stack.style.cssText='position:absolute;left:3px;top:50%;transform:translateY(-50%);';
       const up=el('button','bar-caret'); up.textContent='▲'; up.dataset.phaseId=ph.id; up.dataset.delta=String(C.hrsStep); up.style.color=metaC;
       const dn=el('button','bar-caret'); dn.textContent='▼'; dn.dataset.phaseId=ph.id; dn.dataset.delta=String(-C.hrsStep); dn.style.color=metaC;
       stack.appendChild(up); stack.appendChild(dn); bar.appendChild(stack);
@@ -4655,7 +4670,7 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
       bar.appendChild(hv);
     }
   }
-  const leftOff=includeControls?93:22;
+  const leftOff=includeControls?(laneId==='design'?80:93):22;
   // Left: [wk count] [name] — week count comes first at left margin
   const ng=el('div','bar-name-group');
   ng.style.cssText=`position:absolute;left:${leftOff}px;top:50%;transform:translateY(-50%);display:flex;align-items:baseline;gap:6px;overflow:visible;pointer-events:none;`;
@@ -5662,7 +5677,6 @@ function refreshWkNums(projId){
   });
 }
 // ── Design phase profile mapping ──────────────────────────────────────────
-// Returns the blended profile function for a design phase.
 function getDesignProfileFn(ph) {
   if (ph.isDesignProd) return BP_BLENDED.III;
   const n = (ph.name || '').toLowerCase();
@@ -5690,6 +5704,23 @@ function designPhaseWeeklyHrs(ph) {
   return out;
 }
 
+// Set absolute total hours on a design phase (called from the typed input on blur/Enter).
+function setTotalHours(phId, newH) {
+  const r = findPhase(phId); if (!r) return;
+  const oldH = r.ph.totalHours || 0;
+  if (oldH === newH) return;
+  const snap = _histSnap();
+  r.ph.totalHours = newH;
+  const _hStr = h => h % 1 === 0 ? String(h) : String(Math.round(h * 10) / 10);
+  _histPush(`${_projShortName(r.proj)}: "${r.ph.name}" total hrs ${_hStr(oldH)} → ${_hStr(newH)}`, snap);
+  // Sync any other rendered instances of this input (multi-view) but skip the active one
+  document.querySelectorAll(`[data-total-hrs-id="${phId}"]`).forEach(v => {
+    if (v !== document.activeElement) v.value = newH;
+  });
+  renderTally('design');
+  markDirty(r.proj); triggerSave(r.proj);
+}
+
 function updateHours(phId,delta){
   const r=findPhase(phId); if(!r)return;
   const oldH=r.ph.hours;
@@ -5700,18 +5731,6 @@ function updateHours(phId,delta){
   _histPush(`${_projShortName(r.proj)}: "${r.ph.name}" ${_hStr(oldH)} → ${_hStr(newH)}`,snap);
   document.querySelectorAll(`[data-hrs-id="${phId}"]`).forEach(v=>v.textContent=_hStr(newH));
   renderTally(tallySection(laneOf(phId)));
-  markDirty(r.proj); triggerSave(r.proj);
-}
-function updateTotalHours(phId, delta){
-  const r=findPhase(phId); if(!r) return;
-  const oldH=r.ph.totalHours||0;
-  const newH=Math.max(0, Math.round((oldH+delta)*10)/10);
-  const snap=_histSnap();
-  r.ph.totalHours=newH;
-  const _hStr=h=>h%1===0?h+'h':(Math.round(h*10)/10)+'h';
-  _histPush(`${_projShortName(r.proj)}: "${r.ph.name}" total ${_hStr(oldH)} → ${_hStr(newH)}`,snap);
-  document.querySelectorAll(`[data-total-hrs-id="${phId}"]`).forEach(v=>v.textContent=_hStr(newH));
-  renderTally('design');
   markDirty(r.proj); triggerSave(r.proj);
 }
 function updateTarget(personId,delta){
@@ -5891,7 +5910,7 @@ function initDrag(){
   if(DRAG_INIT)return; DRAG_INIT=true;
   const iw=document.getElementById('iw');
   iw.addEventListener('pointerdown',e=>{
-    if(e.target.closest('[data-open-status-menu],[data-delta],[data-total-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-remove-timeoff],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta],[data-toggle-curves]'))return;
+    if(e.target.closest('[data-open-status-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-remove-timeoff],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta],[data-toggle-curves]')||e.target.classList.contains('phase-hrs-input'))return;
 
     const toEl=e.target.closest('.timeoff-block[data-editable]');
     if(toEl){
@@ -6112,7 +6131,6 @@ function initDrag(){
   iw.addEventListener('click',e=>{
     const ob=e.target.closest('[data-open-status-menu]'); if(ob){openStatusMenu(ob.closest('.status-badge'));return;}
     const hb=e.target.closest('[data-delta]'); if(hb){ if(!canEdit()) return; updateHours(hb.dataset.phaseId,parseFloat(hb.dataset.delta));return;}
-    const thb=e.target.closest('[data-total-delta]'); if(thb){ if(!canEdit()) return; updateTotalHours(thb.dataset.totalPhaseId,parseFloat(thb.dataset.totalDelta));return;}
     const lcTBtn=e.target.closest('[data-lc-target-person]');
     if(lcTBtn){
       const _lcId=lcTBtn.dataset.lcTargetPerson, _d=parseFloat(lcTBtn.dataset.lcTargetDelta);
