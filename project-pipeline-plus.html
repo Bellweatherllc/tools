@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v705</title>
+<title>BW Project Pipeline — v706</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2492,7 +2492,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v705</div>
+    <div class="auth-version" id="authVersionBadge">v706</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2511,7 +2511,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v705</div>
+  <div class="proto-badge" id="versionBadge">v706</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2633,6 +2633,57 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <script>
 'use strict';
+
+// ════════════════════════════════════════════════  PHASE LOAD PROFILES
+// Inlined — calibrated June 2026 from 3-yr designer+developer timecard aggregate.
+// Fit quality: Phase I R²=0.937 · Phase II R²=0.918 · Phase III R²=0.970
+// To adjust curves: edit the constants below. Do NOT load from an external script.
+const BELLWEATHER_PHASE_PROFILES = (() => {
+  // Phase I — Initial Design (~6 wks). Gaussian bell on floor. Peaks ~t=0.64.
+  function phaseI(t) {
+    return 624.509 + 300.681 * Math.exp(-Math.pow((t - 0.6436) / 0.3461, 2));
+  }
+  // Phase II — Design Development (16–20 wks). Bimodal: early kickoff spike + sustained main effort.
+  function phaseII(t) {
+    return Math.min(1400, 461.162
+      + 152.986 * Math.exp(-Math.pow((t - 0.1747) / 0.2000, 2))
+      + 900.000 * Math.exp(-Math.pow((t - 0.6157) / 0.4963, 2)));
+  }
+  // Phase III — Construction Design (24–30 wks). Gamma-shaped early burst + sustained low floor.
+  function phaseIII(t) {
+    const ts = Math.max(t, 1e-5);
+    const shape = Math.pow(ts / 0.1604, 0.3000) * Math.exp(-ts / 0.1604);
+    const norm  = Math.pow(0.3000, 0.3000) * Math.exp(-0.3000);
+    return Math.max(0, 543.288 * (shape / norm) + 142.126);
+  }
+  // Distribute totalHours across numWeeks using a profile shape. Returns array summing to totalHours.
+  function distributeHours(totalHours, numWeeks, profileFn) {
+    if (numWeeks < 1 || totalHours <= 0) return Array(Math.max(0, numWeeks)).fill(0);
+    const weights = Array.from({length: numWeeks}, (_, i) =>
+      Math.max(0, profileFn((i + 0.5) / numWeeks)));
+    const sum = weights.reduce((a, b) => a + b, 0);
+    if (sum === 0) return Array(numWeeks).fill(0);
+    const dist = weights.map(w => Math.round(w / sum * totalHours));
+    dist[dist.length - 1] += totalHours - dist.reduce((a, b) => a + b, 0);
+    return dist;
+  }
+  return {phaseI, phaseII, phaseIII, distributeHours};
+})();
+
+// Blended profiles at strength k=5 (matches Hours Analyzer default).
+// Normalises each profile around its own mean so k controls contrast independent of absolute scale.
+// k=1 = calibrated shape, k=5 = peaks amplified 5x relative to mean.
+const BP_BLENDED = (() => {
+  const k = 5;
+  const BP = BELLWEATHER_PHASE_PROFILES;
+  function blend(fn) {
+    const N = 40; let s = 0;
+    for (let i = 0; i < N; i++) s += Math.max(0, fn((i + 0.5) / N));
+    const mean = s / N || 1;
+    return t => Math.max(0, (1 - k) + k * (Math.max(0, fn(t)) / mean));
+  }
+  return {I: blend(BP.phaseI), II: blend(BP.phaseII), III: blend(BP.phaseIII)};
+})();
 
 // ════════════════════════════════════════════════  CONFIG
 const C = {
@@ -3010,6 +3061,7 @@ function updateSortBtns(){
 const CAP_SORT={design:{field:null,dir:1},production:{field:null,dir:1}};
 let PROD_SHOW_PMS=true;
 let DESIGN_SHOW_DESIGNERS=true;
+let DESIGN_CURVES_ENABLED=false; // when true, distributes phase totalHours via load-profile curves
 let PROD_HIDE_DESIGN=true; // Design rows hidden by default in Production
 let PROD_ZOOM=0.63; // default: full view (~6 months visible) // 0.85=wide, 0.55=mid, 0.25=narrow — production timeline zoom
 function applyProdZoom(){
@@ -3079,6 +3131,11 @@ function buildCapCmdBar(section){
     const desBtn=el('button','sort-btn'+(DESIGN_SHOW_DESIGNERS?' active':''));
     desBtn.dataset.toggleDesignerView='1';
     desBtn.textContent=DESIGN_SHOW_DESIGNERS?'Hide Designers':'Show Designers'; left.appendChild(desBtn);
+    left.appendChild(el('div','sort-divider'));
+    const curvesBtn=el('button','sort-btn'+(DESIGN_CURVES_ENABLED?' active':''));
+    curvesBtn.dataset.toggleCurves='1';
+    curvesBtn.textContent=DESIGN_CURVES_ENABLED?'Curves \u2713':'Curves';
+    left.appendChild(curvesBtn);
     left.appendChild(el('div','sort-divider'));
   }
   const dot=el('div','slb-dot'); left.appendChild(dot);
@@ -4579,12 +4636,24 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
   if(includeControls){
     const stack=el('div','bar-caret-stack');
     stack.style.cssText='position:absolute;left:3px;top:50%;transform:translateY(-50%);';
-    const up=el('button','bar-caret'); up.textContent='▲'; up.dataset.phaseId=ph.id; up.dataset.delta=String(C.hrsStep); up.style.color=metaC;
-    const dn=el('button','bar-caret'); dn.textContent='▼'; dn.dataset.phaseId=ph.id; dn.dataset.delta=String(-C.hrsStep); dn.style.color=metaC;
-    stack.appendChild(up); stack.appendChild(dn); bar.appendChild(stack);
-    const hv=el('span','bar-meta'); hv.dataset.hrsId=ph.id; hv.textContent=ph.hours+'h/w';
-    hv.style.cssText=`position:absolute;left:38px;width:52px;top:50%;transform:translateY(-50%);font-size:13px;color:${metaC};white-space:nowrap;overflow:hidden;`;
-    bar.appendChild(hv);
+    if(laneId==='design'){
+      // Design phases: adjust totalHours in 0.5h steps
+      const _thStr=h=>h%1===0?h+'h':(Math.round(h*10)/10)+'h';
+      const up=el('button','bar-caret'); up.textContent='▲'; up.dataset.totalPhaseId=ph.id; up.dataset.totalDelta='0.5'; up.style.color=metaC;
+      const dn=el('button','bar-caret'); dn.textContent='▼'; dn.dataset.totalPhaseId=ph.id; dn.dataset.totalDelta='-0.5'; dn.style.color=metaC;
+      stack.appendChild(up); stack.appendChild(dn); bar.appendChild(stack);
+      const hv=el('span','bar-meta'); hv.dataset.totalHrsId=ph.id; hv.textContent=_thStr(ph.totalHours||0);
+      hv.style.cssText=`position:absolute;left:38px;width:52px;top:50%;transform:translateY(-50%);font-size:13px;color:${metaC};white-space:nowrap;overflow:hidden;`;
+      bar.appendChild(hv);
+    } else {
+      // Permitting (and any other non-design lane): adjust hours (avg weekly) as before
+      const up=el('button','bar-caret'); up.textContent='▲'; up.dataset.phaseId=ph.id; up.dataset.delta=String(C.hrsStep); up.style.color=metaC;
+      const dn=el('button','bar-caret'); dn.textContent='▼'; dn.dataset.phaseId=ph.id; dn.dataset.delta=String(-C.hrsStep); dn.style.color=metaC;
+      stack.appendChild(up); stack.appendChild(dn); bar.appendChild(stack);
+      const hv=el('span','bar-meta'); hv.dataset.hrsId=ph.id; hv.textContent=ph.hours+'h/w';
+      hv.style.cssText=`position:absolute;left:38px;width:52px;top:50%;transform:translateY(-50%);font-size:13px;color:${metaC};white-space:nowrap;overflow:hidden;`;
+      bar.appendChild(hv);
+    }
   }
   const leftOff=includeControls?93:22;
   // Left: [wk count] [name] — week count comes first at left margin
@@ -5592,6 +5661,35 @@ function refreshWkNums(projId){
     });
   });
 }
+// ── Design phase profile mapping ──────────────────────────────────────────
+// Returns the blended profile function for a design phase.
+function getDesignProfileFn(ph) {
+  if (ph.isDesignProd) return BP_BLENDED.III;
+  const n = (ph.name || '').toLowerCase();
+  if (n.includes('ii') || n.includes('2') || n.includes('plan')) return BP_BLENDED.II;
+  return BP_BLENDED.I;
+}
+
+// Returns a C.numWeeks-length array of per-week hour contributions for a design phase.
+// Uses curve distribution when DESIGN_CURVES_ENABLED, flat otherwise.
+function designPhaseWeeklyHrs(ph) {
+  const out = new Array(C.numWeeks).fill(0);
+  const total = ph.totalHours || 0;
+  if (!ph.durWeeks || ph.durWeeks < 1 || total <= 0) return out;
+  let weekly;
+  if (DESIGN_CURVES_ENABLED) {
+    weekly = BELLWEATHER_PHASE_PROFILES.distributeHours(total, ph.durWeeks, getDesignProfileFn(ph));
+  } else {
+    const flat = total / ph.durWeeks;
+    weekly = new Array(ph.durWeeks).fill(flat);
+  }
+  for (let i = 0; i < ph.durWeeks; i++) {
+    const w = ph.startWeek + i;
+    if (w >= 0 && w < C.numWeeks) out[w] += weekly[i] || 0;
+  }
+  return out;
+}
+
 function updateHours(phId,delta){
   const r=findPhase(phId); if(!r)return;
   const oldH=r.ph.hours;
@@ -5602,6 +5700,18 @@ function updateHours(phId,delta){
   _histPush(`${_projShortName(r.proj)}: "${r.ph.name}" ${_hStr(oldH)} → ${_hStr(newH)}`,snap);
   document.querySelectorAll(`[data-hrs-id="${phId}"]`).forEach(v=>v.textContent=_hStr(newH));
   renderTally(tallySection(laneOf(phId)));
+  markDirty(r.proj); triggerSave(r.proj);
+}
+function updateTotalHours(phId, delta){
+  const r=findPhase(phId); if(!r) return;
+  const oldH=r.ph.totalHours||0;
+  const newH=Math.max(0, Math.round((oldH+delta)*10)/10);
+  const snap=_histSnap();
+  r.ph.totalHours=newH;
+  const _hStr=h=>h%1===0?h+'h':(Math.round(h*10)/10)+'h';
+  _histPush(`${_projShortName(r.proj)}: "${r.ph.name}" total ${_hStr(oldH)} → ${_hStr(newH)}`,snap);
+  document.querySelectorAll(`[data-total-hrs-id="${phId}"]`).forEach(v=>v.textContent=_hStr(newH));
+  renderTally('design');
   markDirty(r.proj); triggerSave(r.proj);
 }
 function updateTarget(personId,delta){
@@ -5622,7 +5732,7 @@ function calcTally(section,personId){
     if(!isVisible(proj)) return; // skip lost/lead — not shown in gantt, can't be zeroed
     const active=proj.status!=='paused';
     if(section==='design'){
-      proj.designLane.phases.forEach(ph=>{ if(active&&ph.hours>0&&ph.durWeeks>0){ for(let w=ph.startWeek;w<ph.startWeek+ph.durWeeks&&w<C.numWeeks;w++)tally[w]+=ph.hours; } });
+      proj.designLane.phases.forEach(ph=>{ if(active){ const wkly=designPhaseWeeklyHrs(ph); for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w]; } });
     } else {
       proj.productionLane.phases.forEach(ph=>{ if(active&&ph.hours>0&&ph.durWeeks>0){ for(let w=ph.startWeek;w<ph.startWeek+ph.durWeeks&&w<C.numWeeks;w++)tally[w]+=ph.hours; } });
     }
@@ -5781,7 +5891,7 @@ function initDrag(){
   if(DRAG_INIT)return; DRAG_INIT=true;
   const iw=document.getElementById('iw');
   iw.addEventListener('pointerdown',e=>{
-    if(e.target.closest('[data-open-status-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-remove-timeoff],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta]'))return;
+    if(e.target.closest('[data-open-status-menu],[data-delta],[data-total-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-remove-timeoff],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta],[data-toggle-curves]'))return;
 
     const toEl=e.target.closest('.timeoff-block[data-editable]');
     if(toEl){
@@ -6002,6 +6112,7 @@ function initDrag(){
   iw.addEventListener('click',e=>{
     const ob=e.target.closest('[data-open-status-menu]'); if(ob){openStatusMenu(ob.closest('.status-badge'));return;}
     const hb=e.target.closest('[data-delta]'); if(hb){ if(!canEdit()) return; updateHours(hb.dataset.phaseId,parseFloat(hb.dataset.delta));return;}
+    const thb=e.target.closest('[data-total-delta]'); if(thb){ if(!canEdit()) return; updateTotalHours(thb.dataset.totalPhaseId,parseFloat(thb.dataset.totalDelta));return;}
     const lcTBtn=e.target.closest('[data-lc-target-person]');
     if(lcTBtn){
       const _lcId=lcTBtn.dataset.lcTargetPerson, _d=parseFloat(lcTBtn.dataset.lcTargetDelta);
@@ -6039,6 +6150,7 @@ function initDrag(){
     // PM toggle in production
     const pmToggle=e.target.closest('[data-toggle-prod-pms]'); if(pmToggle){PROD_SHOW_PMS=!PROD_SHOW_PMS;rebuildSection('production');return;}
     const desToggle=e.target.closest('[data-toggle-designer-view]'); if(desToggle){DESIGN_SHOW_DESIGNERS=!DESIGN_SHOW_DESIGNERS;rebuildSection('design');return;}
+    const curvesToggle=e.target.closest('[data-toggle-curves]'); if(curvesToggle){ DESIGN_CURVES_ENABLED=!DESIGN_CURVES_ENABLED; document.querySelectorAll('[data-toggle-curves]').forEach(b=>{b.classList.toggle('active',DESIGN_CURVES_ENABLED);b.textContent=DESIGN_CURVES_ENABLED?'Curves \u2713':'Curves';}); renderTally('design'); return; }
     const hideDesToggle=e.target.closest('[data-toggle-prod-hide-design]');
     if(hideDesToggle){ PROD_HIDE_DESIGN=!PROD_HIDE_DESIGN; rebuildSection('production'); return; }
     // Production panel toggle
@@ -7083,6 +7195,7 @@ function globalStatePayload(){
     LC_PROJ_COLLAPSED:[...LC_PROJ_COLLAPSED],
     PROD_UNASSIGNED_COLLAPSED, DESIGN_UNASSIGNED_COLLAPSED,
     DESIGN_COLLAPSED:[...DESIGN_COLLAPSED],
+    DESIGN_CURVES_ENABLED,
     CAL_VIEW:{
       production:{from:CAL_VIEW.production.from.toISOString(),to:CAL_VIEW.production.to.toISOString()},
       design:{from:CAL_VIEW.design.from.toISOString(),to:CAL_VIEW.design.to.toISOString()},
@@ -7379,7 +7492,7 @@ function buildPlanningSection(){
       if(personId!==null && proj.designer!==personId) return;
       const active=proj.status!=='paused'&&proj.status!=='cancelled'&&proj.status!=='archived';
       if(!active) return;
-      proj.designLane.phases.forEach(ph=>{ if(ph.hours>0&&ph.durWeeks>0) for(let w=ph.startWeek;w<ph.startWeek+ph.durWeeks&&w<C.numWeeks;w++) tally[w]+=ph.hours; });
+      proj.designLane.phases.forEach(ph=>{ const wkly=designPhaseWeeklyHrs(ph); for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w]; });
     });
     return tally;
   }
@@ -8278,6 +8391,7 @@ function restoreSavedState(saved){
   if(typeof saved.PROD_UNASSIGNED_COLLAPSED==='boolean') PROD_UNASSIGNED_COLLAPSED=saved.PROD_UNASSIGNED_COLLAPSED;
   if(typeof saved.DESIGN_UNASSIGNED_COLLAPSED==='boolean') DESIGN_UNASSIGNED_COLLAPSED=saved.DESIGN_UNASSIGNED_COLLAPSED;
   if(saved.DESIGN_COLLAPSED&&Array.isArray(saved.DESIGN_COLLAPSED)) DESIGN_COLLAPSED=new Set(saved.DESIGN_COLLAPSED);
+  if(typeof saved.DESIGN_CURVES_ENABLED==='boolean') DESIGN_CURVES_ENABLED=saved.DESIGN_CURVES_ENABLED;
   if(typeof saved.SLOT_DEFAULT_BUDGET==='number') SLOT_DEFAULT_BUDGET=saved.SLOT_DEFAULT_BUDGET;
   if(Array.isArray(saved.SLOT_COL_ORDER)) SLOT_COL_ORDER=saved.SLOT_COL_ORDER;
   if(typeof saved.PROD_PANEL_OPEN==='boolean') PROD_PANEL_OPEN=saved.PROD_PANEL_OPEN;
@@ -9943,9 +10057,8 @@ document.addEventListener('click',e=>{
       const active=proj.status!=='paused'&&proj.status!=='cancelled'&&proj.status!=='archived';
       if(!active) return;
       proj.designLane.phases.forEach(ph=>{
-        if(ph.hours>0&&ph.durWeeks>0){
-          for(let w=ph.startWeek;w<ph.startWeek+ph.durWeeks&&w<C.numWeeks;w++) tally[w]+=ph.hours;
-        }
+        const wkly=designPhaseWeeklyHrs(ph);
+        for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w];
       });
       const pm=proj.permitting;
       if(pm.hours>0&&pm.durWeeks>0){
