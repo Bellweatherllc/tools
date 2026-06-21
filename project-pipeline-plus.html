@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v710</title>
+<title>BW Project Pipeline — v711</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2500,7 +2500,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v710</div>
+    <div class="auth-version" id="authVersionBadge">v711</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2519,7 +2519,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v710</div>
+  <div class="proto-badge" id="versionBadge">v711</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4661,16 +4661,21 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     // Phase name: absolute at left:50% — auto-follows resize
     // Right wk count: always present
 
-    // Stack: input centered above, combined hrs·avg label below
+    // Stack: "~ 24 h" row on top, "4h/w" centered below
     const hrsStack=el('div','');
-    hrsStack.style.cssText='position:absolute;left:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:1px;pointer-events:none;';
+    hrsStack.style.cssText='position:absolute;left:11px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:1px;pointer-events:none;';
 
+    // Row 1: ~ [input] h — all on one line, centered as a unit
+    const hrsRow=el('div','');
+    hrsRow.style.cssText='display:flex;align-items:center;gap:2px;';
+    const tilde=el('span',''); tilde.textContent='~';
+    tilde.style.cssText=`font-size:11px;font-weight:700;color:${metaC};pointer-events:none;`;
     const inp=document.createElement('input');
     inp.type='number'; inp.className='phase-hrs-input';
     inp.dataset.totalHrsId=ph.id;
     inp.value=ph.totalHours||0;
     inp.min='0'; inp.step='0.5'; inp.placeholder='0';
-    inp.style.cssText=`color:${metaC};text-align:center;width:36px;height:16px;font-size:13px;`;
+    inp.style.cssText=`color:${metaC};text-align:center;width:28px;height:16px;font-size:12px;`;
     const commit=()=>{
       if(!canEdit()){inp.value=ph.totalHours||0;return;}
       const raw=parseFloat(inp.value);
@@ -4682,8 +4687,12 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     inp.addEventListener('keydown',e=>{if(e.key==='Enter'){inp.blur();}else if(e.key==='Escape'){inp.value=ph.totalHours||0;inp.blur();}});
     inp.addEventListener('focus',()=>inp.select());
     inp.addEventListener('pointerdown',e=>e.stopPropagation());
-    hrsStack.appendChild(inp);
+    const hUnit=el('span',''); hUnit.textContent='h';
+    hUnit.style.cssText=`font-size:11px;font-weight:700;color:${metaC};pointer-events:none;`;
+    hrsRow.appendChild(tilde); hrsRow.appendChild(inp); hrsRow.appendChild(hUnit);
+    hrsStack.appendChild(hrsRow);
 
+    // Row 2: avg h/w — centered below
     const avgSp=el('span','');
     avgSp.dataset.avghwId=ph.id;
     avgSp.textContent=_fmtAvgHW(ph);
@@ -5711,11 +5720,9 @@ function refreshWkNums(projId){
 }
 // ── Design phase avg h/w display helpers ─────────────────────────────────
 function _fmtAvgHW(ph){
-  if(!ph.durWeeks||ph.durWeeks<1) return 'hrs';
-  const total=ph.totalHours||0;
-  if(total<=0) return 'hrs';
-  const avg=Math.round((total/ph.durWeeks)*10)/10;
-  return 'hrs \u00b7 '+(avg%1===0?avg:avg)+'h/w';
+  if(!ph.durWeeks||ph.durWeeks<1||(ph.totalHours||0)<=0) return '';
+  const avg=Math.round((ph.totalHours/ph.durWeeks)*10)/10;
+  return (avg%1===0?avg:avg)+'h/w';
 }
 function _refreshAvgHW(phId, ph){
   document.querySelectorAll(`[data-avghw-id="${phId}"]`).forEach(v=>v.textContent=_fmtAvgHW(ph));
@@ -9123,12 +9130,24 @@ function openDesignerWeekPopup(designerId,week,clientX,clientY){
         else if(wk>=t2.week) tierLabel='T2';
         else if(wk>=t1.week) tierLabel='T1';
         const weekHours=designPhaseWeeklyHrs(ph)[wk]||0;
+        // Collect milestone events occurring in this specific week
+        const events=[];
+        const daMs=proj.milestones.find(m=>m.name==='DA');
+        if(daMs&&daMs.week===wk) events.push('DA');
+        const caMs=proj.milestones.find(m=>m.name==='CA');
+        if(caMs&&caMs.week===wk) events.push('CA');
+        if(t1.week===wk) events.push('T1');
+        if(t2.week===wk) events.push('T2');
+        if(t3.week===wk) events.push('T3');
+        if(proj.pencilsDown?.week===wk) events.push('PD');
+        // End of Phase I = Initial Design Presentation
+        const isPhI_=!ph.isDesignProd&&!((ph.name||'').toLowerCase().match(/ii|2|plan/));
+        if(isPhI_&&wk===ph.startWeek+ph.durWeeks-1) events.push('IDP');
         rows.push({
           name:proj.name, hours:weekHours, phase:ph.name,
-          da:proj.milestones.find(m=>m.name==='DA'),
-          ca:proj.milestones.find(m=>m.name==='CA'),
-          tierLabel,
-          pdWeek:proj.pencilsDown?.week??null
+          da:daMs, ca:caMs, tierLabel,
+          pdWeek:proj.pencilsDown?.week??null,
+          events
         });
       });
     });
@@ -9193,6 +9212,21 @@ function openDesignerWeekPopup(designerId,week,clientX,clientY){
         const h=document.createElement('span'); h.className='lc-wp-hours'; h.textContent=row.hours.toFixed(1)+'h';
         item.appendChild(nm); item.appendChild(ph); item.appendChild(h);
         col.appendChild(item);
+        // Milestone events for this project in this week
+        if(row.events&&row.events.length>0){
+          const bdgRow=document.createElement('div');
+          bdgRow.style.cssText='display:flex;flex-wrap:wrap;gap:3px;padding:1px 0 5px 0;';
+          row.events.forEach(ev=>{
+            let b;
+            if(ev==='T1'||ev==='T2'||ev==='T3') b=mkTierBadge(ev);
+            else if(ev==='PD') b=mkPdBadge();
+            else if(ev==='DA') b=mkPill('DA','rgba(155,97,39,.90)');
+            else if(ev==='CA') b=mkPill('CA','rgba(0,82,27,.90)');
+            else if(ev==='IDP') b=mkPill('Initial Design Presentation','rgba(216,182,79,.90)','rgba(30,20,5,.90)');
+            if(b) bdgRow.appendChild(b);
+          });
+          col.appendChild(bdgRow);
+        }
       });
       const sep=document.createElement('div'); sep.className='lc-wp-sep'; col.appendChild(sep);
       const tot=document.createElement('div'); tot.className='lc-wp-total-row';
