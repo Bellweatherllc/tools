@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v712</title>
+<title>BW Project Pipeline — v713</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2500,7 +2500,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v712</div>
+    <div class="auth-version" id="authVersionBadge">v713</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2519,7 +2519,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v712</div>
+  <div class="proto-badge" id="versionBadge">v713</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -2672,7 +2672,15 @@ const BELLWEATHER_PHASE_PROFILES = (() => {
     const sum = weights.reduce((a, b) => a + b, 0);
     if (sum === 0) return Array(numWeeks).fill(0);
     const dist = weights.map(w => Math.round(w / sum * totalHours));
-    dist[dist.length - 1] += totalHours - dist.reduce((a, b) => a + b, 0);
+    // Put rounding correction on the highest-weight week (never the tail, which can go negative)
+    const actual = dist.reduce((a, b) => a + b, 0);
+    if (actual !== totalHours) {
+      let peakIdx = 0;
+      for (let i = 1; i < weights.length; i++) if (weights[i] > weights[peakIdx]) peakIdx = i;
+      dist[peakIdx] += totalHours - actual;
+    }
+    // Safety clamp — rounding on the peak is safe but guard everything
+    for (let i = 0; i < dist.length; i++) dist[i] = Math.max(0, dist[i]);
     return dist;
   }
   return {phaseI, phaseII, phaseIII, distributeHours};
@@ -4663,9 +4671,9 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
 
     // Stack: "est 24h" row on top, "4h/w" centered below
     const hrsStack=el('div','');
-    hrsStack.style.cssText='position:absolute;left:11px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;pointer-events:none;';
+    hrsStack.style.cssText='position:absolute;left:14px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;pointer-events:none;';
 
-    // Row 1: est [input] h — tight unit, all on one line
+    // Row 1: est [input] h — input width tracks digit count so number and "h" are flush
     const hrsRow=el('div','');
     hrsRow.style.cssText='display:flex;align-items:center;gap:0;';
     const tilde=el('span',''); tilde.textContent='est';
@@ -4675,16 +4683,19 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     inp.dataset.totalHrsId=ph.id;
     inp.value=ph.totalHours||0;
     inp.min='0'; inp.step='0.5'; inp.placeholder='0';
-    inp.style.cssText=`color:${metaC};text-align:center;width:28px;height:16px;font-size:11px;`;
+    // Width tracks the number of characters so "h" sits flush against the last digit
+    const _inpW=v=>Math.max(14,String(v||0).length*7)+'px';
+    inp.style.cssText=`color:${metaC};text-align:left;width:${_inpW(ph.totalHours||0)};height:16px;font-size:11px;`;
     const commit=()=>{
-      if(!canEdit()){inp.value=ph.totalHours||0;return;}
+      if(!canEdit()){inp.value=ph.totalHours||0;inp.style.width=_inpW(ph.totalHours||0);return;}
       const raw=parseFloat(inp.value);
       const snapped=Math.max(0,isNaN(raw)?0:Math.round(raw*2)/2);
-      inp.value=snapped;
+      inp.value=snapped; inp.style.width=_inpW(snapped);
       setTotalHours(ph.id,snapped);
     };
+    inp.addEventListener('input',()=>{ inp.style.width=_inpW(inp.value); });
     inp.addEventListener('blur',commit);
-    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){inp.blur();}else if(e.key==='Escape'){inp.value=ph.totalHours||0;inp.blur();}});
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){inp.blur();}else if(e.key==='Escape'){inp.value=ph.totalHours||0;inp.style.width=_inpW(ph.totalHours||0);inp.blur();}});
     inp.addEventListener('focus',()=>inp.select());
     inp.addEventListener('pointerdown',e=>e.stopPropagation());
     const hUnit=el('span',''); hUnit.textContent='h';
@@ -4696,7 +4707,7 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     const avgSp=el('span','');
     avgSp.dataset.avghwId=ph.id;
     avgSp.textContent=_fmtAvgHW(ph);
-    avgSp.style.cssText=`font-size:11px;font-weight:600;color:${metaC};opacity:.85;white-space:nowrap;pointer-events:none;margin-top:-1px;`;
+    avgSp.style.cssText=`font-size:10px;font-weight:600;color:${metaC};opacity:.85;white-space:nowrap;pointer-events:none;margin-top:-1px;`;
     hrsStack.appendChild(avgSp);
     bar.appendChild(hrsStack);
 
