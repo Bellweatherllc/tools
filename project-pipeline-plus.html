@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v732</title>
+<title>BW Project Pipeline — v734</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2587,7 +2587,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v732</div>
+    <div class="auth-version" id="authVersionBadge">v734</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2606,7 +2606,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v732</div>
+  <div class="proto-badge" id="versionBadge">v734</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -9730,7 +9730,7 @@ function openNotePopover(projId, anchorEl){
   NOTE_POP.style.left=left+'px';
   setTimeout(()=>NOTE_TA.focus(),30);
 }
-function closeNotePopover(){ NOTE_POP.classList.remove('open'); noteProjId=null; }
+function closeNotePopover(){ NOTE_POP.classList.remove('open'); noteProjId=null; notePlanningId=null; }
 function saveNote(){
   const proj=PROJECTS.find(p=>p.id===noteProjId); if(!proj)return;
   // Collect existing entries from textareas (respects staged deletes + inline edits)
@@ -9792,35 +9792,92 @@ NOTE_POP.addEventListener('click',e=>{
   }
 });
 
-// ── Planning project notes (reuses same popover, different source) ──
+// ── Planning project notes (reuses same popover and entry system as Design/Production) ──
 let notePlanningId=null;
 function openPlanningNotePopover(ppId, anchorEl){
   const pp=PLANNING_PROJECTS.find(p=>p.id===ppId); if(!pp)return;
   notePlanningId=ppId; noteProjId=null;
+  if(anchorEl) _noteAnchorEl=anchorEl;
   NOTE_TITLE.textContent=pp.name;
-  NOTE_TA.value=pp.notes||'';
-  // Hide history elements — planning notes are simple single-field
-  const _h=document.getElementById('notePopHistory'); if(_h){_h.style.display='none';_h.innerHTML='';}
-  const _l=document.getElementById('noteNewLabel'); if(_l) _l.style.display='none';
-  const _a=document.getElementById('notePopAttr'); if(_a) _a.style.display='none';
+  // Build per-entry history — identical rendering path to openNotePopover
+  const existing=(pp.notes||'').trim();
+  const histEl=document.getElementById('notePopHistory');
+  const lblEl=document.getElementById('noteNewLabel');
+  if(histEl){
+    if(existing){
+      const entries=existing.split('\n\n').filter(e=>e.trim());
+      const isAdmin=document.body.classList.contains('admin-mode');
+      const TRASH=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1M7 7v5M9 7v5M4 4l1 8a1 1 0 001 1h4a1 1 0 001-1l1-8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      histEl.innerHTML=entries.map((entry,idx)=>{
+        const am=entry.match(/\n— (.+)$/);
+        const text=entry.replace(/\n— .+$/,'').trim();
+        const attr=am?am[1]:'';
+        const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        const attrHtml=attr?`<span class="note-attr">— ${esc(attr)}</span>`:'';
+        if(isAdmin){
+          return `<div class="note-entry"><div class="note-entry-actions"><button class="note-entry-btn note-entry-del" data-ne-del="${idx}" title="Delete entry">${TRASH}</button></div><div class="note-entry-body"><textarea class="ne-text-ta">${esc(text)}</textarea>${attrHtml}</div></div>`;
+        } else {
+          const textHtml=esc(text).replace(/\n/g,'<br>');
+          const escAttr=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/\n/g,'&#10;');
+          return `<div class="note-entry" data-raw="${escAttr(entry)}"><div class="note-entry-body">${textHtml}${attrHtml?'<br>'+attrHtml:''}</div></div>`;
+        }
+      }).join('');
+      histEl.style.display='block';
+      if(lblEl) lblEl.style.display='block';
+    } else {
+      histEl.innerHTML=''; histEl.style.display='none';
+      if(lblEl) lblEl.style.display='none';
+    }
+  }
+  NOTE_TA.value='';
+  const _attrEl=document.getElementById('notePopAttr');
+  if(_attrEl){
+    const _author=_histUser();
+    const _ds=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    _attrEl.textContent='— '+_author+', '+_ds;
+    _attrEl.style.display='block';
+  }
   NOTE_POP.classList.add('open');
-  const r=anchorEl.getBoundingClientRect();
+  const r=(_noteAnchorEl||anchorEl).getBoundingClientRect();
   let top=r.bottom+4, left=r.left-180;
   if(left<8) left=8;
-  if(top+200>window.innerHeight) top=r.top-200-4;
+  if(top+300>window.innerHeight) top=r.top-300-4;
   NOTE_POP.style.top=top+'px'; NOTE_POP.style.left=left+'px';
   setTimeout(()=>NOTE_TA.focus(),30);
 }
 function savePlanningNote(){
-  if(!notePlanningId) return;
   const pp=PLANNING_PROJECTS.find(p=>p.id===notePlanningId); if(!pp)return;
-  pp.notes=NOTE_TA.value.trim()||'';
-  notePlanningId=null;
-  NOTE_POP.classList.remove('open');
-  triggerSave();
-  rebuildSection('planning');
+  // Collect existing entries — same logic as saveNote (handles admin textareas and non-admin data-raw)
+  const histEl=document.getElementById('notePopHistory');
+  const revisedEntries=[];
+  if(histEl){ histEl.querySelectorAll('.note-entry').forEach(el=>{
+    const ta=el.querySelector('.ne-text-ta');
+    const attrEl=el.querySelector('.note-attr');
+    if(ta){
+      const t=ta.value.trim();
+      if(t){ const attr=attrEl?attrEl.textContent.replace(/^— /,'').trim():''; revisedEntries.push(t+(attr?'\n— '+attr:'')); }
+    } else {
+      const raw=(el.dataset.raw||'').trim(); if(raw) revisedEntries.push(raw);
+    }
+  }); }
+  // Append new entry with author + date — same format as saveNote
+  const newText=NOTE_TA.value.trim();
+  if(newText){
+    const author=_histUser();
+    const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    revisedEntries.push(newText+'\n— '+author+', '+dateStr);
+  }
+  if(!revisedEntries.length&&!newText){ closeNotePopover(); return; }
+  pp.notes=revisedEntries.join('\n\n');
+  // Update chip pencil buttons in the DOM
+  document.querySelectorAll(`[data-planning-note-btn="${pp.id}"]`).forEach(btn=>{
+    btn.classList.toggle('pp-pencil-noted',!!pp.notes);
+    btn.title=pp.notes?'Edit note':'Add note';
+  });
+  closeNotePopover();
+  triggerSave(); rebuildSection('planning');
 }
-// Override save to handle planning notes
+// Save button: routes to planning or standard save based on which popover is active
 const _origSaveNote=saveNote;
 document.getElementById('notePopSave').removeEventListener('click',saveNote);
 document.getElementById('notePopSave').addEventListener('click',()=>{
@@ -10120,7 +10177,7 @@ document.addEventListener('click',e=>{
     document.querySelector('.prod-panel-title').textContent=_titleMap[section]||'Key Data';
 
     const _colDefs={
-      production:['CA Sign','Con Start','Con End','Est. Cost'],
+      production:['CA Sign','Con Start','Con End','Est. Cost','% Cmplt'],
       design:    ['DA Sign','Ph I Start','Ph II Start','T1','T2','T3','PD','CA Sign','Ph III Start'],
       planning:  ['DA Sign','Des Start','CA Sign','Con Start','Con End','Est. Cost']
     };
@@ -10256,7 +10313,7 @@ document.addEventListener('click',e=>{
         _addCell(row,_copy,ph3?.startWeek,null);
 
       } else if(section==='production'){
-        // ── Production: CA Sign | Con Start | Con End (admin-editable) | Est. Cost (admin-editable)
+        // ── Production: CA Sign | Con Start | Con End (admin-editable) | Est. Cost (admin-editable) | % Cmplt
         const conEndWk=conPh?conPh.startWeek+conPh.durWeeks:null;
         const costVal=proj.estimatedValue||proj.projBudget||'';
         _addCell(row,_copy,caMs?.week,caMs);
@@ -10292,6 +10349,24 @@ document.addEventListener('click',e=>{
           inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape'){inp.value=costVal;inp.blur();}});
           costCell.appendChild(inp); row.appendChild(costCell); _copy.push(costVal);
         } else { _addTextCell(row,_copy,costVal,true); }
+        // % Complete — (weeks elapsed since CA / total pre-prod+prod weeks) + 10% design credit
+        {
+          const caWk2=caMs?.week; const pctCell=document.createElement('div'); pctCell.className='pp-date-val';
+          let pctStr='—';
+          if(caWk2!=null&&conEndWk!=null){
+            const totalWks=conEndWk-caWk2;
+            const elapsed=Math.max(0,tw-caWk2);
+            const raw=totalWks>0?elapsed/totalWks:0;
+            const pct=Math.min(1.0,raw+0.10);
+            const pctRnd=Math.round(pct*100);
+            pctStr=pctRnd+'%';
+            if(pct>=1.0) pctCell.style.color='#127432';
+            else if(pct>=0.70) pctCell.style.cssText='color:#2182c4;font-weight:600;';
+            else pctCell.style.fontWeight='600';
+          }
+          pctCell.textContent=pctStr;
+          row.appendChild(pctCell); _copy.push(pctStr);
+        }
 
       } else {
         // ── Sales (planning): DA Sign | Des Start | CA Sign | Con Start | Con End | Est. Cost — all read-only
@@ -10853,6 +10928,13 @@ function diffPipeline(){
     if(curNote!==snapNote&&curNote) noteChanges.push({proj,isNew:!snapNote,note:curNote});
   });
   Object.keys(base).forEach(id=>{ if(!PROJECTS.find(p=>p.id===id)) removedProjs.push({id,name:base[id].name}); });
+  // Include planning project note changes in the notes section
+  const planningBase=WEEKLY_BASELINE?.planning||{};
+  PLANNING_PROJECTS.forEach(pp=>{
+    const snap=planningBase[pp.id];
+    const curNote=pp.notes||'', snapNote=snap?.notes||'';
+    if(curNote!==snapNote&&curNote) noteChanges.push({proj:{id:pp.id,name:pp.name,_isPlanningNote:true},isNew:!snapNote,note:curNote});
+  });
   return {statusChanges,msChanges,newProjs,removedProjs,assignmentChanges,scheduleChanges,noteChanges,versionChange};
 }
 
@@ -11095,14 +11177,17 @@ function generateBriefHTML(){
   // ── NOTES ──────────────────────────────────────────────────────── <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;color:var(--navy);margin-right:-2px;"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>
   if(noteChanges&&noteChanges.length){
     let noteCount=0;
-    const PENCIL_BTN=(projId)=>`<button data-note-btn="${projId}" title="Edit note" style="background:rgba(216,182,79,.12);border:1px solid rgba(216,182,79,.35);border-radius:3px;cursor:pointer;color:var(--gold);padding:2px 5px;display:flex;align-items:center;flex-shrink:0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button>`;
+    const PENCIL_BTN=(projId,isPlanningNote)=>isPlanningNote
+      ? `<button data-planning-note-btn="${projId}" title="Edit note" style="background:rgba(216,182,79,.12);border:1px solid rgba(216,182,79,.35);border-radius:3px;cursor:pointer;color:var(--gold);padding:2px 5px;display:flex;align-items:center;flex-shrink:0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button>`
+      : `<button data-note-btn="${projId}" title="Edit note" style="background:rgba(216,182,79,.12);border:1px solid rgba(216,182,79,.35);border-radius:3px;cursor:pointer;color:var(--gold);padding:2px 5px;display:flex;align-items:center;flex-shrink:0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button>`;
     const noteRows=noteChanges.map(({proj,isNew,note})=>{
       const ackId=proj.id+'-note';
       if(BRIEF_ACKS[ackId]==='archived'||BRIEF_ACKS[ackId]==='reviewed') return '';
       noteCount++;
       const ackBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Mark Reviewed</button>`;
       const noteHtml=note.replace(/\n/g,'<br>').replace(/(<br>)(— [^<]+)/g,'$1<span style="color:rgba(0,0,0,.32);font-size:9.5px;font-style:italic;">$2</span>');
-      return `<div class="brief-card-row"><span class="bcr-lbl l-note">${briefProjName(proj)}</span><span class="bcr-text" style="white-space:pre-wrap;">${isNew?'<em style="opacity:.6;font-size:.9em;">New · </em>':''}${noteHtml}</span><span class="brief-ack-btns">${PENCIL_BTN(proj.id)}${ackBtn}</span></div>`;
+      const newBadge=isNew?'<strong style="color:#c0434a;font-size:10px;font-weight:700;margin-right:5px;letter-spacing:.04em;">NEW</strong>':'';
+      return `<div class="brief-card-row"><span class="bcr-lbl l-note">${newBadge}${briefProjName(proj)}</span><span class="bcr-text" style="white-space:pre-wrap;">${noteHtml}</span><span class="brief-ack-btns">${PENCIL_BTN(proj.id,!!proj._isPlanningNote)}${ackBtn}</span></div>`;
     }).filter(Boolean);
     if(noteRows.length){
       html+=`<div class="brief-section"><div class="brief-section-hd">` +
