@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v745</title>
+<title>BW Project Pipeline — v747</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -436,6 +436,12 @@ body.is-panning *{cursor:grabbing!important;}
 .lc-ms-toggle{width:22px;height:22px;border-radius:50%;border:1.5px solid rgba(40,40,40,.20);background:rgba(40,40,40,.07);color:rgba(40,40,40,.35);cursor:pointer;flex-shrink:0;padding:0;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:background .12s,color .12s,border-color .12s;}
 .lc-ms-toggle.ms-on{background:rgba(33,82,161,.15);color:rgba(33,82,161,.85);border-color:rgba(33,82,161,.40);}
 .lc-ms-toggle:hover{background:rgba(40,40,40,.14);color:rgba(40,40,40,.65);}
+.des-curves-btn{width:22px;height:22px;border-radius:4px;border:1.5px solid rgba(40,40,40,.22);background:rgba(40,40,40,.07);cursor:pointer;flex-shrink:0;padding:0;display:flex;align-items:center;justify-content:center;transition:background .12s,border-color .12s;}
+.des-curves-btn.active{border-color:rgba(33,82,161,.45);background:rgba(33,82,161,.13);}
+.des-pm-stk{display:flex;flex-direction:column;flex-shrink:0;gap:1px;}
+.des-pm-stk-btn{width:22px;height:15px;border-radius:3px;border:1px solid rgba(40,40,40,.18);background:rgba(40,40,40,.06);color:rgba(40,40,40,.55);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;line-height:1;}
+.lc-ms-toggle.ms-on{background:rgba(33,82,161,.15);color:rgba(33,82,161,.85);border-color:rgba(33,82,161,.40);}
+.lc-ms-toggle:hover{background:rgba(40,40,40,.14);color:rgba(40,40,40,.65);}
 /* LC project rows: compact tier/PD when collapsed (mirrors .lanes-wrap.proj-collapsed rules) */
 .lc-proj-tl.lc-proj-collapsed .tier-dot{width:24px;height:24px;top:2px;}
 .lc-proj-tl.lc-proj-collapsed .tier-dot .tier-lbl{font-size:11px;}
@@ -443,7 +449,9 @@ body.is-panning *{cursor:grabbing!important;}
 .lc-proj-tl.lc-proj-collapsed .pd-dot .pd-icon-exp{display:none;}
 .lc-proj-tl.lc-proj-collapsed .pd-dot .pd-icon-col{display:block;}
 /* Tier dots and PD in LC rows are display-only — editing happens in Design */
-.lc-proj-tl .tier-dot,.lc-proj-tl .pd-dot{pointer-events:none!important;cursor:default!important;}
+/* Tier dots and PD in LC rows: hover works, dragging blocked in initDrag */
+.lc-proj-tl .tier-dot,.lc-proj-tl .pd-dot{cursor:default!important;}
+.admin-mode .lc-proj-tl .tier-dot,.admin-mode .lc-proj-tl .pd-dot{cursor:default!important;}
 .lc-hrs-btn:hover{background:rgba(30,122,106,.22);}
 body:not(.admin-mode) .lc-phase-bar .bar-caret-stack{opacity:0!important;pointer-events:none!important;}
 .lc-hrs-val{font-size:11px;font-weight:600;color:rgba(40,40,40,.75);min-width:30px;text-align:center;font-variant-numeric:tabular-nums;}
@@ -2602,7 +2610,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v745</div>
+    <div class="auth-version" id="authVersionBadge">v747</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2621,7 +2629,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v745</div>
+  <div class="proto-badge" id="versionBadge">v747</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3186,7 +3194,8 @@ function updateSortBtns(){
 const CAP_SORT={design:{field:null,dir:1},production:{field:null,dir:1}};
 let PROD_SHOW_PMS=true;
 let DESIGN_SHOW_DESIGNERS=true;
-let DESIGN_CURVES_ENABLED=false; // when true, distributes phase totalHours via load-profile curves
+let DES_CURVES_ENABLED=new Set(); // designer IDs where curve distribution is active
+let DES_MS_HIDDEN=new Set();      // designer IDs where T1/T2/T3/PD dots are hidden
 let PROD_HIDE_DESIGN=true; // Design rows hidden by default in Production
 let PROD_ZOOM=0.63; // default: full view (~6 months visible) // 0.85=wide, 0.55=mid, 0.25=narrow — production timeline zoom
 function applyProdZoom(){
@@ -3291,13 +3300,6 @@ function buildCapCmdBar(section){
     right.appendChild(zoomWrap);
   }
   const capSpacer=el('span',''); capSpacer.style.flex='1'; right.appendChild(capSpacer);
-  if(section==='design'){
-    const curvesBtn=el('button','pp-hist-btn'+(DESIGN_CURVES_ENABLED?' active':''));
-    curvesBtn.dataset.toggleCurves='1';
-    curvesBtn.textContent=DESIGN_CURVES_ENABLED?'Curves \u2713':'Curves';
-    right.appendChild(curvesBtn);
-    right.appendChild(el('div','nav-sep'));
-  }
   const histBtnCap=el('button','pp-hist-btn'); histBtnCap.dataset.openSessionHistory='1';
   histBtnCap.innerHTML=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5V8l2.5 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Session History`;
   right.appendChild(histBtnCap);
@@ -4404,7 +4406,6 @@ function buildFcTallyPerson(person, section){
   const c=el('div','fc-tally'); c.style.height=C.tallyH+'px';
   c.dataset.personHeader=person.id; c.dataset.personSection=section;
   if(section==='design'){
-    // Match Production style: chevron + larger name
     const collapsed=DESIGN_COLLAPSED.has(person.id);
     const chev=el('div','fc-chevron'+(collapsed?' collapsed':''));
     chev.style.cssText='width:20px;height:20px;flex-shrink:0;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--tm);';
@@ -4414,17 +4415,36 @@ function buildFcTallyPerson(person, section){
     lbl.style.cssText='cursor:pointer;font-size:14px;';
     lbl.dataset.pickName=person.id; lbl.dataset.pickSection=section;
     c.appendChild(lbl);
-    const addBtn=el('button','timeoff-add-btn'); addBtn.textContent='Time Off';
-    addBtn.dataset.addTimeoff=person.id; addBtn.dataset.addSection=section;
-    c.appendChild(addBtn);
-    const ctrl=el('div','fc-tally-ctrl');
-    const mn=el('div','fc-tally-btn'); mn.textContent='−'; mn.dataset.targetPerson=person.id; mn.dataset.targetDelta='-1';
-    const val=el('div','fc-tally-val'); val.dataset.targetVal=person.id; val.textContent=getTarget(person.id)+'h cap';
-    const pl=el('div','fc-tally-btn'); pl.textContent='+'; pl.dataset.targetPerson=person.id; pl.dataset.targetDelta='1';
-    ctrl.appendChild(mn); ctrl.appendChild(val); ctrl.appendChild(pl);
+    // T — milestone toggle
+    const tBtn=el('button','lc-ms-toggle'+(DES_MS_HIDDEN.has(person.id)?'':' ms-on'));
+    tBtn.textContent='T'; tBtn.title='Show/hide T1, T2, T3 and Pencils Down';
+    tBtn.dataset.toggleDesMilestones=person.id; tBtn.style.marginRight='7px';
+    c.appendChild(tBtn);
+    // Eye
     const eye=el('button','person-eye-btn'); eye.dataset.personEye=person.id; eye.dataset.eyeSection=section;
-    eye.innerHTML=eyeSvg(false); eye.title='Toggle person visibility';
-    c.appendChild(eye); c.appendChild(ctrl);
+    eye.innerHTML=eyeSvg(false); eye.title='Toggle person visibility'; eye.style.marginRight='7px';
+    c.appendChild(eye);
+    // Time Off
+    const addBtn=el('button','timeoff-add-btn'); addBtn.textContent='Time Off';
+    addBtn.dataset.addTimeoff=person.id; addBtn.dataset.addSection=section; addBtn.style.marginRight='7px';
+    c.appendChild(addBtn);
+    // Curves button with canvas parabola
+    const curvesOn=DES_CURVES_ENABLED.has(person.id);
+    const curvesBtn=el('button','des-curves-btn'+(curvesOn?' active':''));
+    curvesBtn.dataset.toggleDesCurves=person.id; curvesBtn.title='Toggle curve distribution'; curvesBtn.style.marginRight='7px';
+    const cv=document.createElement('canvas'); cv.width=14; cv.height=11;
+    const _cx=cv.getContext('2d');
+    _cx.strokeStyle=curvesOn?'#2152a1':'rgba(40,40,40,0.38)'; _cx.lineWidth=1.6; _cx.lineCap='round';
+    _cx.beginPath(); _cx.moveTo(1,10); _cx.quadraticCurveTo(7,0,13,10); _cx.stroke();
+    curvesBtn.appendChild(cv); c.appendChild(curvesBtn);
+    // Hours cap value
+    const val=el('div','fc-tally-val'); val.dataset.targetVal=person.id; val.textContent=getTarget(person.id)+'h cap';
+    val.style.marginRight='7px'; c.appendChild(val);
+    // Stacked ±
+    const stk=el('div','des-pm-stk');
+    const pl=el('div','des-pm-stk-btn'); pl.textContent='+'; pl.dataset.targetPerson=person.id; pl.dataset.targetDelta='1';
+    const mn=el('div','des-pm-stk-btn'); mn.textContent='−'; mn.dataset.targetPerson=person.id; mn.dataset.targetDelta='-1';
+    stk.appendChild(pl); stk.appendChild(mn); c.appendChild(stk);
   } else {
     const lbl=el('div','fc-tally-label'); lbl.textContent=person.label;
     lbl.style.cursor='pointer'; lbl.dataset.pickName=person.id; lbl.dataset.pickSection=section;
@@ -4501,7 +4521,7 @@ function buildFcLcPersonHeader(lc,key){
   const msOn=!LC_DESIGN_MS_HIDDEN.has(lc.id);
   const msToggle=el('button','lc-ms-toggle'+(msOn?' ms-on':''));
   msToggle.textContent='T'; msToggle.title='Toggle Designer milestones (T1, T2, T3, Pencils Down)';
-  msToggle.dataset.toggleLcDesignMs=lc.id;
+  msToggle.dataset.toggleLcDesignMs=lc.id; msToggle.style.marginRight='5px';
   ctrl.appendChild(mn); ctrl.appendChild(val); ctrl.appendChild(pl);
   c.appendChild(chev); c.appendChild(lbl);
   const toBtn=el('button','timeoff-add-btn'); toBtn.textContent='Time Off';
@@ -4903,7 +4923,7 @@ function populateBars(row,proj,laneId,includeControls,showJunctions,isGhost){
   else{ proj.productionLane.phases.forEach(ph=>row.appendChild(buildBar(proj,ph,laneId,false,showJunctions))); }
 }
 
-function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,grpNudgeY,skipMsNames,ghostLaneIds){
+function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,grpNudgeY,skipMsNames,ghostLaneIds,hideTierDots){
   // grpNudgeY ignored in unified model (parameter kept for call-site compat)
   ovTimeoff=ovTimeoff||[]; ghostLaneIds=ghostLaneIds||[];
   const rowH=proj.collapsed?BAND_H:C.laneH;
@@ -4934,7 +4954,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   overlay.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:absolute;top:0;left:0;overflow:visible;`;
   const msToRender=skipMsNames?proj.milestones.filter(ms=>!skipMsNames.includes(ms.name)):proj.milestones;
   msToRender.forEach(ms=>{ const mEl=buildMsTall(proj,ms,rowH,rowH,[],0); overlay.appendChild(mEl); }); // top:1px from buildMsTall default
-  if(laneIds.includes('design')){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); ensurePencilsDown(proj); overlay.appendChild(buildPencilsDot(proj)); }
+  if(laneIds.includes('design')&&!hideTierDots){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); ensurePencilsDown(proj); overlay.appendChild(buildPencilsDot(proj)); }
   wrap.appendChild(overlay); return wrap;
 }
 
@@ -5143,7 +5163,7 @@ function buildDesignSection(){
         const grp=el('div','person-group-tl'); grp.dataset.personId=person.id; grp.dataset.section='design';
         const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer===person.id),'design');
         const topTlSpD=el('div',''); topTlSpD.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(topTlSpD);
-        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['design'],true,true,undefined,-8,null,[])));
+        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['design'],true,true,undefined,-8,null,[],DES_MS_HIDDEN.has(person.id))));
         const botTlSpD=el('div',''); botTlSpD.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(botTlSpD);
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=person.id; ov.dataset.section='design';
         const ovH=calcPersonGroupH(person,'design');
@@ -5868,13 +5888,13 @@ function getDesignProfileFn(ph) {
 }
 
 // Returns a C.numWeeks-length array of per-week hour contributions for a design phase.
-// Uses curve distribution when DESIGN_CURVES_ENABLED, flat otherwise.
-function designPhaseWeeklyHrs(ph) {
+// Uses curve distribution when designer has DES_CURVES_ENABLED, flat otherwise.
+function designPhaseWeeklyHrs(ph, desId) {
   const out = new Array(C.numWeeks).fill(0);
   const total = ph.totalHours || 0;
   if (!ph.durWeeks || ph.durWeeks < 1 || total <= 0) return out;
   let weekly;
-  if (DESIGN_CURVES_ENABLED) {
+  if (desId && DES_CURVES_ENABLED.has(desId)) {
     weekly = BELLWEATHER_PHASE_PROFILES.distributeHours(total, ph.durWeeks, getDesignProfileFn(ph));
   } else {
     const flat = total / ph.durWeeks;
@@ -5935,7 +5955,7 @@ function calcTally(section,personId){
     if(!isVisible(proj)) return; // skip lost/lead — not shown in gantt, can't be zeroed
     const active=proj.status!=='paused';
     if(section==='design'){
-      proj.designLane.phases.forEach(ph=>{ if(active){ const wkly=designPhaseWeeklyHrs(ph); for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w]; } });
+      proj.designLane.phases.forEach(ph=>{ if(active){ const wkly=designPhaseWeeklyHrs(ph,personId); for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w]; } });
     } else {
       proj.productionLane.phases.forEach(ph=>{ if(active&&ph.hours>0&&ph.durWeeks>0){ for(let w=ph.startWeek;w<ph.startWeek+ph.durWeeks&&w<C.numWeeks;w++)tally[w]+=ph.hours; } });
     }
@@ -6135,7 +6155,7 @@ function initDrag(){
   if(DRAG_INIT)return; DRAG_INIT=true;
   const iw=document.getElementById('iw');
   iw.addEventListener('pointerdown',e=>{
-    if(e.target.closest('[data-open-status-menu],[data-open-pp-lead-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-remove-timeoff],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta],[data-toggle-curves],[data-toggle-lc-design-ms]')||e.target.classList.contains('phase-hrs-input'))return;
+    if(e.target.closest('[data-open-status-menu],[data-open-pp-lead-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-remove-timeoff],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta],[data-toggle-des-curves],[data-toggle-des-milestones],[data-toggle-lc-design-ms]')||e.target.classList.contains('phase-hrs-input'))return;
 
     const toEl=e.target.closest('.timeoff-block[data-editable]');
     if(toEl){
@@ -6148,7 +6168,7 @@ function initDrag(){
     }
 
     const pdEl=e.target.closest('.pd-dot');
-    if(pdEl&&!canEdit()) return;
+    if(pdEl&&(!canEdit()||pdEl.closest('.lc-proj-tl'))) return;
     if(pdEl){
       e.preventDefault();
       const pdId=pdEl.dataset.pdId, projId=pdEl.dataset.projId;
@@ -6159,7 +6179,7 @@ function initDrag(){
     }
 
     const tierEl=e.target.closest('.tier-dot');
-    if(tierEl&&!canEdit()) return;
+    if(tierEl&&(!canEdit()||tierEl.closest('.lc-proj-tl'))) return;
     if(tierEl){
       e.preventDefault();
       const tierId=tierEl.dataset.tierId, projId=tierEl.dataset.projId;
@@ -6394,7 +6414,10 @@ function initDrag(){
     // PM toggle in production
     const pmToggle=e.target.closest('[data-toggle-prod-pms]'); if(pmToggle){PROD_SHOW_PMS=!PROD_SHOW_PMS;rebuildSection('production');return;}
     const desToggle=e.target.closest('[data-toggle-designer-view]'); if(desToggle){DESIGN_SHOW_DESIGNERS=!DESIGN_SHOW_DESIGNERS;rebuildSection('design');return;}
-    const curvesToggle=e.target.closest('[data-toggle-curves]'); if(curvesToggle){ DESIGN_CURVES_ENABLED=!DESIGN_CURVES_ENABLED; document.querySelectorAll('[data-toggle-curves]').forEach(b=>{b.classList.toggle('active',DESIGN_CURVES_ENABLED);b.textContent=DESIGN_CURVES_ENABLED?'Curves \u2713':'Curves';}); renderTally('design'); return; }
+    const curvesToggle=e.target.closest('[data-toggle-des-curves]');
+    if(curvesToggle){ const desId=curvesToggle.dataset.toggleDesCurves; if(DES_CURVES_ENABLED.has(desId)) DES_CURVES_ENABLED.delete(desId); else DES_CURVES_ENABLED.add(desId); rebuildSection('design'); triggerSave(); return; }
+    const desMsToggle=e.target.closest('[data-toggle-des-milestones]');
+    if(desMsToggle){ const desId=desMsToggle.dataset.toggleDesMilestones; if(DES_MS_HIDDEN.has(desId)) DES_MS_HIDDEN.delete(desId); else DES_MS_HIDDEN.add(desId); rebuildSection('design'); triggerSave(); return; }
     const hideDesToggle=e.target.closest('[data-toggle-prod-hide-design]');
     if(hideDesToggle){ PROD_HIDE_DESIGN=!PROD_HIDE_DESIGN; rebuildSection('production'); return; }
     // Production panel toggle
@@ -7445,7 +7468,8 @@ function globalStatePayload(){
     LC_DESIGN_MS_HIDDEN:[...LC_DESIGN_MS_HIDDEN],
     PROD_UNASSIGNED_COLLAPSED, DESIGN_UNASSIGNED_COLLAPSED,
     DESIGN_COLLAPSED:[...DESIGN_COLLAPSED],
-    DESIGN_CURVES_ENABLED,
+    DES_CURVES_ENABLED:[...DES_CURVES_ENABLED],
+    DES_MS_HIDDEN:[...DES_MS_HIDDEN],
     CAL_VIEW:{
       production:{from:CAL_VIEW.production.from.toISOString(),to:CAL_VIEW.production.to.toISOString()},
       design:{from:CAL_VIEW.design.from.toISOString(),to:CAL_VIEW.design.to.toISOString()},
@@ -7745,7 +7769,7 @@ function buildPlanningSection(){
       if(personId!==null && proj.designer!==personId) return;
       const active=proj.status!=='paused'&&proj.status!=='cancelled'&&proj.status!=='archived';
       if(!active) return;
-      proj.designLane.phases.forEach(ph=>{ const wkly=designPhaseWeeklyHrs(ph); for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w]; });
+      proj.designLane.phases.forEach(ph=>{ const wkly=designPhaseWeeklyHrs(ph,personId); for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w]; });
     });
     return tally;
   }
@@ -8666,7 +8690,9 @@ function restoreSavedState(saved){
   if(typeof saved.PROD_UNASSIGNED_COLLAPSED==='boolean') PROD_UNASSIGNED_COLLAPSED=saved.PROD_UNASSIGNED_COLLAPSED;
   if(typeof saved.DESIGN_UNASSIGNED_COLLAPSED==='boolean') DESIGN_UNASSIGNED_COLLAPSED=saved.DESIGN_UNASSIGNED_COLLAPSED;
   if(saved.DESIGN_COLLAPSED&&Array.isArray(saved.DESIGN_COLLAPSED)) DESIGN_COLLAPSED=new Set(saved.DESIGN_COLLAPSED);
-  if(typeof saved.DESIGN_CURVES_ENABLED==='boolean') DESIGN_CURVES_ENABLED=saved.DESIGN_CURVES_ENABLED;
+  if(saved.DES_CURVES_ENABLED&&Array.isArray(saved.DES_CURVES_ENABLED)) DES_CURVES_ENABLED=new Set(saved.DES_CURVES_ENABLED);
+  else if(saved.DESIGN_CURVES_ENABLED===true) DESIGNERS.forEach(d=>DES_CURVES_ENABLED.add(d.id)); // upgrade from old global bool
+  if(saved.DES_MS_HIDDEN&&Array.isArray(saved.DES_MS_HIDDEN)) DES_MS_HIDDEN=new Set(saved.DES_MS_HIDDEN);
   if(typeof saved.SLOT_DEFAULT_BUDGET==='number') SLOT_DEFAULT_BUDGET=saved.SLOT_DEFAULT_BUDGET;
   if(Array.isArray(saved.SLOT_COL_ORDER)) SLOT_COL_ORDER=saved.SLOT_COL_ORDER;
   if(typeof saved.PROD_PANEL_OPEN==='boolean') PROD_PANEL_OPEN=saved.PROD_PANEL_OPEN;
@@ -9336,7 +9362,7 @@ function openDesignerWeekPopup(designerId,week,clientX,clientY){
         if(wk>=t3.week) tierLabel='T3';
         else if(wk>=t2.week) tierLabel='T2';
         else if(wk>=t1.week) tierLabel='T1';
-        const weekHours=designPhaseWeeklyHrs(ph)[wk]||0;
+        const weekHours=designPhaseWeeklyHrs(ph,designerId)[wk]||0;
         // Collect milestone events occurring in this specific week
         const events=[];
         const daMs=proj.milestones.find(m=>m.name==='DA');
@@ -10468,7 +10494,7 @@ document.addEventListener('click',e=>{
       const active=proj.status!=='paused'&&proj.status!=='cancelled'&&proj.status!=='archived';
       if(!active) return;
       proj.designLane.phases.forEach(ph=>{
-        const wkly=designPhaseWeeklyHrs(ph);
+        const wkly=designPhaseWeeklyHrs(ph,personId);
         for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w];
       });
       const pm=proj.permitting;
@@ -11428,6 +11454,41 @@ function generateBriefHTML(){
     if(upConstr.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Construction Starts</div><div class="brief-upcoming-rows">${upConstr.map(({proj,cPh,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`Construction starts ${briefFmtDate(wkToDate(cPh.startWeek))} (${tl}).`); }).join('')}</div></div>`;
     if(upOther.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Other Milestones</div><div class="brief-upcoming-rows">${upOther.map(milRow).join('')}</div></div>`;
     html+='</div>';
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // LC UPCOMING DESIGN MILESTONES — T1/T2/T3 and Pencils Down
+  // ══════════════════════════════════════════════════════════════════
+  {
+    const lcUpSections=[];
+    LC_COORDS.forEach(lc=>{
+      const lcProjs=PROJECTS.filter(p=>isVisible(p)&&!['archived','cancelled','lost'].includes(p.status)&&(p.lc1===lc.id||p.lc2===lc.id));
+      const milRows=[];
+      lcProjs.forEach(proj=>{
+        ensureTiers(proj);
+        proj.tiers.forEach(t=>{
+          const d=t.week-tw; if(d<0||d>LOOK_AHEAD) return;
+          const tl=d===0?'This week':d===1?'Next week':`${d} weeks`;
+          const lbls={T1:'Tier 1 selections',T2:'Tier 2 selections',T3:'Tier 3 selections'};
+          milRows.push(briefRow('l-due',briefProjName(proj),`${lbls[t.name]||t.name} \u2014 ${briefFmtDate(wkToDate(t.week))} (${tl}).`));
+        });
+        ensurePencilsDown(proj);
+        if(proj.pencilsDown){
+          const d=proj.pencilsDown.week-tw; if(d>=0&&d<=LOOK_AHEAD){
+            const tl=d===0?'This week':d===1?'Next week':`${d} weeks`;
+            milRows.push(briefRow('l-due',briefProjName(proj),`Pencils Down \u2014 ${briefFmtDate(wkToDate(proj.pencilsDown.week))} (${tl}).`));
+          }
+        }
+      });
+      if(milRows.length) lcUpSections.push({lc,milRows});
+    });
+    if(lcUpSections.length){
+      html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">LC \u2014 Upcoming Design Milestones</span><span class="brief-section-count" style="margin-left:8px;background:#2152a1">${lcUpSections.reduce((s,x)=>s+x.milRows.length,0)}</span></div>`;
+      lcUpSections.forEach(({lc,milRows})=>{
+        html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">${lc.label}</div><div class="brief-upcoming-rows">${milRows.join('')}</div></div>`;
+      });
+      html+='</div>';
+    }
   }
 
   return html;
