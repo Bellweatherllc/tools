@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v735</title>
+<title>BW Project Pipeline — v736</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2245,6 +2245,10 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
   padding:5px 0;border-bottom:1px solid rgba(228,218,196,.5);
 }
 .pp-date-row:last-child{border-bottom:none;}
+.pp-date-note-btn{width:22px;height:22px;flex-shrink:0;border:none;background:none;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;border-radius:3px;color:rgba(40,40,40,.20);transition:color .1s,background .1s;margin-top:1px;}
+.pp-date-note-btn:hover{color:var(--navy);background:rgba(0,0,0,.07);}
+.pp-date-note-btn.has-note{color:var(--gold);opacity:.8;}
+.pp-date-note-btn.has-note:hover{opacity:1;}
 .pp-date-info{flex:1;min-width:0;}
 .pp-date-name{
   font-size:12px;font-weight:600;color:var(--navy);
@@ -2587,7 +2591,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v735</div>
+    <div class="auth-version" id="authVersionBadge">v736</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2606,7 +2610,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v735</div>
+  <div class="proto-badge" id="versionBadge">v736</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7822,7 +7826,7 @@ function buildPlanningSection(){
         if(pp.projBudget) html+='<div class="tt-price">'+pp.projBudget+'</div>';
         html+='<div class="tt-people"><div class="tt-person">';
         html+=pp.salesPerson
-          ?`<span class="tt-person-role">Sales</span><span>${pp.salesPerson}</span>`
+          ?`<span class="tt-person-role">Sales</span><span>${pp.salesPerson.split(' ')[0]}</span>`
           :`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
         html+='</div></div>';
         const origProj=PROJECTS.find(p=>p.id===pp._fromLeadId);
@@ -10127,8 +10131,8 @@ document.addEventListener('click',e=>{
 
     const uaBody=document.getElementById('ppUnassignedBody');
     uaBody.innerHTML='';
-    // Unassigned zone not relevant for Sales — hide it
-    document.getElementById('ppZoneUnassigned').style.display=section==='planning'?'none':'';
+    // Unassigned zone not relevant for Sales or Production — hide it
+    document.getElementById('ppZoneUnassigned').style.display=(section==='planning'||section==='production')?'none':'';
     const unassigned=PROJECTS
       .filter(p=>isVisible(p)&&(section==='design'?false:!p.productionPM)&&!(section==='production'&&/^Slot\b/i.test(p.name)))
       .map(p=>{
@@ -10185,6 +10189,8 @@ document.addEventListener('click',e=>{
     const _wideCol=new Set(['Con End','Est. Cost']);
 
     const colHdr=document.createElement('div'); colHdr.className='pp-date-cols';
+    const noteHdrEl=document.createElement('div'); noteHdrEl.style.cssText='width:22px;min-width:22px;flex-shrink:0;';
+    colHdr.appendChild(noteHdrEl);
     const hSpacer=document.createElement('div'); hSpacer.className='pp-date-col-spacer'; colHdr.appendChild(hSpacer);
     const _MS_PILL='display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;border-radius:3px;padding:1px 5px;line-height:1.5;color:#fff;';
     const _T_CIRCLE='display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;border-radius:50%;width:17px;height:17px;background:rgba(33,82,161,.80);line-height:1;color:#fff;';
@@ -10282,11 +10288,18 @@ document.addEventListener('click',e=>{
       }
       _lastWasAssigned=!isUnassigned;
       const row=document.createElement('div'); row.className='pp-date-row'+(isUnassigned?' pp-date-row-unassigned':'');
+      // Note pencil — left margin, opens note popover
+      const notePencil=document.createElement('button');
+      notePencil.className='pp-date-note-btn'+(proj.notes?' has-note':'');
+      notePencil.dataset.noteBtn=proj.id;
+      notePencil.title=proj.notes?'Edit note':'Add note';
+      notePencil.innerHTML='<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
+      row.appendChild(notePencil);
       const info=document.createElement('div'); info.className='pp-date-info';
       const nm=document.createElement('div'); nm.className='pp-date-name'+(isSlot?' is-slot':isUnassigned?' is-unassigned':'');
       nm.textContent=proj.name.replace(/\s+Residence$/,'');
       info.appendChild(nm);
-      const peopleParts=[sales||null, designer?designer.label:null, pm?pm.label:null].map(v=>v||'—');
+      const peopleParts=[(sales?sales.split(' ')[0]:null), designer?designer.label:null, pm?pm.label:null].map(v=>v||'—');
       const ppl=document.createElement('div'); ppl.className='pp-date-people';
       ppl.textContent=peopleParts.join(' · ');
       info.appendChild(ppl);
