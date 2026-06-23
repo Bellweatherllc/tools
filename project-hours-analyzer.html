@@ -173,7 +173,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div>
     <div class="auth-logo">
       <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" alt="Bellweather Design-Build" style="height:38px;display:block;">
-      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v55</span></div>
+      <div class="auth-tool-name">Project Hours Analyzer <span class="ver">v49</span></div>
     </div>
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
   </div>
@@ -190,7 +190,7 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
   <div class="hdr">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v55</span></h1>
+        <h1><img src="https://bellweatherllc.github.io/tools/logos/Monogram-B.svg" alt="" style="height:26px;opacity:.6;flex-shrink:0;vertical-align:middle;margin-right:2px;position:relative;top:-1px;">Project Hours Analyzer <span class="ver">v49</span></h1>
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="save-dot" style="width:8px;height:8px;border-radius:50%;background:#ddd9d0;flex-shrink:0;transition:background .4s;"></div>
           <span id="last-saved" style="font-size:11px;color:#8a8682;white-space:nowrap;font-family:'DM Mono',monospace;"></span>
@@ -240,18 +240,6 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
     </div>
   </div>
 
-  <!-- New timecards alert -->
-  <div id="new-tc-alert" style="display:none;background:#fffdf5;border:1px solid #d8b64f;border-left:4px solid #d8b64f;border-radius:7px;padding:13px 16px;margin-bottom:16px;">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
-      <div style="min-width:0">
-        <div style="font-size:12px;font-weight:700;color:#7a5a00;margin-bottom:5px;">New projects detected in timecards</div>
-        <div style="font-size:11px;color:#8a8682;margin-bottom:9px;line-height:1.55">These projects appear for the first time. Set phase markers on each to align the load profile comparison.</div>
-        <div id="new-tc-jobs" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
-      </div>
-      <button id="btn-dismiss-tc-alert" title="Dismiss" style="flex-shrink:0;background:transparent;border:none;color:#b0ada8;font-size:18px;line-height:1;cursor:pointer;padding:0 3px;margin-top:-2px;">&times;</button>
-    </div>
-  </div>
-
   <!-- Detail Panel -->
   <div id="detail-panel">
     <!-- Empty state -->
@@ -292,13 +280,6 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
       <div id="det-align-row" style="display:none">
         <button class="svt active" data-det-align="week">By Week</button>
         <button class="svt" data-det-align="phase">By Phase</button>
-        <button class="svt" id="btn-profile-toggle" style="margin-left:6px;border-style:dashed">Load Profile</button>
-        <span id="profile-strength-wrap" style="display:inline-flex;align-items:center;gap:5px;margin-left:10px;font-size:11px;color:#8a8682;">
-          <span style="white-space:nowrap">Strength</span>
-          <input type="range" id="profile-strength" min="2" max="7" step="0.25" value="5"
-            style="width:72px;cursor:pointer;accent-color:#d8b64f;vertical-align:middle;">
-          <span id="profile-strength-val" style="font-family:'DM Mono',monospace;font-size:10px;color:#4a4845;min-width:28px">5×</span>
-        </span>
       </div>
       <div class="chart-wrap" id="det-wrap"><svg id="det-svg" class="chart-svg"></svg></div>
       <div id="person-legend" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 4px;min-height:0;"></div>
@@ -403,39 +384,6 @@ svg.chart-svg{display:block;width:100%;overflow:visible}
 <script>
 'use strict';
 
-// ── PHASE LOAD PROFILES (inlined — calibrated June 2026 from 3-yr timecard aggregate) ──
-const BELLWEATHER_PHASE_PROFILES = (() => {
-  // Phase I: Gaussian bell on floor. Peaks ~t=0.64 (~wk 4 of 6).
-  function phaseI(t) {
-    return 624.509 + 300.681 * Math.exp(-Math.pow((t - 0.6436) / 0.3461, 2));
-  }
-  // Phase II: Bimodal — early kickoff spike + sustained main effort. Peaks ~t=0.62.
-  function phaseII(t) {
-    return Math.min(1400, 461.162
-      + 152.986 * Math.exp(-Math.pow((t - 0.1747) / 0.2000, 2))
-      + 900.000 * Math.exp(-Math.pow((t - 0.6157) / 0.4963, 2)));
-  }
-  // Phase III: Gamma-shaped early burst + sustained low floor (~142 hrs). Peaks ~t=0.05.
-  function phaseIII(t) {
-    const ts = Math.max(t, 1e-5);
-    const shape = Math.pow(ts / 0.1604, 0.3000) * Math.exp(-ts / 0.1604);
-    const norm  = Math.pow(0.3000, 0.3000) * Math.exp(-0.3000);
-    return Math.max(0, 543.288 * (shape / norm) + 142.126);
-  }
-  // Distribute totalHours across numWeeks using a profile shape. Returns integer array.
-  function distributeHours(totalHours, numWeeks, profileFn) {
-    if (numWeeks < 1 || totalHours <= 0) return Array(Math.max(0, numWeeks)).fill(0);
-    const weights = Array.from({length: numWeeks}, (_, i) =>
-      Math.max(0, profileFn((i + 0.5) / numWeeks)));
-    const sum = weights.reduce((a, b) => a + b, 0);
-    if (sum === 0) return Array(numWeeks).fill(0);
-    const dist = weights.map(w => Math.round(w / sum * totalHours));
-    dist[dist.length - 1] += totalHours - dist.reduce((a, b) => a + b, 0);
-    return dist;
-  }
-  return {phaseI, phaseII, phaseIII, distributeHours};
-})();
-
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const CFG = {
   tenantId:     'ff0e3f46-615a-4a22-8a80-4bb83d627785',
@@ -490,9 +438,6 @@ const S = {
   scanYears: ['2024','2025','2026'],
   tcManifest: {},
   detailFilter: {view:'design', sub:'both', prod:'both'},
-  showLoadProfile: true,
-  profileStrength: 5,
-  knownFiles: new Set(),
   streamMode: 'stacked',
   lastJob: null,
 };
@@ -902,7 +847,6 @@ async function loadState() {
           if (Array.isArray(parsed.scanYears)) S.scanYears = parsed.scanYears;
           if (parsed.streamMode) S.streamMode = parsed.streamMode;
           if (parsed.lastJob) S.lastJob = parsed.lastJob;
-          if (Array.isArray(parsed.knownFiles)) S.knownFiles = new Set(parsed.knownFiles);
         } else {
           S.merges   = parsed;
           S.excluded = new Set();
@@ -923,8 +867,7 @@ async function persistState() {
   const data = JSON.stringify({ merges: S.merges, excluded: [...S.excluded],
     excludedLC:[...S.excludedLC], excludedPM:[...S.excludedPM],
     generalJobsLC:[...S.generalJobsLC], generalJobsPM:[...S.generalJobsPM], phases,
-    notes: S.notes, scanYears: S.scanYears, streamMode: S.streamMode,
-    lastJob: S.selJob?.job||null, knownFiles: [...S.knownFiles] });
+    notes: S.notes, scanYears: S.scanYears, streamMode: S.streamMode, lastJob: S.selJob?.job||null });
   if (S.metaMergesItemId) {
     await gfetch('PATCH',`/sites/${S.siteId}/lists/${S.metaListId}/items/${S.metaMergesItemId}/fields`,{StateData:data});
   } else {
@@ -1027,59 +970,6 @@ async function importFile(file) {
 }
 
 // ── DATA COMPUTATION ──────────────────────────────────────────────────────────
-// ── NEW TIMECARD ALERT ────────────────────────────────────────────────────────
-function checkNewTimecards() {
-  const currentPaths = new Set(Object.keys(S.tcManifest));
-
-  // Files not seen in any previous session
-  const newPaths = [...currentPaths].filter(p => !S.knownFiles.has(p));
-
-  // Mark all current files as known so they won't re-alert next session
-  currentPaths.forEach(p => S.knownFiles.add(p));
-
-  if (newPaths.length === 0) return;
-
-  // Persist updated knownFiles
-  persistState().catch(() => {});
-
-  // Collect design job codes that appear in the new files
-  const designJobs = new Set();
-  newPaths.forEach(path => {
-    const cache = S.tcManifest[path];
-    if (!cache?.entries) return;
-    cache.entries.forEach(e => {
-      if (e.CostCode === '5234' || e.CostCode === '5236A') {
-        const canonical = S.merges[e.JobCode] || e.JobCode;
-        if (canonical) designJobs.add(canonical);
-      }
-    });
-  });
-
-  if (designJobs.size === 0) return;
-
-  // Populate and show the alert
-  const alertEl = document.getElementById('new-tc-alert');
-  const jobsEl  = document.getElementById('new-tc-jobs');
-  if (!alertEl || !jobsEl) return;
-
-  jobsEl.innerHTML = '';
-  [...designJobs].sort().forEach(job => {
-    const btn = document.createElement('button');
-    btn.style.cssText = "font:600 11px 'TT Norms Pro',sans-serif;padding:4px 10px;border-radius:4px;border:1px solid #d8b64f;background:#fef8e0;color:#7a5a00;cursor:pointer;white-space:nowrap;transition:background .12s;";
-    btn.textContent = job;
-    btn.addEventListener('mouseenter', () => btn.style.background = '#faefc0');
-    btn.addEventListener('mouseleave', () => btn.style.background = '#fef8e0');
-    btn.addEventListener('click', () => {
-      const ccs = ['5234','5236A'].filter(cc => S.projectsByCost[cc]?.[job]);
-      if (ccs.length) selectJob(job, ccs);
-      alertEl.style.display = 'none';
-    });
-    jobsEl.appendChild(btn);
-  });
-
-  alertEl.style.display = '';
-}
-
 function computeProjects() {
   // Derive pay period anchor from the earliest WeekOf date in loaded data
   let _ppEarliest=null;
@@ -1687,14 +1577,6 @@ function renderDetail(job,_ignored) {
     document.querySelectorAll('#det-align-row .svt').forEach(b=>{
       b.classList.toggle('active',b.dataset.detAlign===S.detailAlign);
     });
-    const ptb=document.getElementById('btn-profile-toggle');
-    if(ptb) ptb.classList.toggle('active',S.showLoadProfile);
-    const psw=document.getElementById('profile-strength-wrap');
-    if(psw) psw.style.display=S.showLoadProfile?'inline-flex':'none';
-    const psi=document.getElementById('profile-strength');
-    if(psi) psi.value=S.profileStrength;
-    const psv=document.getElementById('profile-strength-val');
-    if(psv) psv.textContent=S.profileStrength+'×';
   }
   const ph=getPhases(job,ccList[0]);
   document.getElementById('dp-job').textContent=job;
@@ -1811,46 +1693,6 @@ function renderDetail(job,_ignored) {
     }
   }
 
-  // ── LOAD PROFILE OVERLAY ──────────────────────────────────────────────────
-  // Shows predicted week-by-week distribution scaled to actual phase totals.
-  // Works in both By Week and By Phase modes.
-  if (isDesigner && S.showLoadProfile) {
-    const BP = BELLWEATHER_PHASE_PROFILES;
-    const k  = S.profileStrength; // 0=flat, 1=calibrated, >1=exaggerated
-
-    // Normalize profile around its own mean, then blend with flat (1.0)
-    // so strength controls contrast independent of absolute scale.
-    function makeBlended(profileFn) {
-      const N = 40;
-      let sum = 0;
-      for (let i = 0; i < N; i++) sum += Math.max(0, profileFn((i + 0.5) / N));
-      const mean = sum / N || 1;
-      return t => Math.max(0, (1 - k) + k * (Math.max(0, profileFn(t)) / mean));
-    }
-
-    const hrsSum = (a, b) => { let t=0; for(let w=a;w<b;w++) t+=proj.weeks[w]?.hours||0; return t; };
-    const p1w   = Math.max(1, ph.p2);
-    const p2w   = Math.max(1, ph.p3 - ph.p2);
-    const p3w   = Math.max(1, proj.span - ph.p3 + 1);
-    const p1pred = BP.distributeHours(hrsSum(0,      ph.p2),        p1w, makeBlended(BP.phaseI));
-    const p2pred = BP.distributeHours(hrsSum(ph.p2,  ph.p3),        p2w, makeBlended(BP.phaseII));
-    const p3pred = BP.distributeHours(hrsSum(ph.p3,  proj.span + 1), p3w, makeBlended(BP.phaseIII));
-    const predPts = [
-      ...p1pred.map((h,i) => ({wk: i,         h: Math.max(0, h)})),
-      ...p2pred.map((h,i) => ({wk: ph.p2 + i, h: Math.max(0, h)})),
-      ...p3pred.map((h,i) => ({wk: ph.p3 + i, h: Math.max(0, h)})),
-    ];
-    g.append('path')
-      .datum(predPts)
-      .attr('d', d3.line().x(d=>xSc(d.wk)).y(d=>ySc(d.h)).curve(d3.curveMonotoneX))
-      .attr('fill', 'none')
-      .attr('stroke', '#d8b64f')
-      .attr('stroke-width', 2)
-      .attr('stroke-dasharray', '5 3')
-      .attr('opacity', 0.85)
-      .attr('pointer-events', 'none');
-  }
-
   // X-axis
   if (isPhaseView) {
     const third=w/3;
@@ -1908,17 +1750,10 @@ function renderDetail(job,_ignored) {
     totChip.innerHTML=`<span style="width:10px;height:10px;flex-shrink:0;display:inline-block"></span>Total<span style="color:#4a4845;font-family:'DM Mono',monospace;font-size:10px">${fh(proj.total)}</span>`;
     legEl.appendChild(totChip);
   }
-  // Profile overlay legend entry
-  if (isDesigner && S.showLoadProfile) {
-    const profChip = document.createElement('span');
-    profChip.style.cssText='display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#8a8682;white-space:nowrap;margin-top:2px;';
-    profChip.innerHTML=`<svg width="22" height="10" style="flex-shrink:0;overflow:visible"><line x1="0" y1="5" x2="22" y2="5" stroke="#d8b64f" stroke-width="2" stroke-dasharray="5 3" opacity="0.85"/></svg>Load profile (predicted)`;
-    legEl.appendChild(profChip);
-  }
 
   if (isDesigner) {
-    if (!isPhaseView) addSliders(g,xSc,w,h,M,ph,mW,job,ccList[0]);
-    updatePhaseInfo(job,ccList[0]);
+    if (!isPhaseView) addSliders(g,xSc,w,h,M,ph,mW,job,ccList[0],ccList);
+    updatePhaseInfo(job,ccList[0],ccList);
     document.getElementById('phase-dates').style.display=isPhaseView?'none':'';
   } else {
     document.getElementById('phase-info').innerHTML='';
@@ -1940,7 +1775,7 @@ function renderDetail(job,_ignored) {
 }
 
 // ── SLIDERS ───────────────────────────────────────────────────────────────────
-function addSliders(g,xSc,w,h,M,ph,mW,job,cc) {
+function addSliders(g,xSc,w,h,M,ph,mW,job,cc,ccList) {
   const svgEl=document.getElementById('det-svg');
   [{key:'p2',other:'p3',isFirst:true,color:'#1a7a4a',label:'II'},{key:'p3',other:'p2',isFirst:false,color:'#1a3a7a',label:'III'}].forEach(({key,other,isFirst,color,label})=>{
     const hg=g.append('g').attr('class',`sh-${key}`).style('cursor','ew-resize').attr('transform',`translate(${xSc(ph[key])},0)`);
@@ -1965,12 +1800,14 @@ function addSliders(g,xSc,w,h,M,ph,mW,job,cc) {
       const proj2=S.projectsByCost[cc][job];
       if(dateEl&&document.activeElement!==dateEl) dateEl.value=weekToDate(proj2,fw);
       document.getElementById(`wk-${key}`).textContent=`= Week ${fw}`;
-      updatePhaseInfo(job,cc);
+      updatePhaseInfo(job,cc,ccList);
     }).on('end',()=>{ S.phasesSetByUser.add(job); persistState().catch(e=>setStatus('Phase save failed: '+(e.message||e),true,false)); renderStream(); }));
   });
 }
-function updatePhaseInfo(job,cc){
-  const ph=S.phases[job],proj=S.projectsByCost[cc][job]; if(!ph||!proj)return;
+function updatePhaseInfo(job,cc,ccList){
+  const ph=S.phases[job];
+  const proj=(ccList&&ccList.length>1)?combineProjectData(job,ccList):S.projectsByCost[cc]?.[job];
+  if(!ph||!proj)return;
   const hrs=(a,b)=>{let t=0;for(let w=a;w<b;w++)t+=proj.weeks[w]?.hours||0;return t;};
   const avg=(total,wks)=>wks>0?fh(total/wks)+' hrs/wk':'—';
 
@@ -2655,7 +2492,7 @@ function wireEvents() {
 
   // Rescan
   document.getElementById('btn-rescan').addEventListener('click',()=>{
-    refreshFromFolder().then(()=>{rebuildItemsFromManifest();computeProjects();checkNewTimecards();autoSelectFirstProject();renderAll();renderFiles();})
+    refreshFromFolder().then(()=>{rebuildItemsFromManifest();computeProjects();autoSelectFirstProject();renderAll();renderFiles();})
       .catch(e=>setStatus('Rescan error: '+(e.message||e),true,false));
   });
 
@@ -2695,36 +2532,6 @@ function wireEvents() {
       if (S.selJob) renderDetail(S.selJob.job,null);
     });
   });
-
-  // New timecards alert dismiss
-  document.getElementById('btn-dismiss-tc-alert')?.addEventListener('click', () => {
-    document.getElementById('new-tc-alert').style.display = 'none';
-  });
-
-  // Load Profile toggle
-  const profileToggleBtn = document.getElementById('btn-profile-toggle');
-  if (profileToggleBtn) {
-    profileToggleBtn.classList.toggle('active', S.showLoadProfile);
-    profileToggleBtn.addEventListener('click', () => {
-      S.showLoadProfile = !S.showLoadProfile;
-      profileToggleBtn.classList.toggle('active', S.showLoadProfile);
-      const psw = document.getElementById('profile-strength-wrap');
-      if (psw) psw.style.display = S.showLoadProfile ? 'inline-flex' : 'none';
-      if (S.selJob) renderDetail(S.selJob.job, null);
-    });
-  }
-
-  // Profile strength slider
-  const strengthInput = document.getElementById('profile-strength');
-  const strengthVal   = document.getElementById('profile-strength-val');
-  if (strengthInput) {
-    strengthInput.value = S.profileStrength;
-    strengthInput.addEventListener('input', () => {
-      S.profileStrength = parseFloat(strengthInput.value);
-      if (strengthVal) strengthVal.textContent = S.profileStrength + '×';
-      if (S.selJob) renderDetail(S.selJob.job, null);
-    });
-  }
 }
 
 // ── STARTUP ───────────────────────────────────────────────────────────────────
@@ -2740,7 +2547,6 @@ function showApp() {
       await loadAllItems();
       setStatus('');
       computeProjects();
-      checkNewTimecards();
       autoSelectFirstProject();
       updateHdrSub();
       // Sync stream toggle UI to loaded state
