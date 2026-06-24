@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v751</title>
+<title>BW Project Pipeline — v754</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -425,6 +425,9 @@ body.is-panning *{cursor:grabbing!important;}
 /* ── Phase III bar — locked end, editable hours ── */
 .phase-bar.is-design-prod{cursor:default;background:rgba(74,138,181,.52);border-left-color:rgba(255,255,255,.25);}
 .section[data-s-type="design"] .phase-bar.is-design-prod:hover{filter:brightness(1.08);}
+/* ── Phase III end anchor — appears on hover, explains why right edge can't be dragged ── */
+.dp-end-anchor{position:absolute;right:0;top:0;height:100%;width:14px;cursor:help;z-index:6;display:flex;align-items:center;justify-content:center;border-radius:0 4px 4px 0;opacity:0;transition:opacity .15s,background .15s;}
+.phase-bar.is-design-prod:hover .dp-end-anchor{opacity:1;background:rgba(255,255,255,.10);}
 .phase-bar:hover{filter:brightness(1.06);box-shadow:0 2px 8px rgba(0,0,0,.18);}
 .phase-bar.dragging{cursor:grabbing;box-shadow:0 3px 14px rgba(0,0,0,.28);z-index:20;}
 .phase-bar.status-paused{opacity:.55;}
@@ -2614,7 +2617,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v751</div>
+    <div class="auth-version" id="authVersionBadge">v754</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2633,7 +2636,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v751</div>
+  <div class="proto-badge" id="versionBadge">v754</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4900,8 +4903,16 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     bar.appendChild(wkcR);
   }
   const hdlL=el('div','resize-hdl-left'); hdlL.dataset.resizeLeftId=ph.id; bar.appendChild(hdlL);
-  const hdl=el('div','resize-hdl'); hdl.dataset.resizeId=ph.id; bar.appendChild(hdl);
-  if(ph.isDesignProd){ bar.classList.add('is-design-prod'); }
+  if(!ph.isDesignProd){ const hdl=el('div','resize-hdl'); hdl.dataset.resizeId=ph.id; bar.appendChild(hdl); }
+  if(ph.isDesignProd){
+    bar.classList.add('is-design-prod');
+    const anchor=el('div','dp-end-anchor');
+    anchor.innerHTML='<svg width="9" height="10" viewBox="0 0 9 10" fill="none" style="pointer-events:none"><rect x="1" y="4" width="7" height="6" rx="1.5" fill="rgba(255,255,255,.75)"/><path d="M3 4V2.5a1.5 1.5 0 0 1 3 0V4" stroke="rgba(255,255,255,.75)" stroke-width="1.2" stroke-linecap="round"/></svg>';
+    anchor.addEventListener('mouseenter',e=>{ showTTraw('<span class="tt-n">End follows Production</span><br><span class="tt-d">Resize Construction to move where Phase III ends</span>',e); });
+    anchor.addEventListener('mousemove',moveTT);
+    anchor.addEventListener('mouseleave',hideTT);
+    bar.appendChild(anchor);
+  }
   return bar;
 }
 // ════════════════════════════════════════════════  DESIGN PRODUCTION PHASE SYNC
@@ -6101,7 +6112,8 @@ MENU.addEventListener('click',e=>{
   if(ns==='lead'){
     closeStatusMenu();
     const proj=PROJECTS.find(p=>p.id===menuProjId); if(!proj)return;
-    proj.isLead=true; proj.status='projected';
+    proj.isLead=true; proj.status='projected'; proj.scheduled=false;
+    markDirty(proj); // ensure GanttData is rewritten so isLead survives reload
     if(proj._spItemId) graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{PipelineStage:''}).catch(e=>console.warn('[pipeline] Lead patch failed',e));
     buildAll(); triggerSave(); return;
   }
@@ -7407,6 +7419,7 @@ function hideTT(){TT.classList.remove('show');}
     const _msTallEl=e.target.closest('.ms-tall');
     if(_msTallEl){ const _r=findMs(_msTallEl.dataset.msId); if(_r) msTT(_r.ms,e); return; }
     if(e.target.closest('.tier-dot,.pd-dot')) return;
+    if(e.target.closest('.dp-end-anchor')) return; // anchor manages its own tooltip
     // Only show tooltip when over an interactive element, not empty lane space
     if(!e.target.closest('.phase-bar,.timeoff-block')){hideTT();return;}
     const ss=e.target.closest('.section-scroll');
@@ -7889,19 +7902,35 @@ function buildPlanningSection(){
       // Tooltip (shared, navy, delayed-hide) — matches Design/Production fc-proj-tooltip pattern
       chip.addEventListener('mouseenter',()=>{
         clearTimeout(_psTTTimer);
-        let html='';
-        html+='<div class="tt-type">'+pp.name+'</div>';
-        if(pp.projType) html+='<div class="tt-addr">'+pp.projType+'</div>';
-        if(pp.shortDescription) html+='<div class="tt-scope">'+pp.shortDescription+'</div>';
-        if(pp.address) html+='<div class="tt-addr">'+pp.address+'</div>';
-        if(pp.projBudget) html+='<div class="tt-price">'+pp.projBudget+'</div>';
-        html+='<div class="tt-people"><div class="tt-person">';
-        html+=pp.salesPerson
-          ?`<span class="tt-person-role">Sales</span><span>${pp.salesPerson.split(' ')[0]}</span>`
-          :`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
-        html+='</div></div>';
+        // Prefer live data from PROJECTS (SP-authoritative) over stale pp snapshot
         const origProj=PROJECTS.find(p=>p.id===pp._fromLeadId);
+        const liveName=(origProj?.clientName||origProj?.name||pp.name).split(/[,\u2013\u2014-]/)[0].trim();
+        const liveDesc=origProj?.shortDescription||origProj?.projectDescription||pp.shortDescription||'';
+        const liveAddress=origProj?.address||pp.address||'';
+        const liveValue=origProj?.estimatedValue||pp.projBudget||'';
+        const liveType=origProj?.projType||pp.projType||'';
+        const liveSales=origProj?.salesPerson||pp.salesPerson||'';
         const mgrSpId=origProj?._spItemId||'';
+        let html='';
+        html+='<div class="tt-type">'+liveName+'</div>';
+        if(liveType) html+='<div class="tt-addr">'+liveType+'</div>';
+        if(liveDesc) html+='<div class="tt-scope">'+liveDesc+'</div>';
+        if(liveAddress) html+='<div class="tt-addr">'+liveAddress+'</div>';
+        if(liveValue) html+='<div class="tt-price">'+liveValue+'</div>';
+        html+='<div class="tt-people">';
+        html+='<div class="tt-person">';
+        html+=liveSales
+          ?`<span class="tt-person-role">Sales</span><span>${liveSales.split(' ')[0]}</span>`
+          :`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
+        html+='</div>';
+        // Proposed designer — pp owns this field (set in the planning section)
+        const propD=pp.proposedDesigner?personById(pp.proposedDesigner):null;
+        html+='<div class="tt-person">';
+        html+=propD
+          ?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${propD.label} (proposed)</span>`
+          :`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
+        html+='</div>';
+        html+='</div>';
         html+='<div style="display:flex;align-items:center;gap:5px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);">';
         if(mgrSpId){
           html+='<button class="tt-mgr-pill" data-edit-mgr-btn="'+mgrSpId+'" style="pointer-events:all"><svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1h3v3M11 1L6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg> MGR</button>';
