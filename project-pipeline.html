@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v759</title>
+<title>BW Project Pipeline — v760</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2617,7 +2617,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v759</div>
+    <div class="auth-version" id="authVersionBadge">v760</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2636,7 +2636,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v759</div>
+  <div class="proto-badge" id="versionBadge">v760</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -6917,21 +6917,9 @@ function _buildReserveList(){
   const mgrSvg=`<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 2h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="14" y1="2" x2="8" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
   const leads=PROJECTS.filter(p=>p.isLead);
   const alreadyIn=new Set(PLANNING_PROJECTS.filter(pp=>pp._fromLeadId).map(pp=>pp._fromLeadId));
-  // ── Diagnostic: log the full filter chain so we can see where projects drop off ──
-  console.group('[Pipeline] _buildReserveList diagnostic');
-  console.log('Total PROJECTS:', PROJECTS.length);
-  console.log('isLead=true projects:', leads.map(p=>({id:p.id,name:p.name,isLead:p.isLead,scheduled:p.scheduled,planningSkipped:p.planningSkipped})));
-  console.log('alreadyIn (PLANNING_PROJECTS._fromLeadId):', [...alreadyIn]);
   const available=leads.filter(p=>!alreadyIn.has(p.id));
-  console.log('available (not already on board):', available.map(p=>p.name));
   const active=available.filter(p=>!p.planningSkipped);
   const skipped=available.filter(p=>p.planningSkipped);
-  console.log('active (not deferred):', active.map(p=>p.name));
-  console.log('deferred (planningSkipped):', skipped.map(p=>p.name));
-  // Show projected-status projects that are NOT flagged as leads — these are the candidates
-  const notLead=PROJECTS.filter(p=>p.status==='projected'&&!p.isLead&&!p.isOpenSlot&&!/^Slot\b/i.test(p.name));
-  console.table(notLead.map(p=>({name:p.name,id:p.id,_spItemId:p._spItemId,_rawStage:p._rawStage,isLead:p.isLead,isOpenSlot:p.isOpenSlot||false})));
-  console.groupEnd();
 
   function makeMgrBtn(proj){
     const mgr=document.createElement('button'); mgr.className='pp-reserve-item-mgr';
@@ -7527,8 +7515,8 @@ function globalStatePayload(){
   };
 }
 function projectGanttPayload(proj){
-  // Everything except SP-owned fields (name, address, status, estimatedValue)
-  const {name,address,status,estimatedValue,clientName,projectName,...rest}=proj;
+  // Everything except SP-owned fields (name, address, status, estimatedValue) and diagnostics
+  const {name,address,status,estimatedValue,clientName,projectName,_rawStage,...rest}=proj;
   return rest;
 }
 // Write person display name to SP column when a project is assigned/unassigned
@@ -8531,7 +8519,7 @@ async function graphDelete(url){
 
 // ── Map PipelineStage → Gantt status ──
 function spStageToStatus(stage){
-  const map={'DA Signed':'da-signed','CA Signed':'ca-signed','Paused':'paused','Cancelled':'cancelled','Archive':'archived','Lost':'lost'};
+  const map={'Lead':'projected','DA Signed':'da-signed','CA Signed':'ca-signed','Paused':'paused','Cancelled':'cancelled','Archive':'archived','Lost':'lost'};
   return map[stage]||'projected';
 }
 
@@ -8690,10 +8678,9 @@ async function loadProjects(saved){
     }
     // SP always owns these fields — overwrite GanttData values
     proj.status=status;
-    // A Lead has no PipelineStage and is not an open slot — scheduled flag is not relevant
+    // A Lead has no PipelineStage (or the literal 'Lead') and is not an open slot
     const isSlot = ganttData?.isOpenSlot || /^Slot\b/i.test(name);
-    proj.isLead = !stage && !isSlot;
-    proj._rawStage = stage; // diagnostic — raw PipelineStage value from SP
+    proj.isLead = (!stage || /^lead$/i.test(stage)) && !isSlot;
     proj.name=name;
     proj.clientName=clientName;
     proj.projectName=projectName;
