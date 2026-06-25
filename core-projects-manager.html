@@ -580,6 +580,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
         </div>
         <button class="btn btn-secondary btn-sm refresh-btn" onclick="fetchProjects()">↺ Refresh</button>
         <button class="btn btn-primary btn-sm" id="new-project-btn" onclick="openNewProjectModal()" style="display: none;">+ New Project</button>
+        <button class="btn btn-secondary btn-sm" id="fix-url-cols-btn" onclick="fixUrlColumns()" style="display: none;" title="Convert URL columns from single-line to multiple-lines of text so long SharePoint URLs fit">Fix URL Columns</button>
       </div>
       <div class="filter-pills" id="filter-pills"><div class="pill active-pill" data-s="Lead" onclick="toggleFilter(&#39;Lead&#39;)">Lead <span style="opacity:0.6">31</span></div><div class="pill" data-s="DA Signed" onclick="toggleFilter(&#39;DA Signed&#39;)">DA Signed <span style="opacity:0.6">11</span></div><div class="pill" data-s="CA Signed" onclick="toggleFilter(&#39;CA Signed&#39;)">CA Signed <span style="opacity:0.6">13</span></div><div class="pill" data-s="Paused" onclick="toggleFilter(&#39;Paused&#39;)">Paused <span style="opacity:0.6">1</span></div><div class="pill" data-s="Cancelled" onclick="toggleFilter(&#39;Cancelled&#39;)">Cancelled <span style="opacity:0.6">2</span></div><div class="pill" data-s="Lost" onclick="toggleFilter(&#39;Lost&#39;)">Lost <span style="opacity:0.6">5</span></div><div class="pill" data-s="Archive" onclick="toggleFilter(&#39;Archive&#39;)">Archive <span style="opacity:0.6">25</span></div><div class="pill" data-s="All" onclick="toggleFilter(&#39;All&#39;)">All <span style="opacity:0.6">88</span></div></div>
     </div>
@@ -1080,6 +1081,8 @@ function toggleAdmin() {
   document.getElementById('gear-icon').classList.toggle('active', adminMode);
   const npBtn=document.getElementById('new-project-btn');
   if(npBtn)npBtn.style.display=adminMode?'':'none';
+  const fuBtn=document.getElementById('fix-url-cols-btn');
+  if(fuBtn)fuBtn.style.display=adminMode?'':'none';
   if (expandedId) renderTable();
 }
 
@@ -1342,17 +1345,9 @@ function buildDetailPanel(p){
 
   function urlField(fieldKey, label, val) {
     if (adminMode) {
-      const len=val.length;
-      const warnStyle=len>255?'color:#b94444;font-weight:600;':'color:var(--slate);';
-      const warnText=len>255?`${len} chars — exceeds 255 limit. Change SP column to Multiple lines of text.`:(len>200?`${len}/255 chars`:'');
       return `<div class="df"><label>${label}</label>
-        <div style="display:flex;flex-direction:column;gap:3px;flex:1;">
-          <input class="edit-input" id="ef-${fieldKey}-${id}" type="text" value="${esc(val)}"
-            oninput="autoSaveDebounced('${id}','${fieldKey}',this.value);_urlLen(this,'ef-len-${fieldKey}-${id}')"
-            onblur="autoSaveField('${id}','${fieldKey}',this.value)" placeholder="https://…">
-          <span id="ef-len-${fieldKey}-${id}" style="font-size:9px;${warnStyle}display:${warnText?'':'none'}">${warnText}</span>
-          <span id="ef-msg-${fieldKey}-${id}" style="font-size:9px;display:none;"></span>
-        </div>
+        <input class="edit-input" id="ef-${fieldKey}-${id}" type="url" value="${esc(val)}"
+          oninput="autoSaveDebounced('${id}','${fieldKey}',this.value)" placeholder="https://…">
       </div>`;
     }
     if (!val) return `<div class="df"><label>${label}</label><div class="v empty">—</div></div>`;
@@ -1382,8 +1377,7 @@ function buildDetailPanel(p){
   const pmNames=window._teamPMs||[];
   const salesNames=window._teamSales||[];
 
-  // ── Row 1: Identity — Client Name + Status ──
-  const clientNameField=textField('ClientName','Client Name',p.ClientName||'');
+  // ── Row 1: Identity — Project Name + Status ──
   const nameField=textField('ProjectName','Project Name',p.ProjectName||'');
 
   const statusField=adminMode
@@ -1399,8 +1393,8 @@ function buildDetailPanel(p){
 
   const jobCodeField=textField('JobCode','Job Code',p.JobCode||'');
   const shortDescField=textField('ShortDescription','Short Description',p.ShortDescription||'');
-  const identityGrid=`<div class="detail-grid" style="margin-bottom:0">${clientNameField}${statusField}</div>
-    <div class="detail-grid" style="margin-top:6px;margin-bottom:0">${nameField}${jobCodeField}<div style="grid-column:3/-1">${shortDescField}</div></div>`;
+  const identityGrid=`<div class="detail-grid" style="margin-bottom:0">${nameField}${statusField}</div>
+    <div class="detail-grid" style="margin-top:6px;margin-bottom:0">${jobCodeField}<div style="grid-column:2/-1">${shortDescField}</div></div>`;
 
   // ── Team section — Sales Person, Designer, PM, Secondary Designer ──
   const teamGrid=
@@ -1562,11 +1556,11 @@ const NEW_COLUMNS=[
   {name:'CAPrice',                  displayName:'CA Price',              number:{decimalPlaces:'two',displayAs:'number'}},
   {name:'WarrantyStartDate',        displayName:'Warranty Start Date',   dateTime:{displayAs:'default',format:'dateOnly'}},
   {name:'DataResource',             displayName:'Data Resource',         boolean:{}},
-  {name:'EstimateUrl',              displayName:'Estimate',              text:{allowMultipleLines:true,linesForEditing:2}},
-  {name:'ProjectBasisUrl',          displayName:'Project Basis',         text:{allowMultipleLines:true,linesForEditing:2}},
-  {name:'DAUrl',                    displayName:'DA',                    text:{allowMultipleLines:true,linesForEditing:2}},
-  {name:'CAUrl',                    displayName:'CA',                    text:{allowMultipleLines:true,linesForEditing:2}},
-  {name:'SelectionsSheetUrl',       displayName:'Selections Sheet',      text:{allowMultipleLines:true,linesForEditing:2}},
+  {name:'EstimateUrl',              displayName:'Estimate',              text:{}},
+  {name:'ProjectBasisUrl',          displayName:'Project Basis',         text:{}},
+  {name:'DAUrl',                    displayName:'DA',                    text:{}},
+  {name:'CAUrl',                    displayName:'CA',                    text:{}},
+  {name:'SelectionsSheetUrl',       displayName:'Selections Sheet',      text:{}},
 ];
 
 async function setupColumns(){
@@ -1587,6 +1581,37 @@ async function setupColumns(){
   alert('SharePoint column setup:\n\n'+results.join('\n'));
 }
 
+async function fixUrlColumns(){
+  if(!graphToken){showToast('Sign in first.');return;}
+  const btn=document.getElementById('fix-url-cols-btn');
+  if(btn){btn.disabled=true;btn.textContent='Fixing…';}
+  const URL_COLS=['EstimateUrl','ProjectBasisUrl','DAUrl','CAUrl','SelectionsSheetUrl'];
+  const results=[];
+  try{
+    // Get all column definitions so we can find IDs by name
+    const data=await graphFetch(SP_CONFIG.columnsUrl+'?$select=id,name,text');
+    const cols=data.value||[];
+    for(const name of URL_COLS){
+      const col=cols.find(c=>c.name===name);
+      if(!col){results.push(`— not found: ${name}`);continue;}
+      if(col.text?.allowMultipleLines){results.push(`✓ already multiline: ${name}`);continue;}
+      try{
+        await graphFetch(`${SP_CONFIG.columnsUrl}/${col.id}`,{
+          method:'PATCH',
+          body:JSON.stringify({text:{allowMultipleLines:true}})
+        });
+        results.push(`✓ fixed: ${name}`);
+      }catch(e){
+        results.push(`✗ failed: ${name} — ${e.message}`);
+      }
+    }
+  }catch(e){
+    results.push(`✗ could not fetch columns: ${e.message}`);
+  }
+  if(btn){btn.disabled=false;btn.textContent='Fix URL Columns';}
+  alert('URL column fix results:\n\n'+results.join('\n'));
+}
+
 // ══════════════════════════════════ AUTO-SAVE
 const _autoTimers={};
 async function autoSaveField(itemId,fieldKey,value){
@@ -1604,18 +1629,12 @@ async function autoSaveField(itemId,fieldKey,value){
     proj[fieldKey]=value;
     if(fieldKey==='PipelineStage'){buildFilterPills();applyFilters();}
     if(msg){msg.textContent='Saved.';setTimeout(()=>{if(msg)msg.style.display='none';},2000);}
+    if(fieldMsg){fieldMsg.style.display='none';}
   }catch(e){
     const detail=e.message||'Unknown error';
     if(msg){msg.textContent='Save failed.';msg.className='save-status err';msg.style.display='';}
     if(fieldMsg){fieldMsg.textContent='⚠ '+detail;fieldMsg.style.color='#b94444';fieldMsg.style.display='';}
   }
-}
-function _urlLen(input,spanId){
-  const span=document.getElementById(spanId); if(!span)return;
-  const n=input.value.length;
-  if(n>255){span.textContent=n+' chars — exceeds 255 limit. Change SP column to Multiple lines of text.';span.style.color='#b94444';span.style.fontWeight='600';span.style.display='';}
-  else if(n>200){span.textContent=n+'/255 chars';span.style.color='var(--slate)';span.style.fontWeight='';span.style.display='';}
-  else{span.style.display='none';}
 }
 function autoSaveDebounced(itemId,fieldKey,value){
   const key=itemId+':'+fieldKey;
