@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v780</title>
+<title>BW Project Pipeline — v781</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2621,7 +2621,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v780</div>
+    <div class="auth-version" id="authVersionBadge">v781</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2640,7 +2640,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v780</div>
+  <div class="proto-badge" id="versionBadge">v781</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7919,22 +7919,22 @@ function buildPlanningSection(){
   psTrayTitle.textContent='Unmatched Projects';
   psTrayHd.appendChild(psTrayTitle);
   // addBtn is in addBtnRow above the tray — not here
+
+  // ── Shared tooltip — hoisted to function scope so matched cards can use it too ──
+  let _psProjTT=document.getElementById('psProjTT');
+  if(!_psProjTT){
+    _psProjTT=el('div','fc-proj-tooltip'); _psProjTT.id='psProjTT';
+    document.body.appendChild(_psProjTT);
+  }
+  let _psTTTimer=null;
+  _psProjTT.addEventListener('mouseenter',()=>clearTimeout(_psTTTimer));
+  _psProjTT.addEventListener('mouseleave',()=>{ _psTTTimer=setTimeout(()=>_psProjTT.classList.remove('tt-visible'),120); });
+
   const psTrayBody=el('div','ps-tray-body');
   if(!psUnmatched.length){
     const emp=el('span','ps-tray-empty'); emp.textContent='All projects matched \u2014 ready to confirm.';
     psTrayBody.appendChild(emp);
   } else {
-    // ── Shared tooltip (one element, reused for all chips) ──
-  let _psProjTT=document.getElementById('psProjTT');
-  if(!_psProjTT){
-    _psProjTT=el('div','fc-proj-tooltip'); _psProjTT.id='psProjTT';
-    _psProjTT.addEventListener('mouseenter',()=>clearTimeout(_psTTTimer));
-    _psProjTT.addEventListener('mouseleave',()=>{ _psTTTimer=setTimeout(()=>_psProjTT.classList.remove('tt-visible'),120); });
-    document.body.appendChild(_psProjTT);
-  }
-  _psProjTT.addEventListener('mouseenter',()=>clearTimeout(_psTTTimer));
-  let _psTTTimer=null;
-
   let _psDragTargetId=null; // tracks which tray chip is being hovered over for reorder
   psUnmatched.forEach(pp=>{
       const chip=el('div','ps-chip');
@@ -8099,6 +8099,50 @@ function buildPlanningSection(){
       mPencil.title=attached.notes?'Edit note':'Add note'; mPencil.dataset.planningNoteBtn=attached.id;
       mPencil.innerHTML='<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
       mCard.appendChild(mHdl); mCard.appendChild(mBadge); mCard.appendChild(mNm); mCard.appendChild(mPencil);
+      // Tooltip — same logic as unmatched chips
+      mCard.addEventListener('mouseenter',e=>{
+        clearTimeout(_psTTTimer);
+        const pp=attached;
+        const origProj=PROJECTS.find(p=>p.id===pp._fromLeadId)
+          ||PROJECTS.find(p=>pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''))
+          ||(pp.name&&PROJECTS.find(p=>p.isLead&&p.name&&p.name.toLowerCase()===pp.name.toLowerCase()))
+          ||(pp.name&&PROJECTS.find(p=>p.isLead&&p.name&&(p.name.toLowerCase().includes(pp.name.toLowerCase())||pp.name.toLowerCase().includes(p.name.toLowerCase()))));
+        const liveName=(origProj?(origProj.clientName||origProj.name||pp.name||''):(pp.name||'')).split(/[,\u2013\u2014-]/)[0].trim();
+        const liveDesc=origProj?(origProj.shortDescription||''):(pp.shortDescription||'');
+        const liveAddress=origProj?(origProj.address||''):(pp.address||'');
+        const liveValue=origProj?(origProj.estimatedValue||''):(pp.projBudget||'');
+        const liveType=origProj?(origProj.projType||''):(pp.projType||'');
+        const liveSales=origProj?(origProj.salesPerson||''):(pp.salesPerson||'');
+        const mgrSpId=origProj?._spItemId||'';
+        let html='';
+        html+='<div class="tt-type">'+liveName+'</div>';
+        if(liveType) html+='<div class="tt-addr">'+liveType+'</div>';
+        if(liveDesc) html+='<div class="tt-scope">'+liveDesc+'</div>';
+        if(liveAddress) html+='<div class="tt-addr">'+liveAddress+'</div>';
+        if(liveValue) html+='<div class="tt-price">'+liveValue+'</div>';
+        html+='<div class="tt-people">';
+        html+='<div class="tt-person">';
+        html+=liveSales?`<span class="tt-person-role">Sales</span><span>${liveSales.split(' ')[0]}</span>`:`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
+        html+='</div>';
+        const propD=pp.proposedDesigner?personById(pp.proposedDesigner):null;
+        html+='<div class="tt-person">';
+        html+=propD?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${propD.label} (proposed)</span>`:`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
+        html+='</div></div>';
+        html+='<div style="display:flex;align-items:center;gap:5px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);">';
+        const du=origProj?.docUrls||{};
+        function _pu2(cls,lbl,type,url){return `<button class="tt-circle-pill ${cls}" style="pointer-events:all" data-upcoming-pill="${type}"${url?` data-upcoming-url="${url}"`:''}>${lbl}</button>`;}
+        html+=_pu2('est-pill','EST','est',du.est)+_pu2('pb-pill','PB','pb',du.pb);
+        html+=`<button class="fc-ms-pill-btn da-pill" style="pointer-events:all" data-upcoming-pill="da"${du.da?` data-upcoming-url="${du.da}"`:''}title="Design Agreement">DA</button>`;
+        html+='</div>';
+        _psProjTT.innerHTML=html;
+        const r=mCard.getBoundingClientRect();
+        const ttW=_psProjTT.offsetWidth||280;
+        const ttLeft=Math.max(8,Math.min(r.left,window.innerWidth-ttW-8));
+        _psProjTT.style.left=ttLeft+'px';
+        _psProjTT.style.top=(r.bottom+5)+'px';
+        _psProjTT.classList.add('tt-visible');
+      });
+      mCard.addEventListener('mouseleave',()=>{ _psTTTimer=setTimeout(()=>_psProjTT.classList.remove('tt-visible'),150); });
       projCell.appendChild(mCard);
     } else {
       const dz=el('div','ps-drop-zone'); dz.textContent='Drop project here';
