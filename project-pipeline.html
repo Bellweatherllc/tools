@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v764</title>
+<title>BW Project Pipeline — v766</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2522,6 +2522,8 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 .ps-sticky-top{position:sticky;top:calc(var(--app-h,44px) + var(--slb-h,22px) + 32px - 1px);z-index:15;background:var(--bg);}
 /* ── Unmatched tray ── */
 .ps-tray{background:rgba(31,46,62,.04);border-bottom:2px solid rgba(31,46,62,.14);}
+.ps-add-btn-row{display:flex;align-items:center;padding:8px 14px;background:rgba(31,46,62,.05);border-bottom:2px solid rgba(31,46,62,.10);transition:background .15s,border-color .15s;}
+.ps-add-btn-row.ps-drag-over{background:rgba(216,182,79,.10);border-color:rgba(216,182,79,.55);box-shadow:inset 0 0 0 2px rgba(216,182,79,.28);}
 .ps-tray-hd{display:flex;flex-direction:column;align-items:flex-start;padding:8px 14px 7px;gap:5px;background:rgba(31,46,62,.08);border-bottom:1px solid rgba(31,46,62,.12);}
 .ps-tray-hd-title{font-size:10px;font-weight:700;letter-spacing:.09em;color:var(--navy);text-transform:uppercase;}
 .ps-tray-chev{font-size:10px;color:var(--ts);font-weight:700;}
@@ -2620,7 +2622,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v764</div>
+    <div class="auth-version" id="authVersionBadge">v766</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2639,7 +2641,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v764</div>
+  <div class="proto-badge" id="versionBadge">v766</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7421,7 +7423,7 @@ function hideTT(){TT.classList.remove('show');}
     const _msTallEl=e.target.closest('.ms-tall');
     if(_msTallEl){ const _r=findMs(_msTallEl.dataset.msId); if(_r) msTT(_r.ms,e); return; }
     if(e.target.closest('.tier-dot,.pd-dot')) return;
-    if(e.target.closest('.dp-end-anchor')) return; // anchor manages its own tooltip
+    if(e.target.closest('.dp-end-anchor,.ps-add-btn-row')) return; // these manage their own tooltip
     // Only show tooltip when over an interactive element, not empty lane space
     if(!e.target.closest('.phase-bar,.timeoff-block')){hideTT();return;}
     const ss=e.target.closest('.section-scroll');
@@ -7774,6 +7776,25 @@ function buildPlanningSection(){
 
   // Add button — lives in Unmatched tray header
   const addBtn=el('button','add-proj-btn'); addBtn.textContent='+ Add Planning Project'; addBtn.dataset.openReservePopup='1';
+  // Hover tooltip on addBtn
+  addBtn.addEventListener('mouseenter',e=>showTTraw('<span class="tt-n">Parking for active leads</span><br><span class="tt-d">Drop a project here to park it</span>',e));
+  addBtn.addEventListener('mousemove',moveTT);
+  addBtn.addEventListener('mouseleave',hideTT);
+  // Standalone row — addBtn lives here, also serves as the drag-to-park drop target
+  const addBtnRow=el('div','ps-add-btn-row');
+  addBtnRow.appendChild(addBtn);
+  addBtnRow.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='move';addBtnRow.classList.add('ps-drag-over');});
+  addBtnRow.addEventListener('dragleave',e=>{if(!addBtnRow.contains(e.relatedTarget))addBtnRow.classList.remove('ps-drag-over');});
+  addBtnRow.addEventListener('drop',e=>{
+    e.preventDefault(); addBtnRow.classList.remove('ps-drag-over');
+    const ppId=e.dataTransfer.getData('ps-pp-id');
+    const droppedPP=PLANNING_PROJECTS.find(p=>p.id===ppId);
+    if(droppedPP){
+      pushPlanningHistory(droppedPP.name+' \u2014 parked');
+      droppedPP.parked=true; droppedPP.slotId=null; droppedPP.slotWeek=null;
+      rebuildSection('planning'); triggerSave();
+    }
+  });
   // ── Planning cmd bar (navy sticky band matching Design/Production) ──
   const planningCmdBar=el('div','cap-cmd-bar');
   const planningCmdLeft=el('div','cap-cmd-left'); planningCmdLeft.style.cssText='min-width:60px;';
@@ -7863,7 +7884,7 @@ function buildPlanningSection(){
   const psTrayTitle=el('span','ps-tray-hd-title');
   psTrayTitle.textContent='Unmatched Projects';
   psTrayHd.appendChild(psTrayTitle);
-  psTrayHd.appendChild(addBtn);
+  // addBtn is in addBtnRow above the tray — not here
   const psTrayBody=el('div','ps-tray-body');
   if(!psUnmatched.length){
     const emp=el('span','ps-tray-empty'); emp.textContent='All projects matched \u2014 ready to confirm.';
@@ -8224,6 +8245,7 @@ function buildPlanningSection(){
   }
 
   const psStickyTop=el('div','ps-sticky-top');
+  psStickyTop.appendChild(addBtnRow);
   psStickyTop.appendChild(psTray);
   psStickyTop.appendChild(psHdr);
   sec.appendChild(psStickyTop);
