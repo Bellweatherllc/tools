@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v769</title>
+<title>BW Project Pipeline — v773</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -178,7 +178,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
   position:fixed;z-index:9500;
   background:#fff;border:1px solid var(--bdr);border-radius:8px;
   box-shadow:0 6px 24px rgba(0,0,0,.18);
-  width:676px;padding:10px;
+  width:676px;max-width:calc(100vw - 16px);padding:10px;
   display:none;flex-direction:column;gap:8px;
 }
 .note-popover.open{display:flex;}
@@ -220,7 +220,8 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .note-pop-save{font-size:11px;font-weight:600;color:#fff;background:var(--navy);border:none;cursor:pointer;padding:4px 12px;border-radius:4px;}
 .note-pop-save:hover{background:#2e4560;}
 .bar-caret-stack{display:none;}
-.admin-mode .bar-caret-stack{display:flex;}
+.admin-mode .admin-only-edit{cursor:text;}
+.admin-mode .admin-only-edit:hover .proj-name-text{text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(31,46,62,.30);}
 .lane-row.ghost{ pointer-events:all; border-bottom:none; }
 .fc-proj-row.ghost{ border-bottom:none; }
 .lane-row.ghost .phase-bar{ opacity:1; }
@@ -865,11 +866,9 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .pp-lod-blk:hover .pp-lod-designers{max-height:80px;margin-top:4px;}
 .pp-lod-past{border-left:3px solid #E24B4A;padding:4px 0 4px 8px;margin:3px 0;}
 
-/* ── Pencil pulse gray→gold when has note ── */
-@keyframes pencilPulseDark{0%,100%{color:rgba(255,255,255,.35);}50%{color:#d8b64f;}}
-@keyframes pencilPulseLight{0%,100%{color:rgba(40,40,40,.30);}50%{color:#d8b64f;}}
-.pp-pencil-noted{animation:pencilPulseDark 2.5s ease-in-out infinite;}
-.fc-note-btn.pp-pencil-noted{animation:pencilPulseLight 2.5s ease-in-out infinite;opacity:.85!important;}
+/* ── Pencil: gold when has note, gray when not ── */
+.pp-pencil-noted{color:var(--gold);}
+.fc-note-btn.pp-pencil-noted{opacity:.85;}
 
 /* ── Budget rejection toast ── */
 #budgetToast{
@@ -2622,7 +2621,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v769</div>
+    <div class="auth-version" id="authVersionBadge">v773</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2641,7 +2640,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v769</div>
+  <div class="proto-badge" id="versionBadge">v773</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -4246,7 +4245,10 @@ function buildFcMsRow(proj, capacitySection){
   const name=el('div','fc-proj-name admin-only-edit');
   const _nt=el('span','proj-name-text'); _nt.textContent=proj.name; name.appendChild(_nt);
   name.title='Click to edit project name (admin mode)';
-  name.addEventListener('dblclick',e=>{
+  // Slots: single-click to rename (dblclick too easy to miss on a slot row)
+  // Regular projects: dblclick to avoid accidental edits
+  const _nameEditEvt=(proj.isOpenSlot||/^Slot\b/i.test(proj.name))?'click':'dblclick';
+  name.addEventListener(_nameEditEvt,e=>{
     if(!canEdit()) return;
     e.stopPropagation();
     const prev=proj.projectName||proj.name;
@@ -7938,12 +7940,15 @@ function buildPlanningSection(){
         // with legacy GanttData IDs that predate the 'sp-proj-N' scheme
         const origProj=PROJECTS.find(p=>p.id===pp._fromLeadId)
           ||PROJECTS.find(p=>pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''));
-        const liveName=(origProj?.clientName||origProj?.name||pp.name||'').split(/[,\u2013\u2014-]/)[0].trim();
-        const liveDesc=origProj?.shortDescription||pp.shortDescription||'';
-        const liveAddress=origProj?.address||pp.address||'';
-        const liveValue=origProj?.estimatedValue||pp.projBudget||'';
-        const liveType=origProj?.projType||pp.projType||'';
-        const liveSales=origProj?.salesPerson||pp.salesPerson||'';
+        // If origProj found, use its SP-authoritative data exclusively — never mix with stale snapshot
+        const liveName=(origProj
+          ?(origProj.clientName||origProj.name||pp.name||'')
+          :(pp.name||'')).split(/[,\u2013\u2014-]/)[0].trim();
+        const liveDesc=origProj?(origProj.shortDescription||''):(pp.shortDescription||'');
+        const liveAddress=origProj?(origProj.address||''):(pp.address||'');
+        const liveValue=origProj?(origProj.estimatedValue||''):(pp.projBudget||'');
+        const liveType=origProj?(origProj.projType||''):(pp.projType||'');
+        const liveSales=origProj?(origProj.salesPerson||''):(pp.salesPerson||'');
         const mgrSpId=origProj?._spItemId||'';
         let html='';
         html+='<div class="tt-type">'+liveName+'</div>';
@@ -8096,7 +8101,36 @@ function buildPlanningSection(){
     slotPencilBtn.title=slot.notes?'Edit slot note':'Add slot note';
     slotPencilBtn.dataset.noteBtn=slot.id;
     slotPencilBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
-    const slotNm=el('span','ps-slot-nm'); slotNm.textContent=slot.name;
+    const slotNm=el('span','ps-slot-nm');
+    slotNm.textContent=slot.name;
+    if(canEdit()){
+      slotNm.title='Click to rename slot';
+      slotNm.style.cursor='text';
+      slotNm.addEventListener('click',e=>{
+        e.stopPropagation();
+        const prev=slot.projectName||slot.name;
+        const inp=document.createElement('input');
+        inp.value=prev;
+        inp.style.cssText='font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);border:none;border-bottom:2px solid var(--navy);outline:none;background:transparent;width:110px;padding:0;';
+        slotNm.replaceChildren(inp);
+        inp.focus(); inp.select();
+        const commit=()=>{
+          const val=inp.value.trim()||prev;
+          slot.projectName=val; slot.name=val;
+          slotNm.textContent=val; slotNm.style.cursor='text';
+          if(slot._spItemId){
+            graphPatch(BWC_SITE+'/CORE_Projects/items/'+slot._spItemId+'/fields',{ProjectName:val,ClientName:val})
+              .catch(err=>console.error('[planning] slot rename failed:',err));
+          }
+          markDirty(slot); triggerSave(slot);
+        };
+        inp.addEventListener('blur',commit);
+        inp.addEventListener('keydown',ev=>{
+          if(ev.key==='Enter'){ev.preventDefault();inp.blur();}
+          if(ev.key==='Escape'){inp.value=prev;inp.blur();}
+        });
+      });
+    }
     slotCell.appendChild(slotPencilBtn); slotCell.appendChild(slotNm);
     row.appendChild(slotCell);
 
@@ -9927,11 +9961,26 @@ function openNotePopover(projId, anchorEl){
   }
   NOTE_POP.classList.add('open');
   const r=(_noteAnchorEl||anchorEl).getBoundingClientRect();
-  let top=r.bottom+4, left=r.left-636;
+  // Initial position: left of anchor, just below it
+  let top=r.bottom+4;
+  let left=r.left-636;
   if(left<8) left=8;
-  if(top+300>window.innerHeight) top=r.top-300-4;
   NOTE_POP.style.top=top+'px';
   NOTE_POP.style.left=left+'px';
+  // After render: clamp using actual dimensions so Save button never goes off-screen
+  requestAnimationFrame(()=>{
+    const pw=NOTE_POP.offsetWidth, ph=NOTE_POP.offsetHeight;
+    const vw=window.innerWidth, vh=window.innerHeight;
+    // Right edge
+    if(left+pw>vw-8) left=Math.max(8,vw-pw-8);
+    // Bottom edge — prefer above anchor if it doesn't fit below
+    if(top+ph>vh-8){
+      const above=r.top-ph-4;
+      top=above>=8?above:Math.max(8,vh-ph-8);
+    }
+    NOTE_POP.style.top=top+'px';
+    NOTE_POP.style.left=left+'px';
+  });
   setTimeout(()=>NOTE_TA.focus(),30);
 }
 function closeNotePopover(){ NOTE_POP.classList.remove('open'); noteProjId=null; notePlanningId=null; }
@@ -9963,7 +10012,10 @@ function saveNote(){
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     revisedEntries.push(newText+'\n— '+author+', '+dateStr);
   }
-  if(!revisedEntries.length&&!newText){ closeNotePopover(); return; }
+  if(!revisedEntries.length&&!newText){
+    if(!proj.notes){ closeNotePopover(); return; } // was already empty — nothing to save
+    // fall through to save the cleared state (user deleted all notes)
+  }
   proj.notes=revisedEntries.join('\n\n');
   document.querySelectorAll(`.fc-note-btn[data-note-btn="${proj.id}"]`).forEach(btn=>{
     btn.classList.toggle('has-note',!!proj.notes);
