@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v773</title>
+<title>BW Project Pipeline — v775</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2621,7 +2621,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v773</div>
+    <div class="auth-version" id="authVersionBadge">v775</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2640,7 +2640,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v773</div>
+  <div class="proto-badge" id="versionBadge">v775</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7777,6 +7777,20 @@ function buildPlanningSection(){
   // ── Auto-sync: ensure every Lead in PROJECTS has a PLANNING_PROJECTS entry ──
   // Also cleans up stale unmatched entries whose source is no longer a lead
   (function syncLeadsToPlanning(){
+    // Heal stale _fromLeadId values before doing anything else.
+    // Pre-integration entries may have a legacy proj.id (not 'sp-proj-N' format) that no
+    // longer matches any PROJECTS entry. Try to re-link them by name so downstream
+    // lookups (tooltip, etc.) get live SP data instead of stale snapshots.
+    PLANNING_PROJECTS.forEach(pp=>{
+      if(!pp._fromLeadId) return;
+      const byId=PROJECTS.find(p=>p.id===pp._fromLeadId);
+      if(byId) return; // already good
+      const bySp=PROJECTS.find(p=>String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''));
+      if(bySp){ pp._fromLeadId=bySp.id; return; } // sp-proj-N format — update to current id
+      // Last resort: match by name among leads (handles fully legacy IDs)
+      const byName=PROJECTS.find(p=>p.isLead&&p.name&&p.name===pp.name);
+      if(byName){ pp._fromLeadId=byName.id; } // heal — will persist on next save
+    });
     PROJECTS.filter(p=>p.isLead).forEach(proj=>{
       const already=PLANNING_PROJECTS.find(pp=>
         pp._fromLeadId===proj.id||
@@ -7937,9 +7951,11 @@ function buildPlanningSection(){
       chip.addEventListener('mouseenter',()=>{
         clearTimeout(_psTTTimer);
         // Look up origProj by _fromLeadId first, then by _spItemId for old projects
-        // with legacy GanttData IDs that predate the 'sp-proj-N' scheme
+        // with legacy GanttData IDs that predate the 'sp-proj-N' scheme,
+        // then by name as a last resort for fully pre-integration legacy IDs
         const origProj=PROJECTS.find(p=>p.id===pp._fromLeadId)
-          ||PROJECTS.find(p=>pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''));
+          ||PROJECTS.find(p=>pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''))
+          ||(pp.name&&PROJECTS.find(p=>p.isLead&&p.name===pp.name));
         // If origProj found, use its SP-authoritative data exclusively — never mix with stale snapshot
         const liveName=(origProj
           ?(origProj.clientName||origProj.name||pp.name||'')
@@ -8103,34 +8119,33 @@ function buildPlanningSection(){
     slotPencilBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
     const slotNm=el('span','ps-slot-nm');
     slotNm.textContent=slot.name;
-    if(canEdit()){
-      slotNm.title='Click to rename slot';
-      slotNm.style.cursor='text';
-      slotNm.addEventListener('click',e=>{
-        e.stopPropagation();
-        const prev=slot.projectName||slot.name;
-        const inp=document.createElement('input');
-        inp.value=prev;
-        inp.style.cssText='font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);border:none;border-bottom:2px solid var(--navy);outline:none;background:transparent;width:110px;padding:0;';
-        slotNm.replaceChildren(inp);
-        inp.focus(); inp.select();
-        const commit=()=>{
-          const val=inp.value.trim()||prev;
-          slot.projectName=val; slot.name=val;
-          slotNm.textContent=val; slotNm.style.cursor='text';
-          if(slot._spItemId){
-            graphPatch(BWC_SITE+'/CORE_Projects/items/'+slot._spItemId+'/fields',{ProjectName:val,ClientName:val})
-              .catch(err=>console.error('[planning] slot rename failed:',err));
-          }
-          markDirty(slot); triggerSave(slot);
-        };
-        inp.addEventListener('blur',commit);
-        inp.addEventListener('keydown',ev=>{
-          if(ev.key==='Enter'){ev.preventDefault();inp.blur();}
-          if(ev.key==='Escape'){inp.value=prev;inp.blur();}
-        });
+    slotNm.title='Click to rename slot (admin mode)';
+    slotNm.style.cursor='text';
+    slotNm.addEventListener('click',e=>{
+      if(!canEdit()) return;
+      e.stopPropagation();
+      const prev=slot.projectName||slot.name;
+      const inp=document.createElement('input');
+      inp.value=prev;
+      inp.style.cssText='font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);border:none;border-bottom:2px solid var(--navy);outline:none;background:transparent;width:110px;padding:0;';
+      slotNm.replaceChildren(inp);
+      inp.focus(); inp.select();
+      const commit=()=>{
+        const val=inp.value.trim()||prev;
+        slot.projectName=val; slot.name=val;
+        slotNm.textContent=val; slotNm.style.cursor='text';
+        if(slot._spItemId){
+          graphPatch(BWC_SITE+'/CORE_Projects/items/'+slot._spItemId+'/fields',{ProjectName:val,ClientName:val})
+            .catch(err=>console.error('[planning] slot rename failed:',err));
+        }
+        markDirty(slot); triggerSave(slot);
+      };
+      inp.addEventListener('blur',commit);
+      inp.addEventListener('keydown',ev=>{
+        if(ev.key==='Enter'){ev.preventDefault();inp.blur();}
+        if(ev.key==='Escape'){inp.value=prev;inp.blur();}
       });
-    }
+    });
     slotCell.appendChild(slotPencilBtn); slotCell.appendChild(slotNm);
     row.appendChild(slotCell);
 
