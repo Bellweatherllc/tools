@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v777</title>
+<title>BW Project Pipeline — v778</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2621,7 +2621,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v777</div>
+    <div class="auth-version" id="authVersionBadge">v778</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2640,7 +2640,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v777</div>
+  <div class="proto-badge" id="versionBadge">v778</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7777,19 +7777,27 @@ function buildPlanningSection(){
   // ── Auto-sync: ensure every Lead in PROJECTS has a PLANNING_PROJECTS entry ──
   // Also cleans up stale unmatched entries whose source is no longer a lead
   (function syncLeadsToPlanning(){
-    // Heal stale _fromLeadId values before doing anything else.
-    // Pre-integration entries may have a legacy proj.id (not 'sp-proj-N' format) that no
-    // longer matches any PROJECTS entry. Try to re-link them by name so downstream
-    // lookups (tooltip, etc.) get live SP data instead of stale snapshots.
+    // Helper: find a PROJECTS entry matching a planning project by any available signal
+    function findSrc(pp){
+      if(!pp._fromLeadId&&!pp.name) return null;
+      const nl=pp.name?pp.name.toLowerCase():'';
+      return PROJECTS.find(p=>p.id===pp._fromLeadId)
+        ||PROJECTS.find(p=>pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''))
+        ||(nl&&PROJECTS.find(p=>p.isLead&&p.name&&p.name.toLowerCase()===nl))
+        // Broader: one name contains the other (handles "PILLION" ↔ "Tom & Bonnie Pillion")
+        ||(nl&&PROJECTS.find(p=>p.isLead&&p.name&&(p.name.toLowerCase().includes(nl)||nl.includes(p.name.toLowerCase()))));
+    }
+    // Heal stale _fromLeadId values and refresh stale snapshot fields for all matched entries
     PLANNING_PROJECTS.forEach(pp=>{
-      if(!pp._fromLeadId) return;
-      const byId=PROJECTS.find(p=>p.id===pp._fromLeadId);
-      if(byId) return; // already good
-      const bySp=PROJECTS.find(p=>String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''));
-      if(bySp){ pp._fromLeadId=bySp.id; return; } // sp-proj-N format — update to current id
-      // Last resort: match by name among leads (handles fully legacy IDs)
-      const byName=PROJECTS.find(p=>p.isLead&&p.name&&p.name.toLowerCase()===pp.name.toLowerCase());
-      if(byName){ pp._fromLeadId=byName.id; } // heal — will persist on next save
+      const src=findSrc(pp);
+      if(!src) return;
+      if(pp._fromLeadId!==src.id) pp._fromLeadId=src.id; // update to current ID
+      // Refresh SP-owned snapshot fields so tooltip always shows clean live data
+      pp.shortDescription=src.shortDescription||'';
+      pp.address=src.address||'';
+      pp.projBudget=src.estimatedValue||pp.projBudget||'';
+      pp.salesPerson=src.salesPerson||'';
+      pp.name=src.name||pp.name; // normalize name to current SP value
     });
     PROJECTS.filter(p=>p.isLead).forEach(proj=>{
       const already=PLANNING_PROJECTS.find(pp=>
@@ -7955,7 +7963,8 @@ function buildPlanningSection(){
         // then by name as a last resort for fully pre-integration legacy IDs
         const origProj=PROJECTS.find(p=>p.id===pp._fromLeadId)
           ||PROJECTS.find(p=>pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''))
-          ||(pp.name&&PROJECTS.find(p=>p.isLead&&p.name&&p.name.toLowerCase()===pp.name.toLowerCase()));
+          ||(pp.name&&PROJECTS.find(p=>p.isLead&&p.name&&p.name.toLowerCase()===pp.name.toLowerCase()))
+          ||(pp.name&&PROJECTS.find(p=>p.isLead&&p.name&&(p.name.toLowerCase().includes(pp.name.toLowerCase())||pp.name.toLowerCase().includes(p.name.toLowerCase()))));
         // If origProj found, use its SP-authoritative data exclusively — never mix with stale snapshot
         const liveName=(origProj
           ?(origProj.clientName||origProj.name||pp.name||'')
