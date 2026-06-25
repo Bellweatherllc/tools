@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v783</title>
+<title>BW Project Pipeline — v784</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2624,7 +2624,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v783</div>
+    <div class="auth-version" id="authVersionBadge">v784</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2643,7 +2643,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v783</div>
+  <div class="proto-badge" id="versionBadge">v784</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7541,6 +7541,31 @@ function _patchPersonNameToSP(proj, personField, personId) {
 function markDirty(proj){
   if(proj&&proj._spItemId) _dirtyProjects.add(proj._spItemId);
 }
+
+// ── Flush pending saves on page unload (handles hard refresh before debounce fires) ──
+window.addEventListener('beforeunload',()=>{
+  if(!graphToken) return;
+  clearTimeout(saveTimer); // cancel pending debounce so it doesn't fire on the new page
+  const hdrs={'Authorization':'Bearer '+graphToken,'Content-Type':'application/json'};
+  // PLANNING_PROJECTS + global state → CORE_Config
+  if(_configItemId){
+    fetch(BWC_SITE+'/CORE_Config/items/'+_configItemId+'/fields',{
+      method:'PATCH',headers:hdrs,
+      body:JSON.stringify({Value:JSON.stringify(globalStatePayload())}),
+      keepalive:true
+    });
+  }
+  // Dirty project GanttData → CORE_Projects
+  _dirtyProjects.forEach(spItemId=>{
+    const proj=PROJECTS.find(p=>p._spItemId===spItemId);
+    if(!proj) return;
+    fetch(BWC_SITE+'/CORE_Projects/items/'+spItemId+'/fields',{
+      method:'PATCH',headers:hdrs,
+      body:JSON.stringify({GanttData:JSON.stringify(projectGanttPayload(proj))}),
+      keepalive:true
+    });
+  });
+});
 function triggerSave(dirtyProj){
   if(dirtyProj) markDirty(dirtyProj);
   setSaveState('saving'); clearTimeout(saveTimer);
