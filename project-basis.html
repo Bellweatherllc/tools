@@ -26,7 +26,7 @@
   /* ── Header ── */
   .header{background:#1f2e3e;padding:0 24px;display:flex;align-items:stretch;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.22);position:sticky;top:0;z-index:200;}
   .header-left{display:flex;align-items:center;gap:14px;padding:10px 0;}
-  .header-logo{height:26px;width:auto;object-fit:contain;flex-shrink:0;}
+  .header-logo{height:16px;width:auto;object-fit:contain;flex-shrink:0;}
   .header-divider{width:1px;height:22px;background:rgba(255,255,255,0.14);}
   .header-title{font-family:'Fraunces',serif;font-size:14px;font-weight:400;letter-spacing:0.5px;color:white;line-height:1.1;}
   .header-title em{font-style:italic;font-weight:300;}
@@ -264,7 +264,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v8</span>
+      <span class="header-version">v10</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -289,19 +289,14 @@
         <div class="card-title">Assessment Setup</div>
         <a href="https://bellweatherllc.github.io/tools/core-projects-manager.html" target="_blank" style="margin-left:auto;font-size:11px;font-weight:600;color:var(--steel);text-decoration:none;padding:4px 10px;border:1.5px solid var(--cloud);border-radius:6px;transition:all 0.15s;white-space:nowrap;" onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--cloud)';this.style.color='var(--steel)'">↗ Projects Manager</a>
       </div>
-      <div class="form-row">
+      <div class="form-row" style="align-items:flex-end">
         <div class="form-group" style="flex:2">
-          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
-            <label class="form-label" style="margin-bottom:0">Project</label>
-            <label style="font-size:11px;color:var(--steel);cursor:pointer;display:flex;align-items:center;gap:5px;font-weight:500">
-              <input type="checkbox" id="show-all-projects" onchange="populateAssessSelects()" style="accent-color:var(--gold);width:12px;height:12px"> Show all stages
-            </label>
-          </div>
+          <label class="form-label">Project</label>
           <select id="assess-project" class="form-select" onchange="onProjectSelected()"><option value="">Select a project...</option></select>
         </div>
-        <div class="form-group"><label class="form-label">Your Name</label><input type="text" id="assessor-name" class="form-input" placeholder="Name"></div>
-        <div class="form-group"><label class="form-label">Department</label>
-          <select id="assessor-dept" class="form-select"><option value="">Select...</option><option>Operations</option><option>Sales</option><option>Design</option><option>Production</option></select>
+        <div style="flex-shrink:0;padding-bottom:1px">
+          <label class="form-label">Submitting as</label>
+          <div id="assessor-display" style="font-size:13px;color:var(--navy);padding:10px 12px;background:var(--snow);border-radius:6px;border:1.5px solid var(--cloud);white-space:nowrap;min-width:180px">Connecting…</div>
         </div>
       </div>
       <div id="project-meta-panel" style="display:none;margin-top:4px;padding:12px 16px;background:var(--snow);border-radius:6px;border:1px solid var(--cloud);display:none">
@@ -453,13 +448,15 @@ const SP_CONFIG = {
   graphBase: 'https://graph.microsoft.com/v1.0',
   projectsUrl:    'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500',
   configUrl:      'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Config/items',
-  assessmentsUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Assessments/items'
+  assessmentsUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Assessments/items',
+  teamMembersUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_TeamMembers/items'
 };
 
 let msalInstance = null;
 let graphToken   = null;
 let spProjects   = [];   // live list from SharePoint
 let spLoaded     = false;
+let currentUser  = {name:'', dept:'', email:''};
 
 async function initMsal() {
   if (msalInstance) return;
@@ -486,6 +483,7 @@ async function initMsal() {
       });
       graphToken = resp.accessToken;
       setConnected(true);
+      fetchCurrentUser();
       fetchProjects();
     } catch {
       showAuthBanner();
@@ -548,6 +546,32 @@ async function graphPatch(url, body) {
   return resp.status === 204 ? null : resp.json();
 }
 
+async function graphDelete(url) {
+  if (!graphToken) graphToken = await getToken();
+  const resp = await fetch(url, { method:'DELETE', headers:{ Authorization:`Bearer ${graphToken}` } });
+  if (!resp.ok && resp.status !== 204) throw new Error(`Graph DELETE ${resp.status}`);
+}
+
+async function fetchCurrentUser() {
+  try {
+    const accounts = msalInstance.getAllAccounts();
+    if (!accounts.length) return;
+    const email = accounts[0].username || '';
+    currentUser.email = email;
+    currentUser.name  = accounts[0].name || email;
+    // Look up in CORE_TeamMembers by WorkEmail
+    const url = `${SP_CONFIG.teamMembersUrl}?$expand=fields&$select=id,fields&$filter=fields/WorkEmail eq '${encodeURIComponent(email)}'&$top=1`;
+    const data = await graphFetch(url, {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
+    if (data.value && data.value.length > 0) {
+      const f = data.value[0].fields;
+      currentUser.name = f.Title || currentUser.name;
+      currentUser.dept = f.Department || f.Role || f.Title2 || '';
+    }
+  } catch(e) { /* silent — fall back to MSAL display name */ }
+  const el = document.getElementById('assessor-display');
+  if (el) el.textContent = currentUser.name + (currentUser.dept ? ' · ' + currentUser.dept : '');
+}
+
 function showAuthBanner() {
   setConnected(false);
   document.getElementById('signin-btn').style.display = '';
@@ -575,6 +599,7 @@ async function fetchProjects() {
       return {
         id:       item.id,
         name:     name || `Project #${item.id}`,
+        shortDesc: (f.ShortDescription || '').slice(0, 60),
         jobCode:  f.Job_x0020_Code || f.JobCode || '',
         status:   f.PipelineStage || f.Status || '',
         caValue:  caVal,
@@ -755,26 +780,21 @@ function setScore(btn,blockId,dimId,type){
     btn.classList.add('sel-'+btn.dataset.val);
   }
 }
-const LEAD_STAGE = 'Lead';
-
 function populateAssessSelects(){
-  const showAll = document.getElementById('show-all-projects')?.checked;
-  const filtered = showAll
-    ? spProjects
-    : spProjects.filter(p => p.status && p.status.toLowerCase() === LEAD_STAGE.toLowerCase());
-  const opts = filtered.map(p =>
-    `<option value="${p.id}">${esc(p.name)}</option>`
-  ).join('');
+  const opts = spProjects.map(p => {
+    const label = p.shortDesc ? `${esc(p.name)} — ${esc(p.shortDesc)}` : esc(p.name);
+    return `<option value="${p.id}">${label}</option>`;
+  }).join('');
   const noProjects = !spLoaded
     ? '<option value="" disabled>Sign in to load projects</option>'
-    : filtered.length === 0
-      ? '<option value="" disabled>No Lead projects found — check "Show all stages"</option>'
-      : '';
+    : spProjects.length === 0 ? '<option value="" disabled>No projects found</option>' : '';
   document.getElementById('assess-project').innerHTML = '<option value="">Select a project...</option>' + noProjects + opts;
-  // Also populate results selector (Lead stage only, name only)
-  const resultsFiltered = spProjects.filter(p => p.status && p.status.toLowerCase() === LEAD_STAGE.toLowerCase());
-  document.getElementById('results-project').innerHTML = '<option value="">Select a project...</option>' +
-    resultsFiltered.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  // Also populate results selector
+  const resultsOpts = spProjects.map(p => {
+    const label = p.shortDesc ? `${esc(p.name)} — ${esc(p.shortDesc)}` : esc(p.name);
+    return `<option value="${p.id}">${label}</option>`;
+  }).join('');
+  document.getElementById('results-project').innerHTML = '<option value="">Select a project...</option>' + resultsOpts;
 }
 
 function onProjectSelected(){
@@ -812,9 +832,8 @@ function onProjectSelected(){
 // ══════════════════════════════════════════════════ SUBMIT ═════
 async function submitAssessment(){
   const projectId=document.getElementById('assess-project').value;
-  const name=document.getElementById('assessor-name').value.trim();
-  const dept=document.getElementById('assessor-dept').value;
-  if(!projectId){showToast('Select a project.');return;} if(!name){showToast('Enter your name.');return;}
+  if(!projectId){showToast('Select a project.');return;}
+  if(!currentUser.name){showToast('Sign in to submit an assessment.');return;}
   const {blocks}=getStore();
   const scores={};
   blocks.forEach(b=>{
@@ -830,7 +849,7 @@ async function submitAssessment(){
     });
   });
   const record = {
-    projectId, assessorName:name, assessorDept:dept,
+    projectId, assessorName:currentUser.name, assessorDept:currentUser.dept,
     submittedDate: new Date().toLocaleDateString(),
     scores: JSON.stringify(scores),
     openNotes: document.getElementById('open-notes').value.trim()
@@ -845,14 +864,16 @@ async function submitAssessment(){
       Scores:        record.scores,
       OpenNotes:     record.openNotes
     }});
-    showToast(`Submitted — ${name}`);
+    showToast(`Submitted — ${currentUser.name}`);
     clearAssessForm();
   } catch(e) {
     showToast('Submission failed — ' + e.message);
   }
 }
 function clearAssessForm(){
-  document.getElementById('assessor-name').value=''; document.getElementById('assessor-dept').value=''; document.getElementById('open-notes').value='';
+  document.getElementById('assess-project').value='';
+  document.getElementById('open-notes').value='';
+  document.getElementById('project-meta-panel').style.display='none';
   document.querySelectorAll('.lod-btn').forEach(b=>b.className='lod-btn');
   document.querySelectorAll('.risk-btn').forEach(b=>b.className='risk-btn');
   document.querySelectorAll('.dim-note').forEach(b=>b.value='');
@@ -922,11 +943,7 @@ function clearDropLines(){
 }
 
 // ══════════════════════════════════════════════════ RESULTS ════
-function populateResultsSelect(){
-  const filtered = spProjects.filter(p => p.status && p.status.toLowerCase() === LEAD_STAGE.toLowerCase());
-  document.getElementById('results-project').innerHTML='<option value="">Select a project...</option>'+
-    filtered.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
-}
+function populateResultsSelect(){ populateAssessSelects(); }
 async function loadResults(){
   const pid=document.getElementById('results-project').value;
   const el=document.getElementById('results-content');
@@ -973,7 +990,40 @@ async function loadResults(){
   else if(composite<0.66){hClass='hod-informed';hLabel='↑ HODs Should Be Informed';hDesc='Moderate score. Heads of Department should be briefed before DA signing. Review flagged items.';}
   else{hClass='hod-oversight';hLabel='⚑ Active HOD Oversight Required';hDesc='Elevated score. Active HOD involvement required through the design phase.';}
 
-  let html=`<div class="hod-indicator ${hClass}"><div style="flex:1"><div class="hod-label">${hLabel}</div><div class="hod-desc">${hDesc}</div></div><div style="text-align:right;font-size:12px;color:var(--steel);white-space:nowrap">${asmts.length} respondent${asmts.length!==1?'s':''}<br>Composite: ${(composite*100).toFixed(0)}%</div></div>
+  let html=``;
+
+  // Admin-only submissions management card
+  if(adminMode){
+    html+=`<div class="card" style="margin-bottom:20px;border:1.5px solid var(--pink-admin-border);background:var(--pink-admin)">
+      <div class="card-header" style="margin-bottom:12px;padding-bottom:12px"><div class="card-title">Submissions</div><span style="font-size:11px;color:var(--steel);margin-left:4px">${asmts.length} total</span></div>`;
+    asmts.forEach(a=>{
+      html+=`<div id="sub-row-${a.id}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:white;border-radius:6px;margin-bottom:8px;border:1px solid var(--cloud)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--navy)">${esc(a.assessorName)}${a.assessorDept?' <span style="font-weight:400;color:var(--steel)">· '+esc(a.assessorDept)+'</span>':''}</div>
+          <div style="font-size:11px;color:var(--silver);margin-top:2px">${a.submittedDate}</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="startEditNotes('${a.id}',\`${esc(a.openNotes).replace(/`/g,'\\`')}\`)">Edit Notes</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmDelete('${a.id}')">Delete</button>
+      </div>
+      <div id="edit-notes-${a.id}" style="display:none;padding:10px 12px;background:white;border-radius:6px;margin-bottom:8px;margin-top:-6px;border:1px solid var(--gold)">
+        <textarea id="edit-notes-text-${a.id}" style="width:100%;border:1.5px solid var(--cloud);border-radius:6px;padding:8px 12px;font-family:'DM Sans',sans-serif;font-size:13px;resize:vertical;min-height:80px;box-sizing:border-box">${esc(a.openNotes)}</textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary btn-sm" onclick="saveNotes('${a.id}')">Save</button>
+          <button class="btn btn-secondary btn-sm" onclick="cancelEditNotes('${a.id}')">Cancel</button>
+        </div>
+      </div>
+      <div id="confirm-delete-${a.id}" style="display:none;padding:10px 12px;background:var(--red-bg);border-radius:6px;margin-bottom:8px;margin-top:-6px;border:1px solid var(--red);font-size:13px;display:none">
+        Delete this assessment by ${esc(a.assessorName)}? This cannot be undone.
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-danger btn-sm" onclick="doDelete('${a.id}')">Yes, delete</button>
+          <button class="btn btn-secondary btn-sm" onclick="cancelDelete('${a.id}')">Cancel</button>
+        </div>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+
+  html+=`<div class="hod-indicator ${hClass}"><div style="flex:1"><div class="hod-label">${hLabel}</div><div class="hod-desc">${hDesc}</div></div><div style="text-align:right;font-size:12px;color:var(--steel);white-space:nowrap">${asmts.length} respondent${asmts.length!==1?'s':''}<br>Composite: ${(composite*100).toFixed(0)}%</div></div>
 
   <details class="card" style="margin-bottom:20px;cursor:pointer;">
     <summary style="display:flex;align-items:center;gap:10px;list-style:none;padding:4px 0;cursor:pointer;">
@@ -1063,6 +1113,35 @@ async function loadResults(){
     html+='</div>';
   }
   el.innerHTML=html;
+}
+
+function startEditNotes(id, current){
+  document.getElementById('confirm-delete-'+id).style.display='none';
+  document.getElementById('edit-notes-'+id).style.display='';
+  document.getElementById('edit-notes-text-'+id).value=current;
+}
+function cancelEditNotes(id){ document.getElementById('edit-notes-'+id).style.display='none'; }
+async function saveNotes(id){
+  const notes = document.getElementById('edit-notes-text-'+id).value.trim();
+  try {
+    await graphPatch(`${SP_CONFIG.assessmentsUrl}/${id}`, {fields:{OpenNotes:notes}});
+    showToast('Notes saved.');
+    document.getElementById('edit-notes-'+id).style.display='none';
+    loadResults();
+  } catch(e){ showToast('Save failed — '+e.message); }
+}
+function confirmDelete(id){
+  document.getElementById('edit-notes-'+id).style.display='none';
+  const el=document.getElementById('confirm-delete-'+id);
+  el.style.display=el.style.display==='none'?'':'none';
+}
+function cancelDelete(id){ document.getElementById('confirm-delete-'+id).style.display='none'; }
+async function doDelete(id){
+  try {
+    await graphDelete(`${SP_CONFIG.assessmentsUrl}/${id}`);
+    showToast('Assessment deleted.');
+    loadResults();
+  } catch(e){ showToast('Delete failed — '+e.message); }
 }
 
 // ══════════════════════════════════════════════════ UTILS ══════
