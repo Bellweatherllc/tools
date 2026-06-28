@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sean Farrell – 360 Review</title>
+
+  <!-- ============================================================
+    VERSION: 1.0
+    DESCRIPTION: Internal 360 review survey for Sean Farrell.
+    AUTH: Azure AD / MSAL (redirect flow) — uses Bellweather app registration.
+    STORAGE: Microsoft Graph API → SharePoint BWCore site.
+
+    TWO-LIST ARCHITECTURE (anonymity):
+      Sean360Completions  — records WHO completed (email, name). Byron can
+                            see if someone has submitted. No answers here.
+      Sean360Responses    — records WHAT was answered. No name or email. Anonymous.
+
+    ============================================================
+    SHAREPOINT SETUP (do this before deploying):
+
+    In SharePoint at https://bellweather.sharepoint.com/sites/BWCore,
+    create two new lists:
+
+    List 1: "Sean360Completions"
+      Columns to add:
+        - ReviewerName   (Single line of text)
+        [ Title is built-in — will store reviewer email for completion tracking ]
+
+    List 2: "Sean360Responses"
+      Columns to add:
+        - Strengths1     (Multiple lines of text)
+        - Strengths2     (Multiple lines of text)
+        - BehRating1     (Number)
+        - BehComment1    (Multiple lines of text)
+        - BehRating2     (Number)
+        - BehComment2    (Multiple lines of text)
+        - BehRating3     (Number)
+        - BehComment3    (Multiple lines of text)
+        - BehRating4     (Number)
+        - BehComment4    (Multiple lines of text)
+        - BehRating5     (Number)
+        - BehComment5    (Multiple lines of text)
+        - BehRating6     (Number)
+        - BehComment6    (Multiple lines of text)
+        - Dev1           (Multiple lines of text)
+        - Dev2           (Multiple lines of text)
+        - Dev3           (Multiple lines of text)
+        [ Title is built-in — will be set to "Response" ]
+
+    No additional Azure AD permissions are needed beyond what the
+    existing Design Deliverables Index app registration already has.
+    ============================================================ -->
+
+  <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #f5f3ef;
+      --surface: #fff;
+      --surface-2: #faf9f6;
+      --border: #ddd9d0;
+      --border-light: #eceae4;
+      --ink: #1a1917;
+      --ink-mid: #4a4845;
+      --ink-light: #8a8682;
+      --accent: #2c4a3e;
+      --accent-hover: #1e3329;
+      --accent-light: #e8eeeb;
+      --accent-rule: #8aab99;
+      --notice-bg: #eef3ef;
+      --notice-border: #c8dcc9;
+      --notice-text: #2c4a3e;
+      --selected-bg: #e8eeeb;
+      --selected-border: #2c4a3e;
+      --selected-num: #2c4a3e;
+      --red: #c0392b;
+      --red-light: #fdf2f0;
+      --radius: 6px;
+      --max: 680px;
+      --font: 'DM Sans', system-ui, sans-serif;
+      --serif: 'DM Serif Display', Georgia, serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.65;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+    }
+    .header-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-brand {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-light);
+    }
+    .header-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-user-name {
+      font-size: 12px;
+      color: var(--ink-light);
+    }
+    .btn-signout {
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--ink-light);
+      transition: all 0.15s;
+    }
+    .btn-signout:hover { background: var(--red-light); border-color: #e0aca7; color: var(--red); }
+
+    /* ── Pages ── */
+    main { max-width: var(--max); margin: 0 auto; padding: 52px 24px 100px; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── Loading ── */
+    .loading-msg {
+      text-align: center;
+      padding: 80px 0;
+      color: var(--ink-light);
+      font-size: 14px;
+    }
+
+    /* ── Sign-in ── */
+    .signin-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 50vh;
+      text-align: center;
+      gap: 16px;
+    }
+    .signin-title {
+      font-family: var(--serif);
+      font-size: 28px;
+      color: var(--ink);
+    }
+    .signin-sub {
+      font-size: 14px;
+      color: var(--ink-mid);
+      max-width: 380px;
+      line-height: 1.7;
+    }
+    .btn-signin {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 12px 26px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--ink);
+      transition: all 0.15s;
+      margin-top: 8px;
+    }
+    .btn-signin:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .auth-error { font-size: 12px; color: var(--red); margin-top: 6px; display: none; }
+
+    /* ── Status cards (already done / thank you) ── */
+    .status-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 56px 48px;
+      text-align: center;
+    }
+    .status-icon { font-size: 36px; margin-bottom: 18px; }
+    .status-title {
+      font-family: var(--serif);
+      font-size: 22px;
+      color: var(--ink);
+      margin-bottom: 10px;
+    }
+    .status-body { font-size: 14px; color: var(--ink-mid); max-width: 360px; margin: 0 auto; line-height: 1.7; }
+
+    /* ── Survey ── */
+    .survey-masthead { margin-bottom: 40px; padding-bottom: 28px; border-bottom: 1px solid var(--border); }
+    .survey-masthead h1 { font-family: var(--serif); font-size: 30px; font-weight: 400; margin-bottom: 10px; }
+    .survey-masthead p { font-size: 14px; color: var(--ink-mid); max-width: 560px; line-height: 1.75; }
+
+    .notice {
+      background: var(--notice-bg);
+      border: 1px solid var(--notice-border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      font-size: 13.5px;
+      color: var(--notice-text);
+      margin-top: 20px;
+      line-height: 1.65;
+    }
+
+    /* ── Section ── */
+    .survey-section { margin-bottom: 52px; }
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: var(--ink-light);
+      margin-bottom: 6px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-light);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border-light); }
+    .section-note { font-size: 13px; color: var(--ink-mid); margin-bottom: 24px; line-height: 1.65; }
+
+    /* ── Questions ── */
+    .q-group { margin-bottom: 28px; }
+    .q-label {
+      display: block;
+      font-size: 14.5px;
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .q-label .req { color: #9e4a30; margin-left: 2px; }
+
+    textarea {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-family: var(--font);
+      font-size: 14px;
+      color: var(--ink);
+      background: var(--surface);
+      resize: vertical;
+      min-height: 88px;
+      line-height: 1.6;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { outline: none; border-color: var(--accent-rule); }
+    textarea.comment { min-height: 60px; }
+
+    /* ── Rating blocks ── */
+    .rating-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 20px 18px;
+      margin-bottom: 10px;
+    }
+    .rating-statement {
+      font-size: 14.5px;
+      font-style: italic;
+      color: var(--ink);
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    .rating-scale { display: flex; gap: 8px; margin-bottom: 16px; }
+    .rating-option { flex: 1; }
+    .rating-option input[type="radio"] { display: none; }
+    .rating-option label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      padding: 9px 4px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      transition: all 0.12s;
+      font-size: 12.5px;
+      text-align: center;
+      user-select: none;
+    }
+    .rating-option label .rnum {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--ink-light);
+      transition: color 0.12s;
+    }
+    .rating-option label .rdesc {
+      font-size: 10.5px;
+      color: var(--ink-light);
+      line-height: 1.25;
+      transition: color 0.12s;
+    }
+    .rating-option input:checked + label {
+      background: var(--selected-bg);
+      border-color: var(--selected-border);
+    }
+    .rating-option input:checked + label .rnum { color: var(--selected-num); }
+    .rating-option input:checked + label .rdesc { color: var(--accent); }
+    .rating-option label:hover { border-color: var(--accent-rule); }
+
+    .comment-label {
+      font-size: 12px;
+      color: var(--ink-light);
+      margin-bottom: 6px;
+    }
+
+    /* ── Submit ── */
+    .submit-area {
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .btn-submit {
+      font-family: var(--font);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 13px 36px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      transition: background 0.15s;
+    }
+    .btn-submit:hover { background: var(--accent-hover); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .submit-note { font-size: 13px; color: var(--ink-light); }
+
+    .form-error {
+      background: var(--red-light);
+      border: 1px solid #e0aca7;
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 13.5px;
+      color: var(--red);
+      margin-top: 16px;
+      display: none;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 520px) {
+      main { padding: 32px 16px 60px; }
+      .rating-scale { flex-wrap: wrap; }
+      .rating-option { min-width: 56px; flex: none; }
+      .status-card { padding: 36px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <span class="header-brand">Bellweather Design-Build</span>
+    <div class="header-user">
+      <span class="header-user-name" id="userName"></span>
+      <button class="btn-signout" id="btnSignOut" style="display:none" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- LOADING -->
+  <div id="pageLoading" class="page active">
+    <div class="loading-msg">Loading...</div>
+  </div>
+
+  <!-- SIGN IN -->
+  <div id="pageSignIn" class="page">
+    <div class="signin-wrap">
+      <div>
+        <div class="signin-title">Sean Farrell – 360 Review</div>
+      </div>
+      <p class="signin-sub">Sign in with your Bellweather credentials to continue. Your answers are anonymous — only whether you've completed the review will be recorded.</p>
+      <button class="btn-signin" onclick="signIn()">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect width="7.5" height="7.5" fill="#F25022"/><rect x="8.5" width="7.5" height="7.5" fill="#7FBA00"/><rect y="8.5" width="7.5" height="7.5" fill="#00A4EF"/><rect x="8.5" y="8.5" width="7.5" height="7.5" fill="#FFB900"/></svg>
+        Sign in with Microsoft
+      </button>
+      <div class="auth-error" id="authError">Something went wrong. Please try again.</div>
+    </div>
+  </div>
+
+  <!-- ALREADY DONE -->
+  <div id="pageAlreadyDone" class="page">
+    <div class="status-card">
+      <div class="status-icon">✓</div>
+      <div class="status-title">Already submitted</div>
+      <p class="status-body">Your feedback has been recorded. Thank you for taking the time — it genuinely helps.</p>
+    </div>
+  </div>
+
+  <!-- SURVEY -->
+  <div id="pageSurvey" class="page">
+
+    <div class="survey-masthead">
+      <h1>360 Review – Sean Farrell</h1>
+      <p>This review is part of a developmental process Sean has opted into. Your honest perspective is what makes it useful. There are no right answers, and this is not a performance evaluation.</p>
+      <div class="notice">
+        <strong>On anonymity:</strong> Your name is recorded only to confirm you've completed the review — Byron can see who has responded, but not what anyone said. Your answers are stored in a separate system with no name attached, and will only be reviewed in compiled form.
+      </div>
+    </div>
+
+    <!-- SECTION 1: Strengths -->
+    <section class="survey-section">
+      <div class="section-label">Strengths</div>
+
+      <div class="q-group">
+        <label class="q-label" for="q1">
+          What does Sean do particularly well that you'd want to see more of?<span class="req">*</span>
+        </label>
+        <textarea id="q1" placeholder="Specific examples are more useful than generalizations."></textarea>
+      </div>
+
+      <div class="q-group">
+        <label class="q-label" for="q2">
+          Describe a moment where Sean's contribution made a meaningful difference — to a project or to you personally.
+        </label>
+        <textarea id="q2" placeholder="Optional — but concrete moments land better than general impressions."></textarea>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Behaviors -->
+    <section class="survey-section">
+      <div class="section-label">Relational and Collaborative Behaviors</div>
+      <p class="section-note">Rate each statement 1–5. Adding a comment is optional, but a sentence or two makes the rating substantially more useful in a debrief conversation.</p>
+
+      <div class="q-group" id="ratingGroup1">
+        <div class="rating-block">
+          <div class="rating-statement">"Sean follows through on commitments reliably."</div>
+          <div class="rating-scale"></div>
+          <div class="comment-label">Optional comment</div>
+          <textarea class="comment" placeholder="Add context to your rating if you'd like..."></textarea>
+        </div>
+      </div>
+
+      <div class="q-group" id="ratingGroup2">
+        <div class="rating-block">
+          <div class="rating-statement">"Sean communicates clearly when things are uncertain or changing."</div>
+          <div class="rating-scale"></div>
+          <div class="comment-label">Optional comment</div>
+          <textarea class="comment" placeholder="Add context to your rating if you'd like..."></textarea>
+        </div>
+      </div>
+
+      <div class="q-group" id="ratingGroup3">
+        <div class="rating-block">
+          <div class="rating-statement">"Sean is receptive to feedback and responds to it constructively."</div>
+          <div class="rating-scale"></div>
+          <div class="comment-label">Optional comment</div>
+          <textarea class="comment" placeholder="Add context to your rating if you'd like..."></textarea>
+        </div>
+      </div>
+
+      <div class="q-group" id="ratingGroup4">
+        <div class="rating-block">
+          <div class="rating-statement">"Sean is someone I can count on when the work gets difficult."</div>
+          <div class="rating-scale"></div>
+          <div class="comment-label">Optional comment</div>
+          <textarea class="comment" placeholder="Add context to your rating if you'd like..."></textarea>
+        </div>
+      </div>
+
+      <div class="q-group" id="ratingGroup5">
+        <div class="rating-block">
+          <div class="rating-statement">"Sean contributes to a positive team environment."</div>
+          <div class="rating-scale"></div>
+          <div class="comment-label">Optional comment</div>
+          <textarea class="comment" placeholder="Add context to your rating if you'd like..."></textarea>
+        </div>
+      </div>
+
+      <div class="q-group" id="ratingGroup6">
+        <div class="rating-block">
+          <div class="rating-statement">"When Sean is under pressure, he manages it in a way that doesn't negatively affect those around him."</div>
+          <div class="rating-scale"></div>
+          <div class="comment-label">Optional comment</div>
+          <textarea class="comment" placeholder="Add context to your rating if you'd like..."></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: Development -->
+    <section class="survey-section">
+      <div class="section-label">Development</div>
+      <p class="section-note">These questions are where direct, specific feedback does the most good. Be honest — this is developmental, not evaluative.</p>
+
+      <div class="q-group">
+        <label class="q-label" for="d1">
+          Where do you think Sean has the most room to grow?<span class="req">*</span>
+        </label>
+        <textarea id="d1"></textarea>
+      </div>
+
+      <div class="q-group">
+        <label class="q-label" for="d2">
+          What's one thing — a behavior, habit, or approach — that would make Sean more effective as a colleague?
+        </label>
+        <textarea id="d2"></textarea>
+      </div>
+
+      <div class="q-group">
+        <label class="q-label" for="d3">
+          Is there anything Sean does that sometimes creates friction, even unintentionally?
+        </label>
+        <textarea id="d3"></textarea>
+      </div>
+    </section>
+
+    <div class="submit-area">
+      <button class="btn-submit" id="btnSubmit" onclick="submitSurvey()">Submit Review</button>
+      <span class="submit-note">Fields marked * are required. Everything else is optional.</span>
+    </div>
+    <div class="form-error" id="formError"></div>
+
+  </div><!-- /pageSurvey -->
+
+  <!-- THANK YOU -->
+  <div id="pageThankYou" class="page">
+    <div class="status-card">
+      <div class="status-icon">✓</div>
+      <div class="status-title">Thank you</div>
+      <p class="status-body">Your feedback has been submitted. It will be compiled with the other responses and shared with Sean through a private conversation.</p>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+var CONFIG = {
+  tenantId:           'ff0e3f46-615a-4a22-8a80-4bb83d627785',
+  clientId:           '84b37f0e-b149-4089-9bdc-fc654715db23',
+  sharepointHost:     'bellweather.sharepoint.com',
+  sharepointSitePath: '/sites/BWCore',
+  completionsList:    'Sean360Completions',  // tracks who submitted (email in Title)
+  responsesList:      'Sean360Responses',    // stores anonymous answers (no name/email)
+};
+
+var SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+var REDIRECT_URI = window.location.href.split('?')[0].split('#')[0];
+
+var msalApp = new msal.PublicClientApplication({
+  auth: { clientId: CONFIG.clientId, authority: 'https://login.microsoftonline.com/' + CONFIG.tenantId, redirectUri: REDIRECT_URI },
+  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false },
+});
+
+// ============================================================
+// APP STATE
+// ============================================================
+var graphCtx = { siteId: null, completionsId: null, responsesId: null };
+var currentAccount = null;
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+async function init() {
+  await msalApp.initialize();
+  try {
+    await msalApp.handleRedirectPromise();
+  } catch (e) {
+    console.error('Redirect error:', e);
+  }
+  var accounts = msalApp.getAllAccounts();
+  if (accounts.length > 0) {
+    currentAccount = accounts[0];
+    document.getElementById('userName').textContent = currentAccount.name || currentAccount.username;
+    document.getElementById('btnSignOut').style.display = 'block';
+    await onAuthenticated();
+  } else {
+    showPage('pageSignIn');
+  }
+}
+
+async function signIn() {
+  try {
+    document.getElementById('authError').style.display = 'none';
+    await msalApp.loginRedirect({ scopes: SCOPES });
+  } catch (e) {
+    console.error('Login error:', e);
+    document.getElementById('authError').style.display = 'block';
+  }
+}
+
+function signOut() {
+  msalApp.logoutRedirect({ account: currentAccount });
+}
+
+async function getToken() {
+  var request = { scopes: SCOPES, account: currentAccount };
+  try {
+    var result = await msalApp.acquireTokenSilent(request);
+    return result.accessToken;
+  } catch (e) {
+    await msalApp.acquireTokenRedirect(request);
+  }
+}
+
+// ============================================================
+// GRAPH API
+// ============================================================
+async function graphReq(method, path, body) {
+  var token = await getToken();
+  var opts = {
+    method: method,
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  var resp = await fetch('https://graph.microsoft.com/v1.0' + path, opts);
+  if (!resp.ok) {
+    var err = await resp.text();
+    throw new Error('Graph ' + resp.status + ': ' + err);
+  }
+  if (resp.status === 204) return null;
+  return resp.json();
+}
+
+// ============================================================
+// SHAREPOINT OPERATIONS
+// ============================================================
+async function initGraphContext() {
+  // Get site ID
+  var site = await graphReq('GET', '/sites/' + CONFIG.sharepointHost + ':' + CONFIG.sharepointSitePath);
+  graphCtx.siteId = site.id;
+
+  // Get list IDs
+  var listsResp = await graphReq('GET', '/sites/' + graphCtx.siteId + '/lists?$select=id,displayName');
+  var lists = listsResp.value;
+  var completions = lists.find(function(l) { return l.displayName === CONFIG.completionsList; });
+  var responses   = lists.find(function(l) { return l.displayName === CONFIG.responsesList; });
+  if (!completions) throw new Error('List "' + CONFIG.completionsList + '" not found. See setup instructions in the file header.');
+  if (!responses)   throw new Error('List "' + CONFIG.responsesList + '" not found. See setup instructions in the file header.');
+  graphCtx.completionsId = completions.id;
+  graphCtx.responsesId   = responses.id;
+}
+
+async function checkAlreadyCompleted() {
+  // Title stores the reviewer email; fetch all and filter client-side (safer than OData filter)
+  var data = await graphReq('GET', '/sites/' + graphCtx.siteId + '/lists/' + graphCtx.completionsId +
+    '/items?$expand=fields($select=Title)&$top=200');
+  var email = currentAccount.username.toLowerCase();
+  return (data.value || []).some(function(item) {
+    return item.fields && (item.fields.Title || '').toLowerCase() === email;
+  });
+}
+
+async function recordCompletion() {
+  // Stores only identity — no answers
+  await graphReq('POST', '/sites/' + graphCtx.siteId + '/lists/' + graphCtx.completionsId + '/items', {
+    fields: {
+      Title:        currentAccount.username,                        // email
+      ReviewerName: currentAccount.name || currentAccount.username, // display name
+    }
+  });
+}
+
+async function submitResponses(answers) {
+  // Anonymous — no name or email in this list
+  await graphReq('POST', '/sites/' + graphCtx.siteId + '/lists/' + graphCtx.responsesId + '/items', {
+    fields: {
+      Title:      'Response',
+      Strengths1: answers.q1,
+      Strengths2: answers.q2,
+      BehRating1: answers.b1r, BehComment1: answers.b1c,
+      BehRating2: answers.b2r, BehComment2: answers.b2c,
+      BehRating3: answers.b3r, BehComment3: answers.b3c,
+      BehRating4: answers.b4r, BehComment4: answers.b4c,
+      BehRating5: answers.b5r, BehComment5: answers.b5c,
+      BehRating6: answers.b6r, BehComment6: answers.b6c,
+      Dev1:       answers.d1,
+      Dev2:       answers.d2,
+      Dev3:       answers.d3,
+    }
+  });
+}
+
+// ============================================================
+// SURVEY UI
+// ============================================================
+var SCALE = [
+  { num: '1', desc: 'Rarely' },
+  { num: '2', desc: 'Sometimes' },
+  { num: '3', desc: 'Often' },
+  { num: '4', desc: 'Usually' },
+  { num: '5', desc: 'Consistently' },
+];
+
+function buildRatingScales() {
+  for (var i = 1; i <= 6; i++) {
+    var container = document.querySelector('#ratingGroup' + i + ' .rating-scale');
+    SCALE.forEach(function(s, idx) {
+      var val = idx + 1;
+      var div = document.createElement('div');
+      div.className = 'rating-option';
+      div.innerHTML =
+        '<input type="radio" name="b' + i + '" id="b' + i + 'r' + val + '" value="' + val + '">' +
+        '<label for="b' + i + 'r' + val + '">' +
+          '<span class="rnum">' + s.num + '</span>' +
+          '<span class="rdesc">' + s.desc + '</span>' +
+        '</label>';
+      container.appendChild(div);
+    });
+  }
+}
+
+function getRating(name) {
+  var checked = document.querySelector('input[name="' + name + '"]:checked');
+  return checked ? parseInt(checked.value, 10) : null;
+}
+
+function getComment(groupId) {
+  var ta = document.querySelector('#ratingGroup' + groupId + ' textarea.comment');
+  return ta ? ta.value.trim() : '';
+}
+
+// ============================================================
+// SUBMIT
+// ============================================================
+async function submitSurvey() {
+  hideError();
+
+  var q1 = document.getElementById('q1').value.trim();
+  var d1 = document.getElementById('d1').value.trim();
+
+  if (!q1 || !d1) {
+    showError('Please complete the required fields (marked with *) before submitting.');
+    return;
+  }
+  for (var i = 1; i <= 6; i++) {
+    if (!getRating('b' + i)) {
+      showError('Please select a rating for each statement in the Relational and Collaborative Behaviors section.');
+      return;
+    }
+  }
+
+  var btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+
+  try {
+    var answers = {
+      q1: q1,
+      q2: document.getElementById('q2').value.trim(),
+      b1r: getRating('b1'), b1c: getComment(1),
+      b2r: getRating('b2'), b2c: getComment(2),
+      b3r: getRating('b3'), b3c: getComment(3),
+      b4r: getRating('b4'), b4c: getComment(4),
+      b5r: getRating('b5'), b5c: getComment(5),
+      b6r: getRating('b6'), b6c: getComment(6),
+      d1: d1,
+      d2: document.getElementById('d2').value.trim(),
+      d3: document.getElementById('d3').value.trim(),
+    };
+
+    // Anonymous answers first, then completion record
+    await submitResponses(answers);
+    await recordCompletion();
+
+    showPage('pageThankYou');
+  } catch (e) {
+    console.error('Submit failed:', e);
+    showError('Something went wrong during submission. Please try again, or reach out to Byron if it continues.');
+    btn.disabled = false;
+    btn.textContent = 'Submit Review';
+  }
+}
+
+function showError(msg) {
+  var el = document.getElementById('formError');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideError() {
+  var el = document.getElementById('formError');
+  el.style.display = 'none';
+}
+
+// ============================================================
+// ON AUTHENTICATED
+// ============================================================
+async function onAuthenticated() {
+  try {
+    await initGraphContext();
+    var done = await checkAlreadyCompleted();
+    if (done) {
+      showPage('pageAlreadyDone');
+    } else {
+      buildRatingScales();
+      showPage('pageSurvey');
+    }
+  } catch (e) {
+    console.error('Init error:', e);
+    document.querySelector('#pageLoading .loading-msg').textContent =
+      'Error loading survey: ' + e.message;
+  }
+}
+
+// ============================================================
+// START
+// ============================================================
+init();
+</script>
+</body>
+</html>
