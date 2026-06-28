@@ -6,7 +6,7 @@
   <title>Sean Farrell – 360 Review</title>
 
   <!-- ============================================================
-    VERSION: 1.0
+    VERSION: 1.1
     DESCRIPTION: Internal 360 review survey for Sean Farrell.
     AUTH: Azure AD / MSAL (redirect flow) — uses Bellweather app registration.
     STORAGE: Microsoft Graph API → SharePoint BWCore site.
@@ -579,7 +579,6 @@ var msalApp = new msal.PublicClientApplication({
 // APP STATE
 // ============================================================
 var graphCtx = { siteId: null, completionsId: null, responsesId: null };
-var currentAccount = null;
 
 function showPage(id) {
   document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
@@ -589,45 +588,28 @@ function showPage(id) {
 // ============================================================
 // AUTH
 // ============================================================
-async function init() {
-  await msalApp.initialize();
-  try {
-    await msalApp.handleRedirectPromise();
-  } catch (e) {
-    console.error('Redirect error:', e);
-  }
-  var accounts = msalApp.getAllAccounts();
-  if (accounts.length > 0) {
-    currentAccount = accounts[0];
-    document.getElementById('userName').textContent = currentAccount.name || currentAccount.username;
-    document.getElementById('btnSignOut').style.display = 'block';
-    await onAuthenticated();
-  } else {
-    showPage('pageSignIn');
-  }
+function getAccount() {
+  var accs = msalApp.getAllAccounts();
+  return accs.length ? accs[0] : null;
 }
 
 async function signIn() {
-  try {
-    document.getElementById('authError').style.display = 'none';
-    await msalApp.loginRedirect({ scopes: SCOPES });
-  } catch (e) {
-    console.error('Login error:', e);
-    document.getElementById('authError').style.display = 'block';
-  }
+  document.getElementById('authError').style.display = 'none';
+  await msalApp.loginRedirect({ scopes: SCOPES });
 }
 
 function signOut() {
-  msalApp.logoutRedirect({ account: currentAccount });
+  msalApp.logoutRedirect({ account: getAccount() });
 }
 
 async function getToken() {
-  var request = { scopes: SCOPES, account: currentAccount };
+  var acc = getAccount();
+  if (!acc) throw new Error('Not signed in');
   try {
-    var result = await msalApp.acquireTokenSilent(request);
-    return result.accessToken;
+    var r = await msalApp.acquireTokenSilent({ scopes: SCOPES, account: acc });
+    return r.accessToken;
   } catch (e) {
-    await msalApp.acquireTokenRedirect(request);
+    await msalApp.acquireTokenRedirect({ scopes: SCOPES, account: acc });
   }
 }
 
@@ -673,7 +655,7 @@ async function checkAlreadyCompleted() {
   // Title stores the reviewer email; fetch all and filter client-side (safer than OData filter)
   var data = await graphReq('GET', '/sites/' + graphCtx.siteId + '/lists/' + graphCtx.completionsId +
     '/items?$expand=fields($select=Title)&$top=200');
-  var email = currentAccount.username.toLowerCase();
+  var email = getAccount().username.toLowerCase();
   return (data.value || []).some(function(item) {
     return item.fields && (item.fields.Title || '').toLowerCase() === email;
   });
@@ -681,10 +663,11 @@ async function checkAlreadyCompleted() {
 
 async function recordCompletion() {
   // Stores only identity — no answers
+  var acc = getAccount();
   await graphReq('POST', '/sites/' + graphCtx.siteId + '/lists/' + graphCtx.completionsId + '/items', {
     fields: {
-      Title:        currentAccount.username,                        // email
-      ReviewerName: currentAccount.name || currentAccount.username, // display name
+      Title:        acc.username,                  // email
+      ReviewerName: acc.name || acc.username,      // display name
     }
   });
 }
@@ -816,6 +799,9 @@ function hideError() {
 // ON AUTHENTICATED
 // ============================================================
 async function onAuthenticated() {
+  var acc = getAccount();
+  document.getElementById('userName').textContent = acc.name || acc.username;
+  document.getElementById('btnSignOut').style.display = 'block';
   try {
     await initGraphContext();
     var done = await checkAlreadyCompleted();
@@ -828,14 +814,28 @@ async function onAuthenticated() {
   } catch (e) {
     console.error('Init error:', e);
     document.querySelector('#pageLoading .loading-msg').textContent =
-      'Error loading survey: ' + e.message;
+      'Error: ' + e.message;
   }
 }
 
 // ============================================================
 // START
 // ============================================================
-init();
+window.addEventListener('load', async function() {
+  try {
+    await msalApp.initialize();
+    var redirectResult = await msalApp.handleRedirectPromise();
+    if (redirectResult || getAccount()) {
+      await onAuthenticated();
+    } else {
+      showPage('pageSignIn');
+    }
+  } catch (e) {
+    document.getElementById('authError').textContent = 'Error: ' + (e.message || e);
+    document.getElementById('authError').style.display = 'block';
+    showPage('pageSignIn');
+  }
+});
 </script>
 </body>
 </html>
