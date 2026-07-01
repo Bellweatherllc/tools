@@ -82,7 +82,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
 .import-strip-bar{display:flex;align-items:center;gap:14px;padding:0 32px;height:44px;cursor:pointer;user-select:none;}
 .import-strip-bar:hover .import-strip-label{color:white;}
 .import-strip-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--teak);transition:color 0.2s;}
-.import-strip-status{font-size:11px;color:var(--slate);margin-left:4px;}
+.import-strip-status{font-size:11px;color:#ff6b6b;font-weight:600;margin-left:4px;}
 .import-strip-chevron{margin-left:auto;font-size:11px;color:var(--slate);transition:transform 0.2s;}
 .import-strip-chevron.open{transform:rotate(180deg);color:rgba(255,255,255,0.7);}
 .import-panel{background:var(--cotton);border-bottom:2px solid var(--linen);max-height:0;overflow:hidden;transition:max-height 0.35s ease;}
@@ -321,7 +321,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
     <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" style="height:28px;margin-bottom:28px;display:block;margin-left:auto;margin-right:auto" alt="Bellweather">
     <div style="font-family:&#39;Swear Text&#39;,serif;font-size:22px;color:var(--navy);margin-bottom:6px">Projects Manager</div>
     <div style="font-size:12px;color:var(--slate);margin-bottom:6px">Sign in to access CORE_Projects</div>
-    <div style="font-size:11px;font-weight:700;color:var(--teak);letter-spacing:0.5px;margin-bottom:28px">v49</div>
+    <div style="font-size:11px;font-weight:700;color:var(--teak);letter-spacing:0.5px;margin-bottom:28px">v53</div>
     <button onclick="doSignIn()" style="padding:12px 32px;background:var(--navy);color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;width:100%;font-family:&#39;TT Norms Pro&#39;,sans-serif">Sign In with Microsoft</button>
     <div id="signin-error" style="display:none;margin-top:16px;padding:10px;background:var(--red-bg);color:var(--red);border-radius:6px;font-size:12px"></div>
   </div>
@@ -348,7 +348,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
       <span class="gear-icon" id="gear-icon" onclick="toggleAdmin()" title="Admin settings">⚙</span>
     </div>
     <div class="header-divider"></div>
-    <span class="ver-badge">v49</span>
+    <span class="ver-badge">v53</span>
     <div class="conn-dot" id="conn-dot" style="background: var(--green);"></div>
     <span class="conn-label" id="conn-label" style="color: rgba(255, 255, 255, 0.55);">SharePoint</span>
     <button class="schema-panel-btn" onclick="document.getElementById('schemaPanel').classList.toggle('open')" style="margin-left:auto">Field Mapping ▸</button>
@@ -1693,29 +1693,35 @@ async function trReload(){
 
 function guessStatus(listName){
   const n=listName.toLowerCase();
-  // Archive / skip first — most specific exclusions
+  // Done variants — check combined patterns first
+  if(n.includes('done')&&n.includes('signed'))return'DA Signed';
+  if(n.includes('done')&&n.includes('lost'))return'Lost';
+  // Other terminal states
   if(n.includes('lost')||n.includes('dead')||n.includes('cancel'))return'Cancelled';
   if(n.includes('archive'))return'Archive';
   if(n.includes('warranty'))return'(skip)';
-  // Signed / construction → CA Signed
-  if(n.includes('done')||n.includes('signed')||n.includes('complete'))return'CA Signed';
   if(n.includes('construction')&&!n.includes('pre'))return'CA Signed';
-  // DA / FDDA stage → DA Signed
+  // DA stage
   if(n.includes('fdda')||n.includes('final design')||n.includes(' da '))return'DA Signed';
   // Paused / hold
   if(n.includes('paused')||n.includes('on hold')||n.includes(' hold'))return'Paused';
-  // Everything else (IDEA, lead, prospect, sales prep, pre-con, etc.) → Lead
   return'Lead';
 }
 
-const APPROVED_TRELLO_LISTS=['est review','present est','da full review','da ready to sell','done'];
-function isApprovedList(name){const n=name.toLowerCase();return APPROVED_TRELLO_LISTS.some(a=>n.includes(a));}
+const APPROVED_TRELLO_LISTS=['est review','present est','da full review','da ready to sell'];
+function isApprovedList(name){
+  const n=name.toLowerCase();
+  if(APPROVED_TRELLO_LISTS.some(a=>n.includes(a)))return true;
+  // Only DONE! (Signed) from the done variants — Lost is handled by Pipeline sync, not import
+  if(n.includes('done')&&n.includes('signed'))return true;
+  return false;
+}
 
 function buildListStatusMap(){
   const statusOptions=[...STATUS_ORDER,'(skip)'];
   const grid=document.getElementById('tr-list-map');
   grid.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--slate)">Trello List</div><div></div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--slate)">CORE Status</div>';
-  trLists.filter(l=>isApprovedList(l.name)).forEach(l=>{
+  trLists.filter(l=>isApprovedList(l.name)&&!l.closed).forEach(l=>{
     const def=guessStatus(l.name);
     grid.innerHTML+=`
       <label style="font-size:13px;font-weight:600;color:var(--limestone)">${esc(l.name)}</label>
