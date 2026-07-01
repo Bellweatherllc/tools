@@ -78,7 +78,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
 .field-mapping-tab{display:none;} /* retired */
 
 /* ── IMPORT ACCORDION ── */
-.import-strip{background:var(--navy);position:sticky;top:57px;z-index:190;}
+.import-strip{background:#3d6b9e;position:sticky;top:57px;z-index:190;}
 .import-strip-bar{display:flex;align-items:center;gap:14px;padding:0 32px;height:44px;cursor:pointer;user-select:none;}
 .import-strip-bar:hover .import-strip-label{color:white;}
 .import-strip-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--teak);transition:color 0.2s;}
@@ -321,7 +321,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
     <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" style="height:28px;margin-bottom:28px;display:block;margin-left:auto;margin-right:auto" alt="Bellweather">
     <div style="font-family:&#39;Swear Text&#39;,serif;font-size:22px;color:var(--navy);margin-bottom:6px">Projects Manager</div>
     <div style="font-size:12px;color:var(--slate);margin-bottom:6px">Sign in to access CORE_Projects</div>
-    <div style="font-size:11px;font-weight:700;color:var(--teak);letter-spacing:0.5px;margin-bottom:28px">v47</div>
+    <div style="font-size:11px;font-weight:700;color:var(--teak);letter-spacing:0.5px;margin-bottom:28px">v49</div>
     <button onclick="doSignIn()" style="padding:12px 32px;background:var(--navy);color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;width:100%;font-family:&#39;TT Norms Pro&#39;,sans-serif">Sign In with Microsoft</button>
     <div id="signin-error" style="display:none;margin-top:16px;padding:10px;background:var(--red-bg);color:var(--red);border-radius:6px;font-size:12px"></div>
   </div>
@@ -348,7 +348,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
       <span class="gear-icon" id="gear-icon" onclick="toggleAdmin()" title="Admin settings">⚙</span>
     </div>
     <div class="header-divider"></div>
-    <span class="ver-badge">v47</span>
+    <span class="ver-badge">v49</span>
     <div class="conn-dot" id="conn-dot" style="background: var(--green);"></div>
     <span class="conn-label" id="conn-label" style="color: rgba(255, 255, 255, 0.55);">SharePoint</span>
     <button class="schema-panel-btn" onclick="document.getElementById('schemaPanel').classList.toggle('open')" style="margin-left:auto">Field Mapping ▸</button>
@@ -409,14 +409,10 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
 
       <!-- How projects get in -->
       <div class="import-info-section">
-        <div class="import-info-row">
+        <div class="import-info-row" style="grid-template-columns:repeat(2,1fr)">
           <div class="import-info-col">
-            <div class="import-info-col-head"><span class="info-dot"></span>Automated (normal flow)</div>
-            <div class="import-info-body">New Trello cards with the <strong>EST REVIEW</strong> label trigger a Make automation that extracts the card description via Claude, maps fields to the CORE schema, and writes the record directly to SharePoint — <strong>nothing needed here</strong>. Projects appear in the list automatically within a few minutes.</div>
-          </div>
-          <div class="import-info-col">
-            <div class="import-info-col-head"><span class="info-dot blue"></span>Manual Trello import</div>
-            <div class="import-info-body">Use the form below to pull cards directly from Trello via the API — useful for <strong>catch-up imports</strong>, backfilling older cards, or cards that didn't go through the automation. Connect with your Trello API key and token, then select the cards to bring in.</div>
+            <div class="import-info-col-head"><span class="info-dot blue"></span>Trello import</div>
+            <div class="import-info-body">Opens directly to the <strong>SALES BIG BOARD</strong> — no credentials needed. Cards from the active sales lists are loaded automatically. Use <strong>Analyze with Claude</strong> to enrich sparse cards before importing, then review and commit. Use the Reload button to refresh after changes on the board.</div>
           </div>
           <div class="import-info-col">
             <div class="import-info-col-head"><span class="info-dot amber"></span>Manual entry</div>
@@ -1642,9 +1638,11 @@ async function fetchCoreConfig(){
   const data=await graphFetch(SP_CONFIG.configUrl);
   (data.value||[]).forEach(item=>{
     const f=item.fields||{};
-    const k=f.Title||f.Key||'';
-    const v=f.Value||f.Key||'';
-    if(k&&v&&k!==v)coreConfig[k]=v;
+    const k=(f.Title||f.Key||'').trim();
+    if(!k)return;
+    // "Value" is a reserved SP word; internal field name may be Value0
+    const v=(f.Value||f.Value0||'').trim();
+    if(v)coreConfig[k]=v;
   });
 }
 
@@ -1655,7 +1653,7 @@ async function trAutoConnect(){
     if(!Object.keys(coreConfig).length)await fetchCoreConfig();
     const key=coreConfig['TrelloApiKey'];
     const token=coreConfig['TrelloToken'];
-    const boardId=coreConfig['TrelloSalesBoardId'];
+    const boardId=coreConfig['TrelloSalesBoardId']||coreConfig['TrelloSalesBoardID'];
     if(!key||!token||!boardId){
       status.innerHTML='<span style="color:var(--red)">Trello credentials not found in CORE Config. Add TrelloApiKey, TrelloToken, and TrelloSalesBoardId to the CORE_Config list.</span>';
       return;
@@ -1710,23 +1708,27 @@ function guessStatus(listName){
   return'Lead';
 }
 
+const APPROVED_TRELLO_LISTS=['est review','present est','da full review','da ready to sell','done'];
+function isApprovedList(name){const n=name.toLowerCase();return APPROVED_TRELLO_LISTS.some(a=>n.includes(a));}
+
 function buildListStatusMap(){
   const statusOptions=[...STATUS_ORDER,'(skip)'];
   const grid=document.getElementById('tr-list-map');
   grid.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--slate)">Trello List</div><div></div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--slate)">CORE Status</div>';
-  trLists.forEach(l=>{
+  trLists.filter(l=>isApprovedList(l.name)).forEach(l=>{
+    const def=guessStatus(l.name);
     grid.innerHTML+=`
       <label style="font-size:13px;font-weight:600;color:var(--limestone)">${esc(l.name)}</label>
       <div class="arrow">→</div>
       <select class="status-map-select" id="lmap-${l.id}" data-lid="${l.id}" onchange="renderCardTable()">
-        ${statusOptions.map(s=>`<option value="${s}"${s==='(skip)'?' selected':''}>${s}</option>`).join('')}
+        ${statusOptions.map(s=>`<option value="${s}"${s===def?' selected':''}>${s}</option>`).join('')}
       </select>`;
   });
 }
 
 function getListStatus(idList){
   const sel=document.getElementById('lmap-'+idList);
-  return sel?sel.value:'Lead';
+  return sel?sel.value:'(skip)';
 }
 
 function parseDesc(desc){
