@@ -321,7 +321,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
     <img src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg" style="height:28px;margin-bottom:28px;display:block;margin-left:auto;margin-right:auto" alt="Bellweather">
     <div style="font-family:&#39;Swear Text&#39;,serif;font-size:22px;color:var(--navy);margin-bottom:6px">Projects Manager</div>
     <div style="font-size:12px;color:var(--slate);margin-bottom:6px">Sign in to access CORE_Projects</div>
-    <div style="font-size:11px;font-weight:700;color:var(--teak);letter-spacing:0.5px;margin-bottom:28px">v53</div>
+    <div style="font-size:11px;font-weight:700;color:var(--teak);letter-spacing:0.5px;margin-bottom:28px">v55</div>
     <button onclick="doSignIn()" style="padding:12px 32px;background:var(--navy);color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;width:100%;font-family:&#39;TT Norms Pro&#39;,sans-serif">Sign In with Microsoft</button>
     <div id="signin-error" style="display:none;margin-top:16px;padding:10px;background:var(--red-bg);color:var(--red);border-radius:6px;font-size:12px"></div>
   </div>
@@ -348,7 +348,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
       <span class="gear-icon" id="gear-icon" onclick="toggleAdmin()" title="Admin settings">⚙</span>
     </div>
     <div class="header-divider"></div>
-    <span class="ver-badge">v53</span>
+    <span class="ver-badge">v55</span>
     <div class="conn-dot" id="conn-dot" style="background: var(--green);"></div>
     <span class="conn-label" id="conn-label" style="color: rgba(255, 255, 255, 0.55);">SharePoint</span>
     <button class="schema-panel-btn" onclick="document.getElementById('schemaPanel').classList.toggle('open')" style="margin-left:auto">Field Mapping ▸</button>
@@ -470,6 +470,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
             <button class="btn btn-secondary btn-sm" onclick="trSelectAll(true)">Select all</button>
             <button class="btn btn-secondary btn-sm" onclick="trSelectAll(false)">Deselect all</button>
             <label class="archived-toggle" style="margin:0"><input type="checkbox" id="tr-show-dupes" checked="" onchange="renderCardTable()"> Show possible duplicates</label>
+            <label class="archived-toggle" style="margin:0"><input type="checkbox" id="tr-include-signed" onchange="buildListStatusMap();renderCardTable()"> Include DONE! (Signed)</label>
           </div>
           <div class="preview-wrap" style="max-height:420px;overflow-y:auto;">
             <table class="preview-table" id="tr-card-table">
@@ -1672,11 +1673,20 @@ async function loadBoard(boardId){
   const status=document.getElementById('tr-connect-status');
   status.innerHTML='Loading SALES BIG BOARD…';
   try{
-    trLists=await trFetch(`/boards/${boardId}/lists`,'&fields=name,closed&filter=all');
-    trCards=await trFetch(`/boards/${boardId}/cards`,'&customFieldItems=true&fields=name,desc,idList,closed,dateLastActivity&limit=1000&filter=all');
+    const [lists, cards, members]=await Promise.all([
+      trFetch(`/boards/${boardId}/lists`,'&fields=name,closed&filter=all'),
+      trFetch(`/boards/${boardId}/cards`,'&fields=name,desc,idList,closed,dateLastActivity,idMembers&limit=1000&filter=all'),
+      trFetch(`/boards/${boardId}/members`,'&fields=id,fullName')
+    ]);
+    trLists=lists;
+    trCards=cards;
+    window._trBoardMembers={};
+    (members||[]).forEach(m=>{if(m.id)window._trBoardMembers[m.id]=m.fullName||'';});
     document.getElementById('tr-archived-wrap').style.display='';
     buildListStatusMap();
-    status.innerHTML=`<span style="color:var(--green)">✓ Loaded ${trCards.length} cards (${trCards.filter(c=>!c.closed).length} open, ${trCards.filter(c=>c.closed).length} archived) from ${trLists.length} lists</span>`;
+    const trackedCount=(trCards||[]).filter(c=>getListStatus(c.idList)!=='(skip)').length;
+    const trackedLists=trLists.filter(l=>isApprovedList(l.name)&&!l.closed).length;
+    status.innerHTML=`<span style="color:var(--green)">✓ ${trackedCount} cards across ${trackedLists} tracked lists (${trCards.length} total on board)</span>`;
     document.getElementById('import-s1').style.display='none';
     document.getElementById('import-s2').style.display='';
     _claudeResults={};
@@ -1718,10 +1728,16 @@ function isApprovedList(name){
 }
 
 function buildListStatusMap(){
+  const includeSigned=document.getElementById('tr-include-signed')?.checked||false;
   const statusOptions=[...STATUS_ORDER,'(skip)'];
   const grid=document.getElementById('tr-list-map');
   grid.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--slate)">Trello List</div><div></div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--slate)">CORE Status</div>';
-  trLists.filter(l=>isApprovedList(l.name)&&!l.closed).forEach(l=>{
+  trLists.filter(l=>{
+    if(!isApprovedList(l.name)||l.closed)return false;
+    // Suppress DONE! (Signed) unless checkbox is on
+    if(l.name.toLowerCase().includes('done')&&l.name.toLowerCase().includes('signed'))return includeSigned;
+    return true;
+  }).forEach(l=>{
     const def=guessStatus(l.name);
     grid.innerHTML+=`
       <label style="font-size:13px;font-weight:600;color:var(--limestone)">${esc(l.name)}</label>
@@ -1831,6 +1847,12 @@ function cardToFields(card){
   if(projName)fields.ProjectName=projName;
 
   fields.TrelloCardID=card.id;
+
+  // ── Sales person — first card member maps to SalesPerson ──
+  const members=window._trBoardMembers||{};
+  const firstMemberId=(card.idMembers||[])[0];
+  if(firstMemberId&&members[firstMemberId])fields.SalesPerson=members[firstMemberId];
+
   return{status,fields,df,card};
 }
 
@@ -1869,7 +1891,8 @@ function renderCardTable(){
   const updateCount=cards.filter(c=>getDupeInfo(c).type==='update').length;
   const protectedCount=cards.filter(c=>getDupeInfo(c).type==='protected').length;
   const nameWarnCount=cards.filter(c=>getDupeInfo(c).type==='name-warn').length;
-  const parts=[`${cards.length} visible of ${trCards.length} total`];
+  const trackedTotal=(trCards||[]).filter(c=>getListStatus(c.idList)!=='(skip)').length;
+  const parts=[`${cards.length} shown of ${trackedTotal} in tracked lists · ${trCards.length} total on board`];
   if(updateCount)parts.push(`${updateCount} to update`);
   if(protectedCount)parts.push(`${protectedCount} SP current`);
   if(nameWarnCount)parts.push(`${nameWarnCount} name match`);
@@ -2189,10 +2212,17 @@ function toggleImport(forceClose){
     panel.classList.remove('open');chevron.classList.remove('open');
   }else{
     panel.classList.add('open');chevron.classList.add('open');
-    // Reset to step 1 and auto-connect
-    ['import-s2','import-s3','progress-card'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
-    document.getElementById('import-s1').style.display='';
-    if(!trCards.length)trAutoConnect();
+    if(trCards.length){
+      // Cards already loaded — restore step 2 directly
+      document.getElementById('import-s1').style.display='none';
+      ['import-s3','progress-card'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+      document.getElementById('import-s2').style.display='';
+    }else{
+      // Fresh session — connect and load
+      ['import-s2','import-s3','progress-card'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+      document.getElementById('import-s1').style.display='';
+      trAutoConnect();
+    }
   }
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}
