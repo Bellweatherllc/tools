@@ -559,6 +559,8 @@ function isSpConfigured() {
       && SP_CONFIG.driveId && !SP_CONFIG.driveId.startsWith('PASTE_');
 }
 
+let msalInitPromise = null;
+
 function getMsal() {
   if (msalInstance) return msalInstance;
   msalInstance = new msal.PublicClientApplication({
@@ -572,8 +574,14 @@ function getMsal() {
   return msalInstance;
 }
 
-async function ensureSignedIn() {
+async function ensureMsalInitialized() {
   const app = getMsal();
+  if (!msalInitPromise) msalInitPromise = app.initialize();
+  await msalInitPromise;
+  return app;
+}
+async function ensureSignedIn() {
+  const app = await ensureMsalInitialized();
   const existing = app.getAllAccounts();
   if (existing.length) {
     msalAccount = existing[0];
@@ -587,7 +595,7 @@ async function ensureSignedIn() {
 }
 
 async function getGraphToken() {
-  const app = getMsal();
+  const app = await ensureMsalInitialized();
   const account = msalAccount || (await ensureSignedIn());
   try {
     const result = await app.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
