@@ -9172,7 +9172,7 @@ async function _trelloSync(){
   try{
     const[listsR,cardsR]=await Promise.all([
       fetch(`https://api.trello.com/1/boards/${boardId}/lists?key=${apiKey}&token=${token}&filter=open`),
-      fetch(`https://api.trello.com/1/boards/${boardId}/cards?key=${apiKey}&token=${token}&fields=name,idList&filter=open`)
+      fetch(`https://api.trello.com/1/boards/${boardId}/cards?key=${apiKey}&token=${token}&fields=name,idList,shortLink&filter=open`)
     ]);
     if(!listsR.ok||!cardsR.ok){console.warn('[trelloSync] Trello API non-200',listsR.status,cardsR.status);return;}
     const lists=await listsR.json(),cards=await cardsR.json();
@@ -9182,21 +9182,29 @@ async function _trelloSync(){
     const lostListId=lostList?.id;
     const APPROVED_UP=['EST REVIEW','PRESENT EST','DA FULL REVIEW','DA READY TO SELL','DONE! (SIGNED)'];
     const isApproved=n=>APPROVED_UP.includes((n||'').toUpperCase().trim());
-    const cardIdToProj={};
-    PROJECTS.forEach(p=>{if(p.trelloCardId&&p.isLead) cardIdToProj[p.trelloCardId]=p;});
+    // Two-tier lookup: leads only for list-name/Lost logic; all projects to exclude from net-new
+    const leadLookup={}, allLookup={};
+    PROJECTS.forEach(p=>{
+      if(!p.trelloCardId) return;
+      [p.trelloCardId].forEach(k=>{ allLookup[k]=p; if(p.isLead) leadLookup[k]=p; });
+    });
     PROJECTS.filter(p=>p.isLead).forEach(p=>{p.trelloListName='';});
     const netNew=[],lostNames=[];
     for(const card of cards){
       const listName=listMap[card.idList]||'';
-      const proj=cardIdToProj[card.id];
-      if(proj){
-        proj.trelloListName=listName;
-        if(lostListId&&card.idList===lostListId&&!['da-signed','ca-signed'].includes(proj.status)&&proj.status!=='lost'&&proj._spItemId){
+      // Match on full API id OR shortLink — handles both pasted formats
+      const leadProj=leadLookup[card.id]||leadLookup[card.shortLink];
+      const anyProj=allLookup[card.id]||allLookup[card.shortLink];
+      if(leadProj){
+        leadProj.trelloListName=listName;
+        if(lostListId&&card.idList===lostListId&&!['da-signed','ca-signed'].includes(leadProj.status)&&leadProj.status!=='lost'&&leadProj._spItemId){
           try{
-            await graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{PipelineStage:'Lost'});
-            proj.status='lost'; lostNames.push(proj.name);
-          }catch(e){console.warn('[trelloSync] Lost patch failed:',proj.name,e);}
+            await graphPatch(BWC_SITE+'/CORE_Projects/items/'+leadProj._spItemId+'/fields',{PipelineStage:'Lost'});
+            leadProj.status='lost'; lostNames.push(leadProj.name);
+          }catch(e){console.warn('[trelloSync] Lost patch failed:',leadProj.name,e);}
         }
+      } else if(anyProj){
+        // Already in CORE at a later stage — not net-new, skip
       } else if(isApproved(listName)){
         netNew.push({name:card.name,list:listName,cardId:card.id});
       }
