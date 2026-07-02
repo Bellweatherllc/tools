@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bellweather · Scope Letter Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/3.14.0/js/msal-browser.min.js"></script>
+<style>
+:root {
+  --limestone: #282828;
+  --cotton: #F6F2EE;
+  --navy: #263860;
+  --slate: #9091A0;
+  --mahogany: #54423E;
+  --teak: #B7A9A3;
+  --concrete: #D2D5D8;
+  --glass: #EDF5F9;
+  --linen: #E5E1D8;
+  --marble: #FFFFFF;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-serif: 'DM Serif Display', Georgia, serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--cotton);
+  color: var(--limestone);
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  grid-template-rows: auto 1fr;
+}
+
+/* ── Header ── */
+header {
+  grid-column: 1 / -1;
+  background: var(--limestone);
+  padding: 20px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.header-logo { height: 28px; }
+
+.header-title {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--teak);
+}
+
+/* ── Left Panel ── */
+.left-panel {
+  background: var(--marble);
+  border-right: 1px solid var(--linen);
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  height: calc(100vh - 69px);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 6px;
+}
+
+.import-box {
+  border: 1.5px dashed var(--linen);
+  border-radius: 6px;
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.import-box:focus-within { border-color: var(--teak); }
+
+textarea#jsonInput {
+  width: 100%;
+  height: 100px;
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  padding: 12px 14px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: var(--cotton);
+  color: var(--limestone);
+  line-height: 1.5;
+}
+
+.load-btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  background: var(--limestone);
+  color: var(--cotton);
+  border: none;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.load-btn:hover { background: var(--navy); }
+
+.error-msg { font-size: 11px; color: #8B1A1A; padding: 4px 0; }
+
+/* Card meta */
+.card-meta {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--cotton);
+  border-radius: 6px;
+  border: 1px solid var(--linen);
+}
+.card-meta.visible { display: flex; }
+
+.meta-field { display: flex; flex-direction: column; gap: 4px; }
+
+.meta-field input[type="text"] {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 10px;
+  border: 1px solid var(--concrete);
+  border-radius: 4px;
+  background: var(--marble);
+  color: var(--limestone);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.meta-field input[type="text"]:focus { border-color: var(--slate); }
+
+/* Sections checklist */
+.sections-list { display: flex; flex-direction: column; gap: 4px; }
+.section-chip {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--slate);
+}
+.chip-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--concrete); flex-shrink: 0;
+}
+.section-chip.found .chip-dot { background: #5B8A3C; }
+.section-chip.found { color: var(--limestone); }
+
+/* Action buttons */
+.action-group { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+
+.gen-btn {
+  padding: 12px 20px;
+  background: var(--navy);
+  color: var(--marble);
+  border: none;
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  letter-spacing: 0.02em;
+}
+.gen-btn:hover { opacity: 0.88; }
+.gen-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.dl-btn {
+  padding: 11px 20px;
+  background: transparent;
+  color: var(--limestone);
+  border: 1.5px solid var(--linen);
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: none;
+}
+.dl-btn:hover { background: var(--cotton); border-color: var(--teak); }
+.dl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.sp-btn {
+  padding: 11px 20px;
+  background: var(--navy);
+  color: var(--marble);
+  border: none;
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  display: none;
+}
+.sp-btn:hover { opacity: 0.88; }
+.sp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.account-chip {
+  font-size: 10.5px;
+  color: var(--slate);
+  text-align: center;
+  min-height: 14px;
+}
+.account-chip .signed-in { color: #5B8A3C; font-weight: 500; }
+.account-chip button {
+  background: none; border: none; color: var(--slate); text-decoration: underline;
+  cursor: pointer; font-size: 10.5px; font-family: var(--font-sans); padding: 0 0 0 6px;
+}
+
+.link-box {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--cotton);
+  border: 1px solid var(--linen);
+  border-radius: 6px;
+  margin-top: 2px;
+}
+.link-box.visible { display: flex; }
+.link-box input {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  padding: 6px 8px;
+  border: 1px solid var(--concrete);
+  border-radius: 4px;
+  background: var(--marble);
+  color: var(--navy);
+  width: 100%;
+}
+.link-box .copy-again {
+  align-self: flex-start;
+  background: none; border: none; color: var(--navy);
+  font-size: 11px; font-weight: 500; text-decoration: underline;
+  cursor: pointer; font-family: var(--font-sans); padding: 0;
+}
+
+.status-msg {
+  font-size: 11px;
+  color: var(--slate);
+  text-align: center;
+  padding: 4px 0;
+  min-height: 16px;
+  line-height: 1.4;
+}
+
+/* ── Right Panel / Preview ── */
+.right-panel {
+  padding: 32px 40px;
+  overflow-y: auto;
+  height: calc(100vh - 69px);
+  background: var(--cotton);
+}
+
+/* Toolbar */
+.fmt-toolbar {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  background: var(--marble);
+  border: 1px solid var(--linen);
+  border-radius: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 4px rgba(40,40,40,0.06);
+}
+.fmt-toolbar.visible { display: flex; }
+
+.fmt-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--limestone);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+.fmt-btn:hover { background: var(--cotton); border-color: var(--linen); }
+.fmt-btn.active { background: var(--linen); border-color: var(--teak); }
+.fmt-sep { width: 1px; height: 18px; background: var(--linen); margin: 0 4px; }
+
+.toolbar-hint {
+  font-size: 11px;
+  color: var(--slate);
+  margin-bottom: 12px;
+  display: none;
+}
+
+/* ── Letter ── */
+.letter-wrap {
+  background: var(--marble);
+  max-width: 700px;
+  margin: 0 auto;
+  box-shadow: 0 2px 32px rgba(40,40,40,0.10);
+  border-radius: 2px;
+}
+
+.letter-frame {
+  padding: 64px 72px 72px;
+  position: relative;
+  min-height: 600px;
+  font-family: 'DM Sans', Arial, sans-serif;
+  color: var(--limestone);
+  outline: none;
+  cursor: text;
+}
+
+.letter-frame[contenteditable="true"]:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(146,145,160,0.15);
+}
+
+.letter-monogram {
+  position: absolute;
+  top: 48px;
+  right: 56px;
+  width: 72px;
+  height: 72px;
+  pointer-events: none;
+  user-select: none;
+  filter: brightness(0);
+}
+
+.letter-date {
+  font-size: 12px;
+  color: var(--slate);
+  margin-bottom: 24px;
+  padding-top: 56px;
+  display: block;
+  font-family: 'DM Sans', Arial, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.letter-salutation {
+  font-size: 13.5px;
+  font-weight: 300;
+  color: var(--limestone);
+  margin-bottom: 16px;
+  display: block;
+  font-family: 'DM Sans', Arial, sans-serif;
+}
+
+.letter-opening {
+  font-size: 13.5px;
+  line-height: 1.85;
+  color: var(--limestone);
+  margin-bottom: 28px;
+  display: block;
+  font-family: 'DM Sans', Arial, sans-serif;
+  font-weight: 300;
+}
+
+.letter-section { margin-bottom: 22px; }
+
+.letter-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--limestone);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--linen);
+  display: block;
+  font-family: 'DM Sans', Arial, sans-serif;
+}
+
+.letter-frame ul {
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--limestone);
+  margin: 4px 0;
+  list-style-type: square;
+  font-family: 'DM Sans', Arial, sans-serif;
+  font-weight: 300;
+}
+.letter-frame ul ul {
+  list-style-type: none;
+  margin: 2px 0;
+  padding-left: 0;
+}
+.letter-frame ul ul li {
+  display: flex;
+  gap: 6px;
+  padding-left: 0;
+  text-indent: 0;
+}
+.letter-frame ul ul li::before {
+  content: '—';
+  color: var(--slate);
+  font-weight: 300;
+  flex-shrink: 0;
+}
+.letter-frame li { margin-bottom: 3px; }
+.letter-frame strong, .letter-frame b { font-weight: 600 !important; }
+
+.letter-wordmark {
+  margin-top: 52px;
+  padding-top: 0;
+}
+.letter-wordmark img {
+  width: 100%;
+  height: auto;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  filter: brightness(0);
+}
+
+.placeholder-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 440px;
+  gap: 12px;
+  text-align: center;
+}
+.placeholder-state .ph-icon { opacity: 0.2; }
+.placeholder-state p {
+  font-size: 14px;
+  color: var(--slate);
+  line-height: 1.6;
+}
+.placeholder-state strong { color: var(--limestone); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<header>
+  <img class="header-logo" src="https://bellweatherllc.github.io/tools/logos/HorizontalLogo-W.svg" alt="Bellweather" onerror="this.style.display='none';document.getElementById('headerText').style.display='block'">
+  <span id="headerText" style="display:none;font-family:'DM Sans',sans-serif;font-size:18px;font-weight:600;color:#F6F2EE;letter-spacing:0.02em;">Bellweather</span>
+  <span class="header-title">Scope Letter Tool &nbsp;·&nbsp; V3</span>
+</header>
+
+<aside class="left-panel">
+
+  <div>
+    <div class="section-label">Import Trello card</div>
+    <div class="import-box">
+      <textarea id="jsonInput" placeholder="Paste Trello card JSON here…"></textarea>
+      <button class="load-btn" onclick="loadFromPaste()">Load card →</button>
+    </div>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+
+  <div class="card-meta" id="cardMeta">
+    <div class="meta-field">
+      <div class="section-label">Client first name</div>
+      <input type="text" id="clientFirst" placeholder="First name" />
+    </div>
+    <div class="meta-field">
+      <div class="section-label">Date</div>
+      <input type="text" id="letterDate" />
+    </div>
+    <div class="meta-field">
+      <div class="section-label">File name</div>
+      <input type="text" id="fileName" placeholder="e.g. Rudnick-DA Scope-2026-05-27" style="width:100%" />
+    </div>
+    <div>
+      <div class="section-label" style="margin-bottom:8px">Sections found</div>
+      <div class="sections-list" id="sectionsFound"></div>
+    </div>
+  </div>
+
+  <div class="action-group">
+    <button class="gen-btn" id="genBtn" onclick="generateLetter()" disabled>Generate letter</button>
+    <button class="sp-btn" id="spBtn" onclick="uploadToSharePoint()">☁ Upload &amp; copy link</button>
+    <div class="link-box" id="linkBox">
+      <input type="text" id="linkOutput" readonly onclick="this.select()" />
+      <button class="copy-again" onclick="copyLinkAgain()">Copy link again</button>
+    </div>
+    <button class="dl-btn" id="dlBtn" onclick="downloadLetter()">↓ Download letter (backup)</button>
+    <div class="account-chip" id="accountChip"></div>
+    <div class="status-msg" id="statusMsg">Paste a Trello card JSON to get started</div>
+  </div>
+
+</aside>
+
+<main class="right-panel">
+
+  <div class="fmt-toolbar" id="fmtToolbar">
+    <button class="fmt-btn" id="btnBold" onmousedown="fmtCmd(event,'bold')"><b>B</b></button>
+    <button class="fmt-btn" id="btnItalic" onmousedown="fmtCmd(event,'italic')"><i>I</i></button>
+    <button class="fmt-btn" id="btnUnderline" onmousedown="fmtCmd(event,'underline')"><u>U</u></button>
+    <div class="fmt-sep"></div>
+    <button class="fmt-btn" onmousedown="indentItem(event)">→ Sub-bullet</button>
+    <button class="fmt-btn" onmousedown="outdentItem(event)">← Promote</button>
+    <div class="fmt-sep"></div>
+    <button class="fmt-btn" id="btnRed" onmousedown="fmtRed(event)" style="color:#B41E1E;font-weight:600;">A</button>
+  </div>
+  <div class="toolbar-hint" id="toolbarHint">Click anywhere in the letter to edit · Select text for formatting · Use toolbar to indent or promote bullets</div>
+
+  <div class="letter-wrap">
+    <div class="letter-frame" id="letterFrame">
+      <div class="placeholder-state">
+        <svg class="ph-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#282828" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+        <p>Paste your Trello card JSON on the left<br>and click <strong>Load card</strong>, then<br><strong>Generate letter</strong> to begin.</p>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const MONOGRAM_URL = 'https://bellweatherllc.github.io/tools/logos/CircleCompassLockup-B.svg';
+const WORDMARK_URL = 'https://bellweatherllc.github.io/tools/logos/HorizontalLogo-B.svg';
+
+// ── V3 CONFIG ──────────────────────────────────────────────────────────
+// Fill these in after completing the Azure AD app registration and the
+// getSPIds() lookup described in SETUP-GUIDE.md. Nothing in this block is
+// a secret — the clientId/tenantId/siteId/driveId are safe to be public,
+// same as a URL. The only real secret (the Claude API key) lives server-side
+// in the Azure Function, never here.
+const SP_CONFIG = {
+  clientId: 'b2868a0d-c74f-4cd5-bf6e-4d1e65ead56',      // Application (client) ID from app registration
+  tenantId: 'ff0e3f46-615a-4a22-8a80-4bb83d627785',          // Directory (tenant) ID from app registration
+  siteId: 'PASTE_SITE_ID_HERE',                     // from getSPIds()
+  driveId: 'PASTE_DRIVE_ID_HERE',                   // from getSPIds()
+  folderPath: 'Scope Letters',                      // folder within the document library
+  redirectUri: window.location.href.split('?')[0].split('#')[0] // must match Azure app registration exactly
+};
+
+// Azure Function proxy that holds the real Anthropic key server-side.
+// Fill in after deploying the function (see SETUP-GUIDE.md).
+const PROXY_URL = 'PASTE_AZURE_FUNCTION_URL_HERE'; // e.g. https://bw-scope-proxy.azurewebsites.net/api/generateOpening
+
+const GRAPH_SCOPES = ['Files.ReadWrite', 'Sites.ReadWrite.All'];
+
+let msalInstance = null;
+let msalAccount = null;
+
+function isSpConfigured() {
+  return SP_CONFIG.clientId && !SP_CONFIG.clientId.startsWith('PASTE_')
+      && SP_CONFIG.tenantId && !SP_CONFIG.tenantId.startsWith('PASTE_')
+      && SP_CONFIG.siteId && !SP_CONFIG.siteId.startsWith('PASTE_')
+      && SP_CONFIG.driveId && !SP_CONFIG.driveId.startsWith('PASTE_');
+}
+
+function getMsal() {
+  if (msalInstance) return msalInstance;
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: SP_CONFIG.clientId,
+      authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`,
+      redirectUri: SP_CONFIG.redirectUri
+    },
+    cache: { cacheLocation: 'sessionStorage' }
+  });
+  return msalInstance;
+}
+
+async function ensureSignedIn() {
+  const app = getMsal();
+  const existing = app.getAllAccounts();
+  if (existing.length) {
+    msalAccount = existing[0];
+    updateAccountChip();
+    return msalAccount;
+  }
+  const result = await app.loginPopup({ scopes: GRAPH_SCOPES });
+  msalAccount = result.account;
+  updateAccountChip();
+  return msalAccount;
+}
+
+async function getGraphToken() {
+  const app = getMsal();
+  const account = msalAccount || (await ensureSignedIn());
+  try {
+    const result = await app.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
+    return result.accessToken;
+  } catch (e) {
+    const result = await app.acquireTokenPopup({ scopes: GRAPH_SCOPES, account });
+    return result.accessToken;
+  }
+}
+
+function updateAccountChip() {
+  const chip = document.getElementById('accountChip');
+  if (!chip) return;
+  if (msalAccount) {
+    chip.innerHTML = `<span class="signed-in">Signed in as ${msalAccount.username}</span><button onclick="signOut()">Sign out</button>`;
+  } else {
+    chip.textContent = '';
+  }
+}
+
+async function signOut() {
+  const app = getMsal();
+  if (msalAccount) {
+    await app.logoutPopup({ account: msalAccount });
+  }
+  msalAccount = null;
+  updateAccountChip();
+}
+
+// One-time helper — NOT used by the tool's normal flow.
+// Run getSPIds() from the browser console (F12) once, after filling in
+// clientId + tenantId, to look up the siteId and driveId to paste into
+// SP_CONFIG above.
+async function getSPIds() {
+  if (!SP_CONFIG.clientId || SP_CONFIG.clientId.startsWith('PASTE_')) {
+    console.error('Fill in clientId and tenantId in SP_CONFIG first.');
+    return;
+  }
+  const siteUrl = prompt('Paste the full SharePoint site URL, e.g. https://bellweather.sharepoint.com/sites/Sales');
+  if (!siteUrl) return;
+  const url = new URL(siteUrl);
+  const hostname = url.hostname;
+  const sitePath = url.pathname.replace(/\/$/, '');
+  try {
+    const token = await getGraphToken();
+    const siteResp = await fetch(`https://graph.microsoft.com/v1.0/sites/${hostname}:${sitePath}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const site = await siteResp.json();
+    if (!site.id) { console.error('Site lookup failed:', site); return; }
+    console.log('siteId:', site.id);
+
+    const driveResp = await fetch(`https://graph.microsoft.com/v1.0/sites/${site.id}/drive`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const drive = await driveResp.json();
+    if (!drive.id) { console.error('Drive lookup failed:', drive); return; }
+    console.log('driveId:', drive.id);
+    console.log('%cPaste these two values into SP_CONFIG.siteId and SP_CONFIG.driveId', 'font-weight:bold');
+    alert(`siteId: ${site.id}\n\ndriveId: ${drive.id}\n\n(also logged to console — paste both into SP_CONFIG)`);
+  } catch (e) {
+    console.error('getSPIds failed:', e);
+  }
+}
+window.getSPIds = getSPIds;
+
+let parsedSections = {};
+
+const SECTION_KEYS = [
+  { key: 'focus',          label: 'Focus for design services',  patterns: [/^FOCUS FOR DESIGN SERVICES/i] },
+  { key: 'priorities',     label: 'List of project priorities', patterns: [/^LIST OF PROJECT PRIORITIES/i] },
+  { key: 'tbds',           label: 'List of TBDs',               patterns: [/^LIST OF TBD/i] },
+  { key: 'considerations', label: 'Other considerations',       patterns: [/^Other Considerations/i, /^OTHER CONSIDERATIONS/i] },
+  { key: 'cost',           label: 'Cost breakdown',             patterns: [/^Cost Breakdown/i, /^COST BREAKDOWN/i] }
+];
+
+function parseDesc(desc) {
+  if (!desc) return {};
+  const focusIdx = desc.search(/^FOCUS FOR DESIGN SERVICES/im);
+  const relevant = focusIdx >= 0 ? desc.slice(focusIdx) : desc;
+  const lines = relevant.split('\n');
+  const sections = {};
+  let currentKey = null, buffer = [];
+  function flush() { if (currentKey && buffer.length) sections[currentKey] = buffer.join('\n').trim(); buffer = []; }
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^INTERNAL NOTES/i.test(trimmed)) break;
+    if (!trimmed || trimmed === '---') continue;
+    let matched = false;
+    for (const s of SECTION_KEYS) {
+      if (s.patterns.some(p => p.test(trimmed))) { flush(); currentKey = s.key; matched = true; break; }
+    }
+    if (!matched && currentKey) buffer.push(line);
+  }
+  flush();
+  return sections;
+}
+
+function extractFirstName(name) {
+  const cleaned = name.replace(/\|.*$/, '').replace(/-.*$/, '').trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  return parts.find(p => /^[A-Z][a-z]+$/.test(p)) || parts[0] || '';
+}
+
+function extractLastName(name) {
+  const cleaned = name.replace(/\|.*$/, '').replace(/-.*$/, '').trim();
+  const parts = cleaned.split(/\s+/).filter(p => /^[A-Za-z]+$/.test(p));
+  return parts.length >= 2 ? parts[parts.length - 1] : parts[0] || 'Client';
+}
+
+function loadFromPaste() {
+  const raw = document.getElementById('jsonInput').value.trim();
+  document.getElementById('errorMsg').textContent = '';
+  if (!raw) { document.getElementById('errorMsg').textContent = 'Please paste your Trello card JSON first.'; return; }
+  let card;
+  try { card = JSON.parse(raw); } catch(e) {
+    document.getElementById('errorMsg').textContent = 'Could not parse — make sure you copied the full JSON.';
+    return;
+  }
+  parsedSections = parseDesc(card.desc || '');
+  const name = card.name || '';
+  document.getElementById('clientFirst').value = extractFirstName(name);
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+  const fileDateStr = today.toISOString().slice(0,10);
+  document.getElementById('letterDate').value = dateStr;
+  const lastName = extractLastName(name);
+  document.getElementById('fileName').value = `${lastName}-DA Scope-${fileDateStr}`;
+  document.getElementById('sectionsFound').innerHTML = SECTION_KEYS.map(s => {
+    const has = !!parsedSections[s.key];
+    return `<div class="section-chip ${has ? 'found' : 'missing'}">
+      <div class="chip-dot"></div>
+      <span>${s.label}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('cardMeta').classList.add('visible');
+  document.getElementById('genBtn').disabled = false;
+  document.getElementById('statusMsg').textContent = `Loaded: ${name}`;
+  document.getElementById('jsonInput').value = '';
+  document.getElementById('jsonInput').placeholder = 'Card loaded. Paste new JSON to replace.';
+}
+
+function parseBullets(text) {
+  if (!text || !text.trim()) return [];
+  return text.split('\n').filter(l => l.trim() && l.trim() !== '---').map(line => {
+    const clean = line.trim()
+      .replace(/^[-*•]\s*/, '')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/_(.*?)_/g, '<em>$1</em>');
+    return { text: clean, level: /^(\t|\s{2,})/.test(line) ? 1 : 0 };
+  });
+}
+
+function buildList(items) {
+  if (!items.length) return '';
+  let html = '<ul>';
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.level === 0) {
+      const subs = [];
+      while (i + 1 < items.length && items[i + 1].level === 1) subs.push(items[++i]);
+      html += subs.length
+        ? `<li>${item.text}<ul>${subs.map(s => `<li>${s.text}</li>`).join('')}</ul></li>`
+        : `<li>${item.text}</li>`;
+    } else { html += `<li>${item.text}</li>`; }
+  }
+  return html + '</ul>';
+}
+
+function buildSection(title, text) {
+  const items = parseBullets(text);
+  if (!items.length) return '';
+  return `<div class="letter-section"><div class="letter-section-title">${title}</div>${buildList(items)}</div>`;
+}
+
+function getFrame() { return document.querySelector('.letter-frame[contenteditable="true"]'); }
+
+// Saved selection range so toolbar clicks don't lose it
+let savedRange = null;
+
+function saveSelection() {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0) {
+    savedRange = sel.getRangeAt(0).cloneRange();
+  }
+}
+
+function restoreSelection() {
+  const f = getFrame(); if (!f) return false;
+  f.focus();
+  if (savedRange) {
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+    return true;
+  }
+  return false;
+}
+
+// Check if every text node in the selection is wrapped in the given tag
+function isFullyWrapped(tagName) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const ancestor = range.commonAncestorContainer;
+  // Collect all text nodes within the range
+  const walker = document.createTreeWalker(
+    ancestor.nodeType === 3 ? ancestor.parentElement : ancestor,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+  let allWrapped = true;
+  let found = false;
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!range.intersectsNode(node)) continue;
+    if (!node.textContent.trim()) continue;
+    found = true;
+    if (!node.parentElement.closest(tagName)) { allWrapped = false; break; }
+  }
+  return found && allWrapped;
+}
+
+function fmtCmd(e, cmd) {
+  e.preventDefault();
+  const f = getFrame(); if (!f) return;
+  restoreSelection();
+
+  const tagMap = { bold: 'strong', italic: 'em', underline: 'u' };
+  const btnMap = { bold: 'btnBold', italic: 'btnItalic', underline: 'btnUnderline' };
+  const tag = tagMap[cmd];
+  const btnId = btnMap[cmd];
+
+  const fullyWrapped = tag ? isFullyWrapped(tag) : false;
+
+  // Always execCommand — but if partially formatted, turn off first then on
+  // so the entire selection ends up consistently formatted
+  if (fullyWrapped) {
+    document.execCommand(cmd, false, null); // remove
+  } else {
+    if (document.queryCommandState(cmd)) {
+      document.execCommand(cmd, false, null); // turn off partial
+    }
+    document.execCommand(cmd, false, null); // apply to whole selection
+  }
+
+  saveSelection();
+  try {
+    const btn = document.getElementById(btnId);
+    if (btn) btn.classList.toggle('active', !fullyWrapped);
+  } catch(err) {}
+}
+
+function getActiveLi() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const node = sel.anchorNode;
+  const el = node.nodeType === 3 ? node.parentElement : node;
+  return el.closest('li');
+}
+
+function indentItem(e) {
+  e.preventDefault();
+  const f = getFrame(); if (!f) return;
+  restoreSelection();
+  const li = getActiveLi(); if (!li) return;
+  const prevLi = li.previousElementSibling;
+  if (prevLi) {
+    let sub = prevLi.querySelector(':scope > ul');
+    if (!sub) { sub = document.createElement('ul'); prevLi.appendChild(sub); }
+    sub.appendChild(li);
+  } else {
+    // No previous sibling — wrap in a new sub-ul within a placeholder top-level li
+    const newUl = document.createElement('ul');
+    li.parentElement.insertBefore(newUl, li);
+    newUl.appendChild(li);
+  }
+  restoreCaret(li);
+}
+
+function outdentItem(e) {
+  e.preventDefault();
+  const f = getFrame(); if (!f) return;
+  restoreSelection();
+  const li = getActiveLi(); if (!li) return;
+  const parentUl = li.parentElement;
+  if (!parentUl) return;
+  const grandParent = parentUl.parentElement;
+  if (!grandParent) return;
+
+  const after = [];
+  let next = li.nextElementSibling;
+  while (next) { after.push(next); next = next.nextElementSibling; }
+
+  if (grandParent.tagName === 'LI') {
+    // Standard: nested inside another li
+    const grandUl = grandParent.parentElement;
+    grandUl.insertBefore(li, grandParent.nextSibling);
+    if (after.length) {
+      const sub = document.createElement('ul');
+      after.forEach(n => sub.appendChild(n));
+      li.appendChild(sub);
+    }
+    if (parentUl.children.length === 0) parentUl.remove();
+  } else {
+    // Sub-ul sits directly in a section div — move li to the parent ul
+    const targetUl = grandParent.tagName === 'UL' ? grandParent : null;
+    if (!targetUl) return;
+    targetUl.insertBefore(li, parentUl.nextSibling || null);
+    if (after.length) {
+      const sub = document.createElement('ul');
+      after.forEach(n => sub.appendChild(n));
+      li.appendChild(sub);
+    }
+    if (parentUl.children.length === 0) parentUl.remove();
+  }
+  restoreCaret(li);
+}
+
+function fmtRed(e) {
+  e.preventDefault();
+  restoreSelection();
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+  // Check if anchor node is already red
+  const anchor = sel.anchorNode;
+  const el = anchor.nodeType === 3 ? anchor.parentElement : anchor;
+  const computed = window.getComputedStyle(el).color;
+  if (computed === 'rgb(180, 30, 30)' || el.style.color === '#B41E1E') {
+    document.execCommand('foreColor', false, '#282828');
+  } else {
+    document.execCommand('foreColor', false, '#B41E1E');
+  }
+  saveSelection();
+  updateToolbarState();
+}
+
+function restoreCaret(li) {
+  // Find the first actual text node inside li (not inside a nested ul)
+  let textNode = null;
+  for (const child of li.childNodes) {
+    if (child.nodeType === 3 && child.textContent.trim()) { textNode = child; break; }
+    if (child.nodeType === 1 && child.tagName !== 'UL') {
+      // Dig into inline elements like <strong>, <em>
+      const inner = child.firstChild;
+      if (inner && inner.nodeType === 3) { textNode = inner; break; }
+    }
+  }
+  if (!textNode) textNode = li.firstChild;
+  if (!textNode) return;
+  const range = document.createRange();
+  const offset = textNode.nodeType === 3 ? textNode.length : 0;
+  range.setStart(textNode, offset);
+  range.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  savedRange = range.cloneRange();
+}
+
+function updateToolbarState() {
+  try {
+    document.getElementById('btnBold').classList.toggle('active', document.queryCommandState('bold'));
+    document.getElementById('btnItalic').classList.toggle('active', document.queryCommandState('italic'));
+    document.getElementById('btnUnderline').classList.toggle('active', document.queryCommandState('underline'));
+  } catch(e) {}
+}
+
+async function generateLetter() {
+  const name = document.getElementById('clientFirst').value.trim();
+  const date = document.getElementById('letterDate').value.trim() || new Date().toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  document.getElementById('statusMsg').textContent = 'Drafting opening…';
+
+  const summary = [parsedSections.focus, parsedSections.priorities].filter(Boolean).join('\n\n');
+  let opening = '';
+  try {
+    if (!PROXY_URL || PROXY_URL.startsWith('PASTE_')) throw new Error('Proxy not configured yet');
+    const resp = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientName: name || 'the homeowners',
+        scope: summary
+      })
+    });
+    const data = await resp.json();
+    opening = data.opening || data.content?.[0]?.text || '';
+  } catch(e) {
+    opening = `We're excited to share the following scope outline and look forward to bringing your vision to life.`;
+  }
+
+  const sections = [
+    buildSection('Focus for design services', parsedSections.focus),
+    buildSection('List of project priorities', parsedSections.priorities),
+    buildSection('List of TBDs (priced separately during design)', parsedSections.tbds),
+    buildSection('Other considerations', parsedSections.considerations),
+    buildSection('Cost breakdown', parsedSections.cost)
+  ].filter(Boolean).join('');
+
+  const frame = document.getElementById('letterFrame');
+  frame.contentEditable = 'true';
+  frame.spellcheck = true;
+  frame.innerHTML = `
+    <img class="letter-monogram" src="${MONOGRAM_URL}" alt="" />
+    <div class="letter-date">${date}</div>
+    <div class="letter-salutation">Dear ${name || 'Client'},</div>
+    <div class="letter-opening">${opening}</div>
+    ${sections}
+    <div class="letter-wordmark"><img src="${WORDMARK_URL}" alt="Bellweather" /></div>`;
+
+  frame.addEventListener('keyup', () => { saveSelection(); updateToolbarState(); });
+  frame.addEventListener('mouseup', () => { saveSelection(); updateToolbarState(); });
+  frame.addEventListener('keydown', saveSelection);
+
+  document.getElementById('fmtToolbar').classList.add('visible');
+  document.getElementById('toolbarHint').style.display = 'block';
+  document.getElementById('dlBtn').style.display = 'block';
+  document.getElementById('spBtn').style.display = isSpConfigured() ? 'block' : 'none';
+  btn.disabled = false; btn.textContent = 'Regenerate letter';
+  document.getElementById('statusMsg').textContent = '';
+}
+
+async function svgToDataUri(url) {
+  try {
+    const r = await fetch(url);
+    const t = await r.text();
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(t)));
+  } catch(e) { return url; }
+}
+
+async function buildStandaloneHtml() {
+  const frame = document.getElementById('letterFrame');
+  const [monUri, wordUri] = await Promise.all([svgToDataUri(MONOGRAM_URL), svgToDataUri(WORDMARK_URL)]);
+
+  const clone = frame.cloneNode(true);
+  clone.removeAttribute('contenteditable');
+  clone.removeAttribute('spellcheck');
+  clone.removeAttribute('id');
+  const mon = clone.querySelector('.letter-monogram');
+  if (mon) mon.src = monUri;
+  const wrd = clone.querySelector('.letter-wordmark img');
+  if (wrd) wrd.src = wordUri;
+
+  const firstName = document.getElementById('clientFirst').value.trim() || 'client';
+  const customName = document.getElementById('fileName').value.trim();
+  const dateStr = new Date().toISOString().slice(0,10);
+  const filename = (customName || `Client-DA Scope-${dateStr}`) + '.html';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bellweather Scope — ${firstName}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #F6F2EE; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 48px 24px; font-family: 'DM Sans', Arial, sans-serif; }
+.page { background: #ffffff; max-width: 700px; width: 100%; padding: 64px 72px 72px; position: relative; box-shadow: 0 4px 40px rgba(40,40,40,0.10); }
+.letter-monogram { position: absolute; top: 48px; right: 56px; width: 72px; height: 72px; filter: brightness(0); }
+.letter-date { font-size: 12px; color: #9091A0; margin-bottom: 24px; padding-top: 56px; display: block; font-family: 'DM Sans', Arial, sans-serif; letter-spacing: 0.02em; }
+.letter-salutation { font-size: 13.5px; font-weight: 300; color: #282828; margin-bottom: 16px; display: block; font-family: 'DM Sans', Arial, sans-serif; }
+.letter-opening { font-size: 13.5px; line-height: 1.85; color: #282828; margin-bottom: 28px; display: block; font-family: 'DM Sans', Arial, sans-serif; font-weight: 300; }
+.letter-section { margin-bottom: 22px; }
+.letter-section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #282828; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #E5E1D8; display: block; font-family: 'DM Sans', Arial, sans-serif; }
+ul { padding-left: 20px; font-size: 13px; line-height: 1.85; color: #282828; margin: 4px 0; list-style-type: square; font-family: 'DM Sans', Arial, sans-serif; font-weight: 300; }
+ul ul { list-style-type: none; margin: 2px 0; padding-left: 0; }
+ul ul li { display: flex; gap: 6px; padding-left: 0; text-indent: 0; }
+ul ul li::before { content: '—'; color: #9091A0; font-weight: 300; flex-shrink: 0; }
+li { margin-bottom: 3px; }
+strong { font-weight: 600; }
+em { font-style: italic; }
+u { text-decoration: underline; }
+.letter-wordmark { margin-top: 52px; }
+.letter-wordmark img { width: 100%; height: auto; display: block; filter: brightness(0); }
+</style>
+</head>
+<body>
+<div class="page">${clone.innerHTML}</div>
+</body>
+</html>`;
+
+  return { html, filename };
+}
+
+async function downloadLetter() {
+  const frame = document.getElementById('letterFrame');
+  if (!frame || !frame.contentEditable) return;
+  const btn = document.getElementById('dlBtn');
+  btn.disabled = true; btn.textContent = 'Preparing…';
+  document.getElementById('statusMsg').textContent = 'Building file…';
+
+  const { html, filename } = await buildStandaloneHtml();
+
+  const a = document.createElement('a');
+  a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+  a.download = filename;
+  a.click();
+
+  btn.disabled = false; btn.textContent = '↓ Download letter (backup)';
+  document.getElementById('statusMsg').textContent = `Saved as ${filename}`;
+  setTimeout(() => document.getElementById('statusMsg').textContent = '', 5000);
+}
+
+async function uploadToSharePoint() {
+  const frame = document.getElementById('letterFrame');
+  if (!frame || !frame.contentEditable) return;
+  if (!isSpConfigured()) {
+    document.getElementById('statusMsg').textContent = 'SharePoint isn\'t configured yet — see SETUP-GUIDE.md.';
+    return;
+  }
+
+  const btn = document.getElementById('spBtn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  document.getElementById('linkBox').classList.remove('visible');
+
+  try {
+    const token = await getGraphToken();
+    btn.textContent = 'Uploading…';
+    document.getElementById('statusMsg').textContent = 'Uploading letter to SharePoint…';
+
+    const { html, filename } = await buildStandaloneHtml();
+    const folder = SP_CONFIG.folderPath.replace(/^\/|\/$/g, '');
+    const uploadPath = `${folder}/${filename}`;
+
+    const uploadResp = await fetch(
+      `https://graph.microsoft.com/v1.0/sites/${SP_CONFIG.siteId}/drives/${SP_CONFIG.driveId}/root:/${encodeURIComponent(uploadPath).replace(/%2F/g,'/')}:/content`,
+      {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/html' },
+        body: html
+      }
+    );
+    const item = await uploadResp.json();
+    if (!uploadResp.ok) throw { step: 'upload', detail: item };
+
+    btn.textContent = 'Creating link…';
+    document.getElementById('statusMsg').textContent = 'Creating public link…';
+
+    let linkResp = await fetch(
+      `https://graph.microsoft.com/v1.0/sites/${SP_CONFIG.siteId}/drives/${SP_CONFIG.driveId}/items/${item.id}/createLink`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'view', scope: 'anonymous' })
+      }
+    );
+    let linkData = await linkResp.json();
+
+    if (!linkResp.ok) {
+      const code = linkData?.error?.code || '';
+      if (code === 'invalidRequest' || code === 'accessDenied' || /anonymous/i.test(JSON.stringify(linkData))) {
+        document.getElementById('statusMsg').textContent =
+          'Anonymous links are disabled for this site — ask your SharePoint admin to enable "Anyone" links (SharePoint admin center → Policies → Sharing) for this folder, then try again.';
+        btn.disabled = false; btn.textContent = '☁ Upload & copy link';
+        return;
+      }
+      throw { step: 'link', detail: linkData };
+    }
+
+    const shareUrl = linkData.link.webUrl;
+    const linkInput = document.getElementById('linkOutput');
+    linkInput.value = shareUrl;
+    document.getElementById('linkBox').classList.add('visible');
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      document.getElementById('statusMsg').textContent = 'Link copied — paste it into your client email.';
+    } catch (clipErr) {
+      document.getElementById('statusMsg').textContent = 'Uploaded — copy the link below (clipboard auto-copy was blocked by the browser).';
+    }
+
+  } catch (err) {
+    console.error('SharePoint upload failed:', err);
+    document.getElementById('statusMsg').textContent = 'Upload failed — check the console (F12) for details, or use the backup download button.';
+  } finally {
+    btn.disabled = false; btn.textContent = '☁ Upload & copy link';
+  }
+}
+
+function copyLinkAgain() {
+  const input = document.getElementById('linkOutput');
+  input.select();
+  navigator.clipboard.writeText(input.value).then(() => {
+    document.getElementById('statusMsg').textContent = 'Link copied again.';
+    setTimeout(() => document.getElementById('statusMsg').textContent = '', 3000);
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>
