@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v796</title>
+<title>BW Project Pipeline — v797</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2549,6 +2549,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 .ps-chip-nm-wrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;overflow:hidden;}
 .ps-chip-sub{font-size:9px;color:var(--ts);font-weight:500;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ps-chip-sub.trello-signed{color:#3a7dc0;font-weight:700;}
+.ps-chip-sub.trello-changed{color:#c0392b;font-weight:700;}
 .ps-chip-pencil{flex-shrink:0;line-height:0;display:flex;align-items:center;opacity:.45;}
 .pp-trello-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.20);border-radius:4px;padding:4px 12px;cursor:default;font-family:'TT Norms Pro',sans-serif;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.50);transition:background .12s,border-color .12s,color .12s;}
 .pp-trello-badge.has-new{background:rgba(216,182,79,.16);border-color:rgba(216,182,79,.55);color:var(--gold);cursor:pointer;animation:ppTrelloGlow 2.4s ease-in-out infinite;}
@@ -8033,8 +8034,10 @@ function buildPlanningSection(){
       const _chipSrc=PROJECTS.find(p=>p.id===pp._fromLeadId);
       if(_chipSrc?.trelloListName){
         const nmWrap=el('div','ps-chip-nm-wrap'); nmWrap.appendChild(chipNm);
-        const _signed=/done.*signed/i.test(_chipSrc.trelloListName);
-        const chipSub=el('span','ps-chip-sub'+(_signed?' trello-signed':'')); chipSub.textContent=_chipSrc.trelloListName;
+        const _changed=_isRecentTrelloChange(_chipSrc);
+        const _signed=!_changed&&/done.*signed/i.test(_chipSrc.trelloListName);
+        const chipSub=el('span','ps-chip-sub'+(_signed?' trello-signed':'')+(_changed?' trello-changed':''));
+        chipSub.textContent=_chipSrc.trelloListName+(_changed?' · '+_fmtChangeDate(_chipSrc.trelloListChangedAt):'');
         nmWrap.appendChild(chipSub); chip.appendChild(nmWrap);
       } else { chip.appendChild(chipNm); }
       // Notes pencil — 14×14, matching Design title cards
@@ -8199,8 +8202,10 @@ function buildPlanningSection(){
       const _mList=_mSrc?.trelloListName||'';
       if(_mList){
         const mNmWrap=el('div','ps-chip-nm-wrap'); mNmWrap.appendChild(mNm);
-        const _mSigned=/done.*signed/i.test(_mList);
-        const mSub=el('span','ps-chip-sub'+(_mSigned?' trello-signed':'')); mSub.textContent=_mList;
+        const _mChanged=_isRecentTrelloChange(_mSrc);
+        const _mSigned=!_mChanged&&/done.*signed/i.test(_mList);
+        const mSub=el('span','ps-chip-sub'+(_mSigned?' trello-signed':'')+(_mChanged?' trello-changed':''));
+        mSub.textContent=_mList+(_mChanged?' · '+_fmtChangeDate(_mSrc.trelloListChangedAt):'');
         mNmWrap.appendChild(mSub);
         mCard.appendChild(mHdl); mCard.appendChild(mBadge); mCard.appendChild(mNmWrap); mCard.appendChild(mPencil);
       } else {
@@ -8967,7 +8972,9 @@ async function loadProjects(saved){
     proj.projectDescription=f.ProjectDescription||'';
     proj.projType=f.ScopeType||''; // always from SP — clears any stale GanttData value
     proj.trelloCardId=f.TrelloCardID||''; // Trello card ID for sync matching
-    proj.trelloListName=''; // populated by _trelloSync() on load
+    proj.trelloListName=f.TrelloListName||''; // persisted in SP; updated by sync on change
+    proj.trelloListChangedAt=f.TrelloListChangedAt||''; // ISO timestamp of last list change
+    proj.trelloPreviousList=f.TrelloPreviousList||''; // list name before most recent change
     proj.docUrls={
       est: f.EstimateUrl||'',
       pb:  f.ProjectBasisUrl||'',
@@ -9177,6 +9184,14 @@ document.addEventListener('visibilitychange',()=>{
 
 // ════════════════════════════════════════════════  TRELLO SYNC
 let _trelloCfg=null,_trelloNetNew=[],_trelloLostNotices=[],_trelloSynced=false,_ppTrelloDropOpen=false;
+function _isRecentTrelloChange(proj){
+  if(!proj?.trelloListChangedAt) return false;
+  return (Date.now()-new Date(proj.trelloListChangedAt).getTime())<7*24*60*60*1000;
+}
+function _fmtChangeDate(isoStr){
+  const d=new Date(isoStr);
+  return (d.getMonth()+1)+'/'+(d.getDate());
+}
 function _openTrelloDrop(anchorEl){
   const drop=document.getElementById('ppTrelloDrop'); if(!drop)return;
   const r=anchorEl.getBoundingClientRect();
@@ -9212,7 +9227,8 @@ async function _trelloSync(){
       if(!p.trelloCardId) return;
       [p.trelloCardId].forEach(k=>{ allLookup[k]=p; if(p.isLead) leadLookup[k]=p; });
     });
-    PROJECTS.filter(p=>p.isLead).forEach(p=>{p.trelloListName='';});
+    // Save SP-loaded list names before clearing — used for cross-session change detection
+    PROJECTS.filter(p=>p.isLead).forEach(p=>{p._prevTrelloListName=p.trelloListName;p.trelloListName='';});
     const netNew=[],lostNames=[];
     for(const card of cards){
       const listName=listMap[card.idList]||'';
@@ -9220,7 +9236,22 @@ async function _trelloSync(){
       const leadProj=leadLookup[card.id]||leadLookup[card.shortLink];
       const anyProj=allLookup[card.id]||allLookup[card.shortLink];
       if(leadProj){
+        const oldList=leadProj._prevTrelloListName||'';
         leadProj.trelloListName=listName;
+        // Persist list name to SP; record change timestamp when the list actually changed
+        if(leadProj._spItemId&&listName!==oldList){
+          const now=new Date().toISOString();
+          const patchFields={TrelloListName:listName};
+          if(oldList){
+            // Genuine move — record timestamp and previous list for annotation + audit
+            leadProj.trelloListChangedAt=now;
+            leadProj.trelloPreviousList=oldList;
+            patchFields.TrelloListChangedAt=now;
+            patchFields.TrelloPreviousList=oldList;
+          }
+          graphPatch(BWC_SITE+'/CORE_Projects/items/'+leadProj._spItemId+'/fields',patchFields)
+            .catch(e=>console.warn('[trelloSync] list-change patch failed:',leadProj.name,e));
+        }
         if(lostListId&&card.idList===lostListId&&!['da-signed','ca-signed'].includes(leadProj.status)&&leadProj.status!=='lost'&&leadProj._spItemId){
           try{
             await graphPatch(BWC_SITE+'/CORE_Projects/items/'+leadProj._spItemId+'/fields',{PipelineStage:'Lost'});
@@ -11130,6 +11161,14 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v797', date: '2026-07-08',
+    entries: [
+      'Trello list name now persisted to SharePoint (TrelloListName column on CORE_Projects).',
+      'When a card moves to a different Trello list, the chip sub-text turns red and shows the change date.',
+      'Red annotation clears automatically after 7 days — no manual action needed.'
+    ]
+  },
   {
     version: 'v495', date: '2026-05-13',
     entries: [
