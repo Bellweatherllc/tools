@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v800</title>
+<title>BW Project Pipeline — v801</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2597,7 +2597,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 .ps-dt-cell{font-size:12px;color:var(--navy);font-weight:500;}
 .ps-confirm-placeholder{background:none!important;border:1.5px solid rgba(31,46,62,.20)!important;color:rgba(31,46,62,.35)!important;cursor:default!important;box-shadow:none!important;}
 .ps-confirm-placeholder:hover{background:none!important;}
-.ps-des-cell{display:flex;flex-direction:column;align-items:flex-start;min-width:0;gap:0;min-height:84px;}
+.ps-des-cell{display:flex;flex-direction:column;align-items:flex-start;min-width:0;gap:0;min-height:84px;justify-content:center;}
 .ps-des-opts{display:flex;flex-direction:column;gap:3px;}
 .ps-des-set{display:flex;align-items:center;gap:5px;font-size:12px;min-width:0;}
 .ps-des-clr{background:none;border:none;cursor:pointer;color:rgba(40,40,40,.28);padding:0 2px;line-height:0;display:flex;align-items:center;flex-shrink:0;}
@@ -8338,51 +8338,56 @@ function buildPlanningSection(){
     const propDesId=attached?attached.proposedDesigner:null;
     if(propDesId&&propDesId!=='any'){
       const des=personById(propDesId);
-      const tally=des?designerTally(des.id):null;
+      const desTally=des?designerTally(des.id):[];
       const target=des?getTarget(des.id):0;
-      const hrs=tally&&ph1Wk>=0&&ph1Wk<C.numWeeks?tally[ph1Wk]:0;
+      const hrs=desTally&&ph1Wk>=0&&ph1Wk<C.numWeeks?desTally[ph1Wk]:0;
       const ratio=target>0?hrs/target:1;
       const sc=sigClass(ratio);
-      const free=Math.round(target-hrs);
       const capLabel=_desCapLabel(ratio);
       const slotIdStr=slot.id;
+      // Pre-compute 8 weeks from design start for detail panel
+      const selWeeks=Array.from({length:8},(_,i)=>{ const wk=ph1Wk+i; const h=wk>=0&&wk<C.numWeeks?(desTally[wk]||0):0; const r=target>0?h/target:0; return {h,target,ratio:r,dateLbl:wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014'}; });
       const chip=el('div','ps-des-chip ps-'+sc);
-      const nmBtn=el('button','ps-des-chip-nm no-action'); nmBtn.textContent=des?des.label:'\u2014';
+      // Left zone: × + name together — clicking clears the selection
+      const clrZone=el('button','ps-des-chip-nm');
+      clrZone.type='button'; clrZone.title='Remove designer';
+      clrZone.style.cssText='display:flex;align-items:center;gap:4px;';
+      const xMark=el('span',''); xMark.textContent='\u00d7'; xMark.style.cssText='font-size:13px;line-height:1;opacity:.45;flex-shrink:0;';
+      const nmTxt=el('span',''); nmTxt.textContent=des?des.label:'\u2014'; nmTxt.style.cssText='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      clrZone.appendChild(xMark); clrZone.appendChild(nmTxt);
+      clrZone.addEventListener('click',e=>{ e.stopPropagation(); if(attached){ attached.proposedDesigner=null; rebuildSection('planning'); triggerSave(); } });
       const sep=el('span','ps-des-chip-sep');
-      const capZone=el('button','ps-des-chip-cap');
+      const capZone=el('button','ps-des-chip-cap'); capZone.type='button';
       const capTxt=el('span',''); capTxt.textContent=capLabel;
       const chev=_chevronSvg();
       capZone.appendChild(capTxt); capZone.appendChild(chev);
-      if(des) capZone.addEventListener('click',()=>_toggleCapDetail(capZone,slotIdStr,des.id,ph1Wk));
-      chip.appendChild(nmBtn); chip.appendChild(sep); chip.appendChild(capZone);
-      const desClr=el('button','ps-des-clr');
-      desClr.title='Change designer';
-      desClr.innerHTML='<svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-      desClr.addEventListener('click',()=>{ if(attached){ attached.proposedDesigner=null; rebuildSection('planning'); triggerSave(); } });
-      const wrap=el('div','ps-des-set');
-      wrap.appendChild(chip); wrap.appendChild(desClr);
-      desCell.appendChild(wrap);
+      if(des) capZone.addEventListener('click',e=>{ e.stopPropagation(); _toggleCapDetail(capZone,slotIdStr,des.id,ph1Wk,selWeeks); });
+      chip.appendChild(clrZone); chip.appendChild(sep); chip.appendChild(capZone);
+      desCell.appendChild(chip);
     } else {
       const opts=el('div','ps-des-opts');
       DESIGNERS.forEach(d=>{
-        const tally=designerTally(d.id);
+        const dTally=designerTally(d.id);
         const target=getTarget(d.id);
-        const hrs=ph1Wk>=0&&ph1Wk<C.numWeeks?tally[ph1Wk]:0;
+        const hrs=ph1Wk>=0&&ph1Wk<C.numWeeks?dTally[ph1Wk]:0;
         const ratio=target>0?hrs/target:1;
         const sc=sigClass(ratio);
         const capLabel=_desCapLabel(ratio);
         const slotIdStr=slot.id;
+        // Pre-compute 8 weeks from design start for detail panel
+        const dWeeks=Array.from({length:8},(_,i)=>{ const wk=ph1Wk+i; const h=wk>=0&&wk<C.numWeeks?(dTally[wk]||0):0; const r=target>0?h/target:0; return {h,target,ratio:r,dateLbl:wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014'}; });
         const chip=el('div','ps-des-chip ps-'+sc);
-        const nmBtn=el('button','ps-des-chip-nm'); nmBtn.textContent=d.label; nmBtn.title='Assign '+d.label;
-        nmBtn.addEventListener('click',()=>{
+        const nmBtn=el('button','ps-des-chip-nm'); nmBtn.type='button'; nmBtn.textContent=d.label; nmBtn.title='Assign '+d.label;
+        nmBtn.addEventListener('click',e=>{
+          e.stopPropagation();
           if(attached){ attached.proposedDesigner=d.id; pushPlanningHistory(attached.name+' \u2014 proposed designer: '+d.label); rebuildSection('planning'); triggerSave(); }
         });
         const sep=el('span','ps-des-chip-sep');
-        const capZone=el('button','ps-des-chip-cap');
+        const capZone=el('button','ps-des-chip-cap'); capZone.type='button';
         const capTxt=el('span',''); capTxt.textContent=capLabel;
         const chev=_chevronSvg();
         capZone.appendChild(capTxt); capZone.appendChild(chev);
-        capZone.addEventListener('click',()=>_toggleCapDetail(capZone,slotIdStr,d.id,ph1Wk));
+        capZone.addEventListener('click',e=>{ e.stopPropagation(); _toggleCapDetail(capZone,slotIdStr,d.id,ph1Wk,dWeeks); });
         chip.appendChild(nmBtn); chip.appendChild(sep); chip.appendChild(capZone);
         opts.appendChild(chip);
       });
@@ -9231,34 +9236,29 @@ function _desCapLabel(ratio){
 }
 const _CAP_DOT={'sig-green':'#4fc38a','sig-yellow':'#d8a64f','sig-red':'#c0434a','sig-grey':'rgba(40,40,40,.20)'};
 const _CAP_TX ={'sig-green':'#1a7a4a','sig-yellow':'#8a6820','sig-red':'#923035','sig-grey':'var(--ts)'};
-function _toggleCapDetail(triggerEl,slotId,desId,ph1Wk){
+function _toggleCapDetail(triggerEl,slotId,desId,ph1Wk,weeks){
   const cellEl=triggerEl.closest('.ps-des-cell'); if(!cellEl) return;
   const panelId='psCap_'+slotId+'_'+desId;
   const existing=document.getElementById(panelId);
   const chev=triggerEl.querySelector('.ps-chev');
   if(existing){ existing.remove(); if(chev) chev.style.transform=''; }
-  else { cellEl.appendChild(_buildCapDetailPanel(desId,ph1Wk,panelId)); if(chev) chev.style.transform='rotate(180deg)'; }
+  else { cellEl.appendChild(_buildCapDetailPanel(ph1Wk,panelId,weeks)); if(chev) chev.style.transform='rotate(180deg)'; }
 }
-function _buildCapDetailPanel(desId,ph1Wk,panelId){
-  const des=personById(desId);
-  const tally=des?designerTally(des.id):[];
-  const target=des?getTarget(des.id):0;
+function _buildCapDetailPanel(ph1Wk,panelId,weeks){
+  function _sc(r){ return r>=1?'sig-red':r>=0.85?'sig-yellow':'sig-green'; }
   const panel=el('div','ps-cap-detail'); panel.id=panelId;
   const hdrEl=el('div','');
   hdrEl.style.cssText='font-size:10px;color:var(--ts);margin-bottom:6px;font-weight:500;';
   hdrEl.textContent=ph1Wk>=0?'8 weeks from design start \u00b7 '+wkDate(ph1Wk):'8 weeks from design start';
   panel.appendChild(hdrEl);
-  for(let i=0;i<8;i++){
-    const wk=ph1Wk+i;
-    const h=wk>=0&&wk<C.numWeeks?(tally[wk]||0):0;
-    const ratio=target>0?h/target:0;
-    const rowSc=sigClass(ratio);
-    const pct=Math.min(100,Math.round(ratio*100));
-    const free=Math.round(target-h);
+  (weeks||[]).forEach((w,i)=>{
+    const rowSc=_sc(w.ratio);
+    const pct=Math.min(100,Math.round(w.ratio*100));
+    const free=Math.round(w.target-w.h);
     const row=el('div','ps-cap-det-row');
     const lbl=el('span','');
     lbl.style.cssText='font-size:10px;min-width:46px;color:var(--ts);white-space:nowrap;'+(i===0?'font-weight:600;':'');
-    lbl.textContent=wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014';
+    lbl.textContent=w.dateLbl||'\u2014';
     const trk=el('div','ps-cap-det-trk');
     const fill=el('div','ps-cap-det-fill');
     fill.style.cssText='width:'+pct+'%;background:'+(_CAP_DOT[rowSc]||'#aaa')+';';
@@ -9267,7 +9267,7 @@ function _buildCapDetailPanel(desId,ph1Wk,panelId){
     hrs.style.cssText='font-size:10px;min-width:44px;text-align:right;font-weight:500;color:'+(_CAP_TX[rowSc]||'var(--ts)')+';';
     hrs.textContent=free>=0?free+'h free':Math.abs(free)+'h over';
     row.appendChild(lbl); row.appendChild(trk); row.appendChild(hrs); panel.appendChild(row);
-  }
+  });
   return panel;
 }
 function _openTrelloDrop(anchorEl){
