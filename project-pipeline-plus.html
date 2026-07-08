@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v801</title>
+<title>BW Project Pipeline — v802</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2613,10 +2613,10 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 .ps-des-chip-nm.no-action{cursor:default;}
 .ps-des-chip-nm.no-action:hover{text-decoration:none;}
 .ps-des-chip-sep{width:0.5px;background:currentColor;opacity:0.22;align-self:stretch;flex-shrink:0;}
-.ps-des-chip-cap{display:flex;align-items:center;gap:3px;background:none;border:none;cursor:pointer;font-family:inherit;font-size:10px;font-weight:400;color:inherit;padding:4px 7px;line-height:1;opacity:.80;flex:0 0 88px;overflow:hidden;}
+.ps-des-chip-cap{display:flex;align-items:center;justify-content:space-between;gap:3px;background:none;border:none;cursor:pointer;font-family:inherit;font-size:10px;font-weight:400;color:inherit;padding:4px 7px;line-height:1;opacity:.80;flex:0 0 96px;overflow:hidden;}
 .ps-des-chip-cap:hover{opacity:1;}
-.ps-chev{display:inline-flex;align-items:center;flex-shrink:0;line-height:0;transition:transform .15s;}
-.ps-cap-detail{margin-top:6px;border:0.5px solid var(--bdr);border-radius:6px;padding:8px 10px;background:var(--bg);width:100%;box-sizing:border-box;}
+.ps-chev{display:inline-flex;align-items:center;flex-shrink:0;line-height:0;transition:transform .15s;margin-left:auto;}
+.ps-cap-detail{border:0.5px solid var(--bdr);border-radius:6px;padding:10px 12px;background:var(--bg);min-width:210px;box-shadow:0 2px 8px rgba(0,0,0,.10);}
 .ps-cap-det-row{display:flex;align-items:center;gap:6px;padding:2px 0;}
 .ps-cap-det-trk{flex:1;height:3px;background:rgba(0,0,0,.10);border-radius:2px;overflow:hidden;}
 .ps-cap-det-fill{height:100%;border-radius:2px;}
@@ -7971,7 +7971,7 @@ function buildPlanningSection(){
     }
     return best;
   }
-  function sigClass(ratio){ if(ratio===undefined||ratio===null) return 'sig-grey'; if(ratio<0.5) return 'sig-green'; if(ratio<0.85) return 'sig-yellow'; return 'sig-red'; }
+  function sigClass(ratio){ if(ratio===undefined||ratio===null) return 'sig-grey'; if(ratio<0.70) return 'sig-green'; if(ratio<0.90) return 'sig-yellow'; return 'sig-red'; }
   function milestoneColor(wk){ if(wk<tw) return 'pp-key-date-dot past'; if(wk<tw+4) return 'pp-key-date-dot warn'; return 'pp-key-date-dot future'; }
 
   // Open Slots — unassigned production projects (created via + Open Slot in Production Planning)
@@ -9222,6 +9222,12 @@ function _fmtChangeDate(isoStr){
   const d=new Date(isoStr);
   return (d.getMonth()+1)+'/'+(d.getDate());
 }
+let _psCapDetailEl=null,_psCapDetailChev=null,_psCapDetailCloseFn=null;
+function _closeCapDetail(){
+  if(_psCapDetailEl){_psCapDetailEl.remove();_psCapDetailEl=null;}
+  if(_psCapDetailChev){_psCapDetailChev.style.transform='';_psCapDetailChev=null;}
+  if(_psCapDetailCloseFn){document.removeEventListener('pointerdown',_psCapDetailCloseFn);_psCapDetailCloseFn=null;}
+}
 function _chevronSvg(){
   const s=document.createElement('span'); s.className='ps-chev';
   s.innerHTML='<svg width="9" height="6" viewBox="0 0 9 6" fill="none"><path d="M1 1l3.5 3.5L8 1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -9229,20 +9235,42 @@ function _chevronSvg(){
 }
 function _desCapLabel(ratio){
   if(ratio===undefined||ratio===null) return '';
-  if(ratio>=1)   return 'Overbooked';
-  if(ratio>=0.9) return 'Near full';
-  if(ratio>=0.7) return 'Busy';
+  if(ratio>=1)    return 'Over capacity';
+  if(ratio>=0.9)  return 'Capacity';
+  if(ratio>=0.7)  return 'Near capacity';
   return 'Available';
 }
 const _CAP_DOT={'sig-green':'#4fc38a','sig-yellow':'#d8a64f','sig-red':'#c0434a','sig-grey':'rgba(40,40,40,.20)'};
 const _CAP_TX ={'sig-green':'#1a7a4a','sig-yellow':'#8a6820','sig-red':'#923035','sig-grey':'var(--ts)'};
 function _toggleCapDetail(triggerEl,slotId,desId,ph1Wk,weeks){
-  const cellEl=triggerEl.closest('.ps-des-cell'); if(!cellEl) return;
   const panelId='psCap_'+slotId+'_'+desId;
-  const existing=document.getElementById(panelId);
+  // If this same panel is already open, close it
+  if(_psCapDetailEl&&_psCapDetailEl.id===panelId){_closeCapDetail();return;}
+  // Close any open panel first (mutual exclusion)
+  _closeCapDetail();
+  // Build panel and attach to body as a fixed overlay
+  const panel=_buildCapDetailPanel(ph1Wk,panelId,weeks);
+  panel.style.cssText='position:fixed;z-index:2100;';
+  document.body.appendChild(panel);
+  _psCapDetailEl=panel;
+  // Position to the right of the trigger chip
+  const rect=triggerEl.getBoundingClientRect();
+  panel.style.left=(rect.right+8)+'px';
+  panel.style.top=rect.top+'px';
+  // Adjust if panel clips the right or bottom edge
+  requestAnimationFrame(()=>{
+    const pw=panel.offsetWidth,ph2=panel.offsetHeight;
+    if(rect.right+8+pw>window.innerWidth) panel.style.left=Math.max(8,rect.left-pw-8)+'px';
+    if(rect.top+ph2>window.innerHeight-8) panel.style.top=Math.max(8,window.innerHeight-ph2-8)+'px';
+  });
+  // Animate chevron
   const chev=triggerEl.querySelector('.ps-chev');
-  if(existing){ existing.remove(); if(chev) chev.style.transform=''; }
-  else { cellEl.appendChild(_buildCapDetailPanel(ph1Wk,panelId,weeks)); if(chev) chev.style.transform='rotate(180deg)'; }
+  if(chev){chev.style.transform='rotate(180deg)';_psCapDetailChev=chev;}
+  // Click-away to close
+  _psCapDetailCloseFn=(e)=>{
+    if(_psCapDetailEl&&!_psCapDetailEl.contains(e.target)&&!triggerEl.closest('.ps-des-chip').contains(e.target)) _closeCapDetail();
+  };
+  setTimeout(()=>document.addEventListener('pointerdown',_psCapDetailCloseFn),0);
 }
 function _buildCapDetailPanel(ph1Wk,panelId,weeks){
   function _sc(r){ return r>=1?'sig-red':r>=0.85?'sig-yellow':'sig-green'; }
@@ -9268,6 +9296,10 @@ function _buildCapDetailPanel(ph1Wk,panelId,weeks){
     hrs.textContent=free>=0?free+'h free':Math.abs(free)+'h over';
     row.appendChild(lbl); row.appendChild(trk); row.appendChild(hrs); panel.appendChild(row);
   });
+  const note=el('div','');
+  note.style.cssText='font-size:9px;color:var(--ts);margin-top:7px;padding-top:6px;border-top:0.5px solid var(--bdr);opacity:.70;line-height:1.4;';
+  note.textContent='Most projects require an average of 5h\u202fper week during Phase I.';
+  panel.appendChild(note);
   return panel;
 }
 function _openTrelloDrop(anchorEl){
