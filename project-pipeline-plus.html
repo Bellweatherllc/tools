@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v807</title>
+<title>BW Project Pipeline — v808</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -175,6 +175,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .prod-ghost-pencil{background:none;border:none;cursor:pointer;color:rgba(40,40,40,.42);padding:0;display:flex;align-items:center;line-height:0;flex-shrink:0;}
 .prod-ghost-pencil:hover{color:rgba(40,40,40,.80);}
 .fc-proj-name-wrap:has(.prod-ghost-pp){margin-right:30px;}
+.des-ghost-row{display:flex;align-items:center;padding:0 6px;border-bottom:1px solid rgba(0,0,0,.05);overflow:hidden;}
 .fc-proj-name{flex:1;pointer-events:none;}
 .proj-name-text{display:inline;pointer-events:auto;cursor:default;}
 .fc-note-dot{display:none !important;}
@@ -2661,7 +2662,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v807</div>
+    <div class="auth-version" id="authVersionBadge">v808</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2680,7 +2681,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v807</div>
+  <div class="proto-badge" id="versionBadge">v808</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -5115,9 +5116,14 @@ function buildPersonSep(){
 function calcPersonGroupH(person, section){
   const field=DESIGNERS.find(d=>d.id===person.id)?'designer':'productionPM';
   // Unified model: one lane-row per project; height is BAND_H collapsed, C.laneH expanded
-  return PROJECTS.filter(p=>isVisible(p)&&p[field]===person.id).reduce((sum,proj)=>{
+  const projH=PROJECTS.filter(p=>isVisible(p)&&p[field]===person.id).reduce((sum,proj)=>{
     return sum+(proj.collapsed?BAND_H:C.laneH);
-  },0)+8; // +8 for 4px top + 4px bottom inner spacers
+  },0);
+  // Include ghost rows for pending planning cards proposed to this designer
+  const ghostCount=(section==='design')
+    ?(PLANNING_PROJECTS||[]).filter(pp=>!pp.parked&&pp.ppStatus!=='lost'&&pp.proposedDesigner===person.id&&pp.slotId).length
+    :0;
+  return projH+ghostCount*C.laneH+8; // +8 for 4px top + 4px bottom inner spacers
 }
 function refreshTimeoffOverlayH(personId, section){
   const person=personById(personId); if(!person)return;
@@ -5268,6 +5274,11 @@ function buildDesignSection(){
         const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer===person.id),'design');
         const topTlSpD=el('div',''); topTlSpD.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(topTlSpD);
         projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['design'],true,true,undefined,-8,null,[],DES_MS_HIDDEN.has(person.id))));
+        // Spacers matching design ghost rows in FC
+        (PLANNING_PROJECTS||[]).filter(pp=>!pp.parked&&pp.ppStatus!=='lost'&&pp.proposedDesigner===person.id&&pp.slotId).forEach(()=>{
+          const sp=el('div',''); sp.style.cssText=`height:${C.laneH}px;width:${w2px(C.numWeeks)}px;`;
+          grp.appendChild(sp);
+        });
         const botTlSpD=el('div',''); botTlSpD.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(botTlSpD);
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=person.id; ov.dataset.section='design';
         const ovH=calcPersonGroupH(person,'design');
@@ -5318,6 +5329,19 @@ function buildDesignSection(){
       const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer===person.id),'design');
       const fcTopSpD=el('div',''); fcTopSpD.style.height='4px'; fc.appendChild(fcTopSpD);
       projs.forEach(proj=>{ fc.appendChild(buildFcMsRow(proj,'design')); });
+      // Ghost rows: planning cards proposed to this designer, connected to a slot
+      (PLANNING_PROJECTS||[]).filter(pp=>!pp.parked&&pp.ppStatus!=='lost'&&pp.proposedDesigner===person.id&&pp.slotId).forEach(pp=>{
+        const ghostRow=el('div','des-ghost-row'); ghostRow.style.height=C.laneH+'px';
+        const ghost=el('div','prod-ghost-pp');
+        const ghostNm=el('span','prod-ghost-nm'); ghostNm.textContent=pp.name||'\u2014';
+        const ghostBadge=el('span','prod-ghost-badge'); ghostBadge.textContent='proposed';
+        const ghostPencil=el('button','prod-ghost-pencil'); ghostPencil.type='button';
+        ghostPencil.title='Planning note \u2014 '+(pp.name||'');
+        ghostPencil.dataset.planningNoteBtn=pp.id;
+        ghostPencil.innerHTML='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
+        ghost.appendChild(ghostNm); ghost.appendChild(ghostBadge); ghost.appendChild(ghostPencil);
+        ghostRow.appendChild(ghost); fc.appendChild(ghostRow);
+      });
       const fcBotSpD=el('div',''); fcBotSpD.style.height='4px'; fc.appendChild(fcBotSpD);
     }
   });
@@ -11899,6 +11923,9 @@ function generateBriefHTML(){
       if(!du.est) linkRows.push(briefRow('l-warn',name,'Missing EST link — add to project record.'));
       if(!du.da)  linkRows.push(briefRow('l-warn',name,'Missing DA link — add to project record. Also: create Trello Project Board.'));
       if(isCa&&!du.ca) linkRows.push(briefRow('l-warn',name,'Missing CA link — add to project record once CA is written.'));
+      // Missing design hours — alert if all design phases have 0 hours
+      const hasHours=(proj.designLane?.phases||[]).some(ph=>ph.hours>0);
+      if(!hasHours) linkRows.push(briefRow('l-warn',name,'No design hours entered — add phase hours in Design Planning.'));
     });
     if(linkRows.length){
       html+=`<div class="brief-section"><div class="brief-section-hd">`
