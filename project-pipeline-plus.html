@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v803</title>
+<title>BW Project Pipeline — v805</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -169,6 +169,11 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 /* note dot on name row */
 .fc-proj-name-wrap{display:flex;align-items:center;gap:4px;min-width:0;}
 .fc-proj-name-wrap .proj-name-input{width:100%;font:inherit;border:none;outline:none;background:rgba(255,255,255,.15);color:#fff;border-radius:3px;padding:0 3px;box-sizing:border-box;}
+.prod-ghost-pp{display:inline-flex;align-items:center;gap:4px;border:1.5px dashed rgba(255,255,255,.28);border-radius:5px;padding:2px 6px 2px 6px;flex-shrink:0;margin-left:2px;}
+.prod-ghost-nm{font-size:10px;font-style:italic;color:rgba(255,255,255,.50);white-space:nowrap;}
+.prod-ghost-badge{font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.36);background:rgba(255,255,255,.08);border-radius:3px;padding:1px 4px;}
+.prod-ghost-pencil{background:none;border:none;cursor:pointer;color:rgba(255,255,255,.32);padding:0;display:flex;align-items:center;line-height:0;flex-shrink:0;}
+.prod-ghost-pencil:hover{color:rgba(255,255,255,.72);}
 .fc-proj-name{flex:1;pointer-events:none;}
 .proj-name-text{display:inline;pointer-events:auto;cursor:default;}
 .fc-note-dot{display:none !important;}
@@ -4321,6 +4326,21 @@ function buildFcMsRow(proj, capacitySection){
   nameWrap.appendChild(name);
   // LOD shown in tooltip, not title
   nameWrap.appendChild(noteDot);
+  // Ghost pending card — Production only, slots only, when a planning card is connected
+  if(capacitySection==='production'&&(proj.isOpenSlot||/^Slot\b/i.test(proj.name))){
+    const pendingPP=(PLANNING_PROJECTS||[]).find(pp=>!pp.parked&&pp.ppStatus!=='lost'&&pp.slotId===proj.id);
+    if(pendingPP){
+      const ghost=el('div','prod-ghost-pp');
+      const ghostNm=el('span','prod-ghost-nm'); ghostNm.textContent=pendingPP.name||'\u2014';
+      const ghostBadge=el('span','prod-ghost-badge'); ghostBadge.textContent='proposed';
+      const ghostPencil=el('button','prod-ghost-pencil'); ghostPencil.type='button';
+      ghostPencil.title='Planning note \u2014 '+(pendingPP.name||'');
+      ghostPencil.dataset.planningNoteBtn=pendingPP.id;
+      ghostPencil.innerHTML='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
+      ghost.appendChild(ghostNm); ghost.appendChild(ghostBadge); ghost.appendChild(ghostPencil);
+      nameWrap.appendChild(ghost);
+    }
+  }
   const mslbl=el('div','fc-ms-label'); mslbl.textContent='';
   info.appendChild(nameWrap); info.appendChild(mslbl);
   const des=personById(proj.designer), pm=personById(proj.productionPM);
@@ -11863,6 +11883,27 @@ function generateBriefHTML(){
         +`<span class="brief-section-title">Pipeline Planning</span>`
         +`<span class="brief-section-count" style="margin-left:8px;background:${ppTotal?'#ac2828':'#a3a3a3'}">${ppTotal}</span>`
         +`</div>${ppActionRows.join('')}${ppNoteRows.join('')}</div>`;
+    }
+  }
+
+  // ── MISSING LINKS ─────────────────────────────────────────────────
+  // Only fires for DA Signed and CA Signed projects — never for Leads or Paused.
+  // EST + DA expected at DA Signed; CA additionally expected at CA Signed.
+  {
+    const linkRows=[];
+    PROJECTS.filter(p=>p.status==='da-signed'||p.status==='ca-signed').forEach(proj=>{
+      const du=proj.docUrls||{};
+      const name=briefProjName(proj);
+      const isCa=proj.status==='ca-signed';
+      if(!du.est) linkRows.push(briefRow('l-warn',name,'Missing EST link — add to project record.'));
+      if(!du.da)  linkRows.push(briefRow('l-warn',name,'Missing DA link — add to project record. Also: create Trello Project Board.'));
+      if(isCa&&!du.ca) linkRows.push(briefRow('l-warn',name,'Missing CA link — add to project record once CA is written.'));
+    });
+    if(linkRows.length){
+      html+=`<div class="brief-section"><div class="brief-section-hd">`
+        +`<span class="brief-section-title">Missing Links</span>`
+        +`<span class="brief-section-count" style="margin-left:8px;background:#ac2828">${linkRows.length}</span>`
+        +`</div>${linkRows.join('')}</div>`;
     }
   }
 
