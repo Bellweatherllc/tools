@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v815</title>
+<title>BW Project Pipeline — v817</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -1414,6 +1414,7 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .brief-ack-btns{display:flex;gap:4px;flex-shrink:0;margin-left:auto;}
 .brief-mgr-link{display:inline-flex;align-items:center;justify-content:center;padding:2px 5px;border:none;border-radius:4px;background:rgba(31,46,62,.06);color:rgba(31,46,62,.55);cursor:pointer;flex-shrink:0;line-height:1;transition:background .12s,color .12s;}
 .brief-mgr-link:hover{background:rgba(31,46,62,.14);color:var(--navy);}
+.brief-linkgroup-hdr{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(31,46,62,.42);padding:9px 0 3px;}
 .brief-bug-pencil{
   background:rgba(216,182,79,.08);border:1px solid rgba(216,182,79,.30);border-radius:3px;
   cursor:pointer;color:var(--gold);padding:2px 4px;
@@ -2606,6 +2607,9 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 .ps-pm-cell.no-pm{color:rgba(40,40,40,.30);font-style:italic;font-weight:400;}
 .ps-chip-drag-target{outline:2px dashed var(--gold);outline-offset:2px;}
 .ps-dt-cell{font-size:12px;color:var(--navy);font-weight:500;}
+.admin-mode .ps-dt-cell.ps-dt-editable{cursor:pointer;border-bottom:1px solid transparent;transition:border-color .15s;}
+.admin-mode .ps-dt-cell.ps-dt-editable:hover{border-bottom:1px solid rgba(31,46,62,.45);}
+.ps-dt-input{font-family:inherit;font-size:11px;color:var(--navy);border:none;border-bottom:2px solid var(--navy);outline:none;background:transparent;width:120px;padding:0;}
 .ps-confirm-placeholder{background:none!important;border:1.5px solid rgba(31,46,62,.20)!important;color:rgba(31,46,62,.35)!important;cursor:default!important;box-shadow:none!important;}
 .ps-confirm-placeholder:hover{background:none!important;}
 .ps-des-cell{display:flex;flex-direction:column;align-items:flex-start;min-width:0;gap:0;min-height:84px;justify-content:center;}
@@ -8454,13 +8458,75 @@ function buildPlanningSection(){
     row.appendChild(desCell);
 
     // ── 3. DA signing ──
-    const daCell=el('div','ps-dt-cell');
-    daCell.textContent=daWk>=0&&daWk<C.numWeeks?wkDate(daWk):'\u2014';
+    const daMsSlot=slot.milestones?slot.milestones.find(m=>m.name==='DA'):null;
+    const desPhSlot=slot.designLane&&slot.designLane.phases?slot.designLane.phases.find(ph=>!ph.isDesignProd):null;
+    const _realDaWk=daMsSlot&&daMsSlot.week!=null?daMsSlot.week:null;
+    const _realDesWk=desPhSlot&&desPhSlot.startWeek!=null?desPhSlot.startWeek:null;
+    const _daDisp=_realDaWk!=null?_realDaWk:(daWk>=0&&daWk<C.numWeeks?daWk:null);
+    const _desDisp=_realDesWk!=null?_realDesWk:(ph1Wk>=0&&ph1Wk<C.numWeeks?ph1Wk:null);
+    const _toDS=w=>{const dd=new Date(C.startDate.getTime()+w*7*24*3600*1000);return dd.toISOString().slice(0,10);};
+    const _fromDS=s=>{const dd=new Date(s+'T12:00:00');return Math.round((dd.getTime()-C.startDate)/(7*24*3600*1000));};
+    function _mkDtCell(dispWk,editable,curWk,applyFn){
+      const cell=el('div','ps-dt-cell');
+      const label=dispWk!=null?wkDate(dispWk):'\u2014';
+      cell.textContent=label;
+      if(!editable) return cell;
+      cell.classList.add('ps-dt-editable'); cell.title='Click to edit';
+      cell.addEventListener('click',e=>{
+        if(cell.querySelector('input')) return;
+        e.stopPropagation();
+        const inp=document.createElement('input'); inp.type='date'; inp.className='ps-dt-input';
+        inp.value=curWk!=null?_toDS(curWk):'';
+        cell.replaceChildren(inp); inp.focus();
+        if(inp.showPicker){ try{inp.showPicker();}catch(_){} }
+        let done=false;
+        const restore=()=>{ if(done)return; done=true; cell.textContent=label; };
+        const commit=()=>{
+          if(done) return;
+          if(!inp.value){ restore(); return; }
+          done=true; applyFn(_fromDS(inp.value));
+        };
+        inp.addEventListener('keydown',ev=>{
+          if(ev.key==='Enter'){ ev.preventDefault(); inp.blur(); }
+          else if(ev.key==='Escape'){ ev.preventDefault(); restore(); }
+        });
+        inp.addEventListener('change',commit);
+        inp.addEventListener('blur',commit);
+      });
+      return cell;
+    }
+    const daCell=_mkDtCell(_daDisp, IS_ADMIN_MODE&&!!daMsSlot, daMsSlot?daMsSlot.week:null, nw=>{
+      const desW=desPhSlot?desPhSlot.startWeek:null;
+      if(nw<0) nw=0;
+      if(desW!=null&&nw>=desW) nw=desW-1;
+      if(nw<0||nw===daMsSlot.week){ rebuildSection('planning'); return; }
+      pushHistory(slot.name+' \u2014 DA date \u2192 '+_toDS(nw));
+      daMsSlot.week=nw;
+      markDirty(slot); triggerSave();
+      rebuildSection('planning'); rebuildSection('design'); rebuildSection('production'); renderKeyDatesPanel();
+    });
     row.appendChild(daCell);
 
     // ── 4. Phase I (Design start) ──
-    const ph1Cell=el('div','ps-dt-cell');
-    ph1Cell.textContent=ph1Wk>=0&&ph1Wk<C.numWeeks?wkDate(ph1Wk):'\u2014';
+    const ph1Cell=_mkDtCell(_desDisp, IS_ADMIN_MODE&&!!desPhSlot, desPhSlot?desPhSlot.startWeek:null, nw=>{
+      const daW=daMsSlot?daMsSlot.week:null;
+      if(daW!=null&&nw<=daW) nw=daW+1;
+      if(nw<0) nw=0;
+      const oldStart=desPhSlot.startWeek;
+      if(oldStart!=null&&nw===oldStart){ rebuildSection('planning'); return; }
+      pushHistory(slot.name+' \u2014 design start \u2192 '+_toDS(nw));
+      if(oldStart==null){
+        let pos=nw; slot.designLane.phases.filter(ph=>!ph.isDesignProd).forEach(ph=>{ ph.startWeek=pos; pos+=(ph.durWeeks||0); });
+      } else {
+        const delta=nw-oldStart;
+        slot.designLane.phases.filter(ph=>!ph.isDesignProd).forEach(ph=>{ if(ph.startWeek!=null) ph.startWeek+=delta; });
+        (slot.tiers||[]).forEach(tt=>{ if(tt.week!=null) tt.week+=delta; });
+        if(slot.pencilsDown&&slot.pencilsDown.week!=null) slot.pencilsDown.week+=delta;
+      }
+      slot.designLane.startWeek=slot.designLane.phases[0]?.startWeek??slot.designLane.startWeek;
+      markDirty(slot); triggerSave();
+      rebuildSection('planning'); rebuildSection('design'); rebuildSection('production'); renderKeyDatesPanel();
+    });
     row.appendChild(ph1Cell);
 
     // ── 5. CA signing ──
@@ -11090,58 +11156,12 @@ document.addEventListener('click',e=>{
 
       } else {
         // ── Sales (planning): DA Sign | Des Start | CA Sign | Con Start | Con End | Est. Cost
-        // DA Sign & Des Start are admin-editable and independent; invariant: DA is always
-        // >=1 week before Design Start. Des Start rigid-shifts the design front block
-        // (Phase I/II + tiers + PD); DA moves its milestone alone. Construction/CA/Phase III untouched.
+        // DA Sign and Design Start are read-only here — they are edited on the main Sales
+        // Planning screen as of v816 (buildPSRow slot rows).
         const conEndWk=conPh?conPh.startWeek+conPh.durWeeks:null;
         const costVal=proj.estimatedValue||proj.projBudget||'';
-        const _toDS=w=>{const d=new Date(C.startDate.getTime()+w*7*24*3600*1000);return d.toISOString().slice(0,10);};
-        const _fromDS=s=>{const d=new Date(s+'T12:00:00');return Math.round((d.getTime()-C.startDate)/(7*24*3600*1000));};
-        const _mkDateInput=(val)=>{const inp=document.createElement('input'); inp.type='date'; inp.className='pp-date-input'; inp.value=(val!=null?_toDS(val):''); return inp;};
-        // DA Sign — moves the DA milestone only; cannot reach/pass Design Start
-        if(IS_ADMIN_MODE&&daMs){
-          const cell=document.createElement('div'); cell.className='pp-date-val';
-          const inp=_mkDateInput(daMs.week);
-          inp.addEventListener('change',()=>{
-            if(!inp.value){ inp.value=daMs.week!=null?_toDS(daMs.week):''; return; }
-            let nw=_fromDS(inp.value);
-            const desW=desPh?desPh.startWeek:null;
-            if(nw<0) nw=0;
-            if(desW!=null&&nw>=desW) nw=desW-1;
-            if(nw<0){ inp.value=daMs.week!=null?_toDS(daMs.week):''; return; }
-            if(nw===daMs.week){ inp.value=_toDS(nw); return; }
-            pushHistory(`${proj.name} — DA date → ${_toDS(nw)}`);
-            daMs.week=nw;
-            markDirty(proj); triggerSave(); rebuildSection('planning'); renderKeyDatesPanel();
-          });
-          cell.appendChild(inp); row.appendChild(cell); _copy.push(inp.value);
-        } else { _addCell(row,_copy,daMs?.week,daMs); }
-        // Des Start — rigid shift of the design front block; cannot reach/precede DA
-        if(IS_ADMIN_MODE&&desPh){
-          const cell=document.createElement('div'); cell.className='pp-date-val';
-          const inp=_mkDateInput(desPh.startWeek);
-          inp.addEventListener('change',()=>{
-            if(!inp.value){ inp.value=desPh.startWeek!=null?_toDS(desPh.startWeek):''; return; }
-            const oldStart=desPh.startWeek;
-            let nw=_fromDS(inp.value);
-            const daW=daMs?daMs.week:null;
-            if(daW!=null&&nw<=daW) nw=daW+1;
-            if(nw<0) nw=0;
-            if(oldStart!=null&&nw===oldStart){ inp.value=_toDS(oldStart); return; }
-            pushHistory(`${proj.name} — design start → ${_toDS(nw)}`);
-            if(oldStart==null){
-              let pos=nw; proj.designLane.phases.filter(ph=>!ph.isDesignProd).forEach(ph=>{ ph.startWeek=pos; pos+=(ph.durWeeks||0); });
-            } else {
-              const delta=nw-oldStart;
-              proj.designLane.phases.filter(ph=>!ph.isDesignProd).forEach(ph=>{ if(ph.startWeek!=null) ph.startWeek+=delta; });
-              (proj.tiers||[]).forEach(tt=>{ if(tt.week!=null) tt.week+=delta; });
-              if(proj.pencilsDown&&proj.pencilsDown.week!=null) proj.pencilsDown.week+=delta;
-            }
-            proj.designLane.startWeek=proj.designLane.phases[0]?.startWeek??proj.designLane.startWeek;
-            markDirty(proj); triggerSave(); rebuildSection('planning'); rebuildSection('design'); renderKeyDatesPanel();
-          });
-          cell.appendChild(inp); row.appendChild(cell); _copy.push(inp.value);
-        } else { _addCell(row,_copy,desPh?.startWeek,null); }
+        _addCell(row,_copy,daMs?.week,daMs);
+        _addCell(row,_copy,desPh?.startWeek,null);
         _addCell(row,_copy,caMs?.week,caMs);
         _addCell(row,_copy,conPh?.startWeek,null);
         _addCell(row,_copy,conEndWk,null,false,true);
@@ -11466,6 +11486,21 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v817', date: '2026-07-09',
+    entries: [
+      'Weekly Brief: “Create Trello Project Board” items are now grouped together at the bottom of the Missing Links section under their own sub-header.',
+      'Removed the Project Manager link from the Trello board rows (it belongs on the missing-link rows, not board creation).'
+    ]
+  },
+  {
+    version: 'v816', date: '2026-07-09',
+    entries: [
+      'DA signing and Design Start are now editable directly in the Sales Planning slot rows (admin) — click the date to change it.',
+      'Those two columns now show each slot’s real scheduled dates instead of a fixed offset from CA, so edits carry through to the Gantt and everywhere else.',
+      'Editing moved off the Key Dates panel; those two fields are read-only there again.'
+    ]
+  },
   {
     version: 'v797', date: '2026-07-08',
     entries: [
@@ -12285,6 +12320,7 @@ function generateBriefHTML(){
   // ── MISSING LINKS, DESIGN HOURS, TRELLO BOARDS (rendered last) ─────────
   {
     const linkRows=[];
+    const trelloRows=[];
     const _mgrIcon=(proj)=>{
       const svg=`<svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1h3v3M11 1L6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       const attr=proj._spItemId?`data-edit-mgr-btn="${proj._spItemId}"`:`data-open-mgr-name="${encodeURIComponent(proj.name||'')}"`;
@@ -12292,6 +12328,10 @@ function generateBriefHTML(){
     };
     const _row=(cls,name,text,proj,extraBtns='')=>
       `<div class="brief-card-row"><span class="bcr-lbl ${cls}">${name}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${extraBtns}${_mgrIcon(proj)}</span></div>`;
+    // Trello board rows are collected separately, grouped together at the end of the
+    // section, and carry NO Project Manager link (the board isn't created in the manager).
+    const _trelloRow=(name,text,extraBtns='')=>
+      `<div class="brief-card-row"><span class="bcr-lbl l-warn">${name}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${extraBtns}</span></div>`;
     PROJECTS.filter(p=>p.status==='da-signed'||p.status==='ca-signed').forEach(proj=>{
       const du=proj.docUrls||{};
       const name=briefProjName(proj);
@@ -12304,14 +12344,16 @@ function generateBriefHTML(){
       const _trelloAck=proj.id+'-trello-board';
       if(BRIEF_ACKS[_trelloAck]!=='archived'){
         const resolveBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${_trelloAck}" data-ack-action="archived">Resolve</button>`;
-        linkRows.push(_row('l-warn',name,'Create Trello Project Board.',proj,resolveBtn));
+        trelloRows.push(_trelloRow(name,'Create Trello Project Board.',resolveBtn));
       }
     });
-    if(linkRows.length){
+    const _trelloGroup=trelloRows.length?`<div class="brief-linkgroup-hdr">Create Trello Boards</div>${trelloRows.join('')}`:'';
+    const _totalLinkRows=linkRows.length+trelloRows.length;
+    if(_totalLinkRows){
       html+=`<div class="brief-section"><div class="brief-section-hd">`
         +`<span class="brief-section-title">Missing Links, Design Hours, Trello Boards</span>`
-        +`<span class="brief-section-count" style="margin-left:8px;background:#ac2828">${linkRows.length}</span>`
-        +`</div>${linkRows.join('')}</div>`;
+        +`<span class="brief-section-count" style="margin-left:8px;background:#ac2828">${_totalLinkRows}</span>`
+        +`</div>${linkRows.join('')}${_trelloGroup}</div>`;
     }
   }
 
