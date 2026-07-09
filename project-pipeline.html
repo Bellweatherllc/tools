@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v811</title>
+<title>BW Project Pipeline — v813</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -1412,6 +1412,8 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 }
 .brief-sub-hdr:first-child{margin-top:0;}
 .brief-ack-btns{display:flex;gap:4px;flex-shrink:0;margin-left:auto;}
+.brief-mgr-link{display:inline-flex;align-items:center;justify-content:center;padding:2px 5px;border:none;border-radius:4px;background:rgba(31,46,62,.06);color:rgba(31,46,62,.55);cursor:pointer;flex-shrink:0;line-height:1;transition:background .12s,color .12s;}
+.brief-mgr-link:hover{background:rgba(31,46,62,.14);color:var(--navy);}
 .brief-bug-pencil{
   background:rgba(216,182,79,.08);border:1px solid rgba(216,182,79,.30);border-radius:3px;
   cursor:pointer;color:var(--gold);padding:2px 4px;
@@ -2662,7 +2664,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v811</div>
+    <div class="auth-version" id="authVersionBadge">v813</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2681,7 +2683,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v811</div>
+  <div class="proto-badge" id="versionBadge">v813</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -11918,29 +11920,6 @@ function generateBriefHTML(){
     }
   }
 
-  // ── MISSING LINKS ─────────────────────────────────────────────────
-  // Only fires for DA Signed and CA Signed projects — never for Leads or Paused.
-  // EST + DA expected at DA Signed; CA additionally expected at CA Signed.
-  {
-    const linkRows=[];
-    PROJECTS.filter(p=>p.status==='da-signed'||p.status==='ca-signed').forEach(proj=>{
-      const du=proj.docUrls||{};
-      const name=briefProjName(proj);
-      const isCa=proj.status==='ca-signed';
-      if(!du.est) linkRows.push(briefRow('l-warn',name,'Missing EST link — add to project record.'));
-      if(!du.da)  linkRows.push(briefRow('l-warn',name,'Missing DA link — add to project record. Also: create Trello Project Board.'));
-      if(isCa&&!du.ca) linkRows.push(briefRow('l-warn',name,'Missing CA link — add to project record once CA is written.'));
-      // Missing design hours — alert if all design phases have 0 hours
-      const hasHours=(proj.designLane?.phases||[]).some(ph=>ph.hours>0);
-      if(!hasHours) linkRows.push(briefRow('l-warn',name,'No design hours entered — add phase hours in Design Planning.'));
-    });
-    if(linkRows.length){
-      html+=`<div class="brief-section"><div class="brief-section-hd">`
-        +`<span class="brief-section-title">Missing Links</span>`
-        +`<span class="brief-section-count" style="margin-left:8px;background:#ac2828">${linkRows.length}</span>`
-        +`</div>${linkRows.join('')}</div>`;
-    }
-  }
 
   // Build per-project diff index
   const diffByProj={};
@@ -12162,6 +12141,44 @@ function generateBriefHTML(){
     if(upConstr.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Construction Starts</div><div class="brief-upcoming-rows">${upConstr.map(({proj,cPh,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`Construction starts ${briefFmtDate(wkToDate(cPh.startWeek))} (${tl}).`); }).join('')}</div></div>`;
     if(upOther.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Other Milestones</div><div class="brief-upcoming-rows">${upOther.map(milRow).join('')}</div></div>`;
     html+='</div>';
+  }
+
+  // ── MISSING LINKS, DESIGN HOURS, TRELLO BOARDS (rendered last) ─────────
+  // Fires for DA Signed and CA Signed projects only. Link/hours rows self-clear
+  // from data. Trello board row is unverifiable from data — fires at DA and
+  // clears ONLY via the Resolve button (SP-backed ack), independent of the DA link.
+  {
+    const linkRows=[];
+    const _mgrIcon=(proj)=>{
+      const svg=`<svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1h3v3M11 1L6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      const attr=proj._spItemId?`data-edit-mgr-btn="${proj._spItemId}"`:`data-open-mgr-name="${encodeURIComponent(proj.name||'')}"`;
+      return `<button class="brief-mgr-link" ${attr} title="Open in Project Manager">${svg}</button>`;
+    };
+    const _row=(cls,name,text,proj,extraBtns='')=>
+      `<div class="brief-card-row"><span class="bcr-lbl ${cls}">${name}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${extraBtns}${_mgrIcon(proj)}</span></div>`;
+    PROJECTS.filter(p=>p.status==='da-signed'||p.status==='ca-signed').forEach(proj=>{
+      const du=proj.docUrls||{};
+      const name=briefProjName(proj);
+      const isCa=proj.status==='ca-signed';
+      if(!du.est) linkRows.push(_row('l-warn',name,'Missing EST link — add to project record.',proj));
+      if(!du.da)  linkRows.push(_row('l-warn',name,'Missing DA link — add to project record.',proj));
+      if(isCa&&!du.ca) linkRows.push(_row('l-warn',name,'Missing CA link — add to project record once CA is written.',proj));
+      // Missing design hours — alert if all design phases have 0 total hours
+      const hasHours=(proj.designLane?.phases||[]).some(ph=>(ph.totalHours||0)>0||(ph.hours||0)>0);
+      if(!hasHours) linkRows.push(_row('l-warn',name,'No design hours entered — add phase hours in Design Planning.',proj));
+      // Trello board — unverifiable; clears only via Resolve (permanent SP-backed ack)
+      const _trelloAck=proj.id+'-trello-board';
+      if(BRIEF_ACKS[_trelloAck]!=='archived'){
+        const resolveBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${_trelloAck}" data-ack-action="archived">Resolve</button>`;
+        linkRows.push(_row('l-warn',name,'Create Trello Project Board.',proj,resolveBtn));
+      }
+    });
+    if(linkRows.length){
+      html+=`<div class="brief-section"><div class="brief-section-hd">`
+        +`<span class="brief-section-title">Missing Links, Design Hours, Trello Boards</span>`
+        +`<span class="brief-section-count" style="margin-left:8px;background:#ac2828">${linkRows.length}</span>`
+        +`</div>${linkRows.join('')}</div>`;
+    }
   }
 
   return html;
