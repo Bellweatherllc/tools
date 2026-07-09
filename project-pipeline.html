@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v813</title>
+<title>BW Project Pipeline — v815</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2295,6 +2295,8 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .pp-date-name.is-slot{opacity:.45;}
 .pp-date-name.is-unassigned{opacity:.60;font-style:italic;}
 .pp-date-row-unassigned{opacity:.72;background:rgba(0,0,0,.025);border-radius:3px;}
+.pp-date-row-proposed{opacity:.92;background:rgba(33,82,161,.045);border-radius:3px;}
+.pp-date-name.is-proposed{font-style:italic;color:rgba(33,82,161,.85);}
 .pp-date-pm{font-size:9px;color:#a3a3a3;}
 .pp-date-people{
   font-size:9px;color:#a3a3a3;margin-top:1px;
@@ -2664,7 +2666,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v813</div>
+    <div class="auth-version" id="authVersionBadge">v815</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2683,7 +2685,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v813</div>
+  <div class="proto-badge" id="versionBadge">v815</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -10838,7 +10840,7 @@ document.addEventListener('click',e=>{
     const uaBody=document.getElementById('ppUnassignedBody');
     uaBody.innerHTML='';
     // Unassigned zone not relevant for Sales or Production — hide it
-    document.getElementById('ppZoneUnassigned').style.display=(section==='planning'||section==='production')?'none':'';
+    document.getElementById('ppZoneUnassigned').style.display='none'; // Unassigned zone removed
     const unassigned=PROJECTS
       .filter(p=>isVisible(p)&&(section==='design'?false:!p.productionPM)&&!(section==='production'&&(p.isOpenSlot||/^Slot\b/i.test(p.name))))
       .map(p=>{
@@ -11087,11 +11089,59 @@ document.addEventListener('click',e=>{
         }
 
       } else {
-        // ── Sales (planning): DA Sign | Des Start | CA Sign | Con Start | Con End | Est. Cost — all read-only
+        // ── Sales (planning): DA Sign | Des Start | CA Sign | Con Start | Con End | Est. Cost
+        // DA Sign & Des Start are admin-editable and independent; invariant: DA is always
+        // >=1 week before Design Start. Des Start rigid-shifts the design front block
+        // (Phase I/II + tiers + PD); DA moves its milestone alone. Construction/CA/Phase III untouched.
         const conEndWk=conPh?conPh.startWeek+conPh.durWeeks:null;
         const costVal=proj.estimatedValue||proj.projBudget||'';
-        _addCell(row,_copy,daMs?.week,daMs);
-        _addCell(row,_copy,desPh?.startWeek,null);
+        const _toDS=w=>{const d=new Date(C.startDate.getTime()+w*7*24*3600*1000);return d.toISOString().slice(0,10);};
+        const _fromDS=s=>{const d=new Date(s+'T12:00:00');return Math.round((d.getTime()-C.startDate)/(7*24*3600*1000));};
+        const _mkDateInput=(val)=>{const inp=document.createElement('input'); inp.type='date'; inp.className='pp-date-input'; inp.value=(val!=null?_toDS(val):''); return inp;};
+        // DA Sign — moves the DA milestone only; cannot reach/pass Design Start
+        if(IS_ADMIN_MODE&&daMs){
+          const cell=document.createElement('div'); cell.className='pp-date-val';
+          const inp=_mkDateInput(daMs.week);
+          inp.addEventListener('change',()=>{
+            if(!inp.value){ inp.value=daMs.week!=null?_toDS(daMs.week):''; return; }
+            let nw=_fromDS(inp.value);
+            const desW=desPh?desPh.startWeek:null;
+            if(nw<0) nw=0;
+            if(desW!=null&&nw>=desW) nw=desW-1;
+            if(nw<0){ inp.value=daMs.week!=null?_toDS(daMs.week):''; return; }
+            if(nw===daMs.week){ inp.value=_toDS(nw); return; }
+            pushHistory(`${proj.name} — DA date → ${_toDS(nw)}`);
+            daMs.week=nw;
+            markDirty(proj); triggerSave(); rebuildSection('planning'); renderKeyDatesPanel();
+          });
+          cell.appendChild(inp); row.appendChild(cell); _copy.push(inp.value);
+        } else { _addCell(row,_copy,daMs?.week,daMs); }
+        // Des Start — rigid shift of the design front block; cannot reach/precede DA
+        if(IS_ADMIN_MODE&&desPh){
+          const cell=document.createElement('div'); cell.className='pp-date-val';
+          const inp=_mkDateInput(desPh.startWeek);
+          inp.addEventListener('change',()=>{
+            if(!inp.value){ inp.value=desPh.startWeek!=null?_toDS(desPh.startWeek):''; return; }
+            const oldStart=desPh.startWeek;
+            let nw=_fromDS(inp.value);
+            const daW=daMs?daMs.week:null;
+            if(daW!=null&&nw<=daW) nw=daW+1;
+            if(nw<0) nw=0;
+            if(oldStart!=null&&nw===oldStart){ inp.value=_toDS(oldStart); return; }
+            pushHistory(`${proj.name} — design start → ${_toDS(nw)}`);
+            if(oldStart==null){
+              let pos=nw; proj.designLane.phases.filter(ph=>!ph.isDesignProd).forEach(ph=>{ ph.startWeek=pos; pos+=(ph.durWeeks||0); });
+            } else {
+              const delta=nw-oldStart;
+              proj.designLane.phases.filter(ph=>!ph.isDesignProd).forEach(ph=>{ if(ph.startWeek!=null) ph.startWeek+=delta; });
+              (proj.tiers||[]).forEach(tt=>{ if(tt.week!=null) tt.week+=delta; });
+              if(proj.pencilsDown&&proj.pencilsDown.week!=null) proj.pencilsDown.week+=delta;
+            }
+            proj.designLane.startWeek=proj.designLane.phases[0]?.startWeek??proj.designLane.startWeek;
+            markDirty(proj); triggerSave(); rebuildSection('planning'); rebuildSection('design'); renderKeyDatesPanel();
+          });
+          cell.appendChild(inp); row.appendChild(cell); _copy.push(inp.value);
+        } else { _addCell(row,_copy,desPh?.startWeek,null); }
         _addCell(row,_copy,caMs?.week,caMs);
         _addCell(row,_copy,conPh?.startWeek,null);
         _addCell(row,_copy,conEndWk,null,false,true);
@@ -11113,6 +11163,95 @@ document.addEventListener('click',e=>{
 
       dBody.appendChild(row);
     });
+
+    // ── PROPOSED (attached planning cards only) — always last; future by definition ──
+    const _propItems=(PLANNING_PROJECTS||[])
+      .filter(pp=>!pp.parked&&pp.ppStatus!=='lost'&&(pp.slotId||pp.slotWeek))
+      .map(pp=>{
+        const slot=PROJECTS.find(p=>p.id===pp.slotId)
+          || PROJECTS.find(p=>p.isOpenSlot&&p.designLane&&p.designLane.startWeek===pp.slotWeek);
+        return {pp, slot};
+      })
+      .filter(x=>x.slot)
+      .map(x=>{
+        const s=x.slot;
+        const _da=s.milestones.find(m=>m.name==='DA');
+        const _ca=s.milestones.find(m=>m.name==='CA');
+        const _d1=s.designLane.phases.filter(ph=>!ph.isDesignProd)[0];
+        const key=section==='design'?(_da?_da.week:(_d1?_d1.startWeek:9999)):(_ca?_ca.week:9999);
+        return {pp:x.pp, slot:s, key};
+      })
+      .sort((a,b)=>a.key-b.key);
+
+    if(_propItems.length){
+      const pdiv=document.createElement('div');
+      pdiv.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 0 4px;margin-top:4px;';
+      const _pl1=document.createElement('div'); _pl1.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
+      const _plb=document.createElement('span'); _plb.style.cssText='font-size:7.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a3a3;flex-shrink:0;'; _plb.textContent='Proposed';
+      const _pl2=document.createElement('div'); _pl2.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
+      pdiv.appendChild(_pl1); pdiv.appendChild(_plb); pdiv.appendChild(_pl2);
+      dBody.appendChild(pdiv);
+
+      _propItems.forEach(({pp,slot})=>{
+        const s=slot;
+        const daMs=s.milestones.find(m=>m.name==='DA');
+        const caMs=s.milestones.find(m=>m.name==='CA');
+        const conPh=s.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim()));
+        const desPh=s.designLane.phases[0];
+        const designer=DESIGNERS.find(d=>d.id===pp.proposedDesigner);
+        const sales=pp.salesPerson||'';
+        const row=document.createElement('div'); row.className='pp-date-row pp-date-row-proposed';
+        const notePencil=document.createElement('button');
+        notePencil.className='pp-date-note-btn'+(pp.notes?' has-note':'');
+        notePencil.dataset.planningNoteBtn=pp.id;
+        notePencil.innerHTML='<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
+        row.appendChild(notePencil);
+        const info=document.createElement('div'); info.className='pp-date-info';
+        const nm=document.createElement('div'); nm.className='pp-date-name is-proposed'; nm.textContent=pp.name.replace(/\s+Residence$/,''); info.appendChild(nm);
+        const peopleParts=[(sales?sales.split(' ')[0]:null), designer?designer.label:null, '—'].map(v=>v||'—');
+        const ppl=document.createElement('div'); ppl.className='pp-date-people'; ppl.textContent=peopleParts.join(' · '); info.appendChild(ppl);
+        row.appendChild(info);
+        const _copy=[pp.name];
+        if(section==='design'){
+          const _dp=s.designLane.phases.filter(ph=>!ph.isDesignProd);
+          const ph1=_dp[0], ph2=_dp[1];
+          const ph3=s.designLane.phases.find(ph=>ph.isDesignProd);
+          ensureTiers(s); ensurePencilsDown(s);
+          const t1Wk=(s.tiers||[])[0]?.week, t2Wk=(s.tiers||[])[1]?.week, t3Wk=(s.tiers||[])[2]?.week;
+          const pdWk=s.pencilsDown?.week;
+          _addCell(row,_copy,daMs?.week,daMs);
+          _addCell(row,_copy,ph1?.startWeek,null);
+          _addCell(row,_copy,ph2?.startWeek,null);
+          _addCell(row,_copy,t1Wk!=null?t1Wk:null,null,true);
+          _addCell(row,_copy,t2Wk!=null?t2Wk:null,null,true);
+          _addCell(row,_copy,t3Wk!=null?t3Wk:null,null,true);
+          _addCell(row,_copy,pdWk!=null?pdWk:null,null,true);
+          _addCell(row,_copy,caMs?.week,caMs);
+          _addCell(row,_copy,ph3?.startWeek,null);
+        } else if(section==='production'){
+          const conEndWk=conPh?conPh.startWeek+conPh.durWeeks:null;
+          const costVal=pp.projBudget||s.estimatedValue||s.projBudget||'';
+          _addCell(row,_copy,caMs?.week,caMs);
+          _addCell(row,_copy,conPh?.startWeek,null);
+          _addCell(row,_copy,conEndWk,null,false,true);
+          _addTextCell(row,_copy,costVal,true);
+          const pctCell=document.createElement('div'); pctCell.className='pp-date-val empty'; pctCell.textContent='—'; row.appendChild(pctCell); _copy.push('—');
+        } else {
+          const conEndWk=conPh?conPh.startWeek+conPh.durWeeks:null;
+          const costVal=pp.projBudget||s.estimatedValue||s.projBudget||'';
+          _addCell(row,_copy,daMs?.week,daMs);
+          _addCell(row,_copy,desPh?.startWeek,null);
+          _addCell(row,_copy,caMs?.week,caMs);
+          _addCell(row,_copy,conPh?.startWeek,null);
+          _addCell(row,_copy,conEndWk,null,false,true);
+          _addTextCell(row,_copy,costVal,true);
+        }
+        const copyBtn=document.createElement('button'); copyBtn.className='pp-copy-btn'; copyBtn.title='Copy row to clipboard'; copyBtn.innerHTML=_clipSVG;
+        copyBtn.addEventListener('click',e=>{ e.stopPropagation(); const _pairs=[_copy[0],..._cols.map((c,i)=>c+': '+(_copy[i+1]||'—'))].join('\n'); navigator.clipboard.writeText(_pairs).then(()=>{ copyBtn.textContent='✓'; copyBtn.style.color='#3b7fa8'; setTimeout(()=>{copyBtn.innerHTML=_clipSVG; copyBtn.style.color='';},1400); }).catch(()=>{}); });
+        row.appendChild(copyBtn);
+        dBody.appendChild(row);
+      });
+    }
   }
 })();
 
@@ -12144,9 +12283,6 @@ function generateBriefHTML(){
   }
 
   // ── MISSING LINKS, DESIGN HOURS, TRELLO BOARDS (rendered last) ─────────
-  // Fires for DA Signed and CA Signed projects only. Link/hours rows self-clear
-  // from data. Trello board row is unverifiable from data — fires at DA and
-  // clears ONLY via the Resolve button (SP-backed ack), independent of the DA link.
   {
     const linkRows=[];
     const _mgrIcon=(proj)=>{
@@ -12163,10 +12299,8 @@ function generateBriefHTML(){
       if(!du.est) linkRows.push(_row('l-warn',name,'Missing EST link — add to project record.',proj));
       if(!du.da)  linkRows.push(_row('l-warn',name,'Missing DA link — add to project record.',proj));
       if(isCa&&!du.ca) linkRows.push(_row('l-warn',name,'Missing CA link — add to project record once CA is written.',proj));
-      // Missing design hours — alert if all design phases have 0 total hours
       const hasHours=(proj.designLane?.phases||[]).some(ph=>(ph.totalHours||0)>0||(ph.hours||0)>0);
       if(!hasHours) linkRows.push(_row('l-warn',name,'No design hours entered — add phase hours in Design Planning.',proj));
-      // Trello board — unverifiable; clears only via Resolve (permanent SP-backed ack)
       const _trelloAck=proj.id+'-trello-board';
       if(BRIEF_ACKS[_trelloAck]!=='archived'){
         const resolveBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${_trelloAck}" data-ack-action="archived">Resolve</button>`;
