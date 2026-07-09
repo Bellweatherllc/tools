@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v817</title>
+<title>BW Project Pipeline — v818</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2670,7 +2670,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v815</div>
+    <div class="auth-version" id="authVersionBadge">v818</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2689,7 +2689,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v815</div>
+  <div class="proto-badge" id="versionBadge">v818</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -8249,6 +8249,17 @@ function buildPlanningSection(){
   function buildPSRow(slot,constrStart,caWk){
     const daWk=caWk!==null?caWk-23:-1;
     const ph1Wk=caWk!==null?caWk-22:-1;
+    // v818: resolve the real DA milestone + design-start phase up front so BOTH the capacity chip
+    // (Issue 3) and the DA/Design-Start editors (Issue 1) key off the same real values.
+    // desPhSlot falls back to phases[0] so the cell stays editable whenever any design phase exists.
+    const daMsSlot=slot.milestones?slot.milestones.find(m=>m.name==='DA'):null;
+    const desPhSlot=(slot.designLane&&slot.designLane.phases)?(slot.designLane.phases.find(ph=>!ph.isDesignProd)||slot.designLane.phases[0]):null;
+    const _realDaWk=daMsSlot&&daMsSlot.week!=null?daMsSlot.week:null;
+    const _realDesWk=desPhSlot&&desPhSlot.startWeek!=null?desPhSlot.startWeek:null;
+    const _daDisp=_realDaWk!=null?_realDaWk:(daWk>=0&&daWk<C.numWeeks?daWk:null);
+    const _desDisp=_realDesWk!=null?_realDesWk:(ph1Wk>=0&&ph1Wk<C.numWeeks?ph1Wk:null);
+    // Capacity anchor: real design start when known, else the CA-22 estimate. Updates on Design-Start edit.
+    const _capAnchorWk=_realDesWk!=null?_realDesWk:ph1Wk;
     const attached=PLANNING_PROJECTS.find(pp=>!pp.parked&&(pp.slotId===slot.id||(pp.slotWeek===constrStart&&!pp.slotId)));
     const row=el('div','ps-row'+(attached?' ps-row-matched':''));
 
@@ -8402,13 +8413,13 @@ function buildPlanningSection(){
       const des=personById(propDesId);
       const desTally=des?designerTally(des.id):[];
       const target=des?getTarget(des.id):0;
-      const hrs=desTally&&ph1Wk>=0&&ph1Wk<C.numWeeks?desTally[ph1Wk]:0;
+      const hrs=desTally&&_capAnchorWk>=0&&_capAnchorWk<C.numWeeks?desTally[_capAnchorWk]:0;
       const ratio=target>0?hrs/target:1;
       const sc=sigClass(ratio);
       const capLabel=_desCapLabel(ratio);
       const slotIdStr=slot.id;
-      // Pre-compute 8 weeks from design start for detail panel
-      const selWeeks=Array.from({length:8},(_,i)=>{ const wk=ph1Wk+i; const h=wk>=0&&wk<C.numWeeks?(desTally[wk]||0):0; const r=target>0?h/target:0; return {h,target,ratio:r,dateLbl:wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014'}; });
+      // Pre-compute 8 weeks from the real design start (v818: was ph1Wk estimate) for detail panel
+      const selWeeks=Array.from({length:8},(_,i)=>{ const wk=_capAnchorWk+i; const h=wk>=0&&wk<C.numWeeks?(desTally[wk]||0):0; const r=target>0?h/target:0; return {h,target,ratio:r,dateLbl:wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014'}; });
       const chip=el('div','ps-des-chip ps-'+sc);
       // Left zone: × + name together — clicking clears the selection
       const clrZone=el('button','ps-des-chip-nm');
@@ -8423,7 +8434,7 @@ function buildPlanningSection(){
       const capTxt=el('span',''); capTxt.textContent=capLabel;
       const chev=_chevronSvg();
       capZone.appendChild(capTxt); capZone.appendChild(chev);
-      if(des) capZone.addEventListener('click',e=>{ e.stopPropagation(); _toggleCapDetail(capZone,slotIdStr,des.id,ph1Wk,selWeeks); });
+      if(des) capZone.addEventListener('click',e=>{ e.stopPropagation(); _toggleCapDetail(capZone,slotIdStr,des.id,_capAnchorWk,selWeeks); });
       chip.appendChild(clrZone); chip.appendChild(sep); chip.appendChild(capZone);
       desCell.appendChild(chip);
     } else {
@@ -8431,13 +8442,13 @@ function buildPlanningSection(){
       DESIGNERS.forEach(d=>{
         const dTally=designerTally(d.id);
         const target=getTarget(d.id);
-        const hrs=ph1Wk>=0&&ph1Wk<C.numWeeks?dTally[ph1Wk]:0;
+        const hrs=_capAnchorWk>=0&&_capAnchorWk<C.numWeeks?dTally[_capAnchorWk]:0;
         const ratio=target>0?hrs/target:1;
         const sc=sigClass(ratio);
         const capLabel=_desCapLabel(ratio);
         const slotIdStr=slot.id;
-        // Pre-compute 8 weeks from design start for detail panel
-        const dWeeks=Array.from({length:8},(_,i)=>{ const wk=ph1Wk+i; const h=wk>=0&&wk<C.numWeeks?(dTally[wk]||0):0; const r=target>0?h/target:0; return {h,target,ratio:r,dateLbl:wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014'}; });
+        // Pre-compute 8 weeks from the real design start (v818: was ph1Wk estimate) for detail panel
+        const dWeeks=Array.from({length:8},(_,i)=>{ const wk=_capAnchorWk+i; const h=wk>=0&&wk<C.numWeeks?(dTally[wk]||0):0; const r=target>0?h/target:0; return {h,target,ratio:r,dateLbl:wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014'}; });
         const chip=el('div','ps-des-chip ps-'+sc);
         const nmBtn=el('button','ps-des-chip-nm'); nmBtn.type='button'; nmBtn.textContent=d.label; nmBtn.title='Assign '+d.label;
         nmBtn.addEventListener('click',e=>{
@@ -8449,7 +8460,7 @@ function buildPlanningSection(){
         const capTxt=el('span',''); capTxt.textContent=capLabel;
         const chev=_chevronSvg();
         capZone.appendChild(capTxt); capZone.appendChild(chev);
-        capZone.addEventListener('click',e=>{ e.stopPropagation(); _toggleCapDetail(capZone,slotIdStr,d.id,ph1Wk,dWeeks); });
+        capZone.addEventListener('click',e=>{ e.stopPropagation(); _toggleCapDetail(capZone,slotIdStr,d.id,_capAnchorWk,dWeeks); });
         chip.appendChild(nmBtn); chip.appendChild(sep); chip.appendChild(capZone);
         opts.appendChild(chip);
       });
@@ -8458,21 +8469,21 @@ function buildPlanningSection(){
     row.appendChild(desCell);
 
     // ── 3. DA signing ──
-    const daMsSlot=slot.milestones?slot.milestones.find(m=>m.name==='DA'):null;
-    const desPhSlot=slot.designLane&&slot.designLane.phases?slot.designLane.phases.find(ph=>!ph.isDesignProd):null;
-    const _realDaWk=daMsSlot&&daMsSlot.week!=null?daMsSlot.week:null;
-    const _realDesWk=desPhSlot&&desPhSlot.startWeek!=null?desPhSlot.startWeek:null;
-    const _daDisp=_realDaWk!=null?_realDaWk:(daWk>=0&&daWk<C.numWeeks?daWk:null);
-    const _desDisp=_realDesWk!=null?_realDesWk:(ph1Wk>=0&&ph1Wk<C.numWeeks?ph1Wk:null);
-    const _toDS=w=>{const dd=new Date(C.startDate.getTime()+w*7*24*3600*1000);return dd.toISOString().slice(0,10);};
-    const _fromDS=s=>{const dd=new Date(s+'T12:00:00');return Math.round((dd.getTime()-C.startDate)/(7*24*3600*1000));};
+    // (daMsSlot / desPhSlot / _realDaWk / _realDesWk / _daDisp / _desDisp resolved at top of buildPSRow — v818)
+    // v818: anchor the date picker to wkMon (Monday) too, matching the wkDate label. The old raw-epoch
+    // conversion was 5 days off, so edits rounded onto the wrong week and appeared not to "take".
+    const _toDS=w=>{const dd=new Date(C.startDate.getTime()+(w*7+_CAL_MON_OFFSET)*24*3600*1000);return dd.toISOString().slice(0,10);};
+    const _fromDS=s=>{const dd=new Date(s+'T12:00:00');return Math.round((dd.getTime()-C.startDate.getTime()-_CAL_MON_OFFSET*24*3600*1000)/(7*24*3600*1000));};
+    // editable = has a real target to write; the admin gate is checked at CLICK time (like the
+    // slot-name rename), so toggling admin mode works without rebuilding the section.
     function _mkDtCell(dispWk,editable,curWk,applyFn){
       const cell=el('div','ps-dt-cell');
-      const label=dispWk!=null?wkDate(dispWk):'\u2014';
+      const label=dispWk!=null?wkDate(dispWk):'—';
       cell.textContent=label;
       if(!editable) return cell;
-      cell.classList.add('ps-dt-editable'); cell.title='Click to edit';
+      cell.classList.add('ps-dt-editable'); cell.title='Click to edit (admin)';
       cell.addEventListener('click',e=>{
+        if(!canEdit()) return;
         if(cell.querySelector('input')) return;
         e.stopPropagation();
         const inp=document.createElement('input'); inp.type='date'; inp.className='ps-dt-input';
@@ -8495,12 +8506,12 @@ function buildPlanningSection(){
       });
       return cell;
     }
-    const daCell=_mkDtCell(_daDisp, IS_ADMIN_MODE&&!!daMsSlot, daMsSlot?daMsSlot.week:null, nw=>{
+    const daCell=_mkDtCell(_daDisp, !!daMsSlot, daMsSlot?daMsSlot.week:null, nw=>{
       const desW=desPhSlot?desPhSlot.startWeek:null;
       if(nw<0) nw=0;
       if(desW!=null&&nw>=desW) nw=desW-1;
       if(nw<0||nw===daMsSlot.week){ rebuildSection('planning'); return; }
-      pushHistory(slot.name+' \u2014 DA date \u2192 '+_toDS(nw));
+      pushHistory(slot.name+' — DA date → '+_toDS(nw));
       daMsSlot.week=nw;
       markDirty(slot); triggerSave();
       rebuildSection('planning'); rebuildSection('design'); rebuildSection('production'); renderKeyDatesPanel();
@@ -8508,13 +8519,13 @@ function buildPlanningSection(){
     row.appendChild(daCell);
 
     // ── 4. Phase I (Design start) ──
-    const ph1Cell=_mkDtCell(_desDisp, IS_ADMIN_MODE&&!!desPhSlot, desPhSlot?desPhSlot.startWeek:null, nw=>{
+        const ph1Cell=_mkDtCell(_desDisp, !!desPhSlot, desPhSlot?desPhSlot.startWeek:null, nw=>{
       const daW=daMsSlot?daMsSlot.week:null;
       if(daW!=null&&nw<=daW) nw=daW+1;
       if(nw<0) nw=0;
       const oldStart=desPhSlot.startWeek;
       if(oldStart!=null&&nw===oldStart){ rebuildSection('planning'); return; }
-      pushHistory(slot.name+' \u2014 design start \u2192 '+_toDS(nw));
+      pushHistory(slot.name+' — design start → '+_toDS(nw));
       if(oldStart==null){
         let pos=nw; slot.designLane.phases.filter(ph=>!ph.isDesignProd).forEach(ph=>{ ph.startWeek=pos; pos+=(ph.durWeeks||0); });
       } else {
@@ -10870,13 +10881,14 @@ document.addEventListener('click',e=>{
   }
   function fmtDate(wk){
     if(wk==null) return null;
-    const d=new Date(C.startDate.getTime()+wk*7*24*3600*1000);
+    // v818: anchor to wkMon (Monday) so Key Dates matches the main Sales page + Gantt (was 5 days off)
+    const d=wkMon(wk);
     const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return {day:mo[d.getMonth()]+' '+d.getDate(), yr:"'"+String(d.getFullYear()).slice(2)};
   }
   function fmtDateFull(wk){
     if(wk==null) return '';
-    const d=new Date(C.startDate.getTime()+wk*7*24*3600*1000);
+    const d=wkMon(wk);
     const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return mo[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
   }
@@ -10892,7 +10904,8 @@ document.addEventListener('click',e=>{
   }
   function fmtFriDate(wk){
     if(wk==null) return null;
-    const d=new Date(C.startDate.getTime()+(wk*7+4)*24*3600*1000);
+    // v818: Friday = Monday(wkMon) + 4 days, so tier/PD dates land on real Fridays and stay in step with fmtDate
+    const d=new Date(wkMon(wk).getTime()+4*24*3600*1000);
     const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return {day:mo[d.getMonth()]+' '+d.getDate(), yr:"'"+String(d.getFullYear()).slice(2)};
   }
@@ -11156,11 +11169,7 @@ document.addEventListener('click',e=>{
 
       } else {
         // ── Sales (planning): DA Sign | Des Start | CA Sign | Con Start | Con End | Est. Cost
-        // DA Sign & Des Start are admin-editable and independent; invariant: DA is always
-        // >=1 week before Design Start. Des Start rigid-shifts the design front block
-        // (Phase I/II + tiers + PD); DA moves its milestone alone. Construction/CA/Phase III untouched.
-        // DA Sign and Design Start are read-only here — they are edited on the main Sales
-        // Planning screen as of v816 (buildPSRow slot rows).
+        // DA Sign and Design Start are read-only here — edited on the main Sales Planning screen (v816+).
         const conEndWk=conPh?conPh.startWeek+conPh.durWeeks:null;
         const costVal=proj.estimatedValue||proj.projBudget||'';
         _addCell(row,_copy,daMs?.week,daMs);
@@ -11490,17 +11499,25 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v818', date: '2026-07-09',
+    entries: [
+      'Key Dates panel dates now match the main Sales Planning dates (and the Gantt) — they had been rendering 5 days early.',
+      'DA signing / Design Start editing: the date picker now opens on the same date shown, so edits land on the week you pick instead of drifting.',
+      'Designer capacity chip and its pop-out now recalculate from the real Design Start week, so they update immediately when you change Design Start.'
+    ]
+  },
+  {
     version: 'v817', date: '2026-07-09',
     entries: [
       'Weekly Brief: “Create Trello Project Board” items are now grouped together at the bottom of the Missing Links section under their own sub-header.',
-      'Removed the Project Manager link from the Trello board rows (it belongs on the missing-link rows, not board creation).'
+      'Removed the Project Manager link from the Trello board rows.'
     ]
   },
   {
     version: 'v816', date: '2026-07-09',
     entries: [
       'DA signing and Design Start are now editable directly in the Sales Planning slot rows (admin) — click the date to change it.',
-      'Those two columns now show each slot’s real scheduled dates instead of a fixed offset from CA, so edits carry through to the Gantt and everywhere else.',
+      'Those two columns now show each slot’s real scheduled dates instead of a fixed offset from CA.',
       'Editing moved off the Key Dates panel; those two fields are read-only there again.'
     ]
   },
@@ -12322,7 +12339,7 @@ function generateBriefHTML(){
 
   // ── MISSING LINKS, DESIGN HOURS, TRELLO BOARDS (rendered last) ─────────
   {
-    const linkRows=[];
+        const linkRows=[];
     const trelloRows=[];
     const _mgrIcon=(proj)=>{
       const svg=`<svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1h3v3M11 1L6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -12331,8 +12348,7 @@ function generateBriefHTML(){
     };
     const _row=(cls,name,text,proj,extraBtns='')=>
       `<div class="brief-card-row"><span class="bcr-lbl ${cls}">${name}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${extraBtns}${_mgrIcon(proj)}</span></div>`;
-    // Trello board rows are collected separately, grouped together at the end of the
-    // section, and carry NO Project Manager link (the board isn't created in the manager).
+    // Trello board rows are grouped together at the end and carry NO Project Manager link.
     const _trelloRow=(name,text,extraBtns='')=>
       `<div class="brief-card-row"><span class="bcr-lbl l-warn">${name}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${extraBtns}</span></div>`;
     PROJECTS.filter(p=>p.status==='da-signed'||p.status==='ca-signed').forEach(proj=>{
