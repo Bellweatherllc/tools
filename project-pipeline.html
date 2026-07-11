@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v824</title>
+<title>BW Project Pipeline — v828</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2673,7 +2673,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v824</div>
+    <div class="auth-version" id="authVersionBadge">v828</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2692,7 +2692,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v824</div>
+  <div class="proto-badge" id="versionBadge">v828</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -3162,6 +3162,11 @@ function undoLast(){
   if(!entry){ showToast&&showToast('Nothing to undo.'); return; }
   try{
     PROJECTS.length=0; entry.snap.projects.forEach(p=>PROJECTS.push(p));
+    // Undo restores a wholesale snapshot — any card present now but absent in the snapshot
+    // is a deletion and needs a tombstone, or colleagues' merges resurrect it (v826)
+    const _preIds=new Set(PLANNING_PROJECTS.map(p=>String(p.id||'')));
+    const _postIds=new Set(entry.snap.planning.map(p=>String(p.id||'')));
+    _preIds.forEach(id=>{ if(id&&!_postIds.has(id)) _tombstone('planning',id); });
     PLANNING_PROJECTS.length=0; entry.snap.planning.forEach(p=>PLANNING_PROJECTS.push(p));
     buildAll(); triggerSave();
     showToast&&showToast('Undone: '+entry.desc);
@@ -6295,7 +6300,7 @@ PP_LEAD_MENU.addEventListener('click',e=>{
     document.getElementById('confirmOk').onclick=()=>{
       dlg.classList.remove('open');
       const idx=PLANNING_PROJECTS.findIndex(p=>p.id===_ppLeadMenuId);
-      if(idx>=0){ pushPlanningHistory(pp.name+' \u2014 marked Lost and removed'); _ppDeleted.add(pp.id); PLANNING_PROJECTS.splice(idx,1); }
+      if(idx>=0){ pushPlanningHistory(pp.name+' \u2014 marked Lost and removed'); _tombstone('planning',pp.id); PLANNING_PROJECTS.splice(idx,1); }
       rebuildSection('planning'); triggerSave();
     };
     document.getElementById('confirmCancel').onclick=()=>{ dlg.classList.remove('open'); };
@@ -6758,7 +6763,7 @@ function initDrag(){
     const delBtn=e.target.closest('[data-delete-planning-proj]');
     if(delBtn){
       const idx=PLANNING_PROJECTS.findIndex(p=>p.id===delBtn.dataset.deletePlanningProj);
-      if(idx>=0){ pushPlanningHistory(`Removed planning project — ${PLANNING_PROJECTS[idx].name||'project'}`); _ppDeleted.add(PLANNING_PROJECTS[idx].id); PLANNING_PROJECTS.splice(idx,1); rebuildSection('planning'); triggerSave(); } return;
+      if(idx>=0){ pushPlanningHistory(`Removed planning project — ${PLANNING_PROJECTS[idx].name||'project'}`); _tombstone('planning',PLANNING_PROJECTS[idx].id); PLANNING_PROJECTS.splice(idx,1); rebuildSection('planning'); triggerSave(); } return;
     }
     // Planning project — park/un-park
     const parkBtn=e.target.closest('[data-park-planning-proj]');
@@ -6894,7 +6899,7 @@ function initDrag(){
 
       if(pp.slotWeek) USED_SLOTS.add(pp.slotWeek);
       const idx=PLANNING_PROJECTS.findIndex(p=>p.id===pp.id);
-      if(idx>=0){ _ppDeleted.add(pp.id); PLANNING_PROJECTS.splice(idx,1); }
+      if(idx>=0){ _tombstone('planning',pp.id); PLANNING_PROJECTS.splice(idx,1); }
       pushPlanningHistory(`${pp.name} — approved, DA signed, moved to pipeline`);
 
       // Animate out — dramatic card exit, then collapse column, then rebuild
@@ -7601,19 +7606,31 @@ function tierTT(tier,e){
 // ════════════════════════════════════════════════  SAVE INDICATOR
 const SI=document.getElementById('saveStatus');
 let saveTimer=null;
-let _configItemId=null; // CORE_Config item ID for pipeline_state key
+let _configItemId=null; // CORE_Config item ID for pipeline_state key (shared facts)
+let _prefsItemId=null;  // CORE_Config item ID for this user's pipeline_prefs_{user} row (v827)
+let _lastWrittenShared='',_lastWrittenPrefs=''; // write-only-when-changed snapshots
 let _dirtyProjects=new Set(); // project IDs that need GanttData patched
 function setSaveState(state){
   if(state==='saving')SI.innerHTML='<div class="si-spinner"></div><span class="si-txt">Saving…</span>';
   else if(state==='saved')SI.innerHTML='<div class="si-dot" style="background:#4ade80"></div><span class="si-txt">Saved</span>';
   else SI.innerHTML='<div class="si-dot" style="background:#f87171"></div><span class="si-txt" style="color:#fca5a5">Error</span>';
 }
-function globalStatePayload(){
+// ══ v827: pipeline_state split into shared facts vs personal view preferences ══
+// Shared (pipeline_state row): business facts everyone must agree on.
+// Personal (pipeline_prefs_{user} row): collapse state, calendar ranges, row and
+// project orders, panel state — Byron's original design intent. Per-user rows have
+// no concurrency story at all (you only collide with yourself).
+function sharedStatePayload(){
   return {
-    // PLANNING_PROJECTS / APPROVED_HISTORY / ARCHIVE moved to their own CORE_Config
-    // rows in v824 — this blob now carries view preferences and layout state only.
     USED_SLOTS:[...USED_SLOTS],
-    PROD_ROW_ORDER,DES_ROW_ORDER,PERSON_TARGETS,
+    PERSON_TARGETS,
+    SLOT_DEFAULT_BUDGET,SLOT_COL_ORDER,
+    PANEL_THRESHOLDS
+  };
+}
+function userPrefsPayload(){
+  return {
+    PROD_ROW_ORDER,DES_ROW_ORDER,
     PROD_PM_COLLAPSED:[...PROD_PM_COLLAPSED],
     PROD_LC_COLLAPSED:[...PROD_LC_COLLAPSED],
     PROD_LC_EXPANDED:[...LC_COORDS.map(lc=>lc.id).filter(id=>!PROD_LC_COLLAPSED.has(id))],
@@ -7629,9 +7646,17 @@ function globalStatePayload(){
       planning:{from:CAL_VIEW.planning.from.toISOString(),to:CAL_VIEW.planning.to.toISOString()}
     },
     PROJ_SORT_ORDER:PROJECTS.map(p=>p.id),
-    SLOT_DEFAULT_BUDGET,SLOT_COL_ORDER,
-    PROD_PANEL_OPEN,PANEL_ACTIVE_SECTION,PANEL_THRESHOLDS
+    PROD_PANEL_OPEN,PANEL_ACTIVE_SECTION
   };
+}
+// Stable per-user key from the signed-in account's username local-part —
+// no display-name collisions, nothing to sanitize beyond non-alphanumerics
+function _prefsKey(){
+  try{
+    const a=msalApp.getActiveAccount&&msalApp.getActiveAccount();
+    const local=String((a&&a.username)||'unknown').split('@')[0].toLowerCase().replace(/[^a-z0-9._-]/g,'');
+    return 'pipeline_prefs_'+(local||'unknown');
+  }catch(e){ return 'pipeline_prefs_unknown'; }
 }
 function projectGanttPayload(proj){
   // Everything except SP-owned fields (name, address, status, estimatedValue) and diagnostics
@@ -7652,43 +7677,137 @@ function _patchPersonNameToSP(proj, personField, personId) {
 
 // ══ Split business-data storage (v824) ════════════════════════════════════════
 // PLANNING_PROJECTS / ARCHIVE / APPROVED_HISTORY each live in their own CORE_Config
-// row and are saved with merge-before-write: re-fetch the row, reconcile with local,
-// then write. View preferences remain in pipeline_state (last-write-wins is fine there).
+// row. v826: per-item optimistic concurrency — every item carries `_m` (ISO timestamp of
+// its last modification, stamped centrally at save time), deletions are real tombstone
+// records `{_del:key,_m:ts}` stored in the row itself, and merge is true per-item
+// reconciliation: newest `_m` wins (missing `_m` = legacy = oldest; ties fall to local,
+// which preserves pre-v826 behavior for untouched data, making migration implicit).
+// Accepted assumption on the record: `_m` comes from local clocks. Team machines are
+// NTP-synced within seconds; collisions inside that window are the irreducible race.
+// View preferences remain in pipeline_state (last-write-wins is fine there).
 let _planningItemId=null,_archiveItemId=null,_historyItemId=null;
-let _ppDeleted=new Set(); // planning ids deleted this session — tombstones so merge doesn't resurrect them
-let _lastWrittenDomains={planning:'',archive:'',history:''}; // JSON snapshots — a domain saves only when it actually changed
+let _lastWrittenDomains={planning:'',archive:'',history:''}; // full row payload as last written/seen — cheap skip for the refresh poll
+let _lastWrittenItems={planning:new Map(),archive:new Map(),history:new Map()}; // key → item JSON as last written/adopted; drives save-time _m stamping
+let _domainTombs={planning:new Map(),archive:new Map(),history:new Map()}; // key → _m ISO; deletions live here, never in the in-memory arrays
+let _lastWrittenKeySeq={planning:'',archive:'',history:''}; // key order as last written — reorders are content-neutral but must still save
+const TOMB_TTL_MS=30*24*3600*1000; // tombstones purge after 30 days — no realistic open tab outlives this
+// v828 growth caps. Applied deterministically in the write path only — every client trims
+// the same items before every write, so trimmed entries can't be resurrected by a
+// colleague's merge (their next save trims identically). Refresh deliberately does NOT
+// cap: display may briefly hold extra items; the next save converges. The durable record
+// for archived projects is their CORE_Projects row — this only bounds the display cache.
+const HISTORY_CAP=200;                       // newest N approved-history entries kept in-field
+const ARCHIVE_CAP_MS=24*30.44*24*3600*1000;  // archive cache keeps ~24 months by archivedAt
+function _capDomain(domain){
+  const arr=_domainLocalArr(domain);
+  if(domain==='history'&&arr.length>HISTORY_CAP){ arr.length=HISTORY_CAP; return true; } // sorted newest-first upstream
+  if(domain==='archive'){
+    const cutoff=Date.now()-ARCHIVE_CAP_MS;
+    const kept=arr.filter(a=>!a||!a.archivedAt||a.archivedAt>=cutoff); // entries missing archivedAt are never destroyed
+    if(kept.length!==arr.length){ arr.length=0; kept.forEach(x=>arr.push(x)); return true; }
+  }
+  return false;
+}
 function _domainRowId(domain){return domain==='planning'?_planningItemId:domain==='archive'?_archiveItemId:_historyItemId;}
 function _domainLocalArr(domain){return domain==='planning'?PLANNING_PROJECTS:domain==='archive'?ARCHIVE:APPROVED_HISTORY;}
 function _archKey(a){return (a.id||'')+'|'+(a.archivedAt||'');}
 function _histKey(h){return (h.id||'')+'|'+(h.approvedAt||'');}
+function _domainKeyFn(domain){return domain==='planning'?(x=>String(x&&x.id||'')):domain==='archive'?_archKey:_histKey;}
+function _tombstone(domain,key){ if(key) _domainTombs[domain].set(String(key),new Date().toISOString()); }
+// Split a stored row array into live items and tombstones (keeps in-memory arrays clean —
+// zero render sites need to know tombstones exist)
+function _splitDomainRaw(arr){
+  const live=[],tombs=new Map();
+  (arr||[]).forEach(x=>{
+    if(!x||typeof x!=='object')return;
+    if(x._del!==undefined){ const k=String(x._del),ts=String(x._m||''); const prev=tombs.get(k); if(prev===undefined||ts>prev) tombs.set(k,ts); }
+    else live.push(x);
+  });
+  return {live,tombs};
+}
+// Per-item reconciliation. Returns merged live array + merged tombstones + change report.
+// Does not mutate inputs. Items with an empty key are kept local-only (never adopted/removed).
+function _reconcileDomain(domain,localArr,remoteLive,remoteTombs){
+  const keyFn=_domainKeyFn(domain);
+  const M=x=>String((x&&x._m)||''); // ISO strings compare lexically; '' = legacy = oldest
+  const tombs=new Map(_domainTombs[domain]);
+  (remoteTombs||new Map()).forEach((ts,k)=>{ const prev=tombs.get(k); if(prev===undefined||ts>prev) tombs.set(k,ts); });
+  const merged=[],remoteWon=[],removedKeys=[];
+  let adopted=0,updated=0,removed=0;
+  const localMap=new Map(),remoteMap=new Map();
+  localArr.forEach(x=>{ const k=keyFn(x); if(k)localMap.set(k,x); else merged.push(x); });
+  (remoteLive||[]).forEach(x=>{ const k=keyFn(x); if(k)remoteMap.set(k,x); });
+  new Set([...localMap.keys(),...remoteMap.keys()]).forEach(k=>{
+    const L=localMap.get(k),R=remoteMap.get(k);
+    let winner; if(L&&R) winner=(M(R)>M(L))?R:L; else winner=L||R; // tie → local
+    const T=tombs.get(k);
+    if(T!==undefined&&T>M(winner)){ // deletion is strictly newer than any live version
+      if(L){removed++;removedKeys.push(k);}
+      return;
+    }
+    if(T!==undefined) tombs.delete(k); // a newer live version outlives the deletion — deliberate resurrection
+    if(!L){ adopted++; remoteWon.push(k); }
+    else if(winner===R&&JSON.stringify(R)!==JSON.stringify(L)){ updated++; remoteWon.push(k); }
+    merged.push(winner);
+  });
+  return {merged,tombs,adopted,updated,removed,remoteWon,removedKeys};
+}
+function _normalizePlanningItem(p){ if(p.parked===undefined)p.parked=false; if(!p.ppStatus)p.ppStatus='lead'; return p; }
+// Stamp `_m` on every local item that changed since it was last written/adopted.
+// The single choke point — no mutation site anywhere needs to remember timestamps.
+function _stampDomain(domain){
+  const keyFn=_domainKeyFn(domain),now=new Date().toISOString(),m=_lastWrittenItems[domain];
+  _domainLocalArr(domain).forEach(it=>{ const k=keyFn(it); if(JSON.stringify(it)!==m.get(k)) it._m=now; });
+}
+// Has this domain changed (edits, additions, or deletions) since last write/adopt?
+function _domainDirty(domain){
+  const local=_domainLocalArr(domain),m=_lastWrittenItems[domain],keyFn=_domainKeyFn(domain);
+  if(local.length!==m.size) return true;
+  const seq=[];
+  for(const it of local){ const k=keyFn(it); if(JSON.stringify(it)!==m.get(k)) return true; seq.push(k); }
+  return seq.join('\u0001')!==_lastWrittenKeySeq[domain]; // pure reorder — items identical, order not
+}
+function _domainPayload(domain){
+  const cutoff=new Date(Date.now()-TOMB_TTL_MS).toISOString();
+  const tombs=_domainTombs[domain];
+  [...tombs].forEach(([k,ts])=>{ if(ts<cutoff) tombs.delete(k); });
+  const tombRecords=[...tombs].map(([k,ts])=>({_del:k,_m:ts}));
+  return JSON.stringify(_domainLocalArr(domain).concat(tombRecords));
+}
+function _snapshotDomainItems(domain){
+  const m=_lastWrittenItems[domain],keyFn=_domainKeyFn(domain);
+  m.clear();
+  const seq=[];
+  _domainLocalArr(domain).forEach(it=>{ const k=keyFn(it); m.set(k,JSON.stringify(it)); seq.push(k); });
+  _lastWrittenKeySeq[domain]=seq.join('\u0001');
+}
 async function _saveDomainMerged(domain){
   const rowId=_domainRowId(domain);
   if(!rowId) throw new Error('no row id for '+domain);
-  // 1. Re-fetch the current row so a colleague's additions since our load survive
-  let remote=[];
+  // 1. Stamp local changes, then re-fetch the current row
+  _stampDomain(domain);
+  let remoteLive=[],remoteTombs=new Map();
   try{
     const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+rowId+'?$expand=fields&$select=id,fields');
-    remote=JSON.parse(item?.fields?.Value||'[]');
-    if(!Array.isArray(remote)) remote=[];
-  }catch(e){ remote=[]; console.warn('[domainSave] remote fetch/parse failed for',domain,'— writing local only:',e.message); }
-  // 2. Merge: local wins per item; remote-only items are adopted unless tombstoned
+    const parsed=JSON.parse(item?.fields?.Value||'[]');
+    if(Array.isArray(parsed)){ const sp=_splitDomainRaw(parsed); remoteLive=sp.live; remoteTombs=sp.tombs; }
+  }catch(e){ console.warn('[domainSave] remote fetch/parse failed for',domain,'— writing local only:',e.message); }
+  // 2. Reconcile per item — newest _m wins in both directions
   const local=_domainLocalArr(domain);
-  if(domain==='planning'){
-    const localIds=new Set(local.map(x=>x.id));
-    let adopted=0;
-    remote.forEach(rp=>{ if(rp&&rp.id&&!localIds.has(rp.id)&&!_ppDeleted.has(rp.id)){ if(rp.parked===undefined)rp.parked=false; if(!rp.ppStatus)rp.ppStatus='lead'; local.push(rp); adopted++; } });
-    if(adopted>0){ try{ rebuildSection('planning'); _showSyncInd(adopted+' planning update'+(adopted>1?'s':'')+' from SharePoint'); }catch(e){} }
-  } else {
-    const keyFn=domain==='archive'?_archKey:_histKey;
-    const localKeys=new Set(local.map(keyFn));
-    let adopted=0;
-    remote.forEach(r=>{ if(r&&!localKeys.has(keyFn(r))){ local.push(r); adopted++; } });
-    if(adopted>0&&domain==='history') local.sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
-  }
-  // 3. Write the merged result
-  const payload=JSON.stringify(local);
+  const res=_reconcileDomain(domain,local,remoteLive,remoteTombs);
+  if(domain==='planning') res.merged.forEach(_normalizePlanningItem);
+  if(domain==='history') res.merged.sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
+  local.length=0; res.merged.forEach(x=>local.push(x));
+  _capDomain(domain); // deterministic trim before every write (v828)
+  _domainTombs[domain]=res.tombs;
+  const changes=res.adopted+res.updated+res.removed;
+  if(changes>0&&domain==='planning'){ try{ rebuildSection('planning'); }catch(e){} }
+  if(changes>0) _showSyncInd(changes+' '+(domain==='planning'?'planning':domain)+' update'+(changes>1?'s':'')+' from SharePoint');
+  // 3. Write the merged result (live items + tombstone records)
+  const payload=_domainPayload(domain);
   await graphPatch(BWC_SITE+'/CORE_Config/items/'+rowId+'/fields',{Value:payload});
   _lastWrittenDomains[domain]=payload;
+  _snapshotDomainItems(domain);
 }
 
 function markDirty(proj){
@@ -7706,20 +7825,27 @@ window.addEventListener('beforeunload',()=>{
   const hdrs={'Authorization':'Bearer '+graphToken,'Content-Type':'application/json'};
   // PLANNING_PROJECTS + global state → CORE_Config
   if(_configItemId){
-    fetch(BWC_SITE+'/CORE_Config/items/'+_configItemId+'/fields',{
-      method:'PATCH',headers:hdrs,
-      body:JSON.stringify({Value:JSON.stringify(globalStatePayload())}),
-      keepalive:true
-    });
+    const sharedNow=JSON.stringify(sharedStatePayload());
+    if(sharedNow!==_lastWrittenShared)
+      fetch(BWC_SITE+'/CORE_Config/items/'+_configItemId+'/fields',{
+        method:'PATCH',headers:hdrs,body:JSON.stringify({Value:sharedNow}),keepalive:true
+      });
+  }
+  if(_prefsItemId){
+    const prefsNow=JSON.stringify(userPrefsPayload());
+    if(prefsNow!==_lastWrittenPrefs)
+      fetch(BWC_SITE+'/CORE_Config/items/'+_prefsItemId+'/fields',{
+        method:'PATCH',headers:hdrs,body:JSON.stringify({Value:prefsNow}),keepalive:true
+      });
   }
   // Changed business-data rows → their CORE_Config rows (blind write — no time to merge
   // during unload; the normal debounced path within 900ms of any edit handles merging)
   [['planning',_planningItemId],['archive',_archiveItemId],['history',_historyItemId]].forEach(([domain,rowId])=>{
     if(!rowId) return;
-    const cur=JSON.stringify(_domainLocalArr(domain));
-    if(cur===_lastWrittenDomains[domain]) return;
+    if(!_domainDirty(domain)) return;
+    _stampDomain(domain); // last-second edits still get their _m before the blind write
     fetch(BWC_SITE+'/CORE_Config/items/'+rowId+'/fields',{
-      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:cur}),keepalive:true
+      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:_domainPayload(domain)}),keepalive:true
     });
   });
   // Presence sign-off — zero out the heartbeat so peers drop us on their next poll
@@ -7749,34 +7875,72 @@ function triggerSave(dirtyProj){
       const writes=[];
       const dirty=[..._dirtyProjects];
       _dirtyProjects.clear();
+      const conflicts=[]; // projects where a colleague's newer version replaced our unsaved edit
       dirty.forEach(spItemId=>{
         const proj=PROJECTS.find(p=>p._spItemId===spItemId);
         if(!proj) return;
-        const payload=projectGanttPayload(proj);
-        writes.push(
-          graphPatch(BWC_SITE+'/CORE_Projects/items/'+spItemId+'/fields',
-            {GanttData:JSON.stringify(payload)})
-            .catch(e=>{
-              _dirtyProjects.add(spItemId); // re-queue for retry
-              failures.push(proj.name||spItemId);
-              console.error('[save] GanttData patch failed:',spItemId,e);
-            })
-        );
+        writes.push((async()=>{
+          const payload=JSON.stringify(projectGanttPayload(proj));
+          // v826 conflict check: one light GET before the write. If the stored GanttData
+          // moved from our base while we were editing, a colleague changed this project —
+          // freshness wins: adopt theirs, drop ours, announce. If the check itself fails,
+          // proceed with the write (availability over strictness).
+          let remoteRaw=null;
+          try{
+            const it=await graphGet(BWC_SITE+'/CORE_Projects/items/'+spItemId+'?$expand=fields&$select=id,fields');
+            remoteRaw=it?.fields?.GanttData||'';
+          }catch(e){ remoteRaw=null; }
+          const base=_baseGd.get(spItemId);
+          if(remoteRaw!==null&&base!==undefined&&remoteRaw!==base&&remoteRaw!==payload){
+            let adoptedRemote=false;
+            try{
+              const gd=JSON.parse(remoteRaw);
+              Object.assign(proj,gd);
+              proj._spItemId=spItemId;
+              _baseGd.set(spItemId,remoteRaw);
+              conflicts.push(proj.clientName||proj.name||('item '+spItemId));
+              adoptedRemote=true;
+            }catch(e){ console.warn('[save] conflict adopt failed (remote unparsable) — writing local:',spItemId,e); }
+            if(adoptedRemote) return; // our edit is intentionally not written
+          }
+          await graphPatch(BWC_SITE+'/CORE_Projects/items/'+spItemId+'/fields',{GanttData:payload});
+          _baseGd.set(spItemId,payload);
+        })().catch(e=>{
+          _dirtyProjects.add(spItemId); // re-queue for retry
+          failures.push(proj.name||spItemId);
+          console.error('[save] GanttData patch failed:',spItemId,e);
+        }));
       });
       if(_configItemId){
-        writes.push(
-          graphPatch(BWC_SITE+'/CORE_Config/items/'+_configItemId+'/fields',
-            {Value:JSON.stringify(globalStatePayload())})
-            .catch(e=>{
-              failures.push('pipeline settings');
-              console.error('[save] Config patch failed:',e);
-            })
-        );
+        const sharedNow=JSON.stringify(sharedStatePayload());
+        if(sharedNow!==_lastWrittenShared){
+          writes.push(
+            graphPatch(BWC_SITE+'/CORE_Config/items/'+_configItemId+'/fields',{Value:sharedNow})
+              .then(()=>{_lastWrittenShared=sharedNow;})
+              .catch(e=>{
+                failures.push('pipeline settings');
+                console.error('[save] Config patch failed:',e);
+              })
+          );
+        }
+      }
+      if(_prefsItemId){
+        const prefsNow=JSON.stringify(userPrefsPayload());
+        if(prefsNow!==_lastWrittenPrefs){
+          writes.push(
+            graphPatch(BWC_SITE+'/CORE_Config/items/'+_prefsItemId+'/fields',{Value:prefsNow})
+              .then(()=>{_lastWrittenPrefs=prefsNow;})
+              .catch(e=>{
+                failures.push('view preferences');
+                console.error('[save] Prefs patch failed:',e);
+              })
+          );
+        }
       }
       // Business-data rows — merged write, only when the domain actually changed
       [['planning','planning list'],['archive','archive'],['history','approved history']].forEach(([domain,label])=>{
         if(!_domainRowId(domain)) return;
-        if(JSON.stringify(_domainLocalArr(domain))===_lastWrittenDomains[domain]) return;
+        if(!_domainDirty(domain)) return;
         writes.push(
           _saveDomainMerged(domain).catch(e=>{
             failures.push(label);
@@ -7785,6 +7949,10 @@ function triggerSave(dirtyProj){
         );
       });
       await Promise.all(writes);
+      if(conflicts.length>0){
+        try{ buildAll(); }catch(e){ console.error('[save] rebuild after conflict adopt failed:',e); }
+        _showConflictNotice(conflicts);
+      }
       if(failures.length>0){
         setSaveState('error');
         _showSaveError(failures);
@@ -7806,6 +7974,7 @@ function _showSaveError(items){
   const banner=document.getElementById('sp-error-banner');
   const msg=document.getElementById('sp-error-msg');
   if(!banner||!msg) return;
+  const _rb=banner.querySelector('.seb-retry'); if(_rb)_rb.style.display=''; // conflict notice may have hidden it
   const list=items.map(s=>`<strong>${escH(s)}</strong>`).join(', ');
   msg.innerHTML=`SharePoint save FAILED — the following were <strong>NOT written</strong>: ${list}. Use <em>Retry Save</em> or reload the page.`;
   banner.classList.add('visible');
@@ -7814,16 +7983,33 @@ function _showSaveError(items){
 function _clearSaveError(){
   document.getElementById('sp-error-banner')?.classList.remove('visible');
   document.body.classList.remove('has-save-error');
+  const _rb=document.querySelector('#sp-error-banner .seb-retry'); if(_rb)_rb.style.display='';
   if(_corruptProjects.length&&!_corruptAcked) _showCorruptWarning(); // quarantine notice outlives save-status churn
+}
+// v826: a colleague changed a project while the user was editing it. Freshness wins —
+// their newer version is already on screen; this banner is the announcement that the
+// user's unsaved change was replaced and needs redoing. No action required (Byron's
+// call: near-zero real collision odds at team scale; visibility is what matters).
+function _showConflictNotice(names){
+  const banner=document.getElementById('sp-error-banner');
+  const msg=document.getElementById('sp-error-msg');
+  if(!banner||!msg) return;
+  const list=names.map(s=>`<strong>${escH(s)}</strong>`).join(', ');
+  msg.innerHTML=`${list} ${names.length>1?'were':'was'} updated by a colleague while you were editing — the newer version is now shown. Your unsaved change ${names.length>1?'to these projects':''} was <strong>not saved</strong> and needs to be redone.`;
+  const rb=banner.querySelector('.seb-retry'); if(rb)rb.style.display='none'; // announcement — nothing to retry
+  banner.classList.add('visible');
+  document.body.classList.add('has-save-error');
 }
 let _corruptAcked=false; // user dismissed the quarantine banner — don't resurrect it this session
 let _corruptProjects=[]; // clientNames of projects whose GanttData failed to parse at load
 let _maxLoadedModified=null; // newest SharePoint lastModifiedDateTime seen during load — anchors background sync
+let _baseGd=new Map(); // spItemId → GanttData string as last loaded/synced/written — basis for save-time conflict detection (v826)
 function _showCorruptWarning(){
   if(!_corruptProjects.length) return;
   const banner=document.getElementById('sp-error-banner');
   const msg=document.getElementById('sp-error-msg');
   if(!banner||!msg) return;
+  const _rb=banner.querySelector('.seb-retry'); if(_rb)_rb.style.display='';
   const list=_corruptProjects.map(s=>`<strong>${escH(s)}</strong>`).join(', ');
   msg.innerHTML=`Damaged schedule data found for: ${list}. A default schedule is shown instead, and saves for ${_corruptProjects.length>1?'these projects are':'this project is'} <strong>blocked</strong> to protect the original data in SharePoint. The GanttData field for ${_corruptProjects.length>1?'these items':'this item'} in CORE_Projects needs to be repaired or cleared before editing can resume.`;
   banner.classList.add('visible');
@@ -8054,7 +8240,7 @@ function buildPlanningSection(){
       if(!pp._fromLeadId) continue; // keep legacy entries with no source link
       const src=PROJECTS.find(p=>p.id===pp._fromLeadId||
         (pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,'')));
-      if(src&&!src.isLead){ _ppDeleted.add(PLANNING_PROJECTS[i].id); PLANNING_PROJECTS.splice(i,1); }
+      if(src&&!src.isLead){ _tombstone('planning',PLANNING_PROJECTS[i].id); PLANNING_PROJECTS.splice(i,1); }
     }
     if(PLANNING_PROJECTS.some(pp=>!pp.slotId&&!pp.slotWeek)) triggerSave(); // persist any new entries
   })();
@@ -8765,6 +8951,7 @@ function buildPlanningSection(){
 
 const SECTION_BUILDERS={design:buildDesignSection, production:buildProdSection, planning:buildPlanningSection};
 function rebuildSection(sType){
+  _staleSections.delete(sType); // any rebuild makes the lens current
   PROJECTS.forEach(proj=>initPhaseStartWeeks(proj));
   if(sType==='planning') _ppDragInited=false;
   const iw=document.getElementById('iw');
@@ -8829,6 +9016,7 @@ function rebuildSection(sType){
 }
 
 function buildAll(){
+  _staleSections.clear(); // full rebuild makes every lens current
   PROJECTS.forEach(proj=>initPhaseStartWeeks(proj));
   // Auto-advance statuses based on milestone dates; also save if normalization renamed any phases
   if(autoAdvanceStatus()||_dirtyProjects.size>0) triggerSave();
@@ -9189,9 +9377,11 @@ async function loadProjects(saved){
   PROJECTS.length=0;
   _corruptProjects.length=0;
   _maxLoadedModified=null;
+  _baseGd.clear();
   items.forEach(item=>{
     if(item.lastModifiedDateTime&&(!_maxLoadedModified||item.lastModifiedDateTime>_maxLoadedModified)) _maxLoadedModified=item.lastModifiedDateTime;
     const f=item.fields||{};
+    _baseGd.set(item.id,f.GanttData||'');
     const stage=f.PipelineStage||'';
     const status=spStageToStatus(stage);
     if(status==='archived'||status==='cancelled') return;
@@ -9392,6 +9582,7 @@ async function _fetchPMReviews(){
   }
 }
 let _isBgSyncing=false;
+let _staleSections=new Set(); // lenses whose data changed via bg sync while hidden; rebuilt on focus entry
 const BG_SYNC_MS=30_000;
 
 function _showSyncInd(msg){
@@ -9413,11 +9604,20 @@ async function _bgSync(){
     // Business-data rows (planning/archive/history) — must run before the early return
     // below, since a colleague's planning-only change doesn't touch CORE_Projects
     _refreshDomainsFromSP().catch(()=>{});
-    // Fetch items changed since last sync (Graph supports ISO filter on lastModifiedDateTime)
-    const since=encodeURIComponent(_lastSyncTs);
-    const url=BWC_SITE+`/CORE_Projects/items?$expand=fields&$select=id,lastModifiedDateTime,fields&$filter=lastModifiedDateTime gt '${since}'`;
+    // Detect changed items client-side. Graph's $filter on lastModifiedDateTime for list
+    // items is unreliable (non-indexed; failed silently here through v824 — the same wall
+    // _fetchPMReviews hit, which is why it also filters client-side). Instead: one light
+    // sweep of id+timestamp for all items (no $expand, cheap), compare against the anchor,
+    // then fetch fields only for the handful that actually changed.
     let changed=[];
-    try{ changed=await graphGetAll(url); }catch(e){ _isBgSyncing=false; return; }
+    try{
+      const sweep=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$select=id,lastModifiedDateTime');
+      const newer=sweep.filter(it=>it.lastModifiedDateTime&&it.lastModifiedDateTime>_lastSyncTs);
+      for(const it of newer){
+        const full=await graphGet(BWC_SITE+'/CORE_Projects/items/'+it.id+'?$expand=fields&$select=id,lastModifiedDateTime,fields');
+        changed.push(full);
+      }
+    }catch(e){ console.warn('[bgSync] change sweep failed:',e.message); _isBgSyncing=false; return; }
     if(!changed.length){_isBgSyncing=false;return;}
     // Advance the anchor to the newest SERVER timestamp in this batch (never the local
     // clock — a fast local clock would filter out colleagues' subsequent changes).
@@ -9438,10 +9638,11 @@ async function _bgSync(){
         if(_dirtyProjects.has(existing._spItemId))return;
         // Self-echo: this change is our own recent save coming back around. The stored
         // payload is byte-identical to what we'd serialize right now — nothing to merge.
-        if(!existing._gdCorrupt&&raw===JSON.stringify(projectGanttPayload(existing)))return;
+        if(!existing._gdCorrupt&&raw===JSON.stringify(projectGanttPayload(existing))){_baseGd.set(item.id,raw);return;}
         const gd=JSON.parse(raw);
         Object.assign(existing,gd);
         existing._spItemId=item.id;
+        _baseGd.set(item.id,raw);
         if(existing._gdCorrupt){
           // Valid GanttData arrived from SharePoint (repaired remotely) — lift the quarantine
           delete existing._gdCorrupt;
@@ -9456,8 +9657,10 @@ async function _bgSync(){
     });
     if(patchedCount>0){
       const current=document.body.getAttribute('data-focus')||'production';
-      // Only rebuild the visible section immediately; other sections rebuild on next focus switch
-      if(rebuildNeeded.has(current)) rebuildSection(current);
+      // Rebuild the visible section immediately; mark hidden ones stale so setFocus
+      // rebuilds them on entry (setFocus is a pure CSS visibility swap otherwise —
+      // through v824 hidden sections silently rendered stale data after a sync).
+      rebuildNeeded.forEach(s=>{ if(s===current) rebuildSection(s); else _staleSections.add(s); });
       _showSyncInd(`${patchedCount} update${patchedCount>1?'s':''} from SharePoint`);
     }
     if(maxServerTs)_lastSyncTs=maxServerTs;
@@ -9517,33 +9720,50 @@ function _startPresence(){
 function _stopPresence(){ clearInterval(_presenceTimer); _presenceTimer=null; }
 
 // Pull colleagues' business-data changes into idle tabs (called from _bgSync).
-// Additive adopt only — full two-sided conflict resolution is the optimistic-
-// concurrency follow-up. A colleague's DELETION propagates on reload, not live.
+// v826: true per-item reconciliation — remote-newer items replace local, remote
+// tombstones remove local items live (no reload needed), local-newer edits are kept
+// and will win the next merged save.
 async function _refreshDomainsFromSP(){
-  const domains=[['planning',_planningItemId],['archive',_archiveItemId],['history',_historyItemId]];
-  for(const [domain,rowId] of domains){
+  const domains=['planning','archive','history'];
+  for(const domain of domains){
+    const rowId=_domainRowId(domain);
     if(!rowId) continue;
+    // Unsaved local edits in flight (inside the 900ms save debounce) — don't reconcile
+    // over them; the merged save resolves properly within the second. Mirrors the
+    // _dirtyProjects guard on the CORE_Projects side.
+    if(_domainDirty(domain)) continue;
     try{
       const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+rowId+'?$expand=fields&$select=id,fields');
       const raw=item?.fields?.Value||'[]';
       if(raw===_lastWrittenDomains[domain]) continue; // nothing new remotely
-      let remote=[]; try{ remote=JSON.parse(raw); }catch(e){ continue; }
-      if(!Array.isArray(remote)) continue;
+      let parsed=[]; try{ parsed=JSON.parse(raw); }catch(e){ continue; }
+      if(!Array.isArray(parsed)) continue;
+      const {live:remoteLive,tombs:remoteTombs}=_splitDomainRaw(parsed);
       const local=_domainLocalArr(domain);
-      let adopted=0;
-      if(domain==='planning'){
-        const localIds=new Set(local.map(x=>x.id));
-        remote.forEach(rp=>{ if(rp&&rp.id&&!localIds.has(rp.id)&&!_ppDeleted.has(rp.id)){ if(rp.parked===undefined)rp.parked=false; if(!rp.ppStatus)rp.ppStatus='lead'; local.push(rp); adopted++; } });
-        if(adopted>0){ try{ rebuildSection('planning'); }catch(e){} }
-      } else {
-        const keyFn=domain==='archive'?_archKey:_histKey;
-        const localKeys=new Set(local.map(keyFn));
-        remote.forEach(r=>{ if(r&&!localKeys.has(keyFn(r))){ local.push(r); adopted++; } });
-        if(adopted>0&&domain==='history') local.sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
+      const res=_reconcileDomain(domain,local,remoteLive,remoteTombs);
+      const changes=res.adopted+res.updated+res.removed;
+      if(changes>0){
+        if(domain==='planning') res.merged.forEach(_normalizePlanningItem);
+        if(domain==='history') res.merged.sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
+        local.length=0; res.merged.forEach(x=>local.push(x));
+        _domainTombs[domain]=res.tombs;
+        // Snapshot only the items the remote side won (or removed) — a genuinely dirty
+        // local edit must keep looking dirty so the save path still writes it.
+        const keyFn=_domainKeyFn(domain),m=_lastWrittenItems[domain];
+        const byKey=new Map(); local.forEach(it=>byKey.set(keyFn(it),it));
+        res.remoteWon.forEach(k=>{ const it=byKey.get(k); if(it)m.set(k,JSON.stringify(it)); });
+        res.removedKeys.forEach(k=>m.delete(k));
+        // Adoption reshuffles the array — advance the order baseline too, or the domain
+        // looks permanently order-dirty and the raw-skip (and the guard above) misfire
+        _lastWrittenKeySeq[domain]=local.map(it=>keyFn(it)).join('\u0001');
+        if(domain==='planning'){
+          const cur=document.body.getAttribute('data-focus')||'production';
+          try{ if(cur==='planning') rebuildSection('planning'); else _staleSections.add('planning'); }catch(e){}
+        }
+        _showSyncInd(changes+' '+(domain==='planning'?'planning':domain)+' update'+(changes>1?'s':'')+' from SharePoint');
       }
-      if(adopted>0) _showSyncInd(adopted+' '+(domain==='planning'?'planning':domain)+' update'+(adopted>1?'s':'')+' from SharePoint');
-      // If local and remote now match, advance the snapshot so we skip cheaply next tick
-      if(JSON.stringify(local)===raw) _lastWrittenDomains[domain]=raw;
+      // Advance the cheap-skip snapshot only when we're fully in step with the store
+      if(changes===0&&!_domainDirty(domain)) _lastWrittenDomains[domain]=raw;
     }catch(e){ /* transient — try again next tick */ }
   }
 }
@@ -9791,17 +10011,48 @@ async function initFromSharePoint(){
     const _ar=await _ensureDomainRow('pipeline_archive',saved?.ARCHIVE);
     const _hi=await _ensureDomainRow('approved_history',saved?.APPROVED_HISTORY);
     _planningItemId=_pl.id; _archiveItemId=_ar.id; _historyItemId=_hi.id;
+    // v826: stored rows carry live items + tombstone records — split before anything
+    // downstream sees them (in-memory arrays stay tombstone-free; render sites unchanged)
+    const _plSp=_splitDomainRaw(_pl.arr),_arSp=_splitDomainRaw(_ar.arr),_hiSp=_splitDomainRaw(_hi.arr);
+    _domainTombs.planning=_plSp.tombs; _domainTombs.archive=_arSp.tombs; _domainTombs.history=_hiSp.tombs;
     // The rows are now authoritative — override whatever the legacy blob carried
     saved=saved||{};
-    saved.PLANNING_PROJECTS=_pl.arr; saved.ARCHIVE=_ar.arr; saved.APPROVED_HISTORY=_hi.arr;
+    saved.PLANNING_PROJECTS=_plSp.live; saved.ARCHIVE=_arSp.live; saved.APPROVED_HISTORY=_hiSp.live;
+    // ── v827: per-user view preferences row (create seeded from the shared blob's
+    // legacy view fields on first load, then overlay so personal values win) ──
+    try{
+      const pk=_prefsKey();
+      const prefsRow=_findCfgRow(pk);
+      if(prefsRow){
+        _prefsItemId=prefsRow.id;
+        try{
+          const prefs=JSON.parse(prefsRow.fields?.Value||'{}');
+          if(prefs&&typeof prefs==='object') Object.assign(saved,prefs);
+        }catch(e){ console.warn('[v827] Bad JSON in '+pk+' — using shared view state this session:',e); }
+      } else {
+        // Seed from whatever view state the legacy shared blob carries — everyone
+        // inherits today's shared arrangement once, then diverges freely
+        const seedKeys=['PROD_ROW_ORDER','DES_ROW_ORDER','PROD_PM_COLLAPSED','PROD_LC_COLLAPSED','PROD_LC_EXPANDED','LC_PROJ_EXPANDED','LC_DESIGN_MS_HIDDEN','PROD_UNASSIGNED_COLLAPSED','DESIGN_UNASSIGNED_COLLAPSED','DESIGN_COLLAPSED','DES_CURVES_ENABLED','DES_MS_HIDDEN','CAL_VIEW','PROJ_SORT_ORDER','PROD_PANEL_OPEN','PANEL_ACTIVE_SECTION'];
+        const seed={};
+        seedKeys.forEach(k=>{ if(saved[k]!==undefined) seed[k]=saved[k]; });
+        const data=await graphPost(BWC_SITE+'/CORE_Config/items',
+          {fields:{Title:pk,Key:pk,Value:JSON.stringify(seed)}});
+        _prefsItemId=data.id;
+        console.log('[v827] Created '+pk+' row (seeded from shared view state), id:',data.id);
+      }
+    }catch(e){ console.warn('[v827] Prefs row init failed — personal view state will not persist this session:',e); }
     await loadTeamMembers(saved);
     await loadProjects(saved);
     // Extract Trello credentials from the same CORE_Config fetch (no extra round-trip)
     const _cfgGet=key=>{const r=cfgItems.find(it=>(it.fields?.Title||it.fields?.Key||'')===key);return r?(r.fields?.Value||r.fields?.Value0||''):'';};
     restoreSavedState(saved);
-    _lastWrittenDomains.planning=JSON.stringify(PLANNING_PROJECTS);
-    _lastWrittenDomains.archive=JSON.stringify(ARCHIVE);
-    _lastWrittenDomains.history=JSON.stringify(APPROVED_HISTORY);
+    _lastWrittenDomains.planning=_domainPayload('planning');
+    _lastWrittenDomains.archive=_domainPayload('archive');
+    _lastWrittenDomains.history=_domainPayload('history');
+    _capDomain('archive'); _capDomain('history'); // v828: trim the display caches at load too
+    _snapshotDomainItems('planning'); _snapshotDomainItems('archive'); _snapshotDomainItems('history');
+    _lastWrittenShared=JSON.stringify(sharedStatePayload());
+    _lastWrittenPrefs=JSON.stringify(userPrefsPayload());
     const _trKey=_cfgGet('TrelloApiKey'),_trTok=_cfgGet('TrelloToken'),_trBrd=_cfgGet('TrelloSalesBoardId');
     if(_trKey&&_trTok&&_trBrd) _trelloCfg={apiKey:_trKey,token:_trTok,boardId:_trBrd};
     PROJECTS.forEach(p=>{ p.collapsed=true; }); // always open collapsed
@@ -10022,6 +10273,10 @@ function setFocus(name,opts){
   const body=document.body;
   const current=body.getAttribute('data-focus');
   if(current===name&&!opts.force) return;
+  // Background sync touched this lens while it was hidden — rebuild before revealing.
+  // Safe while display:none (buildAll constructs hidden sections routinely); the shared
+  // scroll position is re-applied below once the section is visible.
+  if(_staleSections.has(name)){ try{ rebuildSection(name); }catch(e){ console.warn('[focus] stale rebuild failed:',e); } }
   // Update header total for the incoming section type
   const _appH=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--app-h'))||44;
   const _slbH=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--slb-h'))||22;
@@ -10497,9 +10752,31 @@ function weekToDateStr(w){
 function archiveProject(projId, note='', cancelled=false, lost=false){
   const idx=PROJECTS.findIndex(p=>p.id===projId); if(idx===-1)return;
   const proj=PROJECTS.splice(idx,1)[0];
+  // v828 fix: this path bypassed setStatus, so PipelineStage was never written and the
+  // project resurrected on the next reload. Persist the final stage (lost maps to
+  // Archive — the lost flag lives in the ARCHIVE record for the modal's filter) and a
+  // final GanttData write so the row keeps the project's ending schedule permanently.
+  if(proj._spItemId){
+    const stage=cancelled?'Cancelled':'Archive';
+    graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',
+      {PipelineStage:stage,GanttData:JSON.stringify(projectGanttPayload(proj))})
+      .then(()=>{ _baseGd.set(proj._spItemId,JSON.stringify(projectGanttPayload(proj))); })
+      .catch(e=>{
+        console.error('[archive] Stage persist failed — project may reappear after reload:',proj.name,e);
+        // No general toast exists in this file; the error banner is the honest affordance
+        try{
+          const banner=document.getElementById('sp-error-banner'),msg=document.getElementById('sp-error-msg');
+          if(banner&&msg){
+            msg.innerHTML=`Archiving <strong>${escH(proj.name||'project')}</strong> did <strong>NOT save</strong> to SharePoint — it may reappear after reload. Archive it again, or check the console.`;
+            const rb=banner.querySelector('.seb-retry'); if(rb)rb.style.display='none';
+            banner.classList.add('visible'); document.body.classList.add('has-save-error');
+          }
+        }catch(_){}
+      });
+  }
   // Remove from planning board if present
   const ppIdx=PLANNING_PROJECTS.findIndex(p=>p._fromLeadId===projId||p.id===projId);
-  if(ppIdx>-1){ _ppDeleted.add(PLANNING_PROJECTS[ppIdx].id); PLANNING_PROJECTS.splice(ppIdx,1); }
+  if(ppIdx>-1){ _tombstone('planning',PLANNING_PROJECTS[ppIdx].id); PLANNING_PROJECTS.splice(ppIdx,1); }
   const des=DESIGNERS.find(d=>d.id===proj.designer);
   const pm=PROD_PMS.find(p=>p.id===proj.productionPM);
 
@@ -11751,6 +12028,43 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v828', date: '2026-07-11',
+    entries: [
+      'Fixed: archiving, cancelling, or marking a project lost now saves that final status to SharePoint. Previously the project quietly kept its old stage and came back on the next reload \u2014 while its snapshot also sat in the archive. Duplicate archive entries were this bug\u2019s fingerprint; they are harmless and can be ignored or hand-cleaned.',
+      'The archived project\u2019s SharePoint row now also keeps its final schedule permanently, so the archive record and the row agree.',
+      'If that final save fails, a banner says so plainly instead of the failure vanishing into the console.',
+      'Housekeeping caps: the archive display keeps roughly the last 24 months and approved history keeps the newest 200 entries, trimmed the same way on every save so these lists can\u2019t grow without bound.',
+      'DEPLOY NOTE: this release carries v825\u2013v828 in one hop \u2014 everyone must close and reopen the Pipeline once after it goes live (a tab still on an older version would mishandle the new deletion records).'
+    ]
+  },
+  {
+    version: 'v827', date: '2026-07-11',
+    entries: [
+      'Your view is now yours: collapsed sections, calendar date ranges, row arrangements, project order, and the Key Dates panel state are saved per person instead of shared. Collapsing a section no longer collapses it for everyone.',
+      'On your first open after this version, you inherit the current shared arrangement as your starting point \u2014 from there, your layout and everyone else\u2019s diverge freely.',
+      'Team facts stay team facts: slot usage, capacity targets, slot budgets, and the Key Dates warning thresholds remain shared by everyone.',
+      'Note: because row and project arrangements are now personal, dragging rows into an order no longer broadcasts that arrangement to colleagues \u2014 what you arrange is what you see.'
+    ]
+  },
+  {
+    version: 'v826', date: '2026-07-11',
+    entries: [
+      'Every planning card, archive entry, and history entry now carries its own last-modified timestamp. When two people\u2019s changes meet, the newer one wins per item \u2014 in both directions \u2014 instead of one person\u2019s whole list overwriting the other\u2019s.',
+      'Deleting a planning card now sticks: the deletion is recorded durably, propagates to colleagues\u2019 open tabs live, and can no longer be silently resurrected by someone else\u2019s save. (Old deletion records clean themselves up after 30 days.)',
+      'Colleagues\u2019 edits to existing planning cards now appear in your open tab automatically \u2014 previously only newly added cards did.',
+      'If a colleague changes a project while you have an unsaved edit to that same project, their newer version now takes over and a banner tells you plainly that your change was not saved and needs redoing. Previously whoever saved last silently won.',
+      'DEPLOY NOTE: everyone must close and reopen the Pipeline once after this version goes live. A tab still running v825 would mishandle the new deletion records \u2014 same one-time ritual as v824.'
+    ]
+  },
+  {
+    version: 'v825', date: '2026-07-11',
+    entries: [
+      'Fixed: colleagues\u2019 project changes (schedule moves, milestone updates, status changes) now actually arrive in open tabs on the 30-second sync. The check that looked for changed projects had been failing silently on every cycle \u2014 a hard refresh was the only way to see someone else\u2019s work. The Pipeline now detects changes itself instead of relying on a SharePoint query feature that doesn\u2019t work dependably.',
+      'Fixed: when a sync brings in changes to a lens you\u2019re not currently viewing, that lens now rebuilds the moment you switch to it. Previously it could quietly show stale data until something else forced a redraw.',
+      'Sync failures now log to the browser console instead of vanishing without a trace.'
+    ]
+  },
   {
     version: 'v824', date: '2026-07-11',
     entries: [
