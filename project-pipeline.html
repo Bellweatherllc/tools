@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v820</title>
+<title>BW Project Pipeline — v821</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2670,7 +2670,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v820</div>
+    <div class="auth-version" id="authVersionBadge">v821</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2689,7 +2689,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v820</div>
+  <div class="proto-badge" id="versionBadge">v821</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -7626,7 +7626,7 @@ function globalStatePayload(){
 }
 function projectGanttPayload(proj){
   // Everything except SP-owned fields (name, address, status, estimatedValue) and diagnostics
-  const {name,address,status,estimatedValue,clientName,projectName,_rawStage,docUrls,...rest}=proj;
+  const {name,address,status,estimatedValue,clientName,projectName,_rawStage,docUrls,_gdCorrupt,...rest}=proj;
   return rest;
 }
 // Write person display name to SP column when a project is assigned/unassigned
@@ -7642,6 +7642,10 @@ function _patchPersonNameToSP(proj, personField, personId) {
 }
 
 function markDirty(proj){
+  if(proj&&proj._gdCorrupt){
+    console.warn('[v821] Save blocked for quarantined project (damaged GanttData):',proj.clientName||proj.name);
+    return;
+  }
   if(proj&&proj._spItemId) _dirtyProjects.add(proj._spItemId);
 }
 
@@ -7709,7 +7713,9 @@ function triggerSave(dirtyProj){
         _showSaveError(failures);
       } else {
         setSaveState('saved');
-        _lastSyncTs=new Date().toISOString(); // our own save — advance anchor so we don't re-fetch it
+        // Note: the sync anchor is NOT advanced here. Our own save will echo back on the
+        // next background sync, where it's recognized (identical payload) and skipped —
+        // and the anchor advances to SharePoint's server timestamp, immune to clock skew.
         _clearSaveError();
       }
     }catch(e){
@@ -7731,9 +7737,24 @@ function _showSaveError(items){
 function _clearSaveError(){
   document.getElementById('sp-error-banner')?.classList.remove('visible');
   document.body.classList.remove('has-save-error');
+  if(_corruptProjects.length&&!_corruptAcked) _showCorruptWarning(); // quarantine notice outlives save-status churn
+}
+let _corruptAcked=false; // user dismissed the quarantine banner — don't resurrect it this session
+let _corruptProjects=[]; // clientNames of projects whose GanttData failed to parse at load
+let _maxLoadedModified=null; // newest SharePoint lastModifiedDateTime seen during load — anchors background sync
+function _showCorruptWarning(){
+  if(!_corruptProjects.length) return;
+  const banner=document.getElementById('sp-error-banner');
+  const msg=document.getElementById('sp-error-msg');
+  if(!banner||!msg) return;
+  const list=_corruptProjects.map(s=>`<strong>${s}</strong>`).join(', ');
+  msg.innerHTML=`Damaged schedule data found for: ${list}. A default schedule is shown instead, and saves for ${_corruptProjects.length>1?'these projects are':'this project is'} <strong>blocked</strong> to protect the original data in SharePoint. The GanttData field for ${_corruptProjects.length>1?'these items':'this item'} in CORE_Projects needs to be repaired or cleared before editing can resume.`;
+  banner.classList.add('visible');
+  document.body.classList.add('has-save-error');
 }
 function _dismissSaveError(){
   // User dismisses knowing data is not saved — keep error dot in save indicator
+  if(_corruptProjects.length) _corruptAcked=true;
   document.getElementById('sp-error-banner')?.classList.remove('visible');
   document.body.classList.remove('has-save-error');
 }
@@ -8896,11 +8917,13 @@ function hideAuthOverlay(){
   if(ov) ov.style.display='none';
 }
 
+let graphToken=null; // cached access token — kept fresh by getToken(); used by the synchronous beforeunload flush
 async function getToken(){
   const acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
   if(!acct) throw new Error('No account — sign in first');
   try{
     const r=await msalApp.acquireTokenSilent({scopes:SP_SCOPES,account:acct});
+    graphToken=r.accessToken;
     return r.accessToken;
   }catch(e){
     // Silent failed — redirect for interaction
@@ -9085,9 +9108,12 @@ function matchPersonByName(nameStr, arr){
 // ── Load projects from CORE_Projects ──
 async function loadProjects(saved){
   setAuthStatus('Loading projects…');
-  const items=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,fields');
+  const items=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,lastModifiedDateTime,fields');
   PROJECTS.length=0;
+  _corruptProjects.length=0;
+  _maxLoadedModified=null;
   items.forEach(item=>{
+    if(item.lastModifiedDateTime&&(!_maxLoadedModified||item.lastModifiedDateTime>_maxLoadedModified)) _maxLoadedModified=item.lastModifiedDateTime;
     const f=item.fields||{};
     const stage=f.PipelineStage||'';
     const status=spStageToStatus(stage);
@@ -9099,14 +9125,21 @@ async function loadProjects(saved){
     const address=f.Address||'';
     const estimatedValue=f.EstimatedProjectValue?'$'+Number(String(f.EstimatedProjectValue).replace(/[^0-9.]/g,'')).toLocaleString():'';
     // GanttData col is the scheduling authority
-    let ganttData=null;
-    if(f.GanttData){ try{ ganttData=JSON.parse(f.GanttData); }catch(e){ console.warn('[v394] Bad GanttData for',projId,e); } }
+    let ganttData=null, gdDamaged=false;
+    if(f.GanttData){ try{ ganttData=JSON.parse(f.GanttData); }catch(e){ gdDamaged=true; console.warn('[v821] Bad GanttData for',projId,e); } }
     let proj;
     if(ganttData){
       proj=ganttData;
       proj._spItemId=item.id;
     } else {
       proj=makeDefaultSchedule(item.id,clientName,address,status,f);
+      if(gdDamaged){
+        // The stored GanttData exists but is unreadable. Show the default schedule for
+        // display, but quarantine this project: markDirty() refuses it, so nothing can
+        // overwrite the damaged-but-possibly-recoverable original in SharePoint.
+        proj._gdCorrupt=true;
+        _corruptProjects.push(clientName);
+      }
     }
     // SP always owns these fields — overwrite GanttData values
     proj.status=status;
@@ -9306,6 +9339,12 @@ async function _bgSync(){
     let changed=[];
     try{ changed=await graphGetAll(url); }catch(e){ _isBgSyncing=false; return; }
     if(!changed.length){_isBgSyncing=false;return;}
+    // Advance the anchor to the newest SERVER timestamp in this batch (never the local
+    // clock — a fast local clock would filter out colleagues' subsequent changes).
+    let maxServerTs=null;
+    changed.forEach(item=>{
+      if(item.lastModifiedDateTime&&(!maxServerTs||item.lastModifiedDateTime>maxServerTs)) maxServerTs=item.lastModifiedDateTime;
+    });
     const rebuildNeeded=new Set();
     let patchedCount=0;
     changed.forEach(item=>{
@@ -9314,13 +9353,21 @@ async function _bgSync(){
       const raw=item.fields?.GanttData;
       if(!raw)return;
       try{
-        const gd=JSON.parse(raw);
         const existing=PROJECTS[idx];
-        // Only merge if the remote version is newer than what we have locally
-        // (guards against overwriting a save we just made)
+        // Guard against overwriting local edits that haven't been saved yet
         if(_dirtyProjects.has(existing._spItemId))return;
+        // Self-echo: this change is our own recent save coming back around. The stored
+        // payload is byte-identical to what we'd serialize right now — nothing to merge.
+        if(!existing._gdCorrupt&&raw===JSON.stringify(projectGanttPayload(existing)))return;
+        const gd=JSON.parse(raw);
         Object.assign(existing,gd);
         existing._spItemId=item.id;
+        if(existing._gdCorrupt){
+          // Valid GanttData arrived from SharePoint (repaired remotely) — lift the quarantine
+          delete existing._gdCorrupt;
+          const ci=_corruptProjects.indexOf(existing.clientName);
+          if(ci>=0)_corruptProjects.splice(ci,1);
+        }
         if(existing.designer)    rebuildNeeded.add('design');
         if(existing.productionPM) rebuildNeeded.add('production');
         rebuildNeeded.add('planning');
@@ -9333,7 +9380,7 @@ async function _bgSync(){
       if(rebuildNeeded.has(current)) rebuildSection(current);
       _showSyncInd(`${patchedCount} update${patchedCount>1?'s':''} from SharePoint`);
     }
-    _lastSyncTs=new Date().toISOString();
+    if(maxServerTs)_lastSyncTs=maxServerTs;
     _fetchPMReviews(); // refresh PM review entries alongside project sync
   }catch(e){
     console.warn('[bgSync] error:',e);
@@ -9582,7 +9629,10 @@ if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('pro
     (()=>{ const m=document.title.match(/v(\d+)/); if(m){ document.getElementById('versionBadge').textContent='v'+m[1]; const ab=document.getElementById('authVersionBadge'); if(ab) ab.textContent='v'+m[1]; } })();
     patchSaveHooks();
     hideAuthOverlay();
-    _lastSyncTs=new Date().toISOString(); // anchor for background sync
+    _showCorruptWarning(); // no-op unless loadProjects quarantined damaged GanttData
+    // Anchor background sync to SharePoint's own clock (newest item timestamp seen at load).
+    // Local clock is only a fallback — a fast local clock would silently skip colleagues' updates.
+    _lastSyncTs=_maxLoadedModified||new Date().toISOString();
     _fetchPMReviews(); // load PM review entries for Weekly Review panel
     _startBgSync();
     _trelloSync().catch(e=>console.warn('[trelloSync] startup failed:',e));
@@ -11506,6 +11556,14 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v821', date: '2026-07-11',
+    entries: [
+      'Fixed a dormant bug: the safety net meant to save your changes when closing or refreshing the tab had never actually worked. It now does — closing the tab right after an edit no longer risks losing it.',
+      'If a project\u2019s stored schedule data is ever damaged, the tool now shows a clear warning banner naming the project and blocks saves for it, instead of silently displaying a default schedule and overwriting the original data on your next edit.',
+      'Background sync now uses SharePoint\u2019s own clock instead of your computer\u2019s. A computer with a fast-running clock could previously miss colleagues\u2019 updates without any sign of it.'
+    ]
+  },
   {
     version: 'v819', date: '2026-07-09',
     entries: [
