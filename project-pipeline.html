@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v821</title>
+<title>BW Project Pipeline — v824</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2449,6 +2449,9 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 @keyframes spin{to{transform:rotate(360deg);}}
 
 /* ── ADMIN BANNER ── */
+.presence-badges{display:flex;gap:5px;align-items:center;margin-left:8px;}
+.presence-chip{font-family:'TT Norms Pro',sans-serif;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 9px;border-radius:9px;background:rgba(255,255,255,.10);color:rgba(255,255,255,.78);border:1px solid rgba(255,255,255,.20);white-space:nowrap;cursor:default;}
+.presence-chip.presence-admin{background:#b41414;color:#fff;border-color:#b41414;box-shadow:0 0 7px rgba(180,20,20,.55);}
 .admin-strip{
   position:fixed;top:0;left:0;right:0;width:100%;z-index:600;
   background:#b41414;
@@ -2670,7 +2673,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v821</div>
+    <div class="auth-version" id="authVersionBadge">v824</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2689,8 +2692,9 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v821</div>
+  <div class="proto-badge" id="versionBadge">v824</div>
   <div id="saveStatus" class="save-indicator"></div>
+  <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
     <button type="button" class="focus-btn" data-focus-btn="planning" role="tab" title="Sales Planning — press 1">Sales</button>
@@ -2985,6 +2989,10 @@ let APPROVED_HISTORY=[];
 // ════════════════════════════════════════════════  SESSION HISTORY
 let HISTORY_STACK=[];
 const HISTORY_MAX=30;
+// ── HTML-escape for external free text (project/client names from Trello & SharePoint,
+//    notes, reviewer entries, bug reports). Apply wherever such text is interpolated into
+//    an HTML template. Internal generated markup (icons, buttons) is NOT passed through this.
+function escH(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function _histUser(){
   try{
     const a=typeof msalApp!=='undefined'&&msalApp.getActiveAccount&&msalApp.getActiveAccount();
@@ -3176,8 +3184,8 @@ function renderSessionHistory(){
   };
   list.innerHTML=[...HISTORY_STACK].reverse().map((e,i)=>`
     <div class="sh-row${i===0?' sh-top':''}">
-      <div class="sh-desc">${e.desc}</div>
-      <div class="sh-meta"><span class="sh-user">${e.user}</span><span class="sh-time">${fmt(e.ts)}</span></div>
+      <div class="sh-desc">${escH(e.desc)}</div>
+      <div class="sh-meta"><span class="sh-user">${escH(e.user)}</span><span class="sh-time">${fmt(e.ts)}</span></div>
     </div>`).join('');
 }
 let PROD_PM_COLLAPSED=new Set(); // set of pmId strings
@@ -4365,17 +4373,17 @@ function buildFcMsRow(proj, capacitySection){
     const ppl=el('div','tt-people');
     const sr=el('div','tt-person');
     sr.innerHTML=proj.salesPerson
-      ?`<span class="tt-person-role">Sales</span>${proj.salesPerson.split(' ')[0]}`
+      ?`<span class="tt-person-role">Sales</span>${escH(proj.salesPerson.split(' ')[0])}`
       :`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
     ppl.appendChild(sr);
     const dr=el('div','tt-person');
     if(des){
       const sec=personById(proj.secondaryDesigner);
-      dr.innerHTML=`<span class="tt-person-role">Design</span>${des.label}${sec?` <span style="opacity:.65">+ ${sec.label}</span>`:''}`;
+      dr.innerHTML=`<span class="tt-person-role">Design</span>${escH(des.label)}${sec?` <span style="opacity:.65">+ ${escH(sec.label)}</span>`:''}`;
     } else if(proj.proposedDesigner){
       const propD=personById(proj.proposedDesigner);
       dr.innerHTML=propD
-        ? `<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${propD.label} (proposed)</span>`
+        ? `<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${escH(propD.label)} (proposed)</span>`
         : `<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
     } else {
       dr.innerHTML=`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
@@ -4385,7 +4393,7 @@ function buildFcMsRow(proj, capacitySection){
     const lc1=proj.logisticsCoord1||'', lc2=proj.logisticsCoord2||'';
     const lcStr=[lc1,lc2].filter(Boolean).map(n=>n.split(' ')[0]).join(', ');
     pr.innerHTML=pm
-      ?`<span class="tt-person-role">Production</span>${pm.label}${lcStr?` · ${lcStr}`:''}`
+      ?`<span class="tt-person-role">Production</span>${escH(pm.label)}${lcStr?` · ${escH(lcStr)}`:''}`
       :`<span class="tt-person-role">Production</span><span class="tt-person-unassigned">Unassigned</span>`;
     ppl.appendChild(pr);
     tip.appendChild(ppl);
@@ -4478,13 +4486,13 @@ function buildFcLanesBlock(proj,laneLabels,ghostLabels){
   ghostLabels.forEach(sub=>{
     const row=el('div','fc-proj-row ghost'); row.style.height=C.laneH+'px';
     const stCol=el('div','fc-st-col'); stCol.style.width=C.statusW+'px';
-    const nameCol=el('div','fc-name-col'); nameCol.innerHTML=`<div class="fc-proj-sub">${sub}</div>`;
+    const nameCol=el('div','fc-name-col'); nameCol.innerHTML=`<div class="fc-proj-sub">${escH(sub)}</div>`;
     row.appendChild(stCol); row.appendChild(nameCol); block.appendChild(row);
   });
   laneLabels.forEach(sub=>{
     const row=el('div','fc-proj-row'); row.style.height=C.laneH+'px';
     const stCol=el('div','fc-st-col'); stCol.style.width=C.statusW+'px';
-    const nameCol=el('div','fc-name-col'); nameCol.innerHTML=`<div class="fc-proj-sub">${sub}</div>`;
+    const nameCol=el('div','fc-name-col'); nameCol.innerHTML=`<div class="fc-proj-sub">${escH(sub)}</div>`;
     row.appendChild(stCol); row.appendChild(nameCol); block.appendChild(row);
   });
   wrapper.appendChild(block); return wrapper;
@@ -4672,17 +4680,17 @@ function buildFcLcProjectRow(proj,lcId){
   const ppl=el('div','tt-people');
   const sr=el('div','tt-person');
   sr.innerHTML=proj.salesPerson
-    ?`<span class="tt-person-role">Sales</span>${proj.salesPerson.split(' ')[0]}`
+    ?`<span class="tt-person-role">Sales</span>${escH(proj.salesPerson.split(' ')[0])}`
     :`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
   ppl.appendChild(sr);
   const dr=el('div','tt-person');
   if(des){
     const sec2=personById(proj.secondaryDesigner);
-    dr.innerHTML=`<span class="tt-person-role">Design</span>${des.label}${sec2?` <span style="opacity:.65">+ ${sec2.label}</span>`:''}`;
+    dr.innerHTML=`<span class="tt-person-role">Design</span>${escH(des.label)}${sec2?` <span style="opacity:.65">+ ${escH(sec2.label)}</span>`:''}`;
   } else if(proj.proposedDesigner){
     const propD=personById(proj.proposedDesigner);
     dr.innerHTML=propD
-      ?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${propD.label} (proposed)</span>`
+      ?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${escH(propD.label)} (proposed)</span>`
       :`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
   } else {
     dr.innerHTML=`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
@@ -4692,7 +4700,7 @@ function buildFcLcProjectRow(proj,lcId){
   const lc1t=proj.logisticsCoord1||'', lc2t=proj.logisticsCoord2||'';
   const lcStr2=[lc1t,lc2t].filter(Boolean).map(n=>n.split(' ')[0]).join(', ');
   pr2.innerHTML=pm
-    ?`<span class="tt-person-role">Production</span>${pm.label}${lcStr2?` · ${lcStr2}`:''}`
+    ?`<span class="tt-person-role">Production</span>${escH(pm.label)}${lcStr2?` · ${escH(lcStr2)}`:''}`
     :`<span class="tt-person-role">Production</span><span class="tt-person-unassigned">Unassigned</span>`;
   ppl.appendChild(pr2);
   tip.appendChild(ppl);
@@ -6287,7 +6295,7 @@ PP_LEAD_MENU.addEventListener('click',e=>{
     document.getElementById('confirmOk').onclick=()=>{
       dlg.classList.remove('open');
       const idx=PLANNING_PROJECTS.findIndex(p=>p.id===_ppLeadMenuId);
-      if(idx>=0){ pushPlanningHistory(pp.name+' \u2014 marked Lost and removed'); PLANNING_PROJECTS.splice(idx,1); }
+      if(idx>=0){ pushPlanningHistory(pp.name+' \u2014 marked Lost and removed'); _ppDeleted.add(pp.id); PLANNING_PROJECTS.splice(idx,1); }
       rebuildSection('planning'); triggerSave();
     };
     document.getElementById('confirmCancel').onclick=()=>{ dlg.classList.remove('open'); };
@@ -6434,7 +6442,7 @@ function initDrag(){
       if(capSection==='production'&&!PROD_SHOW_PMS) return;
       const ghost=document.createElement('div'); ghost.className='proj-reorder-ghost';
       const proj=PROJECTS.find(p=>p.id===projId);
-      ghost.innerHTML=`<span class="ghost-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L7 13M7 1L4 4M7 1L10 4M7 13L4 10M7 13L10 10M1 7L13 7M1 7L4 4M1 7L4 10M13 7L10 4M13 7L10 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="ghost-text"><span class="ghost-name">${proj?proj.name:''}</span><span class="ghost-hint">Drag to relocate</span></span>`;
+      ghost.innerHTML=`<span class="ghost-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L7 13M7 1L4 4M7 1L10 4M7 13L4 10M7 13L10 10M1 7L13 7M1 7L4 4M1 7L4 10M13 7L10 4M13 7L10 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="ghost-text"><span class="ghost-name">${proj?escH(proj.name):''}</span><span class="ghost-hint">Drag to relocate</span></span>`;
       document.body.appendChild(ghost);
       ghost.style.left=e.clientX+12+'px'; ghost.style.top=e.clientY-14+'px';
       document.body.classList.add('is-reordering');
@@ -6750,7 +6758,7 @@ function initDrag(){
     const delBtn=e.target.closest('[data-delete-planning-proj]');
     if(delBtn){
       const idx=PLANNING_PROJECTS.findIndex(p=>p.id===delBtn.dataset.deletePlanningProj);
-      if(idx>=0){ pushPlanningHistory(`Removed planning project — ${PLANNING_PROJECTS[idx].name||'project'}`); PLANNING_PROJECTS.splice(idx,1); rebuildSection('planning'); triggerSave(); } return;
+      if(idx>=0){ pushPlanningHistory(`Removed planning project — ${PLANNING_PROJECTS[idx].name||'project'}`); _ppDeleted.add(PLANNING_PROJECTS[idx].id); PLANNING_PROJECTS.splice(idx,1); rebuildSection('planning'); triggerSave(); } return;
     }
     // Planning project — park/un-park
     const parkBtn=e.target.closest('[data-park-planning-proj]');
@@ -6778,7 +6786,7 @@ function initDrag(){
       // Alert if no designer suggested
       if(!pp.proposedDesigner){
         const toast=document.getElementById('budgetToast');
-        toast.innerHTML=`<div class="bt-title" style="color:#f9e6ae;">No designer proposed</div><div class="bt-row"><span>${pp.name}</span></div><div class="bt-row" style="color:rgba(255,255,255,.55);">Please select a proposed designer (or "Any") before approving.</div>`;
+        toast.innerHTML=`<div class="bt-title" style="color:#f9e6ae;">No designer proposed</div><div class="bt-row"><span>${escH(pp.name)}</span></div><div class="bt-row" style="color:rgba(255,255,255,.55);">Please select a proposed designer (or "Any") before approving.</div>`;
         toast.style.borderLeftColor='#c9a84c'; toast.style.borderColor='rgba(201,168,76,.50)';
         const approveEl=approveBtn.closest('.pp-proj-card')||approveBtn;
         const r=approveEl.getBoundingClientRect();
@@ -6886,7 +6894,7 @@ function initDrag(){
 
       if(pp.slotWeek) USED_SLOTS.add(pp.slotWeek);
       const idx=PLANNING_PROJECTS.findIndex(p=>p.id===pp.id);
-      if(idx>=0) PLANNING_PROJECTS.splice(idx,1);
+      if(idx>=0){ _ppDeleted.add(pp.id); PLANNING_PROJECTS.splice(idx,1); }
       pushPlanningHistory(`${pp.name} — approved, DA signed, moved to pipeline`);
 
       // Animate out — dramatic card exit, then collapse column, then rebuild
@@ -7602,7 +7610,8 @@ function setSaveState(state){
 }
 function globalStatePayload(){
   return {
-    PLANNING_PROJECTS,APPROVED_HISTORY,ARCHIVE,
+    // PLANNING_PROJECTS / APPROVED_HISTORY / ARCHIVE moved to their own CORE_Config
+    // rows in v824 — this blob now carries view preferences and layout state only.
     USED_SLOTS:[...USED_SLOTS],
     PROD_ROW_ORDER,DES_ROW_ORDER,PERSON_TARGETS,
     PROD_PM_COLLAPSED:[...PROD_PM_COLLAPSED],
@@ -7641,6 +7650,47 @@ function _patchPersonNameToSP(proj, personField, personId) {
   }).catch(e => console.warn('[pipeline] SP person name patch failed:', e));
 }
 
+// ══ Split business-data storage (v824) ════════════════════════════════════════
+// PLANNING_PROJECTS / ARCHIVE / APPROVED_HISTORY each live in their own CORE_Config
+// row and are saved with merge-before-write: re-fetch the row, reconcile with local,
+// then write. View preferences remain in pipeline_state (last-write-wins is fine there).
+let _planningItemId=null,_archiveItemId=null,_historyItemId=null;
+let _ppDeleted=new Set(); // planning ids deleted this session — tombstones so merge doesn't resurrect them
+let _lastWrittenDomains={planning:'',archive:'',history:''}; // JSON snapshots — a domain saves only when it actually changed
+function _domainRowId(domain){return domain==='planning'?_planningItemId:domain==='archive'?_archiveItemId:_historyItemId;}
+function _domainLocalArr(domain){return domain==='planning'?PLANNING_PROJECTS:domain==='archive'?ARCHIVE:APPROVED_HISTORY;}
+function _archKey(a){return (a.id||'')+'|'+(a.archivedAt||'');}
+function _histKey(h){return (h.id||'')+'|'+(h.approvedAt||'');}
+async function _saveDomainMerged(domain){
+  const rowId=_domainRowId(domain);
+  if(!rowId) throw new Error('no row id for '+domain);
+  // 1. Re-fetch the current row so a colleague's additions since our load survive
+  let remote=[];
+  try{
+    const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+rowId+'?$expand=fields&$select=id,fields');
+    remote=JSON.parse(item?.fields?.Value||'[]');
+    if(!Array.isArray(remote)) remote=[];
+  }catch(e){ remote=[]; console.warn('[domainSave] remote fetch/parse failed for',domain,'— writing local only:',e.message); }
+  // 2. Merge: local wins per item; remote-only items are adopted unless tombstoned
+  const local=_domainLocalArr(domain);
+  if(domain==='planning'){
+    const localIds=new Set(local.map(x=>x.id));
+    let adopted=0;
+    remote.forEach(rp=>{ if(rp&&rp.id&&!localIds.has(rp.id)&&!_ppDeleted.has(rp.id)){ if(rp.parked===undefined)rp.parked=false; if(!rp.ppStatus)rp.ppStatus='lead'; local.push(rp); adopted++; } });
+    if(adopted>0){ try{ rebuildSection('planning'); _showSyncInd(adopted+' planning update'+(adopted>1?'s':'')+' from SharePoint'); }catch(e){} }
+  } else {
+    const keyFn=domain==='archive'?_archKey:_histKey;
+    const localKeys=new Set(local.map(keyFn));
+    let adopted=0;
+    remote.forEach(r=>{ if(r&&!localKeys.has(keyFn(r))){ local.push(r); adopted++; } });
+    if(adopted>0&&domain==='history') local.sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
+  }
+  // 3. Write the merged result
+  const payload=JSON.stringify(local);
+  await graphPatch(BWC_SITE+'/CORE_Config/items/'+rowId+'/fields',{Value:payload});
+  _lastWrittenDomains[domain]=payload;
+}
+
 function markDirty(proj){
   if(proj&&proj._gdCorrupt){
     console.warn('[v821] Save blocked for quarantined project (damaged GanttData):',proj.clientName||proj.name);
@@ -7660,6 +7710,22 @@ window.addEventListener('beforeunload',()=>{
       method:'PATCH',headers:hdrs,
       body:JSON.stringify({Value:JSON.stringify(globalStatePayload())}),
       keepalive:true
+    });
+  }
+  // Changed business-data rows → their CORE_Config rows (blind write — no time to merge
+  // during unload; the normal debounced path within 900ms of any edit handles merging)
+  [['planning',_planningItemId],['archive',_archiveItemId],['history',_historyItemId]].forEach(([domain,rowId])=>{
+    if(!rowId) return;
+    const cur=JSON.stringify(_domainLocalArr(domain));
+    if(cur===_lastWrittenDomains[domain]) return;
+    fetch(BWC_SITE+'/CORE_Config/items/'+rowId+'/fields',{
+      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:cur}),keepalive:true
+    });
+  });
+  // Presence sign-off — zero out the heartbeat so peers drop us on their next poll
+  if(_presenceItemId){
+    fetch(PRESENCE_LIST+'/'+_presenceItemId+'/fields',{
+      method:'PATCH',headers:hdrs,body:JSON.stringify({LastBeat:new Date(0).toISOString()}),keepalive:true
     });
   }
   // Dirty project GanttData → CORE_Projects
@@ -7707,6 +7773,17 @@ function triggerSave(dirtyProj){
             })
         );
       }
+      // Business-data rows — merged write, only when the domain actually changed
+      [['planning','planning list'],['archive','archive'],['history','approved history']].forEach(([domain,label])=>{
+        if(!_domainRowId(domain)) return;
+        if(JSON.stringify(_domainLocalArr(domain))===_lastWrittenDomains[domain]) return;
+        writes.push(
+          _saveDomainMerged(domain).catch(e=>{
+            failures.push(label);
+            console.error('[save] '+domain+' merged save failed:',e);
+          })
+        );
+      });
       await Promise.all(writes);
       if(failures.length>0){
         setSaveState('error');
@@ -7729,7 +7806,7 @@ function _showSaveError(items){
   const banner=document.getElementById('sp-error-banner');
   const msg=document.getElementById('sp-error-msg');
   if(!banner||!msg) return;
-  const list=items.map(s=>`<strong>${s}</strong>`).join(', ');
+  const list=items.map(s=>`<strong>${escH(s)}</strong>`).join(', ');
   msg.innerHTML=`SharePoint save FAILED — the following were <strong>NOT written</strong>: ${list}. Use <em>Retry Save</em> or reload the page.`;
   banner.classList.add('visible');
   document.body.classList.add('has-save-error');
@@ -7747,7 +7824,7 @@ function _showCorruptWarning(){
   const banner=document.getElementById('sp-error-banner');
   const msg=document.getElementById('sp-error-msg');
   if(!banner||!msg) return;
-  const list=_corruptProjects.map(s=>`<strong>${s}</strong>`).join(', ');
+  const list=_corruptProjects.map(s=>`<strong>${escH(s)}</strong>`).join(', ');
   msg.innerHTML=`Damaged schedule data found for: ${list}. A default schedule is shown instead, and saves for ${_corruptProjects.length>1?'these projects are':'this project is'} <strong>blocked</strong> to protect the original data in SharePoint. The GanttData field for ${_corruptProjects.length>1?'these items':'this item'} in CORE_Projects needs to be repaired or cleared before editing can resume.`;
   banner.classList.add('visible');
   document.body.classList.add('has-save-error');
@@ -7897,8 +7974,8 @@ function showBudgetToast(projName, slotName, cardBudget, slotMin, dropZone){
   const diff=slotMin-cardBudget;
   const toast=document.getElementById('budgetToast');
   toast.innerHTML=`
-    <div class="bt-title">Budget too low for ${slotName}</div>
-    <div class="bt-row"><span>${projName}</span><span class="bt-val">${fmtK(cardBudget)}</span></div>
+    <div class="bt-title">Budget too low for ${escH(slotName)}</div>
+    <div class="bt-row"><span>${escH(projName)}</span><span class="bt-val">${fmtK(cardBudget)}</span></div>
     <div class="bt-row"><span>Slot minimum</span><span class="bt-val">${fmtK(slotMin)}</span></div>
     <div class="bt-row"><span>Shortfall</span><span class="bt-val" style="color:#f9a0a0;">−${fmtK(diff)}</span></div>`;
   // Position centered over the drop zone (or its empty placeholder)
@@ -7977,7 +8054,7 @@ function buildPlanningSection(){
       if(!pp._fromLeadId) continue; // keep legacy entries with no source link
       const src=PROJECTS.find(p=>p.id===pp._fromLeadId||
         (pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,'')));
-      if(src&&!src.isLead) PLANNING_PROJECTS.splice(i,1);
+      if(src&&!src.isLead){ _ppDeleted.add(PLANNING_PROJECTS[i].id); PLANNING_PROJECTS.splice(i,1); }
     }
     if(PLANNING_PROJECTS.some(pp=>!pp.slotId&&!pp.slotWeek)) triggerSave(); // persist any new entries
   })();
@@ -8167,22 +8244,22 @@ function buildPlanningSection(){
         const liveSales=origProj?(origProj.salesPerson||''):(pp.salesPerson||'');
         const mgrSpId=origProj?._spItemId||'';
         let html='';
-        html+='<div class="tt-type">'+liveName+'</div>';
-        if(liveType) html+='<div class="tt-addr">'+liveType+'</div>';
-        if(liveDesc) html+='<div class="tt-scope">'+liveDesc+'</div>';
-        if(liveAddress) html+='<div class="tt-addr">'+liveAddress+'</div>';
-        if(liveValue) html+='<div class="tt-price">'+liveValue+'</div>';
+        html+='<div class="tt-type">'+escH(liveName)+'</div>';
+        if(liveType) html+='<div class="tt-addr">'+escH(liveType)+'</div>';
+        if(liveDesc) html+='<div class="tt-scope">'+escH(liveDesc)+'</div>';
+        if(liveAddress) html+='<div class="tt-addr">'+escH(liveAddress)+'</div>';
+        if(liveValue) html+='<div class="tt-price">'+escH(liveValue)+'</div>';
         html+='<div class="tt-people">';
         html+='<div class="tt-person">';
         html+=liveSales
-          ?`<span class="tt-person-role">Sales</span><span>${liveSales.split(' ')[0]}</span>`
+          ?`<span class="tt-person-role">Sales</span><span>${escH(liveSales.split(' ')[0])}</span>`
           :`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
         html+='</div>';
         // Proposed designer — pp owns this field (set in the planning section)
         const propD=pp.proposedDesigner?personById(pp.proposedDesigner):null;
         html+='<div class="tt-person">';
         html+=propD
-          ?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${propD.label} (proposed)</span>`
+          ?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${escH(propD.label)} (proposed)</span>`
           :`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
         html+='</div>';
         html+='</div>';
@@ -8193,11 +8270,11 @@ function buildPlanningSection(){
           html+='<button class="tt-mgr-pill" data-open-mgr-name="'+encodeURIComponent(pp.name)+'" style="pointer-events:all"><svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1h3v3M11 1L6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg> MGR</button>';
         }
         const du=origProj?.docUrls||{};
-        function _pu(cls,lbl,type,url){ return `<button class="tt-circle-pill ${cls}" style="pointer-events:all${url?'':';opacity:.50'}" data-upcoming-pill="${type}"${url?` data-upcoming-url="${url}"`:''}>${lbl}</button>`; }
+        function _pu(cls,lbl,type,url){ return `<button class="tt-circle-pill ${cls}" style="pointer-events:all${url?'':';opacity:.50'}" data-upcoming-pill="${type}"${url?` data-upcoming-url="${escH(url)}"`:''}>${lbl}</button>`; }
         html+='<div style="display:flex;gap:4px;align-items:center;">';
         html+=_pu('est-pill','EST','est',du.est);
         html+=_pu('pb-pill','PB','pb',du.pb);
-        html+=`<button class="fc-ms-pill-btn da-pill" style="pointer-events:all${du.da?'':';opacity:.50'}" data-upcoming-pill="da"${du.da?` data-upcoming-url="${du.da}"`:''}title="Design Agreement">DA</button>`;
+        html+=`<button class="fc-ms-pill-btn da-pill" style="pointer-events:all${du.da?'':';opacity:.50'}" data-upcoming-pill="da"${du.da?` data-upcoming-url="${escH(du.da)}"`:''}title="Design Agreement">DA</button>`;
         html+='</div>';
         html+='</div>';
         _psProjTT.innerHTML=html;
@@ -8336,18 +8413,18 @@ function buildPlanningSection(){
         const liveSales=origProj?(origProj.salesPerson||''):(pp.salesPerson||'');
         const mgrSpId=origProj?._spItemId||'';
         let html='';
-        html+='<div class="tt-type">'+liveName+'</div>';
-        if(liveType) html+='<div class="tt-addr">'+liveType+'</div>';
-        if(liveDesc) html+='<div class="tt-scope">'+liveDesc+'</div>';
-        if(liveAddress) html+='<div class="tt-addr">'+liveAddress+'</div>';
-        if(liveValue) html+='<div class="tt-price">'+liveValue+'</div>';
+        html+='<div class="tt-type">'+escH(liveName)+'</div>';
+        if(liveType) html+='<div class="tt-addr">'+escH(liveType)+'</div>';
+        if(liveDesc) html+='<div class="tt-scope">'+escH(liveDesc)+'</div>';
+        if(liveAddress) html+='<div class="tt-addr">'+escH(liveAddress)+'</div>';
+        if(liveValue) html+='<div class="tt-price">'+escH(liveValue)+'</div>';
         html+='<div class="tt-people">';
         html+='<div class="tt-person">';
-        html+=liveSales?`<span class="tt-person-role">Sales</span><span>${liveSales.split(' ')[0]}</span>`:`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
+        html+=liveSales?`<span class="tt-person-role">Sales</span><span>${escH(liveSales.split(' ')[0])}</span>`:`<span class="tt-person-role">Sales</span><span class="tt-person-unassigned">Unassigned</span>`;
         html+='</div>';
         const propD=pp.proposedDesigner?personById(pp.proposedDesigner):null;
         html+='<div class="tt-person">';
-        html+=propD?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${propD.label} (proposed)</span>`:`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
+        html+=propD?`<span class="tt-person-role">Design</span><span style="color:rgba(216,182,79,.85);font-style:italic;">${escH(propD.label)} (proposed)</span>`:`<span class="tt-person-role">Design</span><span class="tt-person-unassigned">Unassigned</span>`;
         html+='</div></div>';
         html+='<div style="display:flex;align-items:center;gap:5px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);">';
         if(mgrSpId){
@@ -8356,9 +8433,9 @@ function buildPlanningSection(){
           html+='<button class="tt-mgr-pill" data-open-mgr-name="'+encodeURIComponent(pp.name)+'" style="pointer-events:all"><svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1h3v3M11 1L6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg> MGR</button>';
         }
         const du=origProj?.docUrls||{};
-        function _pu2(cls,lbl,type,url){return `<button class="tt-circle-pill ${cls}" style="pointer-events:all${url?'':';opacity:.50'}" data-upcoming-pill="${type}"${url?` data-upcoming-url="${url}"`:''}>${lbl}</button>`;}
+        function _pu2(cls,lbl,type,url){return `<button class="tt-circle-pill ${cls}" style="pointer-events:all${url?'':';opacity:.50'}" data-upcoming-pill="${type}"${url?` data-upcoming-url="${escH(url)}"`:''}>${lbl}</button>`;}
         html+=_pu2('est-pill','EST','est',du.est)+_pu2('pb-pill','PB','pb',du.pb);
-        html+=`<button class="fc-ms-pill-btn da-pill" style="pointer-events:all${du.da?'':';opacity:.50'}" data-upcoming-pill="da"${du.da?` data-upcoming-url="${du.da}"`:''}title="Design Agreement">DA</button>`;
+        html+=`<button class="fc-ms-pill-btn da-pill" style="pointer-events:all${du.da?'':';opacity:.50'}" data-upcoming-pill="da"${du.da?` data-upcoming-url="${escH(du.da)}"`:''}title="Design Agreement">DA</button>`;
         html+='</div>';
         _psProjTT.innerHTML=html;
         const r=mCard.getBoundingClientRect();
@@ -9315,7 +9392,7 @@ async function _fetchPMReviews(){
   }
 }
 let _isBgSyncing=false;
-const BG_SYNC_MS=90_000;
+const BG_SYNC_MS=30_000;
 
 function _showSyncInd(msg){
   const ind=document.getElementById('bg-sync-ind');
@@ -9333,6 +9410,9 @@ async function _bgSync(){
   try{
     const token=await getToken().catch(()=>null);
     if(!token){_isBgSyncing=false;return;}
+    // Business-data rows (planning/archive/history) — must run before the early return
+    // below, since a colleague's planning-only change doesn't touch CORE_Projects
+    _refreshDomainsFromSP().catch(()=>{});
     // Fetch items changed since last sync (Graph supports ISO filter on lastModifiedDateTime)
     const since=encodeURIComponent(_lastSyncTs);
     const url=BWC_SITE+`/CORE_Projects/items?$expand=fields&$select=id,lastModifiedDateTime,fields&$filter=lastModifiedDateTime gt '${since}'`;
@@ -9389,17 +9469,103 @@ async function _bgSync(){
   }
 }
 
+// ══ Presence (v824) ═══════════════════════════════════════════════════════════
+// Each open tab heartbeats to the CORE_Presence list (Title = full name, Mode =
+// viewing/admin, LastBeat = ISO timestamp) and renders header chips for peers whose
+// heartbeat is fresh. Visibility only — presence does not gate writes.
+const PRESENCE_LIST=BWC_SITE+'/CORE_Presence/items';
+const PRESENCE_BEAT_MS=30_000, PRESENCE_STALE_MS=90_000;
+let _presenceItemId=null,_presenceTimer=null;
+function _myFullName(){
+  try{ const a=msalApp.getActiveAccount&&msalApp.getActiveAccount(); return (a&&(a.name||a.username))||'Unknown'; }
+  catch(e){ return 'Unknown'; }
+}
+function _renderPresence(items){
+  const wrap=document.getElementById('presenceBadges'); if(!wrap) return;
+  const me=_myFullName(); const cutoff=Date.now()-PRESENCE_STALE_MS;
+  const peers=(items||[]).map(it=>it.fields||{})
+    .filter(f=>f.Title&&f.Title!==me&&f.LastBeat&&new Date(f.LastBeat).getTime()>=cutoff);
+  wrap.innerHTML=peers.map(f=>{
+    const first=escH(String(f.Title).split(' ')[0]);
+    const admin=f.Mode==='admin';
+    return `<span class="presence-chip${admin?' presence-admin':''}" title="${escH(f.Title)} \u2014 ${admin?'editing (admin mode)':'viewing'}">${first}</span>`;
+  }).join('');
+}
+async function _presenceTick(){
+  try{
+    const token=await getToken().catch(()=>null); if(!token) return;
+    const items=await graphGetAll(PRESENCE_LIST+'?$expand=fields&$select=id,fields');
+    _renderPresence(items);
+    const mode=IS_ADMIN_MODE?'admin':'viewing';
+    const now=new Date().toISOString();
+    if(!_presenceItemId){
+      const mine=items.find(it=>(it.fields?.Title||'')===_myFullName());
+      if(mine) _presenceItemId=mine.id;
+      else{
+        const data=await graphPost(PRESENCE_LIST,{fields:{Title:_myFullName(),Mode:mode,LastBeat:now}});
+        _presenceItemId=data.id;
+        return;
+      }
+    }
+    await graphPatch(PRESENCE_LIST+'/'+_presenceItemId+'/fields',{Mode:mode,LastBeat:now});
+  }catch(e){ console.warn('[presence] tick failed:',e.message); }
+}
+function _startPresence(){
+  if(_presenceTimer) clearInterval(_presenceTimer);
+  _presenceTimer=setInterval(()=>_presenceTick().catch(()=>{}),PRESENCE_BEAT_MS);
+}
+function _stopPresence(){ clearInterval(_presenceTimer); _presenceTimer=null; }
+
+// Pull colleagues' business-data changes into idle tabs (called from _bgSync).
+// Additive adopt only — full two-sided conflict resolution is the optimistic-
+// concurrency follow-up. A colleague's DELETION propagates on reload, not live.
+async function _refreshDomainsFromSP(){
+  const domains=[['planning',_planningItemId],['archive',_archiveItemId],['history',_historyItemId]];
+  for(const [domain,rowId] of domains){
+    if(!rowId) continue;
+    try{
+      const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+rowId+'?$expand=fields&$select=id,fields');
+      const raw=item?.fields?.Value||'[]';
+      if(raw===_lastWrittenDomains[domain]) continue; // nothing new remotely
+      let remote=[]; try{ remote=JSON.parse(raw); }catch(e){ continue; }
+      if(!Array.isArray(remote)) continue;
+      const local=_domainLocalArr(domain);
+      let adopted=0;
+      if(domain==='planning'){
+        const localIds=new Set(local.map(x=>x.id));
+        remote.forEach(rp=>{ if(rp&&rp.id&&!localIds.has(rp.id)&&!_ppDeleted.has(rp.id)){ if(rp.parked===undefined)rp.parked=false; if(!rp.ppStatus)rp.ppStatus='lead'; local.push(rp); adopted++; } });
+        if(adopted>0){ try{ rebuildSection('planning'); }catch(e){} }
+      } else {
+        const keyFn=domain==='archive'?_archKey:_histKey;
+        const localKeys=new Set(local.map(keyFn));
+        remote.forEach(r=>{ if(r&&!localKeys.has(keyFn(r))){ local.push(r); adopted++; } });
+        if(adopted>0&&domain==='history') local.sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
+      }
+      if(adopted>0) _showSyncInd(adopted+' '+(domain==='planning'?'planning':domain)+' update'+(adopted>1?'s':'')+' from SharePoint');
+      // If local and remote now match, advance the snapshot so we skip cheaply next tick
+      if(JSON.stringify(local)===raw) _lastWrittenDomains[domain]=raw;
+    }catch(e){ /* transient — try again next tick */ }
+  }
+}
+
 function _startBgSync(){
   if(_bgSyncTimer) clearInterval(_bgSyncTimer);
   _bgSyncTimer=setInterval(_bgSync,BG_SYNC_MS);
+  _startPresence();
 }
 function _stopBgSync(){
   clearInterval(_bgSyncTimer);
   _bgSyncTimer=null;
+  _stopPresence();
 }
 // Pause sync while window is hidden (tab in background) to avoid wasted API calls
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden) _stopBgSync(); else if(_lastSyncTs) _startBgSync();
+  if(document.hidden) _stopBgSync();
+  else if(_lastSyncTs){
+    _bgSync();                       // catch up immediately on return to the tab
+    _presenceTick().catch(()=>{});   // re-announce + refresh peer chips
+    _startBgSync();                  // then resume the regular rhythm
+  }
 });
 
 // ════════════════════════════════════════════════  TRELLO SYNC
@@ -9604,11 +9770,38 @@ async function initFromSharePoint(){
         console.log('[v393] Created pipeline_state config row, id:',_configItemId);
       }catch(e){ console.error('[v393] Failed to create pipeline_state:',e); }
     }
+    // ── v824: resolve the split business-data rows (create + migrate on first run) ──
+    const _findCfgRow=key=>cfgItems.find(it=>(it.fields?.Key||it.fields?.Title)===key);
+    async function _ensureDomainRow(key,seedArr){
+      const row=_findCfgRow(key);
+      if(row){
+        let arr=[];
+        try{ arr=JSON.parse(row.fields?.Value||'[]'); if(!Array.isArray(arr)) arr=[]; }
+        catch(e){ console.warn('[v824] Bad JSON in '+key+' — starting from empty:',e); arr=[]; }
+        return {id:row.id,arr};
+      }
+      // First run after the split — seed from the legacy blob's array (migration), else empty
+      const seed=Array.isArray(seedArr)?seedArr:[];
+      const data=await graphPost(BWC_SITE+'/CORE_Config/items',
+        {fields:{Title:key,Key:key,Value:JSON.stringify(seed)}});
+      console.log('[v824] Created '+key+' row (migrated '+seed.length+' items), id:',data.id);
+      return {id:data.id,arr:seed};
+    }
+    const _pl=await _ensureDomainRow('planning_projects',saved?.PLANNING_PROJECTS);
+    const _ar=await _ensureDomainRow('pipeline_archive',saved?.ARCHIVE);
+    const _hi=await _ensureDomainRow('approved_history',saved?.APPROVED_HISTORY);
+    _planningItemId=_pl.id; _archiveItemId=_ar.id; _historyItemId=_hi.id;
+    // The rows are now authoritative — override whatever the legacy blob carried
+    saved=saved||{};
+    saved.PLANNING_PROJECTS=_pl.arr; saved.ARCHIVE=_ar.arr; saved.APPROVED_HISTORY=_hi.arr;
     await loadTeamMembers(saved);
     await loadProjects(saved);
     // Extract Trello credentials from the same CORE_Config fetch (no extra round-trip)
     const _cfgGet=key=>{const r=cfgItems.find(it=>(it.fields?.Title||it.fields?.Key||'')===key);return r?(r.fields?.Value||r.fields?.Value0||''):'';};
     restoreSavedState(saved);
+    _lastWrittenDomains.planning=JSON.stringify(PLANNING_PROJECTS);
+    _lastWrittenDomains.archive=JSON.stringify(ARCHIVE);
+    _lastWrittenDomains.history=JSON.stringify(APPROVED_HISTORY);
     const _trKey=_cfgGet('TrelloApiKey'),_trTok=_cfgGet('TrelloToken'),_trBrd=_cfgGet('TrelloSalesBoardId');
     if(_trKey&&_trTok&&_trBrd) _trelloCfg={apiKey:_trKey,token:_trTok,boardId:_trBrd};
     PROJECTS.forEach(p=>{ p.collapsed=true; }); // always open collapsed
@@ -9635,6 +9828,7 @@ if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('pro
     _lastSyncTs=_maxLoadedModified||new Date().toISOString();
     _fetchPMReviews(); // load PM review entries for Weekly Review panel
     _startBgSync();
+    _presenceTick().catch(()=>{}); // announce ourselves + render peers immediately
     _trelloSync().catch(e=>console.warn('[trelloSync] startup failed:',e));
     setSaveState('saved');
     console.log('[v793] SP load complete:',PROJECTS.length,'projects,',DESIGNERS.length,'designers,',PROD_PMS.length,'PMs');
@@ -9734,6 +9928,7 @@ function toggleAdminMode(){
   if(CURRENT_USER_ROLE!=='admin'){ showToast&&showToast('Admin access required.'); return; }
   IS_ADMIN_MODE=!IS_ADMIN_MODE;
   document.body.classList.toggle('admin-mode',IS_ADMIN_MODE);
+  _presenceTick().catch(()=>{}); // broadcast the mode change immediately
   const cb=document.getElementById('adminCheckbox'); if(cb) cb.checked=IS_ADMIN_MODE;
   const bcb=document.getElementById('briefAdminCheckbox'); if(bcb) bcb.checked=IS_ADMIN_MODE;
   _updateExpandCollapseBtn();
@@ -9785,7 +9980,7 @@ function openRevenueDiag(){
     const parsedStr=`parsed=$${parsed.toLocaleString()}`;
     const revenueStr=ok?`<span style="color:#7fc97a;">$${perWk.toLocaleString()}/wk ✓</span>`:`<span style="color:#e07070;">no revenue ✗</span>`;
     return {perWk, html:`<div style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.07);background:${bg};border-radius:4px;padding:6px 8px;margin-bottom:4px;">
-  <div style="font-weight:700;color:rgba(255,255,255,.85);margin-bottom:3px;">${proj.clientName||proj.name||proj.id} ${revenueStr}</div>
+  <div style="font-weight:700;color:rgba(255,255,255,.85);margin-bottom:3px;">${escH(proj.clientName||proj.name||proj.id)} ${revenueStr}</div>
   <div style="color:rgba(255,255,255,.45);line-height:1.7;">
     Phase: ${phName}<br>
     ${budgetStr}<br>
@@ -10304,7 +10499,7 @@ function archiveProject(projId, note='', cancelled=false, lost=false){
   const proj=PROJECTS.splice(idx,1)[0];
   // Remove from planning board if present
   const ppIdx=PLANNING_PROJECTS.findIndex(p=>p._fromLeadId===projId||p.id===projId);
-  if(ppIdx>-1) PLANNING_PROJECTS.splice(ppIdx,1);
+  if(ppIdx>-1){ _ppDeleted.add(PLANNING_PROJECTS[ppIdx].id); PLANNING_PROJECTS.splice(ppIdx,1); }
   const des=DESIGNERS.find(d=>d.id===proj.designer);
   const pm=PROD_PMS.find(p=>p.id===proj.productionPM);
 
@@ -11557,6 +11752,28 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v824', date: '2026-07-11',
+    entries: [
+      'Multi-user foundation: the planning list, archive, and approved history now each live in their own SharePoint record instead of sharing one settings blob. Saves to these merge with colleagues\u2019 changes instead of overwriting them \u2014 two people can now work the planning board in the same afternoon without erasing each other\u2019s additions.',
+      'Presence badges: the header now shows who else has the Pipeline open. A colleague in admin mode shows in red (matching the admin banner). Badges update on the sync rhythm and clear within about 90 seconds of someone closing their tab.',
+      'Colleagues\u2019 planning, archive, and history additions now appear in your open tab automatically \u2014 no reload needed. (A colleague\u2019s deletion of a planning card still requires a reload to disappear from your view.)',
+      'DEPLOY NOTE: everyone should close and reopen the Pipeline once after this version goes live. The first person to open it migrates the planning list, archive, and history to their new records automatically.'
+    ]
+  },
+  {
+    version: 'v823', date: '2026-07-11',
+    entries: [
+      'Switching back to a Pipeline tab now checks SharePoint for colleagues\u2019 changes immediately, instead of waiting for the next scheduled check. Previously, flipping between tabs could keep resetting the countdown so the check never ran.',
+      'Background sync interval shortened from 90 seconds to 30 \u2014 changes made by others appear up to three times faster.'
+    ]
+  },
+  {
+    version: 'v822', date: '2026-07-11',
+    entries: [
+      'Security hardening: text that originates outside the tool \u2014 project and client names from Trello and SharePoint, notes, PM review entries, bug reports, sales person names \u2014 is now sanitized before being displayed. Previously, a Trello card or note containing certain characters could break the display, and a deliberately crafted one could run code in the browser of anyone viewing the Pipeline. No visible change in normal use.'
+    ]
+  },
+  {
     version: 'v821', date: '2026-07-11',
     entries: [
       'Fixed a dormant bug: the safety net meant to save your changes when closing or refreshing the tab had never actually worked. It now does — closing the tab right after an edit no longer risks losing it.',
@@ -11748,6 +11965,8 @@ function briefPersonLabel(id){
   return p ? (p.label||id) : null;
 }
 function briefProjName(proj){
+  // Returns RAW text — also feeds the saved brief baseline (data, not HTML).
+  // Escape with escH() at HTML render sites.
   return proj.name || proj.clientName || 'Unnamed';
 }
 function briefFmtDate(d){
@@ -12135,7 +12354,7 @@ function generateBriefHTML(){
         <button id="briefBugCancel" class="brief-topbar-btn brief-btn-back" style="font-size:9px;padding:4px 10px;">Cancel</button>
       </div>
     </div>
-    ${openItems.length ? openItems.map((b,i)=>`<div class="brief-card-row" data-bug-id="${b.id}"><span class="bcr-lbl ${typeCls(b.type)}">${typeLbl(b.type)}</span><span class="bcr-text">${b.title}${(b.author||b.createdAt)?`<span style="color:rgba(0,0,0,.32);font-size:10px;margin-left:6px;">\u2014 ${(b.author||'?').split(' ')[0]}${b.createdAt?`, `+(new Date(b.createdAt)).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+(new Date(b.createdAt)).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>`:''}}</span>`
+    ${openItems.length ? openItems.map((b,i)=>`<div class="brief-card-row" data-bug-id="${b.id}"><span class="bcr-lbl ${typeCls(b.type)}">${typeLbl(b.type)}</span><span class="bcr-text">${escH(b.title)}${(b.author||b.createdAt)?`<span style="color:rgba(0,0,0,.32);font-size:10px;margin-left:6px;">\u2014 ${escH((b.author||'?').split(' ')[0])}${b.createdAt?`, `+(new Date(b.createdAt)).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+(new Date(b.createdAt)).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>`:''}}</span>`
     +`<span class="brief-ack-btns" style="gap:3px;"><button class="brief-bug-pencil" data-bug-edit="${b.id}" title="Edit"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button><button class="brief-ack-btn" data-bug-move-up="${b.id}" title="Move up" style="padding:1px 5px;${i===0?'visibility:hidden':''}">↑</button><button class="brief-ack-btn" data-bug-move-down="${b.id}" title="Move down" style="padding:1px 5px;${i===openItems.length-1?'visibility:hidden':''}">↓</button> <button class="brief-ack-btn brief-ack-mark" data-close-bug="${b.id}">Resolve</button></span></div>`).join('')
     : `<div class="brief-card-row"><span class="bcr-lbl l-quiet">\u2014</span><span class="bcr-text quiet">Nothing logged yet.</span></div>`}
   </div>`;
@@ -12149,9 +12368,9 @@ function generateBriefHTML(){
     const ackId=proj.id+'-note';
     if(BRIEF_ACKS[ackId]==='archived'||BRIEF_ACKS[ackId]==='reviewed') return;
     const ackBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Mark Reviewed</button>`;
-    const noteHtml=note.replace(/\n/g,'<br>').replace(/(<br>)(— [^<]+)/g,'$1<span style="color:rgba(0,0,0,.32);font-size:9.5px;font-style:italic;">$2</span>');
+    const noteHtml=escH(note).replace(/\n/g,'<br>').replace(/(<br>)(— [^<]+)/g,'$1<span style="color:rgba(0,0,0,.32);font-size:9.5px;font-style:italic;">$2</span>');
     const newBadge=isNew?'<strong style="color:#c0434a;font-size:10px;font-weight:700;margin-right:5px;letter-spacing:.04em;">NEW</strong>':'';
-    const row=`<div class="brief-card-row"><span class="bcr-lbl l-note">${newBadge}${briefProjName(proj)}</span><span class="bcr-text" style="white-space:pre-wrap;">${noteHtml}</span><span class="brief-ack-btns">${PENCIL_BTN(proj.id,!!proj._isPlanningNote)}${ackBtn}</span></div>`;
+    const row=`<div class="brief-card-row"><span class="bcr-lbl l-note">${newBadge}${escH(briefProjName(proj))}</span><span class="bcr-text" style="white-space:pre-wrap;">${noteHtml}</span><span class="brief-ack-btns">${PENCIL_BTN(proj.id,!!proj._isPlanningNote)}${ackBtn}</span></div>`;
     let dest='sales';
     if(proj._isPlanningNote){
       const pp=(PLANNING_PROJECTS||[]).find(p=>p.id===proj.id);
@@ -12173,7 +12392,7 @@ function generateBriefHTML(){
       const needsDesigner=!pp.proposedDesigner||pp.proposedDesigner==='any';
       const action=needsDesigner?'Assign designer':'Discuss and Confirm';
       const cls=needsDesigner?'l-warn':'l-note';
-      ppActionRows.push(briefRow(cls,action,pp.name));
+      ppActionRows.push(briefRow(cls,action,escH(pp.name)));
       ppActionCount++;
     });
     const ppNoteRows=notesBySection.pipeline;
@@ -12208,7 +12427,7 @@ function generateBriefHTML(){
     const pm=proj.productionPM?briefPersonLabel(proj.productionPM)||'?':'—';
     return `<div data-brief-grp="1" style="margin-bottom:8px;">`
       +`<div style="display:flex;align-items:baseline;gap:8px;padding:5px 0 3px;border-bottom:1px solid rgba(228,218,196,.6);">`
-      +`<span style="font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:var(--navy);">${briefProjName(proj)}</span>`
+      +`<span style="font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:var(--navy);">${escH(briefProjName(proj))}</span>`
       +`<span class="brief-tag ${briefTagClass(proj.status)}" style="font-size:9px;">${briefStatusLabel(proj.status)}</span>`
       +`</div>${rows.join('')}</div>`;
   }
@@ -12231,7 +12450,7 @@ function generateBriefHTML(){
       if(h) salesCount++;
       salesGroups.push(`<div data-brief-grp="1" style="margin-bottom:8px;">`
         +`<div style="padding:5px 0 3px;border-bottom:1px solid rgba(228,218,196,.6);">`
-        +`<span style="font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:var(--navy);">${name}</span>`
+        +`<span style="font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:var(--navy);">${escH(name)}</span>`
         +` <span class="brief-tag t-warn" style="font-size:9px;">Removed</span></div>${h}</div>`);
     });
 
@@ -12263,12 +12482,12 @@ function generateBriefHTML(){
       const ackId='plan-'+c.type+'-'+c.name.replace(/\s+/g,'-').toLowerCase().slice(0,24);
       const lbl=c.type==='added'?'Added':c.type==='removed'?'Removed':c.type==='moved'?'Moved':'Updated';
       const cls=c.type==='removed'?'l-warn':c.type==='added'?'l-note':c.type==='moved'?'l-change':'l-quiet';
-      const h=briefAckRow(ackId,cls,lbl,`${c.name} \u2014 ${c.detail}`); if(h){salesCount++;planRows.push(h);}
+      const h=briefAckRow(ackId,cls,lbl,`${escH(c.name)} \u2014 ${escH(c.detail)}`); if(h){salesCount++;planRows.push(h);}
     });
     planningActivity.forEach(e=>{
       const ackId='plan-act-'+e.ts;
       const t=new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-      const h=briefAckRow(ackId,'l-change','Action',`${e.desc} <span style="opacity:.45;font-size:9px;">${t}</span>`);
+      const h=briefAckRow(ackId,'l-change','Action',`${escH(e.desc)} <span style="opacity:.45;font-size:9px;">${t}</span>`);
       if(h){salesCount++;planRows.push(h);}
     });
 
@@ -12295,7 +12514,7 @@ function generateBriefHTML(){
     const capRows=[], designGroups=[];
 
     capWarnings.forEach(({person,peakWeek,peakLoad,target,weeksOver})=>{
-      const h=briefAckRow('cap-warn-'+person.id,'l-warn',person.label,
+      const h=briefAckRow('cap-warn-'+person.id,'l-warn',escH(person.label),
         `Peak ${Math.round(peakLoad)}h vs ${target}h target, week of ${briefFmtDate(wkToDate(peakWeek))} (${weeksOver} week${weeksOver!==1?'s':''} over).`);
       if(h){designCount++;capRows.push(h);}
     });
@@ -12304,7 +12523,7 @@ function generateBriefHTML(){
       const id=proj.id, pd=diffByProj[id];
       const rows=[];
       if(pd?.assignmentChanges) pd.assignmentChanges.filter(x=>x.field==='Designer').forEach(({from,to})=>
-        rows.push(briefAckRow(id+'-assign-des','l-change','Designer',`${from} \u2192 ${to}.`)));
+        rows.push(briefAckRow(id+'-assign-des','l-change','Designer',`${escH(from)} \u2192 ${escH(to)}.`)));
       if(pd?.scheduleChanges) pd.scheduleChanges.filter(x=>_isDesignField(x.field)).forEach(({field,fromWeek,toWeek,fromDur,toDur})=>{
         const parts=[];
         if(fromWeek!=null&&toWeek!=null&&fromWeek!==toWeek)
@@ -12346,9 +12565,9 @@ function generateBriefHTML(){
       const parts=[];
       if(r.CostDelta){const d=fmtDelta(r.CostDelta);if(d)parts.push('Value '+d);}
       if(r.NewEndDate) parts.push('End date \u2192 '+fmtD(r.NewEndDate));
-      if(r.Notes) parts.push(r.Notes);
-      const who=r.ReviewerName?` \u2014 ${r.ReviewerName.split(' ')[0]}, ${fmtD(r.EntryDate)}`:'';
-      const h=briefAckRow('pm-rev-'+(r.spItemId||r.EntryDate+r.ProjectId),'l-note',projName,(parts.join(' \u00b7 ')||'Note')+who);
+      if(r.Notes) parts.push(escH(r.Notes));
+      const who=r.ReviewerName?` \u2014 ${escH(r.ReviewerName.split(' ')[0])}, ${fmtD(r.EntryDate)}`:'';
+      const h=briefAckRow('pm-rev-'+(r.spItemId||r.EntryDate+r.ProjectId),'l-note',escH(projName),(parts.join(' \u00b7 ')||'Note')+who);
       if(h){prodCount++;pmRows.push(h);}
     });
 
@@ -12356,7 +12575,7 @@ function generateBriefHTML(){
       const id=proj.id, pd=diffByProj[id];
       const rows=[];
       if(pd?.assignmentChanges) pd.assignmentChanges.filter(x=>x.field==='PM').forEach(({from,to})=>
-        rows.push(briefAckRow(id+'-assign-pm','l-change','PM',`${from} \u2192 ${to}.`)));
+        rows.push(briefAckRow(id+'-assign-pm','l-change','PM',`${escH(from)} \u2192 ${escH(to)}.`)));
       if(pd?.scheduleChanges) pd.scheduleChanges.filter(x=>!_isDesignField(x.field)).forEach(({field,fromWeek,toWeek,fromDur,toDur})=>{
         const parts=[];
         if(fromWeek!=null&&toWeek!=null&&fromWeek!==toWeek)
@@ -12402,9 +12621,9 @@ function generateBriefHTML(){
 
   if(upCA.length||upConstr.length||upOther.length){
     html+=`<div class="brief-section"><div class="brief-section-hd"><span class="brief-section-title">Upcoming \u2014 Next ${LOOK_AHEAD} Weeks</span></div>`;
-    const milRow=({proj,ms,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`${ms.name} \u2014 ${briefFmtDate(wkToDate(ms.week))} (${tl}).`); };
+    const milRow=({proj,ms,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',escH(briefProjName(proj)),`${ms.name} \u2014 ${briefFmtDate(wkToDate(ms.week))} (${tl}).`); };
     if(upCA.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">CA Signings</div><div class="brief-upcoming-rows">${upCA.map(milRow).join('')}</div></div>`;
-    if(upConstr.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Construction Starts</div><div class="brief-upcoming-rows">${upConstr.map(({proj,cPh,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',briefProjName(proj),`Construction starts ${briefFmtDate(wkToDate(cPh.startWeek))} (${tl}).`); }).join('')}</div></div>`;
+    if(upConstr.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Construction Starts</div><div class="brief-upcoming-rows">${upConstr.map(({proj,cPh,d})=>{ const tl=d===0?'This week':d===1?'Next week':`${d} weeks`; return briefRow('l-due',escH(briefProjName(proj)),`Construction starts ${briefFmtDate(wkToDate(cPh.startWeek))} (${tl}).`); }).join('')}</div></div>`;
     if(upOther.length) html+=`<div class="brief-upcoming-cat"><div class="brief-upcoming-cat-hdr">Other Milestones</div><div class="brief-upcoming-rows">${upOther.map(milRow).join('')}</div></div>`;
     html+='</div>';
   }
@@ -12425,7 +12644,7 @@ function generateBriefHTML(){
       `<div class="brief-card-row"><span class="bcr-lbl l-warn">${name}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${extraBtns}</span></div>`;
     PROJECTS.filter(p=>p.status==='da-signed'||p.status==='ca-signed').forEach(proj=>{
       const du=proj.docUrls||{};
-      const name=briefProjName(proj);
+      const name=escH(briefProjName(proj));
       const isCa=proj.status==='ca-signed';
       if(!du.est) linkRows.push(_row('l-warn',name,'Missing EST link — add to project record.',proj));
       if(!du.da)  linkRows.push(_row('l-warn',name,'Missing DA link — add to project record.',proj));
