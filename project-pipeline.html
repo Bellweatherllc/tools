@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v829</title>
+<title>BW Project Pipeline — v834</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -270,6 +270,8 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .tt-circle-pill.pb-pill:hover{background:rgba(60,130,220,.48);}
 .tt-circle-pill.pt-pill{background:rgba(30,150,80,.28);color:rgba(120,230,150,.92);}
 .tt-circle-pill.pt-pill:hover{background:rgba(30,150,80,.48);}
+.tt-circle-pill.so-pill{background:rgba(50,175,190,.28);color:rgba(140,225,235,.92);}
+.tt-circle-pill.so-pill:hover{background:rgba(50,175,190,.48);}
 .tt-circle-pill.ss-pill{background:rgba(150,80,220,.28);color:rgba(210,170,255,.92);}
 .tt-circle-pill.ss-pill:hover{background:rgba(150,80,220,.48);}
 /* Upcoming feature popup */
@@ -2676,7 +2678,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v829</div>
+    <div class="auth-version" id="authVersionBadge">v834</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2695,7 +2697,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v829</div>
+  <div class="proto-badge" id="versionBadge">v834</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -3077,6 +3079,11 @@ function _captureDragPre(drag){
     const tierInfo=tier?{id:tier.id,name:tier.name,week:drag.origWeek??tier.week}:null;
     return{type:'tier',nm,projId:drag.projId,tierInfo,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
   }
+  if(drag.type==='crit'){
+    const crit=(proj?.crits||[]).find(c=>c.id===drag.critId);
+    const critInfo=crit?{id:crit.id,name:crit.name,week:drag.origWeek??crit.week}:null;
+    return{type:'crit',nm,projId:drag.projId,critInfo,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
+  }
   let msInfo=null;
   if(drag.msId&&proj){
     const ms=proj.milestones&&proj.milestones.find(m=>m.id===drag.msId);
@@ -3157,12 +3164,20 @@ function _buildDragDesc(pre){
       return `${nm}: ${_ti.name} ${d(_ti.week)} → ${d(_tier.week)}`;
     return `${nm}: ${_ti?.name||'tier'} moved`;
   }
+  if(type==='crit'){
+    const _cp2=PROJECTS.find(p=>p.id===projId); if(_cp2) ensureCrits(_cp2);
+    const _crit=(_cp2?.crits||[]).find(c=>c.id===pre.critInfo?.id);
+    const _ci=pre.critInfo;
+    if(_crit&&_ci&&_crit.week!==_ci.week)
+      return `${nm}: ${_ci.name==='C1'?'Crit 1':'Crit 2'} ${d(_ci.week)} → ${d(_crit.week)}`;
+    return `${nm}: crit moved`;
+  }
   if(type==='timeoffMove') return `${oldPerson?_personLabel(oldPerson):'?'}: time off moved`;
   return `${nm}: changed`;
 }
 function undoLast(){
   const entry=HISTORY_STACK.pop();
-  if(!entry){ showToast&&showToast('Nothing to undo.'); return; }
+  if(!entry){ showToast&&showToast('Nothing to undo.',document.getElementById('shUndoBtn')); return; }
   try{
     PROJECTS.length=0; entry.snap.projects.forEach(p=>PROJECTS.push(p));
     // Undo restores a wholesale snapshot — any card present now but absent in the snapshot
@@ -3172,9 +3187,9 @@ function undoLast(){
     _preIds.forEach(id=>{ if(id&&!_postIds.has(id)) _tombstone('planning',id); });
     PLANNING_PROJECTS.length=0; entry.snap.planning.forEach(p=>PLANNING_PROJECTS.push(p));
     buildAll(); triggerSave();
-    showToast&&showToast('Undone: '+entry.desc);
+    showToast&&showToast('Undone: '+entry.desc,document.getElementById('shUndoBtn'));
     renderSessionHistory();
-  }catch(e){ console.error('[undo]',e); showToast&&showToast('Undo failed.'); }
+  }catch(e){ console.error('[undo]',e); showToast&&showToast('Undo failed.',document.getElementById('shUndoBtn')); }
 }
 function openSessionHistory(){
   renderSessionHistory();
@@ -4056,6 +4071,17 @@ function ensurePencilsDown(proj){
   proj.pencilsDown={id:proj.id+'-pd',week:defWk,_anchor:'pd1'};
 }
 function findPD(id){ for(const proj of PROJECTS){ ensurePencilsDown(proj); if(proj.pencilsDown?.id===id)return{proj,pd:proj.pencilsDown}; } return null; }
+function ensureCrits(proj){
+  // '_anchor':'cr1' marks crits initialized against tiers/pencils-down defaults
+  if(proj.crits&&proj.crits.length===2&&proj.crits[0]._anchor==='cr1') return;
+  ensureTiers(proj); ensurePencilsDown(proj);
+  const [t1,t2]=proj.tiers;
+  proj.crits=[
+    {id:proj.id+'-c1',name:'C1',week:Math.round((t1.week+t2.week)/2),_anchor:'cr1'},
+    {id:proj.id+'-c2',name:'C2',week:Math.max(0,proj.pencilsDown.week-1),_anchor:'cr1'},
+  ];
+}
+function findCrit(id){ for(const proj of PROJECTS){ ensureCrits(proj); const c=proj.crits.find(c=>c.id===id); if(c)return{proj,c}; } return null; }
 function laneOfInProj(proj,id){ if(proj.designLane.phases.find(p=>p.id===id))return'design'; if(id===proj.permitting.id)return'permitting'; return'production'; }
 function laneOf(id){ const r=findPhase(id); return r?laneOfInProj(r.proj,id):null; }
 function tallySection(l){ return l==='production'?'production':'design'; }
@@ -4425,6 +4451,7 @@ function buildFcMsRow(proj, capacitySection){
       pillsWrap.appendChild(_mkCircle('pb-pill', 'PB', 'Project Basis / LOD',     'pb',  proj.docUrls?.pb));
       const daTip=el('button','fc-ms-pill-btn da-pill'); daTip.textContent='DA';  daTip.dataset.upcomingPill='da'; if(proj.docUrls?.da) daTip.dataset.upcomingUrl=proj.docUrls.da; if(!proj.docUrls?.da) daTip.style.opacity='0.5';
       pillsWrap.appendChild(daTip);
+      pillsWrap.appendChild(_mkCircle('so-pill', 'SO', 'Scope Outline',           'so',  proj.docUrls?.so));
       pillsWrap.appendChild(_mkCircle('pt-pill', 'PT', 'Permit Tracker',          'pt',  ''));
       pillsWrap.appendChild(_mkCircle('ss-pill', 'SS', 'Selections Sheet',        'ss',  proj.docUrls?.ss));
       const caTip=el('button','fc-ms-pill-btn ca-pill'); caTip.textContent='CA';  caTip.dataset.upcomingPill='ca'; if(proj.docUrls?.ca) caTip.dataset.upcomingUrl=proj.docUrls.ca; if(!proj.docUrls?.ca) caTip.style.opacity='0.5';
@@ -4536,7 +4563,7 @@ function buildFcTallyPerson(person, section){
     rWrap.appendChild(addBtn);
     // T — milestone toggle
     const tBtn=el('button','lc-ms-toggle'+(DES_MS_HIDDEN.has(person.id)?'':' ms-on'));
-    tBtn.textContent='T'; tBtn.title='Show/hide T1, T2, T3 and Pencils Down';
+    tBtn.textContent='T'; tBtn.title='Show/hide T1, T2, T3, C1, C2 and Pencils Down';
     tBtn.dataset.toggleDesMilestones=person.id;
     rWrap.appendChild(tBtn);
     // Hours cluster: Curve + number + h/w (gap:4px)
@@ -4626,7 +4653,7 @@ function buildFcLcPersonHeader(lc,key){
   const lbl=el('div','fc-tally-label'); lbl.textContent=lc.label; lbl.style.cssText='cursor:pointer;font-size:14px;';
   const msOn=!LC_DESIGN_MS_HIDDEN.has(lc.id);
   const msToggle=el('button','lc-ms-toggle'+(msOn?' ms-on':''));
-  msToggle.textContent='T'; msToggle.title='Toggle Designer milestones (T1, T2, T3, Pencils Down)';
+  msToggle.textContent='T'; msToggle.title='Toggle Designer milestones (T1, T2, T3, C1, C2, Pencils Down)';
   msToggle.dataset.toggleLcDesignMs=lc.id;
   const toBtn=el('button','timeoff-add-btn'); toBtn.textContent='Time Off';
   const capInp=_makeCapInp(getTarget(lc.id).toFixed(1),v=>{
@@ -4724,6 +4751,7 @@ function buildFcLcProjectRow(proj,lcId){
     pillsWrap.appendChild(_mkC('pb-pill','PB','Project Basis / LOD',  'pb',  proj.docUrls?.pb));
     const daTip2=el('button','fc-ms-pill-btn da-pill'); daTip2.textContent='DA';  daTip2.dataset.upcomingPill='da'; if(proj.docUrls?.da) daTip2.dataset.upcomingUrl=proj.docUrls.da; if(!proj.docUrls?.da) daTip2.style.opacity='0.5';
     pillsWrap.appendChild(daTip2);
+    pillsWrap.appendChild(_mkC('so-pill','SO','Scope Outline',      'so',  proj.docUrls?.so));
     pillsWrap.appendChild(_mkC('pt-pill','PT','Permit Tracker',       'pt',  ''));
     pillsWrap.appendChild(_mkC('ss-pill','SS','Selections Sheet',     'ss',  proj.docUrls?.ss));
     const caTip2=el('button','fc-ms-pill-btn ca-pill'); caTip2.textContent='CA';  caTip2.dataset.upcomingPill='ca'; if(proj.docUrls?.ca) caTip2.dataset.upcomingUrl=proj.docUrls.ca; if(!proj.docUrls?.ca) caTip2.style.opacity='0.5';
@@ -4795,7 +4823,7 @@ function buildTlLcProject(proj,lcId){
   proj.milestones.forEach(ms=>{const mEl=buildMsTall(proj,ms,rowH,rowH,[],0);mEl.style.top='0px';ov.appendChild(mEl);});
   // Designer T1/T2/T3 and Pencils Down — shown unless toggled off for this LC
   if(!LC_DESIGN_MS_HIDDEN.has(lcId)){
-    ensureTiers(proj); proj.tiers.forEach(t=>ov.appendChild(buildTierDot(proj,t)));
+    ensureTiers(proj); proj.tiers.forEach(t=>ov.appendChild(buildTierDot(proj,t))); ensureCrits(proj); proj.crits.forEach(c=>ov.appendChild(buildCritDot(proj,c)));
     ensurePencilsDown(proj); ov.appendChild(buildPencilsDot(proj));
   }
   wrap.appendChild(ov);
@@ -4897,6 +4925,17 @@ function buildTierDot(proj,tier){
   dot.style.left=(cx-19)+'px'; // 19 = expanded radius (38px/2); close enough for collapsed (28px/2=14)
   const lbl=el('span','tier-lbl'); lbl.textContent=tier.name; dot.appendChild(lbl);
   dot.addEventListener('mouseenter',e=>tierTT(tier,e));
+  dot.addEventListener('mouseleave',hideTT);
+  dot.addEventListener('mousemove',moveTT);
+  return dot;
+}
+function buildCritDot(proj,crit){
+  const cx=w2px(crit.week)+Math.round(C.weekW/2);
+  const dot=el('div','tier-dot crit-dot');
+  dot.dataset.critId=crit.id; dot.dataset.projId=proj.id; dot.dataset.tier=crit.name;
+  dot.style.left=(cx-19)+'px';
+  const lbl=el('span','tier-lbl'); lbl.textContent=crit.name; dot.appendChild(lbl);
+  dot.addEventListener('mouseenter',e=>critTT(crit,e));
   dot.addEventListener('mouseleave',hideTT);
   dot.addEventListener('mousemove',moveTT);
   return dot;
@@ -5083,7 +5122,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   overlay.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:absolute;top:0;left:0;overflow:visible;`;
   const msToRender=skipMsNames?proj.milestones.filter(ms=>!skipMsNames.includes(ms.name)):proj.milestones;
   msToRender.forEach(ms=>{ const mEl=buildMsTall(proj,ms,rowH,rowH,[],0); overlay.appendChild(mEl); }); // top:1px from buildMsTall default
-  if(laneIds.includes('design')&&!hideTierDots){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); ensurePencilsDown(proj); overlay.appendChild(buildPencilsDot(proj)); }
+  if(laneIds.includes('design')&&!hideTierDots){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); ensureCrits(proj); proj.crits.forEach(c=>overlay.appendChild(buildCritDot(proj,c))); ensurePencilsDown(proj); overlay.appendChild(buildPencilsDot(proj)); }
   wrap.appendChild(overlay); return wrap;
 }
 
@@ -5969,6 +6008,14 @@ function refreshTier(tierId){
     dot.style.left=(cx-half)+'px';
   });
 }
+function refreshCrit(critId){
+  const r=findCrit(critId); if(!r)return;
+  const _ww=_effWW(); const cx=Math.round(r.c.week*_ww)+Math.round(_ww/2);
+  document.querySelectorAll(`.crit-dot[data-crit-id="${critId}"]`).forEach(dot=>{
+    const half=Math.round(dot.offsetWidth/2)||10;
+    dot.style.left=(cx-half)+'px';
+  });
+}
 function buildPencilsDot(proj){
   const cx=w2px(proj.pencilsDown.week)+Math.round(C.weekW/2);
   const dot=el('div','pd-dot');
@@ -6341,6 +6388,19 @@ function initDrag(){
       pdEl.classList.add('dragging'); capture(pdEl,e.pointerId); return;
     }
 
+    const critEl=e.target.closest('.crit-dot');
+    if(critEl&&(!canEdit()||critEl.closest('.lc-proj-tl'))) return;
+    if(critEl){
+      e.preventDefault();
+      const critId=critEl.dataset.critId, projId=critEl.dataset.projId;
+      const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
+      ensureCrits(proj);
+      const crit=proj.crits.find(c=>c.id===critId); if(!crit) return;
+      DRAG={type:'crit',critId,projId,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:crit.week,minWeek:0,maxWeek:C.numWeeks-1};
+      critEl.classList.add('dragging');
+      capture(critEl,e.pointerId); return;
+    }
+
     const tierEl=e.target.closest('.tier-dot');
     if(tierEl&&(!canEdit()||tierEl.closest('.lc-proj-tl'))) return;
     if(tierEl){
@@ -6376,6 +6436,7 @@ function initDrag(){
         DRAG={type:'projMove',projId,startX:e.clientX,weekW:_dragWeekW(e.target),allPhs,origStarts,origMsWeeks,
               milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane,
               tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week),
+              crits:(ensureCrits(proj)||proj.crits),origCritWeeks:proj.crits.map(c=>c.week),
               pencilsDown:proj.pencilsDown,origPdWeek:proj.pencilsDown.week};
         document.querySelectorAll(`.ms-tall[data-ms-id="${id}"]`).forEach(m=>m.classList.add('dragging'));
         capture(msEl,e.pointerId); return;
@@ -6527,10 +6588,11 @@ function initDrag(){
         DRAG={type:'projMove',projId,startX:e.clientX,allPhs,origStarts:origAllStarts,origMsWeeks,
               milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane,
               tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week),
+              crits:(ensureCrits(proj)||proj.crits),origCritWeeks:proj.crits.map(c=>c.week),
               pencilsDown:proj.pencilsDown,origPdWeek:proj.pencilsDown.week};
         bar.classList.add('dragging'); capture(bar,e.pointerId); return;
       }
-      const _phaseTiers=(laneId==='design'&&chainStart===0)?(()=>{ensureTiers(proj);ensurePencilsDown(proj);return{tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week),pencilsDown:proj.pencilsDown,origPdWeek:proj.pencilsDown.week};})():{};
+      const _phaseTiers=(laneId==='design'&&chainStart===0)?(()=>{ensureTiers(proj);ensurePencilsDown(proj);ensureCrits(proj);return{tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week),crits:proj.crits,origCritWeeks:proj.crits.map(c=>c.week),pencilsDown:proj.pencilsDown,origPdWeek:proj.pencilsDown.week};})():{};
       DRAG={type:'phaseMove',laneId,projId,bar,startX:e.clientX,chain,origStarts,allPhs:phs,chainStart,chainEnd,cascadeLeft,designCascadeRight,designCascadeLeft,..._phaseTiers};
       bar.classList.add('dragging'); capture(bar,e.pointerId); return;
     }
@@ -6539,7 +6601,7 @@ function initDrag(){
   iw.addEventListener('click',e=>{
     const ob=e.target.closest('[data-open-status-menu]'); if(ob){openStatusMenu(ob.closest('.status-badge'));return;}
     const ppLmb=e.target.closest('[data-open-pp-lead-menu]'); if(ppLmb){openPPLeadMenu(ppLmb);return;}
-    const hb=e.target.closest('[data-delta]'); if(hb){ if(!canEdit()){ showToast('Admin mode required.'); return; } updateHours(hb.dataset.phaseId,parseFloat(hb.dataset.delta));return;}
+    const hb=e.target.closest('[data-delta]'); if(hb){ if(!canEdit()){ showToast('Admin mode required.',hb); return; } updateHours(hb.dataset.phaseId,parseFloat(hb.dataset.delta));return;}
     const lcTBtn=e.target.closest('[data-lc-target-person]');
     if(lcTBtn){
       const _lcId=lcTBtn.dataset.lcTargetPerson, _d=parseFloat(lcTBtn.dataset.lcTargetDelta);
@@ -6589,7 +6651,7 @@ function initDrag(){
     // Slot defaults toggle
     const sbd=e.target.closest('[data-slot-budget-delta]');
     if(sbd){
-      if(!canEdit()){ showToast('Admin mode required.'); return; }
+      if(!canEdit()){ showToast('Admin mode required.',sbd); return; }
       const projId=sbd.dataset.slotBudgetProj;
       const dir=parseInt(sbd.dataset.slotBudgetDelta);
       const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
@@ -6787,7 +6849,7 @@ function initDrag(){
     }
     // Planning project — approve & migrate to pipeline
     const approveBtn=e.target.closest('[data-approve-planning-proj]');
-    if(approveBtn&&!canEdit()){ showToast('Admin mode required.'); return; }
+    if(approveBtn&&!canEdit()){ showToast('Admin mode required.',approveBtn); return; }
     if(approveBtn){
       const pp=PLANNING_PROJECTS.find(p=>p.id===approveBtn.dataset.approvePlanningProj); if(!pp)return;
 
@@ -7265,6 +7327,7 @@ function onMove(e){
     DRAG.prodLane.startWeek=DRAG.prodLane.phases[0].startWeek;
     if(DRAG.milestones){ DRAG.milestones.forEach((ms,i)=>{ ms.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origMsWeeks[i]+clampedDw)); refreshMs(ms.id); }); }
     if(DRAG.tiers){ DRAG.tiers.forEach((t,i)=>{ t.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origTierWeeks[i]+clampedDw)); refreshTier(t.id); }); }
+    if(DRAG.crits){ DRAG.crits.forEach((c,i)=>{ c.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origCritWeeks[i]+clampedDw)); refreshCrit(c.id); }); }
     if(DRAG.pencilsDown){ DRAG.pencilsDown.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origPdWeek+clampedDw)); refreshPD(DRAG.pencilsDown.id); }
     // Update bars in-place
     DRAG.allPhs.forEach(ph=>{
@@ -7319,6 +7382,7 @@ function onMove(e){
     if(DRAG.chainStart===0) getLane(proj,DRAG.laneId).startWeek=DRAG.chain[0].startWeek;
     if(DRAG.laneId==='design'&&DRAG.chainStart===0&&DRAG.tiers){
       DRAG.tiers.forEach((t,i)=>{ t.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origTierWeeks[i]+clampedDw)); refreshTier(t.id); });
+      if(DRAG.crits){ DRAG.crits.forEach((c,i)=>{ c.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origCritWeeks[i]+clampedDw)); refreshCrit(c.id); }); }
       if(DRAG.pencilsDown){ DRAG.pencilsDown.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origPdWeek+clampedDw)); refreshPD(DRAG.pencilsDown.id); }
     }
     // Cascade left: Construction drags Pre-con and CA milestone left with it when all touching
@@ -7414,6 +7478,17 @@ function onMove(e){
     });
   }
 
+  if(DRAG.type==='crit'){
+    const r=findCrit(DRAG.critId); if(!r) return;
+    const _newCritWk=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek,DRAG.origWeek+dw));
+    if(_newCritWk!==r.c.week) _dragMoved=true;
+    r.c.week=_newCritWk; r.c._anchor='cr1';
+    const cx=Math.round(r.c.week*_dragWW)+Math.round(_dragWW/2);
+    document.querySelectorAll(`.crit-dot[data-crit-id="${DRAG.critId}"]`).forEach(dot=>{
+      const half=Math.round(dot.offsetWidth/2)||10; dot.style.left=(cx-half)+'px';
+    });
+  }
+
   if(DRAG.type==='pd'){
     const r=findPD(DRAG.pdId); if(!r) return;
     const _newWk=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek,DRAG.origWeek+dw));
@@ -7505,6 +7580,12 @@ function onUp(){
   if(DRAG.type==='tier'){
     document.querySelectorAll(`.tier-dot[data-tier-id="${DRAG.tierId}"]`).forEach(d=>d.classList.remove('dragging'));
     const _tp=PROJECTS.find(p=>p.id===DRAG.projId); if(_tp){ markDirty(_tp); triggerSave(_tp); }
+    document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp);
+    DRAG=null; return;
+  }
+  if(DRAG.type==='crit'){
+    document.querySelectorAll(`.crit-dot[data-crit-id="${DRAG.critId}"]`).forEach(d=>d.classList.remove('dragging'));
+    const _cp=PROJECTS.find(p=>p.id===DRAG.projId); if(_cp){ markDirty(_cp); triggerSave(_cp); }
     document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp);
     DRAG=null; return;
   }
@@ -7604,6 +7685,12 @@ function tierTT(tier,e){
   const lbls={'T1':'Tier 1','T2':'Tier 2','T3':'Tier 3'};
   const lbl=lbls[tier.name]||tier.name;
   showTTraw(`<div class="tt-n">${lbl} selections due ${fmt(fri)}</div><div class="tt-d">Enter into BT by ${fmt(tue)} at 5:00 pm</div>`,e);
+}
+function critTT(crit,e){
+  const fri=wkFri(crit.week);
+  const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const lbl=crit.name==='C1'?'Crit 1':'Crit 2';
+  showTTraw(`<div class="tt-n">${lbl} — ${fmt(fri)}</div>`,e);
 }
 
 // ════════════════════════════════════════════════  SAVE INDICATOR
@@ -8464,6 +8551,7 @@ function buildPlanningSection(){
         html+=_pu('est-pill','EST','est',du.est);
         html+=_pu('pb-pill','PB','pb',du.pb);
         html+=`<button class="fc-ms-pill-btn da-pill" style="pointer-events:all${du.da?'':';opacity:.50'}" data-upcoming-pill="da"${du.da?` data-upcoming-url="${escH(du.da)}"`:''}title="Design Agreement">DA</button>`;
+        html+=_pu('so-pill','SO','so',du.so);
         html+='</div>';
         html+='</div>';
         _psProjTT.innerHTML=html;
@@ -8625,6 +8713,7 @@ function buildPlanningSection(){
         function _pu2(cls,lbl,type,url){return `<button class="tt-circle-pill ${cls}" style="pointer-events:all${url?'':';opacity:.50'}" data-upcoming-pill="${type}"${url?` data-upcoming-url="${escH(url)}"`:''}>${lbl}</button>`;}
         html+=_pu2('est-pill','EST','est',du.est)+_pu2('pb-pill','PB','pb',du.pb);
         html+=`<button class="fc-ms-pill-btn da-pill" style="pointer-events:all${du.da?'':';opacity:.50'}" data-upcoming-pill="da"${du.da?` data-upcoming-url="${escH(du.da)}"`:''}title="Design Agreement">DA</button>`;
+        html+=_pu2('so-pill','SO','so',du.so);
         html+='</div>';
         _psProjTT.innerHTML=html;
         const r=mCard.getBoundingClientRect();
@@ -8769,7 +8858,7 @@ function buildPlanningSection(){
       const label=dispWk!=null?wkDate(dispWk):'—';
       cell.textContent=label;
       if(!editable) return cell;
-      cell.classList.add('ps-dt-editable'); cell.title='Click to edit (admin)';
+      cell.classList.add('ps-dt-editable');
       cell.addEventListener('click',e=>{
         if(!canEdit()) return;
         if(cell.querySelector('input')) return;
@@ -8827,6 +8916,7 @@ function buildPlanningSection(){
         const delta=nw-oldStart;
         slot.designLane.phases.filter(ph=>!ph.isDesignProd).forEach(ph=>{ if(ph.startWeek!=null) ph.startWeek+=delta; });
         (slot.tiers||[]).forEach(tt=>{ if(tt.week!=null) tt.week+=delta; });
+        (slot.crits||[]).forEach(cc=>{ if(cc.week!=null) cc.week+=delta; });
         if(slot.pencilsDown&&slot.pencilsDown.week!=null) slot.pencilsDown.week+=delta;
       }
       slot.designLane.startWeek=slot.designLane.phases[0]?.startWeek??slot.designLane.startWeek;
@@ -9455,6 +9545,7 @@ async function loadProjects(saved){
       est: f.EstimateUrl||'',
       pb:  f.ProjectBasisUrl||'',
       da:  f.DAUrl||'',
+      so:  (typeof f.ScopeOutline==='string'?f.ScopeOutline:(f.ScopeOutline?.Url||'')),
       ca:  f.CAUrl||'',
       ss:  f.SelectionsSheetUrl||''
     };
@@ -9588,10 +9679,20 @@ let _isBgSyncing=false;
 let _staleSections=new Set(); // lenses whose data changed via bg sync while hidden; rebuilt on focus entry
 const BG_SYNC_MS=30_000;
 
-function showToast(msg){
+function showToast(msg, anchor){
   const t=document.getElementById('pp-toast');
   if(!t)return;
   t.textContent=msg;
+  if(anchor&&anchor.getBoundingClientRect){
+    const r=anchor.getBoundingClientRect();
+    const w=t.offsetWidth||140, h=t.offsetHeight||26;
+    let left=Math.max(8,Math.min(r.left+r.width/2-w/2,window.innerWidth-w-8));
+    let top=r.top-h-8;
+    if(top<8) top=r.bottom+8; // no room above — sit below the button
+    t.style.left=left+'px'; t.style.top=top+'px'; t.style.bottom='auto'; t.style.right='auto';
+  } else {
+    t.style.left=''; t.style.top=''; t.style.bottom=''; t.style.right=''; // default bottom-left
+  }
   t.classList.add('visible');
   clearTimeout(t._t);
   t._t=setTimeout(()=>t.classList.remove('visible'),3200);
@@ -10187,7 +10288,7 @@ function applyAdminEligibility(){
   if(!eligible&&IS_ADMIN_MODE){ IS_ADMIN_MODE=false; document.body.classList.remove('admin-mode'); }
 }
 function toggleAdminMode(){
-  if(CURRENT_USER_ROLE!=='admin'){ showToast&&showToast('Admin access required.'); return; }
+  if(CURRENT_USER_ROLE!=='admin'){ showToast&&showToast('Admin access required.',document.getElementById('adminControl')); return; }
   IS_ADMIN_MODE=!IS_ADMIN_MODE;
   document.body.classList.toggle('admin-mode',IS_ADMIN_MODE);
   _presenceTick().catch(()=>{}); // broadcast the mode change immediately
@@ -10369,6 +10470,7 @@ const UPCOMING_INFO={
   pb: {label:'Project Basis',          desc:'LOD assessment and risk scoring for this project.'},
   pt: {label:'Permit Tracker',         desc:'Live permit status and tracking for this project.'},
   ss: {label:'Selections Sheet',       desc:'Selections log and finish schedule for this project.'},
+  so: {label:'Scope Outline',          desc:'Link to the Scope Outline document for this project.'},
   da: {label:'Design Agreement',       desc:'Link to the signed Design Agreement document.'},
   ca: {label:'Construction Agreement', desc:'Link to the signed Construction Agreement document.'},
 };
@@ -10394,13 +10496,20 @@ document.addEventListener('pointerdown',e=>{
   if(upBtn){ e.stopPropagation(); const url=upBtn.dataset.upcomingUrl; if(url) window.open(url,'_blank','noopener'); else _showUpcomingPop(upBtn); return; }
   if(pop&&!pop.contains(e.target)) pop.style.display='none';
 },true);
-function _showTip(info, e, anchor){
+function _showTip(info, e, anchor, belowEl){
   const tip=info.querySelector('.fc-proj-tooltip'); if(!tip)return;
   // Close any other open tooltips first
   document.querySelectorAll('.fc-proj-tooltip.tt-visible').forEach(t=>{ if(t!==tip) t.classList.remove('tt-visible'); });
+  // belowEl: anchor beneath the project name (Design/Production — matches Sales behavior)
   // anchor: when provided (LC rows), flush tooltip against anchor's right edge — zero gap
-  const x=anchor?anchor.getBoundingClientRect().right:e?e.clientX+14:info.getBoundingClientRect().right+8;
-  const y=e?e.clientY-10:info.getBoundingClientRect().top;
+  let x,y;
+  if(belowEl){
+    const br=belowEl.getBoundingClientRect();
+    x=br.left; y=br.bottom+4;
+  } else {
+    x=anchor?anchor.getBoundingClientRect().right:e?e.clientX+14:info.getBoundingClientRect().right+8;
+    y=e?e.clientY-10:info.getBoundingClientRect().top;
+  }
   tip.style.left=x+'px'; tip.style.top=y+'px';
   tip.classList.add('tt-visible');
   // Clamp after render so we know the tooltip width
@@ -10412,8 +10521,10 @@ function _showTip(info, e, anchor){
   });
 }
 function _hideAllTips(){ document.querySelectorAll('.fc-proj-tooltip.tt-visible').forEach(t=>t.classList.remove('tt-visible')); }
+let _projTipHideTimer=null;
 document.addEventListener('mouseenter',e=>{
   if(!e.target||!e.target.closest)return;
+  if(e.target.closest('.proj-name-text,.fc-proj-tooltip')) clearTimeout(_projTipHideTimer);
   if(e.target.closest('.fc-proj-tooltip')) return; // inside tooltip — do nothing
   const nameText=e.target.closest('.proj-name-text');
   if(!nameText)return;
@@ -10421,7 +10532,7 @@ document.addEventListener('mouseenter',e=>{
   if(!info)return;
   // LC rows: anchor tooltip to span's right edge (zero gap); others: cursor-relative
   const isLcRow=nameText.closest('[data-capacity-section="lc"]');
-  _showTip(info, e, isLcRow?nameText:null);
+  _showTip(info, e, isLcRow?nameText:null, isLcRow?null:nameText);
 },true);
 // Dismiss on click outside tooltip and project name
 document.addEventListener('pointerdown',e=>{
@@ -10441,7 +10552,7 @@ document.addEventListener('mouseleave',e=>{
   if(!e.target?.closest)return;
   if(!e.target.closest('.proj-name-text,.fc-proj-tooltip'))return;
   const to=e.relatedTarget;
-  if(!to?.closest?.('.proj-name-text,.fc-proj-tooltip')) _hideAllTips();
+  if(!to?.closest?.('.proj-name-text,.fc-proj-tooltip')){ clearTimeout(_projTipHideTimer); _projTipHideTimer=setTimeout(_hideAllTips,150); }
 },true);
 
 // ════════════════════════════════════════════════  CALENDAR RANGE POPUP
@@ -10476,9 +10587,10 @@ function openLcWeekPopup(lcId,week,clientX,clientY){
       phases.forEach((ph,i)=>{
         if(ph.startWeek===null||ph.durWeeks<=0) return;
         if(wk<ph.startWeek||wk>=ph.startWeek+ph.durWeeks) return;
-        ensureTiers(proj); ensurePencilsDown(proj);
+        ensureTiers(proj); ensurePencilsDown(proj); ensureCrits(proj);
         const events=[];
         proj.tiers.forEach(t=>{ if(t.week===wk) events.push(t.name); });
+        proj.crits.forEach(c=>{ if(c.week===wk) events.push(c.name); });
         if(proj.pencilsDown?.week===wk) events.push('PD');
         rows.push({name:proj.name,hours:hrs[i],phase:ph.name,events});
       });
@@ -10553,7 +10665,7 @@ function openLcWeekPopup(lcId,week,clientX,clientY){
   [[rows1,d1,tot1,'Week at a glance'],[rows2,d2,tot2,'Upcoming']].forEach(([rows,date,tot,lbl])=>{
     copyT+=lbl+' \u2014 '+fmtFull(date)+':\n';
     if(rows.length===0) copyT+='  No scheduled hours.\n';
-    else{ rows.forEach(r=>{ const evStr=r.events&&r.events.length>0?' ['+r.events.map(e=>e==='PD'?'Pencils Down':e).join(', ')+']':''; copyT+='  \u2022 '+r.name+': '+r.hours.toFixed(1)+'h'+evStr+'\n'; }); copyT+='  Total: '+tot.toFixed(1)+'h\n'; }
+    else{ rows.forEach(r=>{ const evStr=r.events&&r.events.length>0?' ['+r.events.map(e=>e==='PD'?'Pencils Down':e==='C1'?'Crit 1':e==='C2'?'Crit 2':e).join(', ')+']':''; copyT+='  \u2022 '+r.name+': '+r.hours.toFixed(1)+'h'+evStr+'\n'; }); copyT+='  Total: '+tot.toFixed(1)+'h\n'; }
     copyT+='\n';
   });
   LC_WEEK_POPUP._copyText=copyT;
@@ -10581,8 +10693,9 @@ function openDesignerWeekPopup(designerId,week,clientX,clientY){
       proj.designLane.phases.forEach(ph=>{
         if(!ph.durWeeks||ph.startWeek==null) return;
         if(wk<ph.startWeek||wk>=ph.startWeek+ph.durWeeks) return;
-        ensureTiers(proj); ensurePencilsDown(proj);
+        ensureTiers(proj); ensurePencilsDown(proj); ensureCrits(proj);
         const [t1,t2,t3]=proj.tiers;
+        const [c1,c2]=proj.crits;
         let tierLabel=null;
         if(wk>=t3.week) tierLabel='T3';
         else if(wk>=t2.week) tierLabel='T2';
@@ -10597,6 +10710,8 @@ function openDesignerWeekPopup(designerId,week,clientX,clientY){
         if(t1.week===wk) events.push('T1');
         if(t2.week===wk) events.push('T2');
         if(t3.week===wk) events.push('T3');
+        if(c1.week===wk) events.push('C1');
+        if(c2.week===wk) events.push('C2');
         if(proj.pencilsDown?.week===wk) events.push('PD');
         rows.push({
           name:proj.name, hours:weekHours, phase:ph.name,
@@ -10720,7 +10835,7 @@ function openDesignerWeekPopup(designerId,week,clientX,clientY){
     if(rows.length===0) copyT+='  No scheduled hours.\n';
     else{
       rows.forEach(r=>{
-        const evStr=r.events&&r.events.length>0?' ['+r.events.map(e=>e==='PD'?'Pencils Down':e).join(', ')+']':'';
+        const evStr=r.events&&r.events.length>0?' ['+r.events.map(e=>e==='PD'?'Pencils Down':e==='C1'?'Crit 1':e==='C2'?'Crit 2':e).join(', ')+']':'';
         copyT+='  \u2022 '+r.name+': '+r.hours.toFixed(1)+'h'+evStr+'\n';
       });
       copyT+='  Total: '+tot.toFixed(1)+'h\n';
@@ -11510,7 +11625,7 @@ document.addEventListener('click',e=>{
 
     const _colDefs={
       production:['CA Sign','Con Start','Con End','Est. Cost','% Cmplt'],
-      design:    ['DA Sign','Ph I Start','Ph II Start','T1','T2','T3','PD','CA Sign','Ph III Start'],
+      design:    ['DA Sign','Ph I Start','Ph II Start','T1','C1','T2','T3','C2','PD','CA Sign','Ph III Start'],
       planning:  ['DA Sign','Des Start','CA Sign','Con Start','Con End','Est. Cost']
     };
     const _cols=_colDefs[section]||_colDefs.planning;
@@ -11548,6 +11663,9 @@ document.addEventListener('click',e=>{
       } else if(section==='design'&&(lbl==='T1'||lbl==='T2'||lbl==='T3')){
         h.innerHTML='<span style="'+_T_CIRCLE+'">'+lbl+'</span>';
         h.title='Tier '+lbl.slice(1)+' milestone date';
+      } else if(section==='design'&&(lbl==='C1'||lbl==='C2')){
+        h.innerHTML='<span style="'+_T_CIRCLE+'">'+lbl+'</span>';
+        h.title='Crit '+lbl.slice(1)+' date';
       } else if(section==='design'&&lbl==='PD'){
         h.innerHTML=_PD_SVG+'<span style="'+_SUB+'">PD</span>';
         h.title='Pencils down date';
@@ -11640,15 +11758,18 @@ document.addEventListener('click',e=>{
         const _dp=proj.designLane.phases.filter(ph=>!ph.isDesignProd);
         const ph1=_dp[0], ph2=_dp[1];
         const ph3=proj.designLane.phases.find(ph=>ph.isDesignProd);
-        ensureTiers(proj); ensurePencilsDown(proj);
+        ensureTiers(proj); ensurePencilsDown(proj); ensureCrits(proj);
         const t1Wk=(proj.tiers||[])[0]?.week; const t2Wk=(proj.tiers||[])[1]?.week; const t3Wk=(proj.tiers||[])[2]?.week;
+        const c1Wk=(proj.crits||[])[0]?.week; const c2Wk=(proj.crits||[])[1]?.week;
         const pdWk=proj.pencilsDown?.week;
         _addCell(row,_copy,daMs?.week,daMs);
         _addCell(row,_copy,ph1?.startWeek,null);
         _addCell(row,_copy,ph2?.startWeek,null);
         _addCell(row,_copy,t1Wk!=null?t1Wk:null,null,true);
+        _addCell(row,_copy,c1Wk!=null?c1Wk:null,null,true);
         _addCell(row,_copy,t2Wk!=null?t2Wk:null,null,true);
         _addCell(row,_copy,t3Wk!=null?t3Wk:null,null,true);
+        _addCell(row,_copy,c2Wk!=null?c2Wk:null,null,true);
         _addCell(row,_copy,pdWk!=null?pdWk:null,null,true);
         _addCell(row,_copy,caMs?.week,caMs);
         _addCell(row,_copy,ph3?.startWeek,null);
@@ -12040,6 +12161,39 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v834', date: '2026-07-13',
+    entries: [
+      'The project information hover in Design and Production now opens directly beneath the project name \u2014 matching Sales \u2014 instead of floating beside the cursor, making the document pills much easier to reach.',
+      'The hover also forgives the short mouse trip from the name down into it, instead of vanishing the instant the pointer leaves the name.'
+    ]
+  },
+  {
+    version: 'v833', date: '2026-07-13',
+    entries: [
+      'Two new designer milestones on Design projects: C1 and C2 (Crits 1 and 2). They start out with C1 midway between T1 and T2 and C2 one week before Pencils Down, and from there are dragged independently in admin mode, exactly like the tiers.',
+      'C1 and C2 appear everywhere the tier milestones do: the Design Key Dates panel (between T1 and T2, and between T3 and PD), the week-at-a-glance popup from each designer\u2019s weekly capacity cells, the weekly-change Brief, and the T show/hide toggle.',
+      'Crit dates move with the project: dragging a whole project or its design phases carries C1 and C2 along, same as tiers and Pencils Down.'
+    ]
+  },
+  {
+    version: 'v832', date: '2026-07-13',
+    entries: [
+      'New SO (Scope Outline) document pill on project cards in Design and Production, sitting right after DA. It reads the new ScopeOutline column on the project record: when a link exists the pill opens it in a new tab; until then it shows dimmed, like the other document pills. Links are added through the Projects Manager.'
+    ]
+  },
+  {
+    version: 'v831', date: '2026-07-11',
+    entries: [
+      'Removed the browser-native \u201cClick to edit (admin)\u201d tooltip from the editable date cells in the planning list. The cells already signal editability the CORE way \u2014 pointer cursor and underline on hover in admin mode \u2014 so the old tooltip was redundant, slow to appear, and invisible on touch devices.'
+    ]
+  },
+  {
+    version: 'v830', date: '2026-07-11',
+    entries: [
+      'The message pill now appears right beside the button you pressed (just above it, or below if there\u2019s no room) instead of tucked in the bottom-left corner. Messages without a specific button \u2014 rare \u2014 still use the corner.'
+    ]
+  },
+  {
     version: 'v829', date: '2026-07-11',
     entries: [
       'New quiet message pill (bottom-left, matching the sync indicator\u2019s style): pressing an action button outside admin mode \u2014 CONFIRM on a planning slot, the hours steppers, the slot-budget steppers \u2014 now says \u201cAdmin mode required.\u201d instead of doing nothing.',
@@ -12332,6 +12486,7 @@ function snapshotPipeline(){
       notes:p.notes||'',
       milestones:(p.milestones||[]).map(m=>({id:m.id,name:m.name,status:m.status,week:m.week})),
       tiers:(p.tiers||[]).map(t=>({id:t.id,name:t.name,week:t.week})),
+      crits:(p.crits||[]).map(c=>({id:c.id,name:c.name,week:c.week})),
       pd:p.pencilsDown?{id:p.pencilsDown.id,week:p.pencilsDown.week}:null,
       designStart:p.designLane?.phases?.[0]?.startWeek??null,
       prodStart:p.productionLane?.phases?.[0]?.startWeek??null,
@@ -12446,6 +12601,10 @@ function diffPipeline(){
       })();
       const bt=_snapTiers.find(t=>t.id===tier.id); if(!bt) return;
       if(bt.week!==tier.week) scheduleChanges.push({proj,field:tier.name+' Selection',fromWeek:bt.week,toWeek:tier.week,fromDur:null,toDur:null});
+    });
+    (proj.crits||[]).forEach(crit=>{
+      const bc=(snap.crits||[]).find(c=>c.id===crit.id); if(!bc) return;
+      if(bc.week!==crit.week) scheduleChanges.push({proj,field:(crit.name==='C1'?'Crit 1':'Crit 2'),fromWeek:bc.week,toWeek:crit.week,fromDur:null,toDur:null});
     });
     // Construction schedule changes (kept for backward compat with old baselines)
     const cPh=proj.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
@@ -12763,7 +12922,7 @@ function generateBriefHTML(){
       +`<span class="brief-tag ${briefTagClass(proj.status)}" style="font-size:9px;">${briefStatusLabel(proj.status)}</span>`
       +`</div>${rows.join('')}</div>`;
   }
-  const _isDesignField=f=>/Phase\s*I|T[123]\s*Selection|Pencils\s*Down/i.test(f);
+  const _isDesignField=f=>/Phase\s*I|T[123]\s*Selection|Crit\s*[12]|Pencils\s*Down/i.test(f);
 
   // Notes are distributed into Pipeline Planning / Sales Updates / Design Updates / Production Updates above
 
