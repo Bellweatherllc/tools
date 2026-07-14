@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v843</title>
+<title>BW Project Pipeline — v844</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2685,7 +2685,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v843</div>
+    <div class="auth-version" id="authVersionBadge">v844</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2704,7 +2704,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v843</div>
+  <div class="proto-badge" id="versionBadge">v844</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -9621,11 +9621,21 @@ async function loadProjects(saved){
   _baseGd.clear();
   items.forEach(item=>{
     if(item.lastModifiedDateTime&&(!_maxLoadedModified||item.lastModifiedDateTime>_maxLoadedModified)) _maxLoadedModified=item.lastModifiedDateTime;
+    _baseGd.set(item.id,(item.fields||{}).GanttData||'');
+    const proj=_projectFromItem(item);
+    if(proj) PROJECTS.push(proj);
+  });
+}
+
+// v844: the one and only place a CORE_Projects row becomes a project object.
+// Extracted from loadProjects so the background sync can adopt rows created by a
+// colleague without a second, drifting copy of this logic. Returns null for rows
+// that do not belong on the board (archived / cancelled).
+function _projectFromItem(item){
     const f=item.fields||{};
-    _baseGd.set(item.id,f.GanttData||'');
     const stage=f.PipelineStage||'';
     const status=spStageToStatus(stage);
-    if(status==='archived'||status==='cancelled') return;
+    if(status==='archived'||status==='cancelled') return null; // not on the board
     const projId='sp-proj-'+item.id;
     const clientName=f.ClientName||f.Title||'Unnamed Project';
     const projectName=f.ProjectName||''; // editable display name; falls back to clientName
@@ -9646,7 +9656,7 @@ async function loadProjects(saved){
         // display, but quarantine this project: markDirty() refuses it, so nothing can
         // overwrite the damaged-but-possibly-recoverable original in SharePoint.
         proj._gdCorrupt=true;
-        _corruptProjects.push(clientName);
+        if(!_corruptProjects.includes(clientName)) _corruptProjects.push(clientName);
       }
     }
     // SP always owns these fields — overwrite GanttData values
@@ -9658,7 +9668,8 @@ async function loadProjects(saved){
     // July 2026). It reads as a slot to this loader while reading as a project everywhere else.
     // Slots are never edited into projects — the lead row is created fresh.
     if(ganttData?.isOpenSlot && !/^Slot\b/i.test(name)){
-      _slotMismatch.push(clientName||name||('item '+item.id));
+      const _smName=clientName||name||('item '+item.id);
+      if(!_slotMismatch.includes(_smName)) _slotMismatch.push(_smName);
       console.warn(APP_VER+' Slot/project mismatch: row',item.id,'named',JSON.stringify(name),'still has isOpenSlot in GanttData.');
     }
     proj.isLead = (!stage || /^lead$/i.test(stage)) && !isSlot;
@@ -9705,8 +9716,7 @@ async function loadProjects(saved){
       ca:  f.CAUrl||'',
       ss:  f.SelectionsSheetUrl||''
     };
-    PROJECTS.push(proj);
-  });
+  return proj;
 }
 
 // ── Restore non-project state from saved localStorage ──
@@ -9863,6 +9873,27 @@ function _showSyncInd(msg){
   ind._t=setTimeout(()=>ind.classList.remove('visible'),4000);
 }
 
+// v844: fields SharePoint owns outright — GanttData is the scheduling authority, but these
+// columns are edited in the Projects Manager and must reach an open board without a reload.
+// A stage change made by a colleague was previously invisible until you reloaded the page.
+const _SP_OWNED_KEYS=['status','isLead','name','clientName','projectName','address','estimatedValue',
+  'projType','salesPerson','shortDescription','projectDescription','secondaryDesigner',
+  'logisticsCoord1','logisticsCoord2','lc1','lc2','docUrls',
+  'trelloCardId','trelloListName','trelloListChangedAt','trelloPreviousList'];
+function _applySpColumns(existing, fresh){
+  if(!existing||!fresh) return false;
+  let changed=false;
+  _SP_OWNED_KEYS.forEach(k=>{
+    const a=existing[k], b=fresh[k];
+    const same=(k==='docUrls')?JSON.stringify(a)===JSON.stringify(b):a===b;
+    if(!same){ existing[k]=b; changed=true; }
+  });
+  // Designer/PM follow the loader's rule: GanttData wins, SP only fills a blank.
+  if(!existing.designer&&fresh.designer){ existing.designer=fresh.designer; changed=true; }
+  if(!existing.productionPM&&fresh.productionPM){ existing.productionPM=fresh.productionPM; changed=true; }
+  return changed;
+}
+
 async function _bgSync(){
   if(_isBgSyncing||!_lastSyncTs||_dirtyProjects.size>0||DRAG)return;
   _isBgSyncing=true;
@@ -9877,16 +9908,34 @@ async function _bgSync(){
     // _fetchPMReviews hit, which is why it also filters client-side). Instead: one light
     // sweep of id+timestamp for all items (no $expand, cheap), compare against the anchor,
     // then fetch fields only for the handful that actually changed.
-    let changed=[];
+    let changed=[], sweep=null;
     try{
-      const sweep=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$select=id,lastModifiedDateTime');
+      sweep=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$select=id,lastModifiedDateTime');
       const newer=sweep.filter(it=>it.lastModifiedDateTime&&it.lastModifiedDateTime>_lastSyncTs);
       for(const it of newer){
         const full=await graphGet(BWC_SITE+'/CORE_Projects/items/'+it.id+'?$expand=fields&$select=id,lastModifiedDateTime,fields');
         changed.push(full);
       }
     }catch(e){ console.warn('[bgSync] change sweep failed:',e.message); _isBgSyncing=false; return; }
-    if(!changed.length){_isBgSyncing=false;return;}
+    // v844: rows that vanished from SharePoint (a slot consumed by someone else's CONFIRM,
+    // or a row deleted in the Manager) must leave the board too. The sweep already carries
+    // the complete id list, so absence is free to detect — but destructive if the sweep is
+    // ever wrong, hence the sanity gate below.
+    const _removed=[];
+    if(sweep&&sweep.length){
+      const live=new Set(sweep.map(it=>String(it.id)));
+      const gone=PROJECTS.filter(p=>p._spItemId&&!live.has(String(p._spItemId))&&!_dirtyProjects.has(p._spItemId));
+      const gate=Math.max(5,Math.floor(PROJECTS.length*0.25));
+      if(gone.length>gate){
+        console.warn('[bgSync] '+gone.length+' rows missing from the sweep (gate '+gate+') — refusing to remove. Treating the sweep as untrustworthy; reload to resync.');
+      } else {
+        gone.forEach(p=>{
+          const k=PROJECTS.indexOf(p);
+          if(k>=0){ PROJECTS.splice(k,1); _baseGd.delete(p._spItemId); _removed.push(p.name||p.clientName||('item '+p._spItemId)); }
+        });
+      }
+    }
+    if(!changed.length&&!_removed.length){_isBgSyncing=false;return;}
     // Advance the anchor to the newest SERVER timestamp in this batch (never the local
     // clock — a fast local clock would filter out colleagues' subsequent changes).
     let maxServerTs=null;
@@ -9895,20 +9944,64 @@ async function _bgSync(){
     });
     const rebuildNeeded=new Set();
     let patchedCount=0;
+    let addedCount=0;
+    const _diagBefore=_corruptProjects.length+_slotMismatch.length;
+    if(_removed.length){
+      ['design','production','planning'].forEach(sec=>rebuildNeeded.add(sec));
+      console.log(APP_VER+' [bgSync] removed from board (gone from SharePoint):',_removed.join(', '));
+    }
     changed.forEach(item=>{
       const idx=PROJECTS.findIndex(p=>p._spItemId===item.id);
-      if(idx<0)return; // new project — will need full reload; skip for now
+      if(idx<0){
+        // v844: a row we have never seen — a lead or slot created by a colleague in the
+        // Manager. Previously dropped on the floor with "will need full reload", and because
+        // the anchor advances past it below, it never came back. The fields are already in
+        // hand from the sweep, so adopting it costs nothing extra.
+        try{
+          const fresh=_projectFromItem(item);
+          if(!fresh)return;            // archived/cancelled — never belonged on the board
+          fresh.collapsed=true;        // match the loader's opening posture
+          PROJECTS.push(fresh);
+          _baseGd.set(item.id,item.fields?.GanttData||'');
+          if(fresh.designer)     rebuildNeeded.add('design');
+          if(fresh.productionPM) rebuildNeeded.add('production');
+          rebuildNeeded.add('planning');
+          rebuildNeeded.add('production'); // unassigned bucket lives here
+          addedCount++;
+        }catch(e){ console.warn('[bgSync] could not adopt new row',item.id,e); }
+        return;
+      }
       const raw=item.fields?.GanttData;
-      if(!raw)return;
       try{
         const existing=PROJECTS[idx];
         // Guard against overwriting local edits that haven't been saved yet
         if(_dirtyProjects.has(existing._spItemId))return;
+        // v844: SharePoint-owned columns are reconciled FIRST and unconditionally — before
+        // the GanttData merge and before the self-echo bail-out. A colleague who changes only
+        // PipelineStage leaves GanttData byte-identical, so the self-echo test would otherwise
+        // discard the change and the board would show a stale stage until reload.
+        const fresh=_projectFromItem(item);
+        if(!fresh){
+          // Remotely archived or cancelled — take it off the board.
+          PROJECTS.splice(idx,1); _baseGd.delete(item.id);
+          ['design','production','planning'].forEach(sec=>rebuildNeeded.add(sec));
+          patchedCount++;
+          return;
+        }
+        if(_applySpColumns(existing,fresh)){
+          if(existing.designer)     rebuildNeeded.add('design');
+          if(existing.productionPM) rebuildNeeded.add('production');
+          rebuildNeeded.add('planning');
+          rebuildNeeded.add('production');
+          patchedCount++;
+        }
+        if(!raw)return;
         // Self-echo: this change is our own recent save coming back around. The stored
         // payload is byte-identical to what we'd serialize right now — nothing to merge.
         if(!existing._gdCorrupt&&raw===JSON.stringify(projectGanttPayload(existing))){_baseGd.set(item.id,raw);return;}
         const gd=JSON.parse(raw);
         Object.assign(existing,gd);
+        _applySpColumns(existing,fresh); // GanttData blob can carry stale copies of SP-owned keys
         existing._spItemId=item.id;
         _baseGd.set(item.id,raw);
         if(existing._gdCorrupt){
@@ -9923,13 +10016,18 @@ async function _bgSync(){
         patchedCount++;
       }catch(e){}
     });
-    if(patchedCount>0){
+    if(_corruptProjects.length+_slotMismatch.length>_diagBefore) _showCorruptWarning();
+    if(patchedCount>0||addedCount>0){
       const current=document.body.getAttribute('data-focus')||'production';
       // Rebuild the visible section immediately; mark hidden ones stale so setFocus
       // rebuilds them on entry (setFocus is a pure CSS visibility swap otherwise —
       // through v824 hidden sections silently rendered stale data after a sync).
       rebuildNeeded.forEach(s=>{ if(s===current) rebuildSection(s); else _staleSections.add(s); });
-      _showSyncInd(`${patchedCount} update${patchedCount>1?'s':''} from SharePoint`);
+      const bits=[];
+      if(addedCount) bits.push(`${addedCount} new project${addedCount>1?'s':''}`);
+      if(_removed.length) bits.push(`${_removed.length} removed`);
+      if(patchedCount) bits.push(`${patchedCount} update${patchedCount>1?'s':''}`);
+      _showSyncInd(bits.join(', ')+' from SharePoint');
     }
     if(maxServerTs)_lastSyncTs=maxServerTs;
     _fetchPMReviews(); // refresh PM review entries alongside project sync
@@ -12325,6 +12423,14 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v844', date: '2026-07-14',
+    entries: [
+      'A project created by someone else now appears on your board within a few seconds instead of requiring you to reload the page. Until now the Pipeline noticed the new row, decided it could not handle it, and then moved past it \u2014 so it never appeared at all until the next reload.',
+      'Changes made in the Projects Manager \u2014 a stage change, a designer name, a Scope Outline link \u2014 now reach an already-open board. Previously only schedule changes came through, so a project could show the wrong stage to everyone who had the page open.',
+      'A project that disappears from SharePoint \u2014 an open slot consumed by someone else\u2019s CONFIRM, or a row deleted in the Manager \u2014 now leaves your board too, rather than lingering as a ghost until reload. If an implausible number of projects appear to have vanished at once, the Pipeline refuses to remove any of them and says so, on the assumption that the problem is with the connection rather than with your data.'
+    ]
+  },
   {
     version: 'v843', date: '2026-07-14',
     entries: [
