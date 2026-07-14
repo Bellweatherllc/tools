@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v841</title>
+<title>BW Project Pipeline — v842</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2685,7 +2685,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v841</div>
+    <div class="auth-version" id="authVersionBadge">v842</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2704,7 +2704,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v841</div>
+  <div class="proto-badge" id="versionBadge">v842</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -8002,7 +8002,7 @@ async function _saveDomainMerged(domain){
 
 function markDirty(proj){
   if(proj&&proj._gdCorrupt){
-    console.warn('[v821] Save blocked for quarantined project (damaged GanttData):',proj.clientName||proj.name);
+    console.warn(APP_VER+' Save blocked for quarantined project (damaged GanttData):',proj.clientName||proj.name);
     return;
   }
   if(proj&&proj._spItemId) _dirtyProjects.add(proj._spItemId);
@@ -8174,7 +8174,7 @@ function _clearSaveError(){
   document.getElementById('sp-error-banner')?.classList.remove('visible');
   document.body.classList.remove('has-save-error');
   const _rb=document.querySelector('#sp-error-banner .seb-retry'); if(_rb)_rb.style.display='';
-  if(_corruptProjects.length&&!_corruptAcked) _showCorruptWarning(); // quarantine notice outlives save-status churn
+  if((_corruptProjects.length||_slotMismatch.length)&&!_corruptAcked) _showCorruptWarning(); // quarantine + slot-mismatch notices outlive save-status churn
 }
 // v826: a colleague changed a project while the user was editing it. Freshness wins —
 // their newer version is already on screen; this banner is the announcement that the
@@ -8190,24 +8190,37 @@ function _showConflictNotice(names){
   banner.classList.add('visible');
   document.body.classList.add('has-save-error');
 }
+// v842: log tag derived from <title> — the one place the version actually lives.
+// Hardcoded tokens ([v793], [v821]) went stale the moment they shipped.
+const APP_VER='[v'+((document.title.match(/v(\d+)/)||[])[1]||'?')+']';
 let _corruptAcked=false; // user dismissed the quarantine banner — don't resurrect it this session
 let _corruptProjects=[]; // clientNames of projects whose GanttData failed to parse at load
+let _slotMismatch=[];    // v842: rows whose GanttData says "open slot" but whose name says "project"
 let _maxLoadedModified=null; // newest SharePoint lastModifiedDateTime seen during load — anchors background sync
 let _baseGd=new Map(); // spItemId → GanttData string as last loaded/synced/written — basis for save-time conflict detection (v826)
 function _showCorruptWarning(){
-  if(!_corruptProjects.length) return;
+  if(!_corruptProjects.length && !_slotMismatch.length) return;
   const banner=document.getElementById('sp-error-banner');
   const msg=document.getElementById('sp-error-msg');
   if(!banner||!msg) return;
-  const _rb=banner.querySelector('.seb-retry'); if(_rb)_rb.style.display='';
-  const list=_corruptProjects.map(s=>`<strong>${escH(s)}</strong>`).join(', ');
-  msg.innerHTML=`Damaged schedule data found for: ${list}. A default schedule is shown instead, and saves for ${_corruptProjects.length>1?'these projects are':'this project is'} <strong>blocked</strong> to protect the original data in SharePoint. The GanttData field for ${_corruptProjects.length>1?'these items':'this item'} in CORE_Projects needs to be repaired or cleared before editing can resume.`;
+  // Retry-save only makes sense for the quarantine case.
+  const _rb=banner.querySelector('.seb-retry'); if(_rb)_rb.style.display=_corruptProjects.length?'':'none';
+  const parts=[];
+  if(_corruptProjects.length){
+    const list=_corruptProjects.map(s=>`<strong>${escH(s)}</strong>`).join(', ');
+    parts.push(`Damaged schedule data found for: ${list}. A default schedule is shown instead, and saves for ${_corruptProjects.length>1?'these projects are':'this project is'} <strong>blocked</strong> to protect the original data in SharePoint. The GanttData field for ${_corruptProjects.length>1?'these items':'this item'} in CORE_Projects needs to be repaired or cleared before editing can resume.`);
+  }
+  if(_slotMismatch.length){
+    const slist=_slotMismatch.map(s=>`<strong>${escH(s)}</strong>`).join(', ');
+    parts.push(`${_slotMismatch.length>1?'These rows read as open slots':'This row reads as an open slot'} but ${_slotMismatch.length>1?'are':'is'} named as a project: ${slist}. That happens when a slot row is renamed in the Projects Manager instead of a new lead being created — the Pipeline will keep treating ${_slotMismatch.length>1?'them':'it'} as ${_slotMismatch.length>1?'slots':'a slot'} no matter what the stage says. Delete the row and create the lead fresh.`);
+  }
+  msg.innerHTML=parts.join('<br><br>');
   banner.classList.add('visible');
   document.body.classList.add('has-save-error');
 }
 function _dismissSaveError(){
   // User dismisses knowing data is not saved — keep error dot in save indicator
-  if(_corruptProjects.length) _corruptAcked=true;
+  if(_corruptProjects.length||_slotMismatch.length) _corruptAcked=true;
   document.getElementById('sp-error-banner')?.classList.remove('visible');
   document.body.classList.remove('has-save-error');
 }
@@ -9620,7 +9633,7 @@ async function loadProjects(saved){
     const estimatedValue=f.EstimatedProjectValue?'$'+Number(String(f.EstimatedProjectValue).replace(/[^0-9.]/g,'')).toLocaleString():'';
     // GanttData col is the scheduling authority
     let ganttData=null, gdDamaged=false;
-    if(f.GanttData){ try{ ganttData=JSON.parse(f.GanttData); }catch(e){ gdDamaged=true; console.warn('[v821] Bad GanttData for',projId,e); } }
+    if(f.GanttData){ try{ ganttData=JSON.parse(f.GanttData); }catch(e){ gdDamaged=true; console.warn(APP_VER+' Bad GanttData for',projId,e); } }
     let proj;
     if(ganttData){
       proj=ganttData;
@@ -9639,6 +9652,14 @@ async function loadProjects(saved){
     proj.status=status;
     // A Lead has no PipelineStage (or the literal 'Lead') and is not an open slot
     const isSlot = ganttData?.isOpenSlot || /^Slot\b/i.test(name);
+    // v842 guard: a row whose GanttData still carries isOpenSlot but whose name has been
+    // changed to a client name is a slot that was hand-edited into a "project" (Thomas Demo,
+    // July 2026). It reads as a slot to this loader while reading as a project everywhere else.
+    // Slots are never edited into projects — the lead row is created fresh.
+    if(ganttData?.isOpenSlot && !/^Slot\b/i.test(name)){
+      _slotMismatch.push(clientName||name||('item '+item.id));
+      console.warn(APP_VER+' Slot/project mismatch: row',item.id,'named',JSON.stringify(name),'still has isOpenSlot in GanttData.');
+    }
     proj.isLead = (!stage || /^lead$/i.test(stage)) && !isSlot;
     proj.name=name;
     proj.clientName=clientName;
@@ -10328,9 +10349,9 @@ if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('pro
     _presenceTick().catch(()=>{}); // announce ourselves + render peers immediately
     _trelloSync().catch(e=>console.warn('[trelloSync] startup failed:',e));
     setSaveState('saved');
-    console.log('[v793] SP load complete:',PROJECTS.length,'projects,',DESIGNERS.length,'designers,',PROD_PMS.length,'PMs');
+    console.log(APP_VER+' SP load complete:',PROJECTS.length,'projects,',DESIGNERS.length,'designers,',PROD_PMS.length,'PMs');
   }catch(e){
-    console.error('[v793] SP load error:',e);
+    console.error(APP_VER+' SP load error:',e);
     setAuthStatus('Error loading data: '+e.message,true);
     const btn=document.getElementById('authSignInBtn');
     const spinner=document.getElementById('authSpinner');
@@ -12293,6 +12314,13 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v842', date: '2026-07-14',
+    entries: [
+      'The Pipeline now warns you when a row in CORE_Projects has been renamed from a slot into a project. Editing a slot row into a project leaves it looking like a slot to the Pipeline even though the stage says otherwise \u2014 the fix is always to delete the row and create the lead fresh. A banner now names any row in that state at load instead of letting it quietly confuse the board.',
+      'Console messages now report the version you are actually running rather than a version number frozen in place months ago.'
+    ]
+  },
   {
     version: 'v841', date: '2026-07-14',
     entries: [
