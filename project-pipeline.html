@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v839</title>
+<title>BW Project Pipeline — v840</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2682,7 +2682,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v839</div>
+    <div class="auth-version" id="authVersionBadge">v840</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2701,7 +2701,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v839</div>
+  <div class="proto-badge" id="versionBadge">v840</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -6910,15 +6910,34 @@ function initDrag(){
         ||PROJECTS.find(p=>pp._fromLeadId&&String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,''))
         ||(pp.name&&PROJECTS.find(p=>p.isLead&&p.name&&p.name.toLowerCase()===pp.name.toLowerCase()))
         ||null;
-      const _stampPromo=(proj)=>{
+      const _stampPromo=(proj,slotPM)=>{
         proj.projType=pp.projType||'';
         proj.projBudget=pp.projBudget||proj.projBudget||'';
         proj.salesPerson=pp.salesPerson||'';
         proj.lod=lod; proj.lodReason=pp.lodReason||''; proj.notes=pp.notes||'';
-        proj.designer=null; proj.productionPM=null;
+        // v840: inherit known assignments — a concrete proposed designer becomes the designer
+        // ('any'/none stays unassigned); the slot's PM carries onto the project.
+        const _pd=pp.proposedDesigner;
+        proj.designer=(_pd&&_pd!=='any'&&DESIGNERS.some(d=>d.id===_pd))?_pd:null;
+        proj.productionPM=slotPM||null;
         proj.proposedDesigner=pp.proposedDesigner||null;
         proj.scheduled=true; proj.status='da-signed'; proj.isLead=false;
         const _daMs=proj.milestones?.find(m=>m.name==='DA'); if(_daMs) _daMs.status='da-signed';
+      };
+      const _confirmSummary=(proj,slotName)=>{ // v840: the moment deserves a proper announcement
+        const t=document.getElementById('budgetToast'); if(!t) return;
+        const dLbl=proj.designer?(personById(proj.designer)?.label||'\u2014'):null;
+        const pLbl=proj.productionPM?(personById(proj.productionPM)?.label||'\u2014'):null;
+        t.innerHTML='<div class="bt-title" style="color:#8fe0a4;">\u2713 '+escH(pp.name)+' confirmed \u2014 DA Signed</div>'
+          +(slotName?'<div class="bt-row"><span>'+escH(slotName)+' \u2192 '+escH(pp.name)+'</span></div>':'')
+          +'<div class="bt-row"><span>Designer: '+(dLbl?escH(dLbl):'unassigned')+' \u00b7 PM: '+(pLbl?escH(pLbl):'unassigned')+'</span></div>'
+          +'<div class="bt-row" style="color:rgba(255,255,255,.55);">Now in Design'+(dLbl?' ('+escH(dLbl)+')':' Unassigned')+' and Production'+(pLbl?' ('+escH(pLbl)+')':' Unassigned')+'.</div>';
+        t.style.borderLeftColor='#2e8b57'; t.style.borderColor='rgba(46,139,87,.55)';
+        t.style.left=Math.max(8,Math.round(window.innerWidth/2)-160)+'px';
+        t.style.top='84px'; t.style.transform='none';
+        t.classList.add('show');
+        if(_toastTimer) clearTimeout(_toastTimer);
+        _toastTimer=setTimeout(()=>{ t.classList.remove('show'); t.style.borderLeftColor=''; t.style.borderColor=''; },7000);
       };
       const _persistPromo=(proj,extra)=>{ // v838: the promotion must reach SharePoint
         markDirty(proj); // GanttData rides the normal dirty-save
@@ -6938,7 +6957,8 @@ function initDrag(){
         srcLead.milestones=slotProj.milestones;
         srcLead.tiers=slotProj.tiers; srcLead.pencilsDown=slotProj.pencilsDown; srcLead.crits=slotProj.crits;
         srcLead.collapsed=true;
-        _stampPromo(srcLead);
+        const _slotPM=slotProj.productionPM||null;
+        _stampPromo(srcLead,_slotPM);
         _persistPromo(srcLead);
         // Consume the slot scaffold — memory and SharePoint (mirrors the slot-delete pattern)
         const _slotIdx=PROJECTS.indexOf(slotProj);
@@ -6959,6 +6979,7 @@ function initDrag(){
           constrStartWeek:cPhL?cPhL.startWeek:null,
           constrEndWeek:cPhL?cPhL.startWeek+cPhL.durWeeks:null,
         });
+        _confirmSummary(srcLead,slotProj.name);
       } else if(slotProj){
         // Legacy: card has no CORE lead row — the slot row itself becomes the project (v838: persisted)
         slotProj.name=pp.name;
@@ -6969,9 +6990,11 @@ function initDrag(){
         slotProj.lod=lod;
         slotProj.lodReason=pp.lodReason||'';
         slotProj.notes=pp.notes||'';
-        slotProj.designer=null;  // lands in Design Unassigned for manual assignment
-        slotProj.productionPM=null; // stays in Production Unassigned for manual assignment
-        slotProj.proposedDesigner=pp.proposedDesigner||null; // suggestion only — not auto-assigned
+        // v840: inherit — concrete proposed designer becomes the designer; slot keeps its own PM
+        const _pdL=pp.proposedDesigner;
+        slotProj.designer=(_pdL&&_pdL!=='any'&&DESIGNERS.some(d=>d.id===_pdL))?_pdL:null;
+        /* slotProj.productionPM intentionally left as-is — the slot's PM stays */
+        slotProj.proposedDesigner=pp.proposedDesigner||null;
         slotProj.scheduled=true;
         slotProj.status='da-signed';
         // Set DA milestone to signed
@@ -6991,16 +7014,18 @@ function initDrag(){
           constrStartWeek:cPh?cPh.startWeek:null,
           constrEndWeek:cPh?cPh.startWeek+cPh.durWeeks:null,
         });
+        _confirmSummary(slotProj,null);
       } else {
         // No matching slot — create new project (fallback)
         const newId='proj-'+Date.now();
         const sw=Math.max(0,todayWeek()+4);
         const cdDur={1:4,2:4,3:6}[lod]||4;
+        const _pdN=pp.proposedDesigner;
         const _newProj={
           id:newId, name:pp.name, status:'da-signed', collapsed:true,
           addedAt:Date.now(), projType:pp.projType||'', projBudget:pp.projBudget||'',
           salesPerson:pp.salesPerson||'',
-          designer:null, productionPM:null, scheduled:true,
+          designer:(_pdN&&_pdN!=='any'&&DESIGNERS.some(d=>d.id===_pdN))?_pdN:null, productionPM:null, scheduled:true,
           proposedDesigner:pp.proposedDesigner||null,
           lod, lodReason:pp.lodReason||'', notes:pp.notes||'',
           designLane:{startWeek:sw,phases:[
@@ -7026,6 +7051,7 @@ function initDrag(){
           daWeek:sw-2, designStartWeek:sw, caWeek:sw+6+pdDur,
           constrStartWeek:sw+6+pdDur+1, constrEndWeek:sw+6+pdDur+1+6+16,
         });
+        _confirmSummary(_newProj,null);
       }
 
       if(pp.slotWeek) USED_SLOTS.add(pp.slotWeek);
@@ -7034,7 +7060,7 @@ function initDrag(){
       pushPlanningHistory(`${pp.name} — approved, DA signed, moved to pipeline`);
 
       // Animate out — dramatic card exit, then collapse column, then rebuild
-      const cardEl=approveBtn.closest('.pp-proj-card');
+      const cardEl=approveBtn.closest('.pp-proj-card')||approveBtn.closest('.ps-chip')||approveBtn.closest('.pp-slot-col'); // v840: animate whatever holds the button
       const colEl=approveBtn.closest('.pp-slot-col');
       e.stopPropagation();
 
@@ -12259,6 +12285,13 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v840', date: '2026-07-14',
+    entries: [
+      'Confirming a project now announces itself: a green summary appears (project name, slot consumed, designer, PM, and where the project landed), and the exit animation now plays no matter which element held the CONFIRM button.',
+      'Confirm inherits known assignments: a concretely proposed designer becomes the assigned designer (\u201cAny\u201d still lands in Unassigned), and the slot\u2019s PM carries onto the project instead of being cleared.'
+    ]
+  },
   {
     version: 'v839', date: '2026-07-14',
     entries: [
