@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v842</title>
+<title>BW Project Pipeline — v843</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2685,7 +2685,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v842</div>
+    <div class="auth-version" id="authVersionBadge">v843</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2704,7 +2704,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v842</div>
+  <div class="proto-badge" id="versionBadge">v843</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -8196,6 +8196,7 @@ const APP_VER='[v'+((document.title.match(/v(\d+)/)||[])[1]||'?')+']';
 let _corruptAcked=false; // user dismissed the quarantine banner — don't resurrect it this session
 let _corruptProjects=[]; // clientNames of projects whose GanttData failed to parse at load
 let _slotMismatch=[];    // v842: rows whose GanttData says "open slot" but whose name says "project"
+let _trelloAuditColsMissing=false; // v843: set when a list-change PATCH is rejected and we fall back to the list name alone
 let _maxLoadedModified=null; // newest SharePoint lastModifiedDateTime seen during load — anchors background sync
 let _baseGd=new Map(); // spItemId → GanttData string as last loaded/synced/written — basis for save-time conflict detection (v826)
 function _showCorruptWarning(){
@@ -10202,8 +10203,18 @@ async function _trelloSync(){
             patchFields.TrelloListChangedAt=now;
             patchFields.TrelloPreviousList=oldList;
           }
+          // v843: the audit fields (TrelloListChangedAt / TrelloPreviousList) are optional
+          // columns. If they are absent from CORE_Projects the whole PATCH is rejected, and
+          // TrelloListName — the field the board actually reads — goes down with it, for
+          // exactly the cards that just moved. Degrade instead: retry with the list name alone.
           graphPatch(BWC_SITE+'/CORE_Projects/items/'+leadProj._spItemId+'/fields',patchFields)
-            .catch(e=>console.warn('[trelloSync] list-change patch failed:',leadProj.name,e));
+            .catch(e=>{
+              if(Object.keys(patchFields).length===1) throw e; // nothing left to strip
+              console.warn('[trelloSync] list-change patch rejected for',leadProj.name,'— retrying without audit fields. Add TrelloListChangedAt and TrelloPreviousList (Single line of text) to CORE_Projects to record list-change history.',e);
+              _trelloAuditColsMissing=true;
+              return graphPatch(BWC_SITE+'/CORE_Projects/items/'+leadProj._spItemId+'/fields',{TrelloListName:listName});
+            })
+            .catch(e=>console.warn('[trelloSync] list-name patch failed:',leadProj.name,e));
         }
         if(lostListId&&card.idList===lostListId&&!['da-signed','ca-signed'].includes(leadProj.status)&&leadProj.status!=='lost'&&leadProj._spItemId){
           try{
@@ -12314,6 +12325,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v843', date: '2026-07-14',
+    entries: [
+      'When a Trello card moves to a new list, the Pipeline records the move history alongside the new list name. If the history columns are missing from CORE_Projects, that whole update used to be rejected \u2014 which meant the new list name was lost too, for exactly the cards that had just moved. The list name now saves regardless, and only the history is skipped.'
+    ]
+  },
   {
     version: 'v842', date: '2026-07-14',
     entries: [
