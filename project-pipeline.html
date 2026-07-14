@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v838</title>
+<title>BW Project Pipeline — v839</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2682,7 +2682,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v838</div>
+    <div class="auth-version" id="authVersionBadge">v839</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2701,7 +2701,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v838</div>
+  <div class="proto-badge" id="versionBadge">v839</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -9354,9 +9354,22 @@ async function getToken(){
   try{
     const r=await msalApp.acquireTokenSilent({scopes:SP_SCOPES,account:acct});
     graphToken=r.accessToken;
+    try{ sessionStorage.removeItem('pp-auth-redirects'); }catch(_){} // v839: healthy — reset the loop counter
     return r.accessToken;
   }catch(e){
-    // Silent failed — redirect for interaction
+    console.error('[auth] silent token failed:',e.errorCode||e.name||'',e.message||e);
+    // v839: only interaction-type failures justify a redirect. Redirecting on ANY failure
+    // (network blip, config error, account mismatch) created an infinite sign-in loop.
+    const interactive=(typeof msal!=='undefined'&&msal.InteractionRequiredAuthError&&e instanceof msal.InteractionRequiredAuthError)
+      ||/interaction_required|login_required|consent_required/i.test(e.errorCode||'');
+    let laps=0; try{ laps=parseInt(sessionStorage.getItem('pp-auth-redirects')||'0',10)||0; }catch(_){}
+    if(!interactive||laps>=3){
+      const why=(e.errorCode||e.name||'unknown')+': '+(e.message||'');
+      setAuthStatus((laps>=3?'Sign-in loop stopped after 3 attempts \u2014 ':'Authentication error \u2014 ')+why,true);
+      const ov=document.getElementById('authOverlay'); if(ov) ov.style.display='flex';
+      throw e;
+    }
+    try{ sessionStorage.setItem('pp-auth-redirects',String(laps+1)); }catch(_){}
     await msalApp.acquireTokenRedirect({scopes:SP_SCOPES,account:acct});
     throw new Error('Redirecting for token…');
   }
@@ -12246,6 +12259,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v839', date: '2026-07-14',
+    entries: [
+      'Sign-in loop protection: if getting a Microsoft token fails, the page now redirects to sign-in only for failures a sign-in can actually fix, and never more than three times in a row. After that it stops and displays the real underlying error on the sign-in screen instead of bouncing to Microsoft forever.'
+    ]
+  },
   {
     version: 'v838', date: '2026-07-14',
     entries: [
