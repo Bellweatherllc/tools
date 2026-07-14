@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v836</title>
+<title>BW Project Pipeline — v837</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2541,6 +2541,9 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
 /* Sticky top flush below section label + cmd bar */
 .ps-sticky-top{position:sticky;top:calc(var(--app-h,44px) + var(--slb-h,22px) + 32px - 1px);z-index:15;background:var(--bg);}
 /* ── Unmatched tray ── */
+.ps-chip-del{display:none;background:none;border:none;color:#a30a0a;font-size:15px;font-weight:700;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0;}
+body.admin-mode .ps-chip-del{display:flex;align-items:center;}
+.ps-chip-del:hover{color:#d01414;}
 .ps-tray{background:rgba(31,46,62,.04);border-bottom:2px solid rgba(31,46,62,.14);}
 .ps-add-btn-row{display:flex;align-items:center;padding:8px 14px;background:rgba(31,46,62,.05);border-bottom:2px solid rgba(31,46,62,.10);transition:background .15s,border-color .15s;}
 .ps-add-btn-row.ps-drag-over{background:rgba(216,182,79,.10);border-color:rgba(216,182,79,.55);box-shadow:inset 0 0 0 2px rgba(216,182,79,.28);}
@@ -2679,7 +2682,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v836</div>
+    <div class="auth-version" id="authVersionBadge">v837</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2698,7 +2701,7 @@ body:not(.admin-mode) .admin-only-hide{display:none!important;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v836</div>
+  <div class="proto-badge" id="versionBadge">v837</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -6828,6 +6831,7 @@ function initDrag(){
     // Planning project — delete
     const delBtn=e.target.closest('[data-delete-planning-proj]');
     if(delBtn){
+      if(!canEdit()){ showToast('Admin mode required.',delBtn); return; }
       const idx=PLANNING_PROJECTS.findIndex(p=>p.id===delBtn.dataset.deletePlanningProj);
       if(idx>=0){ pushPlanningHistory(`Removed planning project — ${PLANNING_PROJECTS[idx].name||'project'}`); _tombstone('planning',PLANNING_PROJECTS[idx].id); PLANNING_PROJECTS.splice(idx,1); rebuildSection('planning'); triggerSave(); } return;
     }
@@ -8493,6 +8497,12 @@ function buildPlanningSection(){
         chipSub.textContent=_chipSrc.trelloListName+(_changed?' · '+_fmtChangeDate(_chipSrc.trelloListChangedAt):'');
         nmWrap.appendChild(chipSub); chip.appendChild(nmWrap);
       } else { chip.appendChild(chipNm); }
+      // Delete ✕ — admin mode only (CSS-gated); handler pre-dates this button's restoration
+      const chipDel=el('button','ps-chip-del');
+      chipDel.dataset.deletePlanningProj=pp.id;
+      chipDel.title='Delete card';
+      chipDel.textContent='\u00d7';
+      chip.appendChild(chipDel);
       // Notes pencil — 14×14, matching Design title cards
       const chipPencil=el('button','pp-proj-edit-btn ps-chip-pencil'+(pp.notes?' pp-pencil-noted':''));
       
@@ -9202,7 +9212,7 @@ const BWC_SITE       = 'https://graph.microsoft.com/v1.0/sites/bellweather.share
 //  this tool. localStorage is PROHIBITED for all business data.
 //
 //  ALLOWED localStorage keys (UI preferences, non-operational):
-//    'bw-gantt-plus-focus'  — last active section tab (Production / Design / Sales)
+//    'bw-gantt-focus'  — last active section tab (Production / Design / Sales)
 //    msal.* / server-telemetry-* — MSAL auth library internals (token cache etc.)
 //    Any key NOT starting with 'bw-' — third-party libraries write freely
 //
@@ -10375,7 +10385,7 @@ function resolveInitialFocus(){
   try{
     const p=new URLSearchParams(location.search).get('focus');
     if(p&&FOCUS_VALID.includes(p)) return p;
-    const stored=localStorage.getItem('bw-gantt-plus-focus');
+    const stored=localStorage.getItem('bw-gantt-focus')||localStorage.getItem('bw-gantt-plus-focus'); // plus-era fallback read; writes use the clean key
     if(stored&&FOCUS_VALID.includes(stored)) return stored;
   }catch(e){}
   return 'planning';
@@ -10402,7 +10412,7 @@ function setFocus(name,opts){
     btn.setAttribute('aria-selected',btn.dataset.focusBtn===name?'true':'false');
   });
   // Persist (independent of animation)
-  try{ localStorage.setItem('bw-gantt-plus-focus',name); }catch(e){}
+  try{ localStorage.setItem('bw-gantt-focus',name); }catch(e){}
   if(!opts.skipUrl){
     try{
       const u=new URL(location.href); u.searchParams.set('focus',name);
@@ -12160,6 +12170,13 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v837', date: '2026-07-14',
+    entries: [
+      'Silenced the \u201cDATA INTEGRITY \u2026 blocked\u201d console error (and its red banner) that fired on every page load in a focused view. The remembered-lens feature was writing to a storage key left over from the retired pipeline_plus experiment; it now uses the clean key the integrity policy expects. Purely cosmetic \u2014 lens memory worked all along.',
+      'Restored a delete \u00d7 on unmatched planning cards, visible in admin mode only. Deleting a card removes it from Sales planning everywhere (as a real synced deletion) and never touches the project record \u2014 Design and Production are unaffected.'
+    ]
+  },
   {
     version: 'v836', date: '2026-07-13',
     entries: [
