@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v844</title>
+<title>BW Project Pipeline — v845</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2685,7 +2685,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v844</div>
+    <div class="auth-version" id="authVersionBadge">v845</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2704,7 +2704,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v844</div>
+  <div class="proto-badge" id="versionBadge">v845</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -9903,6 +9903,7 @@ async function _bgSync(){
     // Business-data rows (planning/archive/history) — must run before the early return
     // below, since a colleague's planning-only change doesn't touch CORE_Projects
     _refreshDomainsFromSP().catch(()=>{});
+    _refreshSharedStateFromSP().catch(()=>{}); // v845: USED_SLOTS et al. — see above
     // Detect changed items client-side. Graph's $filter on lastModifiedDateTime for list
     // items is unreliable (non-indexed; failed silently here through v824 — the same wall
     // _fetchPMReviews hit, which is why it also filters client-side). Instead: one light
@@ -10089,6 +10090,67 @@ function _stopPresence(){ clearInterval(_presenceTimer); _presenceTimer=null; }
 // v826: true per-item reconciliation — remote-newer items replace local, remote
 // tombstones remove local items live (no reload needed), local-newer edits are kept
 // and will win the next merged save.
+// v845: the shared pipeline_state row (USED_SLOTS, PERSON_TARGETS, slot defaults, panel
+// thresholds) was read once at load and never again — _refreshDomainsFromSP only covers
+// planning/archive/history. So two open boards drifted apart on which slot weeks were
+// consumed, and because the row is whole-blob last-write-wins, the second save could erase
+// the first person's slot claim: two projects, one week. This pulls it in on every sync.
+async function _refreshSharedStateFromSP(){
+  if(!_configItemId) return;
+  // Local edits in flight (inside the save debounce) — don't reconcile over them. Mirrors
+  // the _domainDirty guard; the debounce writes within the second and the next tick agrees.
+  const localNow=JSON.stringify(sharedStatePayload());
+  if(localNow!==_lastWrittenShared) return;
+  try{
+    const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_configItemId+'?$expand=fields&$select=id,fields');
+    const f=item?.fields||{};
+    const raw=f.Value||f.Value0||'';
+    if(!raw||raw===_lastWrittenShared) return; // nothing new remotely
+    let parsed=null; try{ parsed=JSON.parse(raw); }catch(e){ return; }
+    if(!parsed||typeof parsed!=='object') return;
+    const notes=[];
+    if(Array.isArray(parsed.USED_SLOTS)){
+      const incoming=new Set(parsed.USED_SLOTS);
+      const added=[...incoming].filter(w=>!USED_SLOTS.has(w));
+      const freed=[...USED_SLOTS].filter(w=>!incoming.has(w));
+      if(added.length||freed.length){
+        USED_SLOTS=incoming;
+        if(added.length) notes.push(added.length+' slot'+(added.length>1?'s':'')+' consumed');
+        if(freed.length) notes.push(freed.length+' slot'+(freed.length>1?'s':'')+' freed');
+      }
+    }
+    if(parsed.PERSON_TARGETS&&typeof parsed.PERSON_TARGETS==='object'
+       &&JSON.stringify(parsed.PERSON_TARGETS)!==JSON.stringify(PERSON_TARGETS)){
+      // const object — mutate in place, never reassign
+      Object.keys(PERSON_TARGETS).forEach(k=>{ delete PERSON_TARGETS[k]; });
+      Object.assign(PERSON_TARGETS,parsed.PERSON_TARGETS);
+      notes.push('capacity targets');
+    }
+    if(typeof parsed.SLOT_DEFAULT_BUDGET==='number'&&parsed.SLOT_DEFAULT_BUDGET!==SLOT_DEFAULT_BUDGET){
+      SLOT_DEFAULT_BUDGET=parsed.SLOT_DEFAULT_BUDGET; notes.push('slot budget');
+    }
+    if(Array.isArray(parsed.SLOT_COL_ORDER)&&JSON.stringify(parsed.SLOT_COL_ORDER)!==JSON.stringify(SLOT_COL_ORDER)){
+      SLOT_COL_ORDER=parsed.SLOT_COL_ORDER; notes.push('slot order');
+    }
+    if(parsed.PANEL_THRESHOLDS&&typeof parsed.PANEL_THRESHOLDS==='object'
+       &&JSON.stringify(parsed.PANEL_THRESHOLDS)!==JSON.stringify(PANEL_THRESHOLDS)){
+      PANEL_THRESHOLDS=parsed.PANEL_THRESHOLDS; notes.push('panel thresholds');
+    }
+    // In step with the store either way — otherwise the save path would treat the adopted
+    // values as a local edit and write them straight back out.
+    _lastWrittenShared=JSON.stringify(sharedStatePayload());
+    if(notes.length){
+      const current=document.body.getAttribute('data-focus')||'production';
+      ['production','design','planning'].forEach(sec=>{
+        if(sec===current){ try{ rebuildSection(sec); }catch(e){} } else _staleSections.add(sec);
+      });
+      try{ if(typeof renderProdPanel==='function'&&PROD_PANEL_OPEN) renderProdPanel(); }catch(e){}
+      _showSyncInd(notes.join(', ')+' from SharePoint');
+      console.log(APP_VER+' [bgSync] shared state updated:',notes.join(', '));
+    }
+  }catch(e){ /* transient — try again next tick */ }
+}
+
 async function _refreshDomainsFromSP(){
   const domains=['planning','archive','history'];
   for(const domain of domains){
@@ -12423,6 +12485,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v845', date: '2026-07-14',
+    entries: [
+      'Which slot weeks are already taken now stays in step across everyone\u2019s open boards. Previously that information was read once when you opened the page and never refreshed, so if a colleague confirmed a project into a slot, your board went on believing that week was still free \u2014 and saving from your side could quietly erase their claim to it. Capacity targets, the default slot budget and the Key Dates thresholds now travel the same way.'
+    ]
+  },
   {
     version: 'v844', date: '2026-07-14',
     entries: [
