@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v851</title>
+<title>BW Project Pipeline — v854</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2078,6 +2078,17 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
   border-bottom:1px solid rgba(255,255,255,.10);flex-shrink:0;
 }
 .sh-undo-btn:disabled{opacity:.45;cursor:default;}
+.snap-section{border-top:1px solid rgba(255,255,255,.12);margin-top:2px;}
+.snap-hd{display:flex;align-items:center;gap:8px;padding:9px 12px 7px;}
+.snap-title{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.60);flex:1;}
+.snap-now-btn{font-size:10px;font-weight:700;letter-spacing:.03em;color:rgba(255,255,255,.85);background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:5px;padding:4px 9px;cursor:pointer;transition:background .12s;}
+.snap-now-btn:hover{background:rgba(255,255,255,.18);}
+.snap-now-btn:disabled{opacity:.5;cursor:default;}
+.snap-list{max-height:180px;overflow-y:auto;padding:0 8px 8px;}
+.snap-row{display:flex;align-items:center;justify-content:space-between;padding:6px 6px;border-radius:5px;font-size:11px;color:rgba(255,255,255,.85);}
+.snap-row:hover{background:rgba(255,255,255,.06);}
+.snap-when{font-weight:600;}
+.snap-kind{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.45);}
 .sh-title{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.60);flex:1;}
 .sh-undo-btn{
   font-size:10px;font-weight:700;padding:3px 9px;border-radius:4px;
@@ -2687,7 +2698,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v851</div>
+    <div class="auth-version" id="authVersionBadge">v854</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2706,7 +2717,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v851</div>
+  <div class="proto-badge" id="versionBadge">v854</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -2740,6 +2751,13 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     <button class="sh-close-btn" id="shCloseBtn">✕</button>
   </div>
   <div class="sh-body" id="shList"></div>
+  <div class="snap-section">
+    <div class="snap-hd">
+      <span class="snap-title">Daily snapshots</span>
+      <button class="snap-now-btn" id="snapNowBtn">Snapshot now</button>
+    </div>
+    <div class="snap-list" id="snapList"><div class="sh-empty">Open to load snapshots…</div></div>
+  </div>
 </div>
 <div class="status-menu" id="ppLeadMenu">
   <div class="sm-item" data-pp-set-status="lead"><span class="sm-dot projected"></span>Lead</div>
@@ -3204,6 +3222,8 @@ function undoLast(){
 function openSessionHistory(){
   renderSessionHistory();
   document.getElementById('sessionHistoryPanel').classList.add('open');
+  const _sl=document.getElementById('snapList'); if(_sl&&!(_snapList&&_snapList.length)) _sl.innerHTML='<div class="sh-empty">Loading snapshots…</div>';
+  _snapFetchList().then(renderSnapshotList).catch(e=>{ console.warn('[snapshot] list load failed:',e); const el=document.getElementById('snapList'); if(el) el.innerHTML='<div class="sh-empty">Couldn’t load snapshots.</div>'; });
 }
 function closeSessionHistory(){
   document.getElementById('sessionHistoryPanel').classList.remove('open');
@@ -3232,6 +3252,119 @@ function renderSessionHistory(){
       <div class="sh-meta"><span class="sh-user">${escH(e.user)}</span><span class="sh-time">${fmt(e.ts)}</span></div>
     </div>`).join('');
 }
+// ══════════════════════════════════════════  PIPELINE SNAPSHOTS (Time Machine)
+// Full-state snapshots stored as individual JSON files in the CORE_Pipeline_Snapshots
+// document library on BWCore. One auto file per day (first load captures the clean,
+// pre-edit start-of-day state); plus manual "Snapshot now". This stage is capture +
+// list only — diff and restore come next. Reading file CONTENT (for diff/restore) is
+// deliberately not wired yet.
+const BWC_DRIVES='https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/drives';
+const SNAP_LIB='CORE_Pipeline_Snapshots';
+const SNAP_RETAIN_DAYS=90;
+let _snapDriveId=null;
+let _snapList=null;   // [{id,name,date,time,kind,mod,size}] newest-first, cached for the panel
+
+async function _snapDrive(){
+  if(_snapDriveId) return _snapDriveId;
+  const data=await graphGet(BWC_DRIVES);
+  const d=(data.value||[]).find(x=>x.name===SNAP_LIB);
+  if(!d) throw new Error('Snapshot library "'+SNAP_LIB+'" not found on BWCore');
+  _snapDriveId=d.id; return _snapDriveId;
+}
+function _snapNowParts(){
+  const d=new Date(), z=n=>String(n).padStart(2,'0');
+  return { date:d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()), hm:z(d.getHours())+z(d.getMinutes()) };
+}
+function _snapPrettyDate(date,time){
+  try{ const d=new Date(date+'T'+(time||'00:00')+':00');
+    return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+', '+
+           d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+  }catch(e){ return date+' '+(time||''); }
+}
+function _buildSnapshotObj(kind){
+  return {
+    _snap:1,
+    meta:{ ts:new Date().toISOString(), user:_histUser(), version:APP_VER, kind:(kind==='manual'?'manual':'auto') },
+    data:{
+      projects:JSON.parse(JSON.stringify(PROJECTS)),
+      planning:JSON.parse(JSON.stringify(PLANNING_PROJECTS)),
+      archive:JSON.parse(JSON.stringify(ARCHIVE)),
+      history:JSON.parse(JSON.stringify(APPROVED_HISTORY)),
+      shared:sharedStatePayload()
+    }
+  };
+}
+async function _snapWrite(name,obj){
+  const drive=await _snapDrive(), token=await getToken();
+  const url='https://graph.microsoft.com/v1.0/drives/'+drive+'/root:/'+encodeURIComponent(name)+':/content';
+  const res=await fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(obj)});
+  if(!res.ok){ const t=await res.text(); throw new Error('Snapshot write '+res.status+': '+t); }
+  return res.json();
+}
+async function _snapFetchList(){
+  const drive=await _snapDrive();
+  const data=await graphGet('https://graph.microsoft.com/v1.0/drives/'+drive+'/root/children?$select=id,name,size,lastModifiedDateTime&$top=200');
+  const re=/^pipeline-snapshot-(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})-(auto|manual)\.json$/i;
+  _snapList=(data.value||[]).map(f=>{
+    const m=f.name.match(re); if(!m) return null;
+    return { id:f.id, name:f.name, size:f.size, mod:f.lastModifiedDateTime, date:m[1], time:m[2]+':'+m[3], kind:m[4].toLowerCase() };
+  }).filter(Boolean).sort((a,b)=>a.name<b.name?1:-1);
+  return _snapList;
+}
+async function _snapPrune(){
+  try{
+    const list=_snapList||await _snapFetchList();
+    const cutoff=Date.now()-SNAP_RETAIN_DAYS*24*3600*1000, drive=_snapDriveId;
+    for(const sfile of list){
+      const t=Date.parse(sfile.mod||sfile.date);
+      if(!isNaN(t)&&t<cutoff){
+        try{ await graphDelete('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+sfile.id); }
+        catch(e){ console.warn('[snapshot] prune failed for',sfile.name,e); }
+      }
+    }
+  }catch(e){ console.warn('[snapshot] prune skipped:',e); }
+}
+async function _takeSnapshot(kind){
+  const parts=_snapNowParts();
+  const name='pipeline-snapshot-'+parts.date+'-'+parts.hm+'-'+(kind==='manual'?'manual':'auto')+'.json';
+  await _snapWrite(name,_buildSnapshotObj(kind));
+  await _snapFetchList();
+  _snapPrune();               // fire-and-forget; list already refreshed
+  renderSnapshotList();
+  console.log(APP_VER+' [snapshot] wrote',name);
+  return name;
+}
+async function _maybeDailySnapshot(){
+  try{
+    const list=await _snapFetchList();
+    const today=_snapNowParts().date;
+    if(list.some(x=>x.date===today)){ renderSnapshotList(); return; }
+    await _takeSnapshot('auto');
+  }catch(e){ console.warn('[snapshot] daily capture skipped:',e); }
+}
+async function takeManualSnapshot(){
+  const btn=document.getElementById('snapNowBtn');
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  try{
+    await _takeSnapshot('manual');
+    if(typeof showToast==='function') showToast('Snapshot saved.',btn);
+  }catch(e){
+    console.error('[snapshot] manual save failed:',e);
+    if(typeof showToast==='function') showToast('Snapshot failed — see console.',btn);
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='Snapshot now'; }
+  }
+}
+function renderSnapshotList(){
+  const el=document.getElementById('snapList'); if(!el) return;
+  const list=_snapList||[];
+  if(!list.length){ el.innerHTML='<div class="sh-empty">No snapshots yet.</div>'; return; }
+  el.innerHTML=list.map(sfile=>
+    '<div class="snap-row"><div class="snap-when">'+escH(_snapPrettyDate(sfile.date,sfile.time))+
+    '</div><div class="snap-kind">'+(sfile.kind==='manual'?'manual':'daily')+'</div></div>'
+  ).join('');
+}
+
 let PROD_PM_COLLAPSED=new Set(); // set of pmId strings
 let PROD_LC_COLLAPSED=new Set(); // set of lcId strings
 let LC_PROJ_EXPANDED=new Set(); // 'lcId:projId' pairs that are explicitly expanded; default is collapsed
@@ -3791,7 +3924,7 @@ NAME_PICKER.addEventListener('click',e=>{
       document.getElementById('confirmOk').textContent='Archive';
       const arr=section==='design'?DESIGNERS:PROD_PMS;
       const idx=arr.findIndex(p=>p.id===person.id);
-      if(idx>=0) arr.splice(idx,1);
+      if(idx>=0){ pushHistory(`${person.label} — removed from team view`); arr.splice(idx,1); }
       delete PERSON_TARGETS[person.id];
       buildAll(); triggerSave();
     };
@@ -3803,7 +3936,7 @@ NAME_PICKER.addEventListener('click',e=>{
     return;
   }
   const it=e.target.closest('.np-item'); if(!it||it.classList.contains('in-use'))return;
-  const person=personById(npPersonId); if(person) person.label=it.dataset.npName;
+  const person=personById(npPersonId); if(person){ pushHistory(`${person.label} → ${it.dataset.npName}`); person.label=it.dataset.npName; }
   closeNamePicker(); buildAll(); triggerSave();
 });
 
@@ -5401,11 +5534,13 @@ function renderTimeoffOverlay(personId, section){
 }
 function addTimeoff(personId, section){
   const person=personById(personId); if(!person)return;
+  pushHistory(`${person.label} — time off added`);
   person.timeOff.push({id:newToId(),week:Math.max(0,Math.min(C.numWeeks-1,todayWeek()+2))});
   renderTimeoffOverlay(personId,section); triggerSave();
 }
 function removeTimeoff(toId, personId, section){
   const person=personById(personId); if(!person)return;
+  pushHistory(`${person.label} — time off removed`);
   person.timeOff=person.timeOff.filter(t=>t.id!==toId);
   renderTimeoffOverlay(personId,section);
   document.querySelectorAll(`.timeoff-ov-strip[data-to-id="${toId}"]`).forEach(s=>s.remove());
@@ -6360,6 +6495,7 @@ function renderTally(section){
 let menuProjId=null;
 function setStatus(projId,ns){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
+  if(proj.status!==ns){ const _sl={projected:'Projected','da-signed':'DA Signed','ca-signed':'CA Signed',paused:'Paused',cancelled:'Cancelled',lost:'Lost',archive:'Archive'}[ns]||ns; pushHistory(`${_projShortName(proj)} — status → ${_sl}`); }
   proj.status=ns;
   if(ns==='projected'){ proj.milestones.forEach(ms=>{ ms.status='projected'; document.querySelectorAll(`.ms-tall[data-ms-id="${ms.id}"]`).forEach(m=>m.className='ms-tall projected'); }); }
   if(ns==='da-signed'){ const da=proj.milestones.find(m=>m.name==='DA'); if(da){ da.status='da-signed'; document.querySelectorAll(`.ms-tall[data-ms-id="${da.id}"]`).forEach(m=>m.className='ms-tall da-signed'); } }
@@ -6611,7 +6747,7 @@ function initDrag(){
         // rebuild cascade (same logic as before)
         var cascadeRight=willCascade?[{ph:preConPh,origStart:preConPh.startWeek},{ph:conPh,origStart:conPh.startWeek}]:null;
       }
-      DRAG={type:'ms',msId:id,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:ms.week,minWeek,maxWeek,cascadeRight:typeof cascadeRight!=='undefined'?cascadeRight:null};
+      DRAG={type:'ms',msId:id,projId,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:ms.week,minWeek,maxWeek,cascadeRight:typeof cascadeRight!=='undefined'?cascadeRight:null};
       document.querySelectorAll(`.ms-tall[data-ms-id="${id}"]`).forEach(m=>m.classList.add('dragging'));
       capture(msEl,e.pointerId); return;
     }
@@ -7695,6 +7831,7 @@ function onMove(e){
   if(DRAG.type==='ms'){
     const ms=msById(DRAG.msId);
     ms.week=Math.max(DRAG.minWeek??0,Math.min(DRAG.maxWeek??C.numWeeks-1,DRAG.origWeek+dw));
+    if(ms.week!==DRAG.origWeek) _dragMoved=true;
     // Cascade: if CA is pushing a touching chain right, carry Pre-con + Construction along
     if(DRAG.cascadeRight&&dw>0){
       const[preConItem,conItem]=DRAG.cascadeRight;
@@ -7942,12 +8079,22 @@ function setSaveState(state){
 // Personal (pipeline_prefs_{user} row): collapse state, calendar ranges, row and
 // project orders, panel state — Byron's original design intent. Per-user rows have
 // no concurrency story at all (you only collide with yourself).
+function _collectTimeOff(){
+  const out={};
+  [...DESIGNERS,...PROD_PMS].forEach(p=>{ if(p&&Array.isArray(p.timeOff)&&p.timeOff.length) out[p.id]=p.timeOff.map(t=>({id:t.id,week:t.week})); });
+  return out;
+}
+function _applyTimeOff(src){
+  if(!src||typeof src!=='object') return;
+  [...DESIGNERS,...PROD_PMS].forEach(p=>{ if(!p) return; p.timeOff=Array.isArray(src[p.id])?src[p.id].map(t=>({id:t.id,week:t.week})):[]; });
+}
 function sharedStatePayload(){
   return {
     USED_SLOTS:[...USED_SLOTS],
     PERSON_TARGETS,
     SLOT_DEFAULT_BUDGET,SLOT_COL_ORDER,
-    PANEL_THRESHOLDS
+    PANEL_THRESHOLDS,
+    TIME_OFF:_collectTimeOff()
   };
 }
 function userPrefsPayload(){
@@ -9689,7 +9836,8 @@ async function loadTeamMembers(saved){
     const role=(f.Role||'').trim();
     const personId='sp-person-'+item.id;
     const fullName=f.EmployeeName||f.Title||'Unknown';
-    const entry={id:personId, label:fullName.split(' ')[0], fullLabel:fullName, timeOff:[]};
+    const _to=(saved&&saved.TIME_OFF&&Array.isArray(saved.TIME_OFF[personId]))?saved.TIME_OFF[personId].map(t=>({id:t.id,week:t.week})):[];
+    const entry={id:personId, label:fullName.split(' ')[0], fullLabel:fullName, timeOff:_to};
     if(role==='Designer'){
       DESIGNERS.push(entry);
       if(!(personId in PERSON_TARGETS)) PERSON_TARGETS[personId]=32;
@@ -10271,6 +10419,9 @@ async function _refreshSharedStateFromSP(){
        &&JSON.stringify(parsed.PANEL_THRESHOLDS)!==JSON.stringify(PANEL_THRESHOLDS)){
       PANEL_THRESHOLDS=parsed.PANEL_THRESHOLDS; notes.push('panel thresholds');
     }
+    if('TIME_OFF' in parsed && JSON.stringify(parsed.TIME_OFF||{})!==JSON.stringify(_collectTimeOff())){
+      _applyTimeOff(parsed.TIME_OFF); notes.push('time off');
+    }
     // In step with the store either way — otherwise the save path would treat the adopted
     // values as a local edit and write them straight back out.
     _lastWrittenShared=JSON.stringify(sharedStatePayload());
@@ -10656,6 +10807,7 @@ if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('pro
     _presenceTick().catch(()=>{}); // announce ourselves + render peers immediately
     _trelloSync().catch(e=>console.warn('[trelloSync] startup failed:',e));
     setSaveState('saved');
+    if(PROJECTS.length||PLANNING_PROJECTS.length) _maybeDailySnapshot().catch(()=>{});
     console.log(APP_VER+' SP load complete:',PROJECTS.length,'projects,',DESIGNERS.length,'designers,',PROD_PMS.length,'PMs');
   }catch(e){
     console.error(APP_VER+' SP load error:',e);
@@ -12593,6 +12745,28 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v854', date: '2026-07-15',
+    entries: [
+      'The pipeline now keeps daily snapshots — a full picture of the whole board saved automatically the first time someone opens the tool each day, before any edits, and stored as its own file in the CORE_Pipeline_Snapshots library. Each day is a separate file that sits alongside the others, so nothing gets overwritten; you build up a timeline you can look back through. Older snapshots past about three months are pruned automatically.',
+      'You can also capture a snapshot on demand: open Session History and use the “Snapshot now” button inside that panel, for the moment right before you do something risky.',
+      'The panel now shows a dated list of snapshots below your session changes. This first version lists them; comparing a snapshot to the current board and restoring from one are the next two additions.'
+    ]
+  },
+  {
+    version: 'v853', date: '2026-07-15',
+    entries: [
+      'Dragging a milestone on its own — in unlinked mode, where milestones move independently of the project — now records an undo point and appears in Session History, which it wasn’t doing before. The entry names the milestone and its date change (for example, “Lebow: DA moved Mar 3 → Mar 10”), so an independent milestone move reads differently from a whole-project move.'
+    ]
+  },
+  {
+    version: 'v852', date: '2026-07-15',
+    entries: [
+      'Time off is now saved. Until now the OFF markers you placed on a designer or PM lived only in your own browser and were never written to SharePoint, so they disappeared the next time the page reloaded or refreshed its team list — which is how a set of markers vanished. Time off is now stored as a shared fact: it survives reloads, and everyone on the team sees the same markers. (Markers placed before this version were never saved and can’t be recovered.)',
+      'Adding or removing a time-off marker, and changing a project’s status (DA Signed, CA Signed, Paused, and so on), now record undo points like everything else — Undo reverses them and they show up in Session History.',
+      'Removing or renaming a designer or PM in the gantt view now records an undo point too.'
+    ]
+  },
+  {
     version: 'v851', date: '2026-07-15',
     entries: [
       'Undo now actually works. Until now, when you changed something and pressed Undo, the tool was quietly taking its "before" picture a moment too late — after the change had already landed — so undoing put you right back where you already were and nothing appeared to move. This affected dragging bars and milestones on the chart, assigning or clearing a proposed designer, deferring or restoring a project in the planning list, and editing an estimated cost. All of those now record the true before-state and reverse cleanly.',
@@ -13904,6 +14078,7 @@ document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&e.key==='z'&&!e.shiftKey){ e.preventDefault(); undoLast(); }
 });
 document.getElementById('shUndoBtn').addEventListener('click',undoLast);
+document.getElementById('snapNowBtn')?.addEventListener('click',takeManualSnapshot);
 document.getElementById('shCloseBtn').addEventListener('click',closeSessionHistory);
 
 // Load on boot from localStorage cache only — SP versions loaded after auth completes
