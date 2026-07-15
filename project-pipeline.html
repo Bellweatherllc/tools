@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v850</title>
+<title>BW Project Pipeline — v851</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2077,6 +2077,7 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
   display:flex;align-items:center;gap:8px;padding:10px 12px;
   border-bottom:1px solid rgba(255,255,255,.10);flex-shrink:0;
 }
+.sh-undo-btn:disabled{opacity:.45;cursor:default;}
 .sh-title{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.60);flex:1;}
 .sh-undo-btn{
   font-size:10px;font-weight:700;padding:3px 9px;border-radius:4px;
@@ -2686,7 +2687,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v850</div>
+    <div class="auth-version" id="authVersionBadge">v851</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2705,7 +2706,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v850</div>
+  <div class="proto-badge" id="versionBadge">v851</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -3024,6 +3025,7 @@ function _histPush(desc,snap,planning=false){
   if(!desc||!snap) return;
   HISTORY_STACK.push({ts:Date.now(),desc,user:_histUser(),snap,planning:!!planning});
   if(HISTORY_STACK.length>HISTORY_MAX) HISTORY_STACK.shift();
+  try{ renderSessionHistory(); }catch(_e){}
 }
 function pushHistory(desc){
   if(!desc) return;
@@ -3206,7 +3208,18 @@ function openSessionHistory(){
 function closeSessionHistory(){
   document.getElementById('sessionHistoryPanel').classList.remove('open');
 }
+function _refreshUndoBtn(){
+  const b=document.getElementById('shUndoBtn'); if(!b) return;
+  const top=HISTORY_STACK[HISTORY_STACK.length-1];
+  if(!top){ b.innerHTML='↩ Nothing to undo'; b.title='Nothing to undo'; b.disabled=true; return; }
+  b.disabled=false;
+  const d=String(top.desc||'change');
+  const short=d.length>34?d.slice(0,33)+'…':d;
+  b.innerHTML='↩ Undo: '+escH(short);
+  b.title='Undo: '+d;
+}
 function renderSessionHistory(){
+  _refreshUndoBtn();
   const list=document.getElementById('shList'); if(!list) return;
   if(!HISTORY_STACK.length){ list.innerHTML='<div class="sh-empty">No changes recorded this session.</div>'; return; }
   const fmt=ts=>{
@@ -3679,7 +3692,7 @@ document.getElementById('proposedDesignerPicker').addEventListener('click',e=>{
   const noneBtn=e.target.closest('[data-prop-des-none]');
   if(noneBtn){
     const pp=PLANNING_PROJECTS.find(p=>p.id===_propDesPicker.ppId); if(!pp)return;
-    pp.proposedDesigner=null; pushPlanningHistory(`${pp.name} — proposed designer cleared`);
+    pushPlanningHistory(`${pp.name} — proposed designer cleared`); pp.proposedDesigner=null;
     const src=PROJECTS.find(p=>p.id===pp._fromLeadId);
     if(src){ src.designer=null; if(src._spItemId) graphPatch(BWC_SITE+'/CORE_Projects/items/'+src._spItemId+'/fields',{DesignerName:''}).catch(e=>console.warn('[designer picker] SP patch failed',e)); }
     closeProposedDesignerPicker(); rebuildSection('planning'); triggerSave(); return;
@@ -3687,7 +3700,7 @@ document.getElementById('proposedDesignerPicker').addEventListener('click',e=>{
   const anyBtn=e.target.closest('[data-prop-des-any]');
   if(anyBtn){
     const pp=PLANNING_PROJECTS.find(p=>p.id===_propDesPicker.ppId); if(!pp)return;
-    pp.proposedDesigner='any'; pushPlanningHistory(`${pp.name} — proposed designer: Any`);
+    pushPlanningHistory(`${pp.name} — proposed designer: Any`); pp.proposedDesigner='any';
     const src=PROJECTS.find(p=>p.id===pp._fromLeadId);
     if(src){ if(src._spItemId) graphPatch(BWC_SITE+'/CORE_Projects/items/'+src._spItemId+'/fields',{DesignerName:''}).catch(e=>console.warn('[designer picker] SP patch failed',e)); }
     closeProposedDesignerPicker(); rebuildSection('planning'); triggerSave(); return;
@@ -3696,7 +3709,7 @@ document.getElementById('proposedDesignerPicker').addEventListener('click',e=>{
   if(btn){
     const pp=PLANNING_PROJECTS.find(p=>p.id===_propDesPicker.ppId); if(!pp)return;
     const des=personById(btn.dataset.propDesId);
-    pp.proposedDesigner=btn.dataset.propDesId; pushPlanningHistory(`${pp.name} — proposed designer: ${des?.label||'?'}`);
+    pushPlanningHistory(`${pp.name} — proposed designer: ${des?.label||'?'}`); pp.proposedDesigner=btn.dataset.propDesId;
     const src=PROJECTS.find(p=>p.id===pp._fromLeadId);
     if(src){ src.designer=btn.dataset.propDesId; if(src._spItemId) graphPatch(BWC_SITE+'/CORE_Projects/items/'+src._spItemId+'/fields',{DesignerName:des?.fullLabel||des?.label||''}).catch(e=>console.warn('[designer picker] SP patch failed',e)); }
     closeProposedDesignerPicker(); rebuildSection('planning'); triggerSave(); return;
@@ -7366,7 +7379,7 @@ function _buildReserveList(){
       incBtn.textContent='Include'; incBtn.title='Include in planning picker';
       incBtn.addEventListener('click',ev=>{
         ev.stopPropagation();
-        proj.planningSkipped=false; pushPlanningHistory(`${proj.name} — returned to planning list`); triggerSave(proj); _buildReserveList();
+        pushPlanningHistory(`${proj.name} — returned to planning list`); proj.planningSkipped=false; triggerSave(proj); _buildReserveList();
       });
       item.appendChild(incBtn);
     } else {
@@ -7375,7 +7388,7 @@ function _buildReserveList(){
       skipBtn.textContent='Defer'; skipBtn.title='Project not ready for planning — hide for now';
       skipBtn.addEventListener('click',ev=>{
         ev.stopPropagation();
-        proj.planningSkipped=true; pushPlanningHistory(`${proj.name} — deferred from planning list`); triggerSave(proj); _buildReserveList();
+        pushPlanningHistory(`${proj.name} — deferred from planning list`); proj.planningSkipped=true; triggerSave(proj); _buildReserveList();
       });
       item.appendChild(addLbl); item.appendChild(skipBtn);
     }
@@ -7441,6 +7454,7 @@ function capture(el,pid){ try{el.setPointerCapture(pid);}catch(_){} document.add
 
 function onMove(e){
   if(!DRAG)return;
+  if(!DRAG._preSnap && DRAG.type!=='panScroll'){ try{ DRAG._preSnap=_histSnap(); }catch(_e){ DRAG._preSnap=null; } }
   const _dragWW=DRAG.weekW||Math.round(C.weekW*PROD_ZOOM);
   const _w2px=w=>Math.round(w*_dragWW); // zoom-correct positioning — never use global w2px here
   const dw=Math.round((e.clientX-DRAG.startX)/_dragWW);
@@ -8351,10 +8365,13 @@ function patchSaveHooks(){
   const _ou=onUp; onUp=function(){
     const wd=!!DRAG;
     let snap=null, pre=null;
-    if(wd&&DRAG){ try{ snap=_histSnap(); pre=_captureDragPre(DRAG); }catch(e){} }
+    if(wd&&DRAG){ snap=DRAG._preSnap||null; try{ pre=_captureDragPre(DRAG); }catch(e){ console.warn('[history] drag desc capture failed',e); } }
     _ou();
     if(wd){
-      try{ if(_dragMoved&&snap&&pre) _histPush(_buildDragDesc(pre),snap); }catch(e){}
+      try{
+        if(_dragMoved&&pre&&snap) _histPush(_buildDragDesc(pre),snap);
+        else if(_dragMoved&&!snap){ console.warn('[history] drag pre-snapshot missing — not recorded for undo'); if(typeof showToast==='function') showToast('Change made, but not recorded for undo.',null); }
+      }catch(e){ console.warn('[history] drag capture failed',e); if(typeof showToast==='function') showToast('Change made, but not recorded for undo.',null); }
       _dragMoved=false;
       triggerSave();
       // Re-apply glow in case drag refreshed DOM elements
@@ -9069,7 +9086,7 @@ function buildPlanningSection(){
         const nmBtn=el('button','ps-des-chip-nm'); nmBtn.type='button'; nmBtn.textContent=d.label; nmBtn.title='Assign '+d.label;
         nmBtn.addEventListener('click',e=>{
           e.stopPropagation();
-          if(attached){ attached.proposedDesigner=d.id; pushPlanningHistory(attached.name+' \u2014 proposed designer: '+d.label); rebuildSection('planning'); triggerSave(); }
+          if(attached){ pushPlanningHistory(attached.name+' \u2014 proposed designer: '+d.label); attached.proposedDesigner=d.id; rebuildSection('planning'); triggerSave(); }
         });
         const sep=el('span','ps-des-chip-sep');
         const capZone=el('button','ps-des-chip-cap'); capZone.type='button';
@@ -12219,8 +12236,8 @@ document.addEventListener('click',e=>{
             const raw=inp.value.trim(); if(raw===costVal) return;
             const num=parseInt(raw.replace(/[^0-9]/g,''));
             const fmt=num?'$'+num.toLocaleString():raw; inp.value=fmt;
-            proj.estimatedValue=fmt; proj.projBudget=fmt;
-            pushHistory(`${proj.name} — estimated cost: ${fmt}`); markDirty(proj); triggerSave();
+            pushHistory(`${proj.name} — estimated cost: ${fmt}`);
+            proj.estimatedValue=fmt; proj.projBudget=fmt; markDirty(proj); triggerSave();
             if(proj._spItemId) graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{EstimatedProjectValue:fmt}).catch(e=>console.warn('[key data] cost patch failed',e));
           });
           inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape'){inp.value=costVal;inp.blur();}});
@@ -12575,6 +12592,14 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v851', date: '2026-07-15',
+    entries: [
+      'Undo now actually works. Until now, when you changed something and pressed Undo, the tool was quietly taking its "before" picture a moment too late — after the change had already landed — so undoing put you right back where you already were and nothing appeared to move. This affected dragging bars and milestones on the chart, assigning or clearing a proposed designer, deferring or restoring a project in the planning list, and editing an estimated cost. All of those now record the true before-state and reverse cleanly.',
+      'The Session History panel updates live as you work — each change appears the instant you make it, so you can see it registered. The Undo button now names what it will reverse (for example, "Undo: Lebow — proposed designer: Sean") instead of a blank "Undo Last," and dims to "Nothing to undo" when the list is empty.',
+      'If a change ever fails to be recorded for undo, the tool now says so with a brief message rather than failing in silence.'
+    ]
+  },
   {
     version: 'v850', date: '2026-07-14',
     entries: [
