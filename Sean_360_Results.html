@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>360 Results — Sean Farrell</title>
+
+  <!-- ============================================================
+    VERSION: 1.0
+    DESCRIPTION: Results reader and AI synthesis for Sean Farrell 360 review.
+    AUTH: Azure AD / MSAL — same app registration as the survey.
+    STORAGE: Reads from Sean360Responses and Sean360Completions on BWCore.
+
+    AZURE AD SETUP:
+    Add this redirect URI to the existing app registration:
+      https://bellweatherllc.github.io/tools/Sean_360_Results.html
+  ============================================================ -->
+
+  <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+
+  <style>
+    @font-face { font-family: 'TT Norms Pro'; src: url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'TT Norms Pro'; src: url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'TT Norms Pro'; src: url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_DemiBold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Swear Text'; src: url('https://bellweatherllc.github.io/tools/fonts/SwearText-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Swear Text'; src: url('https://bellweatherllc.github.io/tools/fonts/SwearText-Italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
+    @font-face { font-family: 'Swear Text'; src: url('https://bellweatherllc.github.io/tools/fonts/SwearText-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Swear Text'; src: url('https://bellweatherllc.github.io/tools/fonts/SwearText-MediumItalic.woff2') format('woff2'); font-weight: 500; font-style: italic; font-display: swap; }
+
+    :root {
+      --limestone: #282828;
+      --cotton:    #F6F2EE;
+      --navy:      #263860;
+      --slate:     #9091A0;
+      --mahogany:  #54423E;
+      --teak:      #B7A9A3;
+      --concrete:  #D2D5D8;
+      --glass:     #EDF5F9;
+      --linen:     #E5E1D8;
+      --marble:    #FFFFFF;
+      --font-sans:       'TT Norms Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-serif-text: 'Swear Text', Georgia, serif;
+      --bg:              var(--cotton);
+      --surface:         var(--marble);
+      --border:          var(--concrete);
+      --border-light:    var(--linen);
+      --ink:             var(--limestone);
+      --ink-mid:         var(--mahogany);
+      --ink-light:       var(--slate);
+      --accent:          var(--navy);
+      --accent-hover:    #1a2847;
+      --teak-border:     var(--teak);
+      --radius:          6px;
+      --max:             760px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-sans); font-size: 15px; line-height: 1.65; background: var(--bg); color: var(--ink); min-height: 100vh; }
+
+    /* ── Header ── */
+    header { background: var(--limestone); padding: 0 24px; }
+    .header-inner { max-width: var(--max); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 52px; }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-logo { height: 26px; width: auto; display: block; flex-shrink: 0; }
+    .header-title-group { display: flex; align-items: baseline; gap: 8px; }
+    .header-brand { font-family: var(--font-sans); font-size: 12px; font-weight: 500; letter-spacing: 0.06em; color: rgba(255,255,255,0.75); }
+    .header-version { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.3); }
+    .header-user { display: flex; align-items: center; gap: 10px; }
+    .header-user-name { font-size: 12px; color: rgba(255,255,255,0.45); }
+    .btn-signout { font-family: var(--font-sans); font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 4px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; color: rgba(255,255,255,0.45); transition: all 0.15s; }
+    .btn-signout:hover { border-color: rgba(255,255,255,0.5); color: rgba(255,255,255,0.8); }
+
+    /* ── Layout ── */
+    main { max-width: var(--max); margin: 0 auto; padding: 48px 24px 100px; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── Sign in ── */
+    .signin-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 50vh; text-align: center; gap: 16px; }
+    .signin-title { font-family: var(--font-serif-text); font-size: 26px; font-weight: 500; }
+    .signin-sub { font-size: 14px; color: var(--ink-mid); max-width: 360px; line-height: 1.7; }
+    .btn-signin { display: inline-flex; align-items: center; gap: 10px; font-family: var(--font-sans); font-size: 14px; font-weight: 600; padding: 12px 26px; border-radius: var(--radius); cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--ink); transition: all 0.15s; margin-top: 8px; }
+    .btn-signin:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .loading-msg { text-align: center; padding: 80px 0; color: var(--ink-light); font-size: 14px; }
+
+    /* ── Page header ── */
+    .page-head { margin-bottom: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+    .page-head h1 { font-family: var(--font-serif-text); font-size: 28px; font-weight: 500; }
+    .response-count { font-size: 13px; color: var(--ink-light); margin-top: 4px; }
+
+    /* ── Section ── */
+    .section { margin-bottom: 52px; }
+    .section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-light); padding-bottom: 10px; border-bottom: 1px solid var(--border-light); margin-bottom: 24px; }
+
+    /* ── Rating rows ── */
+    .rating-row { margin-bottom: 20px; }
+    .rating-statement { font-family: var(--font-serif-text); font-style: italic; font-size: 14px; color: var(--ink); margin-bottom: 10px; line-height: 1.5; }
+    .rating-bar-wrap { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    .rating-avg { font-size: 22px; font-weight: 600; color: var(--accent); min-width: 36px; line-height: 1; }
+    .rating-avg-denom { font-size: 12px; color: var(--ink-light); margin-top: 2px; }
+    .bar-track { flex: 1; height: 8px; background: var(--border-light); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.6s ease; }
+    .rating-dist { display: flex; gap: 4px; }
+    .dist-pip { width: 24px; height: 24px; border-radius: 4px; background: var(--border-light); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: var(--ink-light); }
+    .dist-pip.has-votes { background: var(--accent); color: #fff; }
+    .rating-comments { margin-top: 10px; padding-left: 14px; border-left: 2px solid var(--border-light); }
+    .rating-comment { font-size: 13px; color: var(--ink-mid); line-height: 1.65; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-light); }
+    .rating-comment:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+    /* ── Qualitative responses ── */
+    .q-block { margin-bottom: 36px; }
+    .q-prompt { font-family: var(--font-serif-text); font-size: 14.5px; font-style: italic; font-weight: 400; color: var(--ink); margin-bottom: 14px; line-height: 1.55; }
+    .q-responses { display: flex; flex-direction: column; gap: 10px; }
+    .q-response { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; font-size: 14px; color: var(--ink); line-height: 1.7; }
+    .q-response.empty { color: var(--ink-light); font-style: italic; font-size: 13px; }
+    .q-none { font-size: 13px; color: var(--ink-light); font-style: italic; }
+
+    /* ── AI Synthesis ── */
+    .synthesis-wrap { background: var(--glass); border: 1px solid var(--teak-border); border-radius: var(--radius); padding: 28px; }
+    .synthesis-intro { font-size: 14px; color: var(--ink-mid); margin-bottom: 20px; line-height: 1.7; }
+    .btn-synthesize { font-family: var(--font-sans); font-size: 14px; font-weight: 600; padding: 12px 28px; border-radius: var(--radius); cursor: pointer; border: none; background: var(--accent); color: #fff; transition: background 0.15s; }
+    .btn-synthesize:hover { background: var(--accent-hover); }
+    .btn-synthesize:disabled { opacity: 0.5; cursor: not-allowed; }
+    .synthesis-output { margin-top: 24px; display: none; }
+    .synthesis-output.visible { display: block; }
+    .synthesis-text { font-size: 14px; color: var(--ink); line-height: 1.8; white-space: pre-wrap; }
+    .synthesis-section-head { font-family: var(--font-sans); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-light); margin: 24px 0 8px; padding-top: 20px; border-top: 1px solid var(--border-light); }
+    .synthesis-section-head:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+    .synthesis-body { font-size: 14px; color: var(--ink); line-height: 1.8; }
+    .synthesis-spinner { display: none; font-size: 13px; color: var(--ink-light); margin-top: 12px; }
+    .synthesis-spinner.visible { display: block; }
+    .synthesis-error { font-size: 13px; color: #c0392b; margin-top: 12px; display: none; }
+    .synthesis-error.visible { display: block; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="header-left">
+      <img src="https://bellweatherllc.github.io/tools/logos/Monogram-W.svg" class="header-logo" alt="Bellweather">
+      <div class="header-title-group">
+        <span class="header-brand">360 Results — Sean Farrell</span>
+        <span class="header-version">v1.0</span>
+      </div>
+    </div>
+    <div class="header-user">
+      <span class="header-user-name" id="userName"></span>
+      <button class="btn-signout" id="btnSignOut" style="display:none" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <div id="pageLoading" class="page active">
+    <div class="loading-msg">Loading...</div>
+  </div>
+
+  <div id="pageSignIn" class="page">
+    <div class="signin-wrap">
+      <div class="signin-title">360 Results — Sean Farrell</div>
+      <p class="signin-sub">Sign in with your Bellweather credentials to view the results.</p>
+      <button class="btn-signin" onclick="signIn()">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect width="7.5" height="7.5" fill="#F25022"/><rect x="8.5" width="7.5" height="7.5" fill="#7FBA00"/><rect y="8.5" width="7.5" height="7.5" fill="#00A4EF"/><rect x="8.5" y="8.5" width="7.5" height="7.5" fill="#FFB900"/></svg>
+        Sign in with Microsoft
+      </button>
+    </div>
+  </div>
+
+  <div id="pageResults" class="page">
+
+    <div class="page-head">
+      <div>
+        <h1>Sean Farrell — 360 Review</h1>
+        <div class="response-count" id="responseCount"></div>
+      </div>
+    </div>
+
+    <!-- RATINGS -->
+    <div class="section">
+      <div class="section-label">Relational and Collaborative Behaviors</div>
+      <div id="ratingsContainer"></div>
+    </div>
+
+    <!-- STRENGTHS -->
+    <div class="section">
+      <div class="section-label">Strengths</div>
+      <div id="strengthsContainer"></div>
+    </div>
+
+    <!-- DEVELOPMENT -->
+    <div class="section">
+      <div class="section-label">Development</div>
+      <div id="devContainer"></div>
+    </div>
+
+    <!-- AI SYNTHESIS -->
+    <div class="section">
+      <div class="section-label">Debrief Preparation</div>
+      <div class="synthesis-wrap">
+        <p class="synthesis-intro">Generate an AI-assisted synthesis of the feedback to help you prepare for the debrief conversation with Sean. This looks across all responses for themes, patterns, and things worth surfacing.</p>
+        <button class="btn-synthesize" id="btnSynthesize" onclick="generateSynthesis()">Generate Analysis</button>
+        <div class="synthesis-spinner" id="synthSpinner">Analyzing responses...</div>
+        <div class="synthesis-error" id="synthError"></div>
+        <div class="synthesis-output" id="synthOutput"></div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+var CONFIG = {
+  tenantId:        'ff0e3f46-615a-4a22-8a80-4bb83d627785',
+  clientId:        '84b37f0e-b149-4089-9bdc-fc654715db23',
+  redirectUri:     'https://bellweatherllc.github.io/tools/Sean_360_Results.html',
+  sharepointHost:  'bellweather.sharepoint.com',
+  sharepointSite:  '/sites/BWCore',
+  completionsList: 'Sean360Completions',
+  responsesList:   'Sean360Responses',
+};
+
+var SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+
+var BEHAVIOR_LABELS = [
+  'Sean follows through on commitments reliably.',
+  'Sean communicates clearly when things are uncertain or changing.',
+  'Sean is receptive to feedback and responds to it constructively.',
+  'Sean is someone I can count on when the work gets difficult.',
+  'Sean contributes to a positive team environment.',
+  'When Sean is under pressure, he manages it in a way that doesn\'t negatively affect those around him.',
+];
+
+var SCALE_LABELS = ['Rarely', 'Sometimes', 'Often', 'Usually', 'Consistently'];
+
+var Q_LABELS = {
+  q1: 'What does Sean do particularly well that you\'d want to see more of?',
+  q2: 'Describe a moment where Sean\'s contribution made a meaningful difference — to a project or to you personally.',
+  d1: 'Where do you think Sean has the most room to grow?',
+  d2: 'What\'s one thing — a behavior, habit, or approach — that would make Sean more effective as a colleague?',
+  d3: 'Is there anything Sean does that sometimes creates friction, even unintentionally?',
+};
+
+// ============================================================
+// MSAL
+// ============================================================
+var msalApp = new msal.PublicClientApplication({
+  auth: { clientId: CONFIG.clientId, authority: 'https://login.microsoftonline.com/' + CONFIG.tenantId, redirectUri: CONFIG.redirectUri },
+  cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false },
+});
+
+var graphCtx = { siteId: null, completionsId: null, responsesId: null };
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+}
+
+function getAccount() {
+  var accs = msalApp.getAllAccounts();
+  return accs.length ? accs[0] : null;
+}
+
+async function signIn() {
+  await msalApp.loginRedirect({ scopes: SCOPES });
+}
+
+function signOut() {
+  msalApp.logoutRedirect({ account: getAccount() });
+}
+
+async function getToken() {
+  var acc = getAccount();
+  if (!acc) throw new Error('Not signed in');
+  try {
+    var r = await msalApp.acquireTokenSilent({ scopes: SCOPES, account: acc });
+    return r.accessToken;
+  } catch(e) {
+    await msalApp.acquireTokenRedirect({ scopes: SCOPES, account: acc });
+  }
+}
+
+// ============================================================
+// GRAPH API
+// ============================================================
+async function graphReq(method, path, body) {
+  var token = await getToken();
+  var opts = { method: method, headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  var resp = await fetch('https://graph.microsoft.com/v1.0' + path, opts);
+  if (!resp.ok) { var err = await resp.text(); throw new Error('Graph ' + resp.status + ': ' + err); }
+  if (resp.status === 204) return null;
+  return resp.json();
+}
+
+async function initGraphContext() {
+  var site = await graphReq('GET', '/sites/' + CONFIG.sharepointHost + ':' + CONFIG.sharepointSite);
+  graphCtx.siteId = site.id;
+  var listsResp = await graphReq('GET', '/sites/' + graphCtx.siteId + '/lists?$select=id,displayName');
+  var lists = listsResp.value;
+  var comp = lists.find(function(l) { return l.displayName === CONFIG.completionsList; });
+  var resp = lists.find(function(l) { return l.displayName === CONFIG.responsesList; });
+  if (!comp || !resp) throw new Error('SharePoint lists not found. Check list names in CONFIG.');
+  graphCtx.completionsId = comp.id;
+  graphCtx.responsesId = resp.id;
+}
+
+// ============================================================
+// DATA FETCHING
+// ============================================================
+async function fetchResponses() {
+  var data = await graphReq('GET', '/sites/' + graphCtx.siteId + '/lists/' + graphCtx.responsesId +
+    '/items?$expand=fields($select=ResponseData)&$top=200');
+  return (data.value || []).map(function(item) {
+    try { return JSON.parse(item.fields.ResponseData); } catch(e) { return null; }
+  }).filter(Boolean);
+}
+
+async function fetchCompletions() {
+  var data = await graphReq('GET', '/sites/' + graphCtx.siteId + '/lists/' + graphCtx.completionsId +
+    '/items?$expand=fields($select=Title,ReviewerName)&$top=200');
+  return data.value || [];
+}
+
+// ============================================================
+// DISPLAY
+// ============================================================
+var allResponses = [];
+
+function renderResults(responses, completions) {
+  allResponses = responses;
+  var n = responses.length;
+
+  document.getElementById('responseCount').textContent =
+    n + ' response' + (n !== 1 ? 's' : '') + ' received' +
+    (completions.length > 0 ? ' from ' + completions.length + ' invited reviewer' + (completions.length !== 1 ? 's' : '') : '');
+
+  renderRatings(responses);
+  renderQualitative(responses);
+}
+
+function renderRatings(responses) {
+  var container = document.getElementById('ratingsContainer');
+  container.innerHTML = '';
+
+  BEHAVIOR_LABELS.forEach(function(label, idx) {
+    var key = 'b' + (idx + 1) + 'r';
+    var commentKey = 'b' + (idx + 1) + 'c';
+    var ratings = responses.map(function(r) { return r[key]; }).filter(function(v) { return v && v >= 1 && v <= 5; });
+    var comments = responses.map(function(r) { return r[commentKey]; }).filter(function(v) { return v && v.trim(); });
+
+    if (ratings.length === 0) return;
+
+    var avg = ratings.reduce(function(a, b) { return a + b; }, 0) / ratings.length;
+    var dist = [0, 0, 0, 0, 0];
+    ratings.forEach(function(r) { dist[r - 1]++; });
+
+    var row = document.createElement('div');
+    row.className = 'rating-row';
+
+    var pipsHtml = dist.map(function(count, i) {
+      return '<div class="dist-pip' + (count > 0 ? ' has-votes' : '') + '" title="' + SCALE_LABELS[i] + ': ' + count + '">' + count + '</div>';
+    }).join('');
+
+    var commentsHtml = '';
+    if (comments.length > 0) {
+      commentsHtml = '<div class="rating-comments">' +
+        comments.map(function(c) { return '<div class="rating-comment">' + esc(c) + '</div>'; }).join('') +
+        '</div>';
+    }
+
+    row.innerHTML =
+      '<div class="rating-statement">\u201c' + label + '\u201d</div>' +
+      '<div class="rating-bar-wrap">' +
+        '<div>' +
+          '<div class="rating-avg">' + avg.toFixed(1) + '</div>' +
+          '<div class="rating-avg-denom">out of 5</div>' +
+        '</div>' +
+        '<div class="bar-track"><div class="bar-fill" style="width:' + (avg / 5 * 100) + '%"></div></div>' +
+        '<div class="rating-dist">' + pipsHtml + '</div>' +
+      '</div>' +
+      commentsHtml;
+
+    container.appendChild(row);
+  });
+}
+
+function renderQualitative(responses) {
+  renderQSection('strengthsContainer', [
+    { key: 'q1', label: Q_LABELS.q1 },
+    { key: 'q2', label: Q_LABELS.q2 },
+  ], responses);
+
+  renderQSection('devContainer', [
+    { key: 'd1', label: Q_LABELS.d1 },
+    { key: 'd2', label: Q_LABELS.d2 },
+    { key: 'd3', label: Q_LABELS.d3 },
+  ], responses);
+}
+
+function renderQSection(containerId, questions, responses) {
+  var container = document.getElementById(containerId);
+  container.innerHTML = '';
+  questions.forEach(function(q) {
+    var answers = responses.map(function(r) { return r[q.key]; }).filter(function(v) { return v && v.trim(); });
+    var block = document.createElement('div');
+    block.className = 'q-block';
+    var answersHtml = answers.length > 0
+      ? '<div class="q-responses">' + answers.map(function(a) { return '<div class="q-response">' + esc(a) + '</div>'; }).join('') + '</div>'
+      : '<div class="q-none">No responses to this question.</div>';
+    block.innerHTML = '<div class="q-prompt">' + esc(q.label) + '</div>' + answersHtml;
+    container.appendChild(block);
+  });
+}
+
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ============================================================
+// AI SYNTHESIS
+// ============================================================
+function buildPrompt(responses) {
+  var n = responses.length;
+  var lines = [];
+
+  lines.push('You are helping a design manager prepare for a private 360 feedback debrief conversation with a direct report named Sean Farrell. Sean is a designer on a small residential design-build team. He has opted into this developmental process. The goal of the debrief is growth, not evaluation.\n');
+  lines.push(n + ' anonymous responses were collected from colleagues. Analyze the full set and produce a structured debrief preparation document. Be specific and direct. Use the actual language from the responses where it is illustrative. Do not hedge excessively. This is for the manager\'s eyes only.\n');
+  lines.push('Produce your response in these five sections, using the exact section headers shown:\n');
+  lines.push('STRENGTH THEMES\nKEY DEVELOPMENT THEMES\nBEHAVIOR RATING OBSERVATIONS\nDEBRIEF PREPARATION NOTES\nOVERALL SYNTHESIS\n');
+  lines.push('--- BEHAVIOR RATINGS (average out of 5, with comments) ---\n');
+
+  BEHAVIOR_LABELS.forEach(function(label, idx) {
+    var key = 'b' + (idx + 1) + 'r';
+    var commentKey = 'b' + (idx + 1) + 'c';
+    var ratings = responses.map(function(r) { return r[key]; }).filter(function(v) { return v; });
+    var comments = responses.map(function(r) { return r[commentKey]; }).filter(function(v) { return v && v.trim(); });
+    if (ratings.length === 0) return;
+    var avg = (ratings.reduce(function(a, b) { return a + b; }, 0) / ratings.length).toFixed(1);
+    lines.push('"' + label + '" — avg ' + avg + '/5');
+    if (comments.length > 0) {
+      comments.forEach(function(c) { lines.push('  • ' + c); });
+    }
+    lines.push('');
+  });
+
+  lines.push('--- STRENGTHS ---\n');
+  lines.push('Q: ' + Q_LABELS.q1);
+  responses.forEach(function(r) { if (r.q1 && r.q1.trim()) lines.push('  • ' + r.q1); });
+  lines.push('');
+  lines.push('Q: ' + Q_LABELS.q2);
+  responses.forEach(function(r) { if (r.q2 && r.q2.trim()) lines.push('  • ' + r.q2); });
+  lines.push('');
+
+  lines.push('--- DEVELOPMENT ---\n');
+  lines.push('Q: ' + Q_LABELS.d1);
+  responses.forEach(function(r) { if (r.d1 && r.d1.trim()) lines.push('  • ' + r.d1); });
+  lines.push('');
+  lines.push('Q: ' + Q_LABELS.d2);
+  responses.forEach(function(r) { if (r.d2 && r.d2.trim()) lines.push('  • ' + r.d2); });
+  lines.push('');
+  lines.push('Q: ' + Q_LABELS.d3);
+  responses.forEach(function(r) { if (r.d3 && r.d3.trim()) lines.push('  • ' + r.d3); });
+
+  return lines.join('\n');
+}
+
+async function generateSynthesis() {
+  var btn = document.getElementById('btnSynthesize');
+  var spinner = document.getElementById('synthSpinner');
+  var output = document.getElementById('synthOutput');
+  var errEl = document.getElementById('synthError');
+
+  btn.disabled = true;
+  spinner.classList.add('visible');
+  output.classList.remove('visible');
+  errEl.classList.remove('visible');
+
+  try {
+    var prompt = buildPrompt(allResponses);
+
+    var resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: 'You are a direct, insightful organizational consultant helping a manager prepare for a developmental feedback conversation. Produce structured, specific analysis grounded in the data provided. Avoid hedging and corporate filler.',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!resp.ok) {
+      var errText = await resp.text();
+      throw new Error('API error ' + resp.status + ': ' + errText);
+    }
+
+    var data = await resp.json();
+    var text = (data.content || []).filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('');
+
+    renderSynthesis(text, output);
+    spinner.classList.remove('visible');
+    output.classList.add('visible');
+    btn.textContent = 'Regenerate';
+    btn.disabled = false;
+
+  } catch(e) {
+    spinner.classList.remove('visible');
+    errEl.textContent = 'Analysis failed: ' + (e.message || e);
+    errEl.classList.add('visible');
+    btn.disabled = false;
+  }
+}
+
+function renderSynthesis(text, container) {
+  var sections = [
+    'STRENGTH THEMES',
+    'KEY DEVELOPMENT THEMES',
+    'BEHAVIOR RATING OBSERVATIONS',
+    'DEBRIEF PREPARATION NOTES',
+    'OVERALL SYNTHESIS',
+  ];
+
+  var html = '';
+  var remaining = text;
+
+  sections.forEach(function(header, idx) {
+    var nextHeader = sections[idx + 1];
+    var startIdx = remaining.indexOf(header);
+    if (startIdx === -1) return;
+
+    var bodyStart = startIdx + header.length;
+    var bodyEnd = nextHeader ? remaining.indexOf(nextHeader) : remaining.length;
+    if (bodyEnd === -1) bodyEnd = remaining.length;
+
+    var body = remaining.slice(bodyStart, bodyEnd).replace(/^[\s\n:—-]+/, '').trim();
+    html += '<div class="synthesis-section-head">' + header + '</div>';
+    html += '<div class="synthesis-body">' + esc(body) + '</div>';
+  });
+
+  container.innerHTML = html || '<div class="synthesis-body">' + esc(text) + '</div>';
+}
+
+// ============================================================
+// INIT
+// ============================================================
+async function onAuthenticated() {
+  var acc = getAccount();
+  document.getElementById('userName').textContent = acc.name || acc.username;
+  document.getElementById('btnSignOut').style.display = 'block';
+  document.querySelector('#pageLoading .loading-msg').textContent = 'Loading responses...';
+
+  try {
+    await initGraphContext();
+    var responses = await fetchResponses();
+    var completions = await fetchCompletions();
+    renderResults(responses, completions);
+    showPage('pageResults');
+  } catch(e) {
+    document.querySelector('#pageLoading .loading-msg').textContent = 'Error: ' + e.message;
+  }
+}
+
+window.addEventListener('load', async function() {
+  await msalApp.initialize();
+  var redirectResult = await msalApp.handleRedirectPromise();
+  if (redirectResult || getAccount()) {
+    await onAuthenticated();
+  } else {
+    showPage('pageSignIn');
+  }
+});
+</script>
+</body>
+</html>
