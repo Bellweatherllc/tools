@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v855</title>
+<title>BW Project Pipeline — v857</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2099,6 +2099,8 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .snap-d-item{font-size:11px;margin:5px 0;line-height:1.45;padding-left:8px;border-left:2px solid rgba(216,182,79,.5);}
 .snap-d-item b{font-weight:700;}
 .snap-d-none{font-size:11px;color:rgba(255,255,255,.5);padding:8px 0;font-style:italic;}
+.snap-restore-btn{display:block;width:100%;margin-top:14px;padding:9px;font-size:11px;font-weight:700;letter-spacing:.03em;color:#1f2e3e;background:#d8b64f;border:none;border-radius:6px;cursor:pointer;transition:filter .12s;}
+.snap-restore-btn:hover{filter:brightness(1.08);}
 .sh-title{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.60);flex:1;}
 .sh-undo-btn{
   font-size:10px;font-weight:700;padding:3px 9px;border-radius:4px;
@@ -2708,7 +2710,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v855</div>
+    <div class="auth-version" id="authVersionBadge">v857</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2727,7 +2729,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v855</div>
+  <div class="proto-badge" id="versionBadge">v857</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -3429,7 +3431,7 @@ async function _snapRead(id){
   if(!res.ok) throw new Error('Snapshot download '+res.status);
   return res.json();
 }
-function _renderSnapDiff(container, when, d){
+function _renderSnapDiff(container, when, d, id){
   const esc=escH;
   const grp=(label,arr)=> arr.length?('<div class="snap-d-grp"><span class="snap-d-lbl">'+label+'</span> '+arr.map(esc).join(', ')+'</div>'):'';
   let html='<button class="snap-d-close" id="snapDiffClose">\u2190 back to list</button>';
@@ -3443,6 +3445,7 @@ function _renderSnapDiff(container, when, d){
   html+=grp('Planning removed:',d.planRemoved);
   d.planChanged.forEach(pc=>{ html+='<div class="snap-d-item"><b>'+esc(pc.name)+'</b> \u2014 '+esc(pc.reasons.join('; '))+'</div>'; });
   if(d.timeOff) html+='<div class="snap-d-item">'+esc(d.timeOff)+'</div>';
+  html+='<button class="snap-restore-btn" data-snap-restore-id="'+esc(id)+'">Restore board to this snapshot</button>';
   container.innerHTML=html;
 }
 async function showSnapshotDiff(id){
@@ -3455,8 +3458,85 @@ async function showSnapshotDiff(id){
   try{
     const obj=await _snapRead(id);
     if(!obj||!obj.data) throw new Error('Snapshot file has no data');
-    _renderSnapDiff(cont, when, _snapDiff(obj.data));
+    _renderSnapDiff(cont, when, _snapDiff(obj.data), id);
   }catch(e){ console.error('[snapshot] diff failed:',e); cont.innerHTML='<button class="snap-d-close" id="snapDiffClose">\u2190 back to list</button><div class="snap-d-none">Couldn\u2019t compare this snapshot \u2014 see console.</div>'; }
+}
+
+// ── Snapshot restore (additive): put the board back to a snapshot, never deleting newer work ──
+function _applyRestore(d){
+  const now=new Date().toISOString();
+  const stageMap={lead:'',projected:'','da-signed':'DA Signed','ca-signed':'CA Signed',paused:'Paused',cancelled:'Cancelled',archived:'Archive',archive:'Archive',lost:'Lost'};
+  const stagePatches=[];
+  // Projects: replace matching by id, re-add ones removed since, leave newer ones untouched
+  (d.projects||[]).forEach(sp=>{
+    const clone=JSON.parse(JSON.stringify(sp));
+    const idx=PROJECTS.findIndex(p=>String(p.id)===String(sp.id));
+    const cur=idx>=0?PROJECTS[idx]:null;
+    const spId=(cur&&cur._spItemId)||clone._spItemId;
+    if(spId&&(!cur||(cur.status||'')!==(sp.status||''))) stagePatches.push({spItemId:spId,stage:(stageMap[sp.status]??''),name:sp.name||''});
+    if(idx>=0) PROJECTS[idx]=clone; else PROJECTS.push(clone);
+    markDirty(clone);
+  });
+  // Planning / archive / history: additive upsert, clear any deletion marker, stamp fresh so it wins the sync
+  ['planning','archive','history'].forEach(domain=>{
+    const snapArr = domain==='planning'?d.planning : domain==='archive'?d.archive : d.history;
+    if(!Array.isArray(snapArr)) return;
+    const liveArr=_domainLocalArr(domain), keyFn=_domainKeyFn(domain);
+    snapArr.forEach(sit=>{
+      const clone=JSON.parse(JSON.stringify(sit)); clone._m=now;
+      const key=keyFn(clone);
+      _domainTombs[domain].delete(String(key));
+      const idx=liveArr.findIndex(it=>keyFn(it)===key);
+      if(idx>=0) liveArr[idx]=clone; else liveArr.push(clone);
+    });
+  });
+  // Shared state: time off, capacity targets, slots, thresholds
+  if(d.shared){
+    const sh=d.shared;
+    if(sh.TIME_OFF) _applyTimeOff(sh.TIME_OFF);
+    if(sh.PERSON_TARGETS&&typeof sh.PERSON_TARGETS==='object'){ Object.keys(PERSON_TARGETS).forEach(k=>delete PERSON_TARGETS[k]); Object.assign(PERSON_TARGETS,sh.PERSON_TARGETS); }
+    if(Array.isArray(sh.USED_SLOTS)){ USED_SLOTS.clear(); sh.USED_SLOTS.forEach(x=>USED_SLOTS.add(x)); }
+    if(sh.SLOT_DEFAULT_BUDGET!=null) SLOT_DEFAULT_BUDGET=sh.SLOT_DEFAULT_BUDGET;
+    if(Array.isArray(sh.SLOT_COL_ORDER)) SLOT_COL_ORDER=sh.SLOT_COL_ORDER;
+    if(sh.PANEL_THRESHOLDS&&typeof sh.PANEL_THRESHOLDS==='object') PANEL_THRESHOLDS=sh.PANEL_THRESHOLDS;
+  }
+  return {stagePatches};
+}
+async function _doRestore(id, when){
+  const closeDiff=()=>{ const c=document.getElementById('snapDiff'); if(c){ c.style.display='none'; c.innerHTML=''; } const l=document.getElementById('snapList'); if(l) l.style.display=''; };
+  try{
+    if(typeof showToast==='function') showToast('Saving a before-snapshot\u2026',null);
+    // Never restore without a net: save the current board first, and abort if that fails.
+    try{ await _takeSnapshot('manual'); }
+    catch(e){ console.error('[restore] pre-restore snapshot failed \u2014 aborting:',e); if(typeof showToast==='function') showToast('Could not save a before-snapshot \u2014 restore aborted, nothing changed.',null); return; }
+    const obj=await _snapRead(id);
+    if(!obj||!obj.data) throw new Error('Snapshot has no data');
+    const {stagePatches}=_applyRestore(obj.data);
+    buildAll();
+    triggerSave();
+    for(const sp of stagePatches){
+      try{ await graphPatch(BWC_SITE+'/CORE_Projects/items/'+sp.spItemId+'/fields',{PipelineStage:sp.stage}); }
+      catch(e){ console.warn('[restore] stage patch failed for',sp.name,e); }
+    }
+    await _snapFetchList(); renderSnapshotList(); closeDiff();
+    if(typeof showToast==='function') showToast('Restored to '+when+'. A before-snapshot was saved so you can reverse this.',null);
+    console.log(APP_VER+' [restore] complete \u2192',when);
+  }catch(e){ console.error('[restore] failed:',e); if(typeof showToast==='function') showToast('Restore failed \u2014 see console.',null); }
+}
+function restoreSnapshot(id){
+  const meta=(_snapList||[]).find(x=>x.id===id);
+  const when=meta?_snapPrettyDate(meta.date,meta.time):'that snapshot';
+  const dlg=document.getElementById('confirmDialog'), titleEl=document.querySelector('.confirm-title');
+  if(titleEl) titleEl.textContent='Restore board to '+when+'?';
+  document.getElementById('confirmMsg').textContent='Projects, planning, and time off are set back to that day, and anything removed since is brought back. Projects created since are left untouched. A snapshot of the current board is saved first, so you can reverse this.';
+  document.getElementById('confirmOk').textContent='Restore';
+  dlg.classList.add('open');
+  document.getElementById('confirmOk').onclick=()=>{
+    dlg.classList.remove('open');
+    if(titleEl) titleEl.textContent='Archive Project?';
+    document.getElementById('confirmOk').textContent='Archive';
+    _doRestore(id, when);
+  };
 }
 
 let PROD_PM_COLLAPSED=new Set(); // set of pmId strings
@@ -7699,6 +7779,7 @@ function onMove(e){
   if(DRAG.type==='timeoffMove'){
     const person=personById(DRAG.personId), to=person?.timeOff.find(t=>t.id===DRAG.toId); if(!to)return;
     to.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origWeek+dw));
+    if(to.week!==DRAG.origWeek) _dragMoved=true;
     document.querySelectorAll(`.timeoff-block[data-to-id="${DRAG.toId}"]`).forEach(b=>b.style.left=_w2px(to.week)+'px');
     document.querySelectorAll(`.timeoff-ov-strip[data-to-id="${DRAG.toId}"]`).forEach(s=>s.style.left=_w2px(to.week)+'px');
     const field=DESIGNERS.find(d=>d.id===DRAG.personId)?'designer':'productionPM';
@@ -12839,6 +12920,20 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v857', date: '2026-07-15',
+    entries: [
+      'You can now restore the board to a snapshot. Open Session History, click a day to see what changed, and use “Restore board to this snapshot” at the bottom of that comparison. It sets projects, planning, and time off back to that day and brings back anything that was removed since. Projects created after the snapshot are left alone — restore recovers and corrects, it never deletes newer work.',
+      'Every restore saves a fresh snapshot of the current board first, automatically, before it changes anything — so a restore is itself reversible: just restore that before-snapshot. If that safety snapshot can’t be saved, the restore aborts and nothing changes.',
+      'This completes the snapshot feature: automatic daily backups, on-demand snapshots, comparing any day to now, and restoring.'
+    ]
+  },
+  {
+    version: 'v856', date: '2026-07-15',
+    entries: [
+      'Moving a time-off marker now records an undo point and appears in Session History. Before, only creating or removing one was tracked, not dragging it — the same fix as the milestone-drag one, where the move handler wasn’t raising the flag that records a change.'
+    ]
+  },
+  {
     version: 'v855', date: '2026-07-15',
     entries: [
       'Snapshots can now be compared to the current board. In Session History, click any dated snapshot and it shows, in plain terms, what has changed since then — which projects were added, removed, or altered (with the reason: reassigned, schedule moved, milestone moved, status changed, and so on), the same for planning, and whether time off changed. If nothing differs it says so. This is the sanity check for “I changed something and can’t tell what.”',
@@ -14181,7 +14276,7 @@ document.addEventListener('keydown',e=>{
 document.getElementById('shUndoBtn').addEventListener('click',undoLast);
 document.getElementById('snapNowBtn')?.addEventListener('click',takeManualSnapshot);
 document.getElementById('snapList')?.addEventListener('click',e=>{ const row=e.target.closest('.snap-row'); if(row&&row.dataset.snapId) showSnapshotDiff(row.dataset.snapId); });
-document.getElementById('snapDiff')?.addEventListener('click',e=>{ if(e.target.closest('#snapDiffClose')){ const c=document.getElementById('snapDiff'); if(c){ c.style.display='none'; c.innerHTML=''; } const l=document.getElementById('snapList'); if(l) l.style.display=''; } });
+document.getElementById('snapDiff')?.addEventListener('click',e=>{ if(e.target.closest('#snapDiffClose')){ const c=document.getElementById('snapDiff'); if(c){ c.style.display='none'; c.innerHTML=''; } const l=document.getElementById('snapList'); if(l) l.style.display=''; return; } const rb=e.target.closest('[data-snap-restore-id]'); if(rb) restoreSnapshot(rb.dataset.snapRestoreId); });
 document.getElementById('shCloseBtn').addEventListener('click',closeSessionHistory);
 
 // Load on boot from localStorage cache only — SP versions loaded after auth completes
