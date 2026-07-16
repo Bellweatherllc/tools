@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v859</title>
+<title>BW Project Pipeline — v860</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2710,7 +2710,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v859</div>
+    <div class="auth-version" id="authVersionBadge">v860</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2729,7 +2729,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v859</div>
+  <div class="proto-badge" id="versionBadge">v860</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -9107,9 +9107,10 @@ function buildPlanningSection(){
       if(_chipSrc?.trelloListName){
         const nmWrap=el('div','ps-chip-nm-wrap'); nmWrap.appendChild(chipNm);
         const _changed=_isRecentTrelloChange(_chipSrc);
-        const _signed=!_changed&&/done.*signed/i.test(_chipSrc.trelloListName);
-        const chipSub=el('span','ps-chip-sub'+(_signed?' trello-signed':'')+(_changed?' trello-changed':''));
-        chipSub.textContent=_chipSrc.trelloListName+(_changed?' · '+_fmtChangeDate(_chipSrc.trelloListChangedAt):'');
+        const _new=!_changed&&_isNewCard(_chipSrc);
+        const _signed=!_changed&&!_new&&/done.*signed/i.test(_chipSrc.trelloListName);
+        const chipSub=el('span','ps-chip-sub'+(_signed?' trello-signed':'')+((_changed||_new)?' trello-changed':''));
+        chipSub.textContent=_chipSrc.trelloListName+(_changed?' · '+_fmtChangeDate(_chipSrc.trelloListChangedAt):(_new?' · new':''));
         nmWrap.appendChild(chipSub); chip.appendChild(nmWrap);
       } else { chip.appendChild(chipNm); }
       // Delete ✕ — admin mode only (CSS-gated); handler pre-dates this button's restoration
@@ -9292,9 +9293,10 @@ function buildPlanningSection(){
       if(_mList){
         const mNmWrap=el('div','ps-chip-nm-wrap'); mNmWrap.appendChild(mNm);
         const _mChanged=_isRecentTrelloChange(_mSrc);
-        const _mSigned=!_mChanged&&/done.*signed/i.test(_mList);
-        const mSub=el('span','ps-chip-sub'+(_mSigned?' trello-signed':'')+(_mChanged?' trello-changed':''));
-        mSub.textContent=_mList+(_mChanged?' · '+_fmtChangeDate(_mSrc.trelloListChangedAt):'');
+        const _mNew=!_mChanged&&_isNewCard(_mSrc);
+        const _mSigned=!_mChanged&&!_mNew&&/done.*signed/i.test(_mList);
+        const mSub=el('span','ps-chip-sub'+(_mSigned?' trello-signed':'')+((_mChanged||_mNew)?' trello-changed':''));
+        mSub.textContent=_mList+(_mChanged?' · '+_fmtChangeDate(_mSrc.trelloListChangedAt):(_mNew?' · new':''));
         mNmWrap.appendChild(mSub);
         mCard.appendChild(mHdl); mCard.appendChild(mBadge); mCard.appendChild(mNmWrap); mCard.appendChild(mPencil);
       } else {
@@ -10121,7 +10123,7 @@ function matchPersonByName(nameStr, arr){
 // ── Load projects from CORE_Projects ──
 async function loadProjects(saved){
   setAuthStatus('Loading projects…');
-  const items=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,lastModifiedDateTime,fields');
+  const items=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,lastModifiedDateTime,createdDateTime,fields');
   PROJECTS.length=0;
   _corruptProjects.length=0;
   _maxLoadedModified=null;
@@ -10168,6 +10170,10 @@ function _projectFromItem(item){
     }
     // SP always owns these fields — overwrite GanttData values
     proj.status=status;
+    // Durable "first appeared" timestamp = SP item creation time. Same for every viewer,
+    // survives reloads. Drives the "new card" marker; the client-clock addedAt set on load
+    // would otherwise make every card look new on every open.
+    proj.addedAt = item.createdDateTime ? Date.parse(item.createdDateTime) : (proj.addedAt||Date.now());
     // A Lead has no PipelineStage (or the literal 'Lead') and is not an open slot
     const isSlot = ganttData?.isOpenSlot || /^Slot\b/i.test(name);
     // v842 guard: a row whose GanttData still carries isOpenSlot but whose name has been
@@ -10421,7 +10427,7 @@ async function _bgSync(){
       sweep=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$select=id,lastModifiedDateTime');
       const newer=sweep.filter(it=>it.lastModifiedDateTime&&it.lastModifiedDateTime>_lastSyncTs);
       for(const it of newer){
-        const full=await graphGet(BWC_SITE+'/CORE_Projects/items/'+it.id+'?$expand=fields&$select=id,lastModifiedDateTime,fields');
+        const full=await graphGet(BWC_SITE+'/CORE_Projects/items/'+it.id+'?$expand=fields&$select=id,lastModifiedDateTime,createdDateTime,fields');
         changed.push(full);
       }
     }catch(e){ console.warn('[bgSync] change sweep failed:',e.message); _isBgSyncing=false; return; }
@@ -10731,6 +10737,12 @@ let _trelloCfg=null,_trelloNetNew=[],_trelloLostNotices=[],_trelloSynced=false,_
 function _isRecentTrelloChange(proj){
   if(!proj?.trelloListChangedAt) return false;
   return (Date.now()-new Date(proj.trelloListChangedAt).getTime())<7*24*60*60*1000;
+}
+function _isNewCard(proj){
+  if(!proj?.addedAt) return false;
+  const t=typeof proj.addedAt==='number'?proj.addedAt:Date.parse(proj.addedAt);
+  if(!t||isNaN(t)) return false;
+  return (Date.now()-t)<7*24*60*60*1000;
 }
 function _fmtChangeDate(isoStr){
   const d=new Date(isoStr);
@@ -12968,6 +12980,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v860', date: '2026-07-16',
+    entries: [
+      'New planning cards are now flagged. When a card first appears in the pipeline — imported from Trello within the last week — its Trello-list text shows in red with a “· new” tag. It’s the same red already used when a card changes Trello lists, but the suffix tells you which: a date means it moved lists, “new” means it just arrived. “New” is based on when the record was actually created in SharePoint, so everyone sees the same cards flagged and each one clears on its own after a week.',
+    ],
+  },
   {
     version: 'v859', date: '2026-07-16',
     entries: [
