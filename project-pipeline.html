@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v854</title>
+<title>BW Project Pipeline — v855</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2089,6 +2089,16 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .snap-row:hover{background:rgba(255,255,255,.06);}
 .snap-when{font-weight:600;}
 .snap-kind{font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.45);}
+.snap-row{cursor:pointer;}
+.snap-diff{padding:2px 12px 12px;color:rgba(255,255,255,.85);}
+.snap-d-close{font-size:10px;font-weight:700;color:rgba(255,255,255,.7);background:none;border:none;cursor:pointer;padding:6px 0;letter-spacing:.03em;}
+.snap-d-close:hover{color:#fff;}
+.snap-d-hd{font-size:11px;font-weight:700;letter-spacing:.05em;color:rgba(255,255,255,.6);margin:2px 0 8px;}
+.snap-d-grp{font-size:11px;margin:4px 0;line-height:1.4;}
+.snap-d-lbl{font-weight:700;color:rgba(255,255,255,.55);}
+.snap-d-item{font-size:11px;margin:5px 0;line-height:1.45;padding-left:8px;border-left:2px solid rgba(216,182,79,.5);}
+.snap-d-item b{font-weight:700;}
+.snap-d-none{font-size:11px;color:rgba(255,255,255,.5);padding:8px 0;font-style:italic;}
 .sh-title{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.60);flex:1;}
 .sh-undo-btn{
   font-size:10px;font-weight:700;padding:3px 9px;border-radius:4px;
@@ -2698,7 +2708,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v854</div>
+    <div class="auth-version" id="authVersionBadge">v855</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2717,7 +2727,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v854</div>
+  <div class="proto-badge" id="versionBadge">v855</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -2757,6 +2767,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <button class="snap-now-btn" id="snapNowBtn">Snapshot now</button>
     </div>
     <div class="snap-list" id="snapList"><div class="sh-empty">Open to load snapshots…</div></div>
+    <div class="snap-diff" id="snapDiff" style="display:none;"></div>
   </div>
 </div>
 <div class="status-menu" id="ppLeadMenu">
@@ -3360,9 +3371,92 @@ function renderSnapshotList(){
   const list=_snapList||[];
   if(!list.length){ el.innerHTML='<div class="sh-empty">No snapshots yet.</div>'; return; }
   el.innerHTML=list.map(sfile=>
-    '<div class="snap-row"><div class="snap-when">'+escH(_snapPrettyDate(sfile.date,sfile.time))+
+    '<div class="snap-row" data-snap-id="'+escH(sfile.id)+'"><div class="snap-when">'+escH(_snapPrettyDate(sfile.date,sfile.time))+
     '</div><div class="snap-kind">'+(sfile.kind==='manual'?'manual':'daily')+'</div></div>'
   ).join('');
+}
+
+// ── Snapshot diff: compare a stored snapshot to the live board, in plain terms ──
+function _statusLabel(x){ return {lead:'Lead',projected:'Lead','da-signed':'DA Signed','ca-signed':'CA Signed',paused:'Paused',cancelled:'Cancelled',lost:'Lost',archived:'Archive',archive:'Archive'}[x]||x||'\u2014'; }
+function _phSig(lane){ return ((lane&&lane.phases)?lane.phases:[]).map(x=>(x.name||'')+':'+x.startWeek+'+'+x.durWeeks).join('|'); }
+function _msSig(p){ return (p.milestones||[]).slice().sort((a,b)=>((a.name||'')>(b.name||'')?1:-1)).map(m=>(m.name||'')+'@'+m.week).join('|'); }
+function _pName(id){ if(id==='any')return 'Any'; if(!id)return 'none'; return (personById(id)&&personById(id).label)||'someone'; }
+function _projChangeReasons(a,b){
+  const r=[];
+  if((a.name||'')!==(b.name||'')) r.push('renamed to “'+(b.name||'')+'”');
+  if((a.status||'')!==(b.status||'')) r.push('status '+_statusLabel(a.status)+' \u2192 '+_statusLabel(b.status));
+  if((a.designer||null)!==(b.designer||null)) r.push('designer '+_pName(a.designer)+' \u2192 '+_pName(b.designer));
+  if((a.productionPM||null)!==(b.productionPM||null)) r.push('PM '+_pName(a.productionPM)+' \u2192 '+_pName(b.productionPM));
+  if((a.estimatedValue??a.projBudget??null)!==(b.estimatedValue??b.projBudget??null)) r.push('estimated cost changed');
+  if(_phSig(a.designLane)!==_phSig(b.designLane)) r.push('design schedule moved');
+  if(_phSig(a.productionLane)!==_phSig(b.productionLane)) r.push('production schedule moved');
+  if(_msSig(a)!==_msSig(b)) r.push('milestones moved');
+  return r;
+}
+function _planChangeReasons(a,b){
+  const r=[];
+  if((a.name||'')!==(b.name||'')) r.push('renamed to “'+(b.name||'')+'”');
+  if((a.proposedDesigner||null)!==(b.proposedDesigner||null)) r.push('proposed designer '+_pName(a.proposedDesigner)+' \u2192 '+_pName(b.proposedDesigner));
+  if((a.salesPerson||'')!==(b.salesPerson||'')) r.push('sales '+(a.salesPerson||'none')+' \u2192 '+(b.salesPerson||'none'));
+  if(!!a.planningSkipped!==!!b.planningSkipped) r.push(b.planningSkipped?'deferred from planning':'returned to planning');
+  if((a.slotId||null)!==(b.slotId||null)) r.push('slot changed');
+  return r;
+}
+function _snapDiff(snap){
+  const out={projAdded:[],projRemoved:[],projChanged:[],planAdded:[],planRemoved:[],planChanged:[],timeOff:null};
+  const byId=arr=>{const m={};(arr||[]).forEach(x=>{if(x&&x.id!=null)m[x.id]=x;});return m;};
+  const sP=byId(snap.projects), cP=byId(PROJECTS);
+  Object.keys(cP).forEach(id=>{ if(!sP[id]) out.projAdded.push(cP[id].name||'(unnamed)'); });
+  Object.keys(sP).forEach(id=>{
+    if(!cP[id]){ out.projRemoved.push(sP[id].name||'(unnamed)'); return; }
+    const r=_projChangeReasons(sP[id],cP[id]); if(r.length) out.projChanged.push({name:cP[id].name||sP[id].name||'(unnamed)',reasons:r});
+  });
+  const sL=byId(snap.planning), cL=byId(PLANNING_PROJECTS);
+  Object.keys(cL).forEach(id=>{ if(!sL[id]) out.planAdded.push(cL[id].name||'(unnamed)'); });
+  Object.keys(sL).forEach(id=>{
+    if(!cL[id]){ out.planRemoved.push(sL[id].name||'(unnamed)'); return; }
+    const r=_planChangeReasons(sL[id],cL[id]); if(r.length) out.planChanged.push({name:cL[id].name||'(unnamed)',reasons:r});
+  });
+  if(JSON.stringify((snap.shared&&snap.shared.TIME_OFF)||{})!==JSON.stringify(_collectTimeOff())) out.timeOff='Time-off markers changed';
+  return out;
+}
+async function _snapRead(id){
+  const drive=await _snapDrive();
+  const meta=await graphGet('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+id);
+  const url=meta['@microsoft.graph.downloadUrl'];
+  if(!url) throw new Error('No download URL for snapshot '+id);
+  const res=await fetch(url);
+  if(!res.ok) throw new Error('Snapshot download '+res.status);
+  return res.json();
+}
+function _renderSnapDiff(container, when, d){
+  const esc=escH;
+  const grp=(label,arr)=> arr.length?('<div class="snap-d-grp"><span class="snap-d-lbl">'+label+'</span> '+arr.map(esc).join(', ')+'</div>'):'';
+  let html='<button class="snap-d-close" id="snapDiffClose">\u2190 back to list</button>';
+  html+='<div class="snap-d-hd">Changes since '+esc(when)+'</div>';
+  const any=d.projAdded.length||d.projRemoved.length||d.projChanged.length||d.planAdded.length||d.planRemoved.length||d.planChanged.length||d.timeOff;
+  if(!any){ container.innerHTML=html+'<div class="snap-d-none">No differences \u2014 the board matches this snapshot.</div>'; return; }
+  html+=grp('Projects added:',d.projAdded);
+  html+=grp('Projects removed:',d.projRemoved);
+  d.projChanged.forEach(pc=>{ html+='<div class="snap-d-item"><b>'+esc(pc.name)+'</b> \u2014 '+esc(pc.reasons.join('; '))+'</div>'; });
+  html+=grp('Planning added:',d.planAdded);
+  html+=grp('Planning removed:',d.planRemoved);
+  d.planChanged.forEach(pc=>{ html+='<div class="snap-d-item"><b>'+esc(pc.name)+'</b> \u2014 '+esc(pc.reasons.join('; '))+'</div>'; });
+  if(d.timeOff) html+='<div class="snap-d-item">'+esc(d.timeOff)+'</div>';
+  container.innerHTML=html;
+}
+async function showSnapshotDiff(id){
+  const cont=document.getElementById('snapDiff'), listEl=document.getElementById('snapList'); if(!cont) return;
+  const meta=(_snapList||[]).find(x=>x.id===id);
+  const when=meta?_snapPrettyDate(meta.date,meta.time):'snapshot';
+  if(listEl) listEl.style.display='none';
+  cont.style.display='block';
+  cont.innerHTML='<div class="snap-d-none">Comparing to the current board\u2026</div>';
+  try{
+    const obj=await _snapRead(id);
+    if(!obj||!obj.data) throw new Error('Snapshot file has no data');
+    _renderSnapDiff(cont, when, _snapDiff(obj.data));
+  }catch(e){ console.error('[snapshot] diff failed:',e); cont.innerHTML='<button class="snap-d-close" id="snapDiffClose">\u2190 back to list</button><div class="snap-d-none">Couldn\u2019t compare this snapshot \u2014 see console.</div>'; }
 }
 
 let PROD_PM_COLLAPSED=new Set(); // set of pmId strings
@@ -12745,6 +12839,13 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v855', date: '2026-07-15',
+    entries: [
+      'Snapshots can now be compared to the current board. In Session History, click any dated snapshot and it shows, in plain terms, what has changed since then — which projects were added, removed, or altered (with the reason: reassigned, schedule moved, milestone moved, status changed, and so on), the same for planning, and whether time off changed. If nothing differs it says so. This is the sanity check for “I changed something and can’t tell what.”',
+      'Restoring a snapshot — putting the board back to a chosen day — is the next and final piece of this feature.'
+    ]
+  },
+  {
     version: 'v854', date: '2026-07-15',
     entries: [
       'The pipeline now keeps daily snapshots — a full picture of the whole board saved automatically the first time someone opens the tool each day, before any edits, and stored as its own file in the CORE_Pipeline_Snapshots library. Each day is a separate file that sits alongside the others, so nothing gets overwritten; you build up a timeline you can look back through. Older snapshots past about three months are pruned automatically.',
@@ -14079,6 +14180,8 @@ document.addEventListener('keydown',e=>{
 });
 document.getElementById('shUndoBtn').addEventListener('click',undoLast);
 document.getElementById('snapNowBtn')?.addEventListener('click',takeManualSnapshot);
+document.getElementById('snapList')?.addEventListener('click',e=>{ const row=e.target.closest('.snap-row'); if(row&&row.dataset.snapId) showSnapshotDiff(row.dataset.snapId); });
+document.getElementById('snapDiff')?.addEventListener('click',e=>{ if(e.target.closest('#snapDiffClose')){ const c=document.getElementById('snapDiff'); if(c){ c.style.display='none'; c.innerHTML=''; } const l=document.getElementById('snapList'); if(l) l.style.display=''; } });
 document.getElementById('shCloseBtn').addEventListener('click',closeSessionHistory);
 
 // Load on boot from localStorage cache only — SP versions loaded after auth completes
