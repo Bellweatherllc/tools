@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BW Project Pipeline — v860</title>
+<title>BW Project Pipeline — v862</title>
 <style>
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
 @font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
@@ -2342,6 +2342,8 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .pp-date-val.signed{color:#019425;}
 .pp-date-val.warn{color:rgba(208,120,32,.9);font-weight:700;}
 .pp-date-val.crit{color:rgba(172,40,40,.85);font-weight:700;}
+.ps-dt-cell.warn{color:rgba(208,120,32,.9);font-weight:700;}
+.ps-dt-cell.crit{color:rgba(172,40,40,.85);font-weight:700;}
 .pp-date-val.empty{color:#a3a3a3;font-style:italic;font-weight:400;}
 .pp-copy-btn{flex-shrink:0;width:20px;height:20px;border:none;background:none;color:#a3a3a3;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;border-radius:3px;font-size:10px;font-weight:700;}
 .pp-copy-btn:hover{background:rgba(0,0,0,.07);color:var(--navy);}
@@ -2646,8 +2648,8 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 .ps-pm-cell.no-pm{color:rgba(40,40,40,.30);font-style:italic;font-weight:400;}
 .ps-chip-drag-target{outline:2px dashed var(--gold);outline-offset:2px;}
 .ps-dt-cell{font-size:12px;color:var(--navy);font-weight:500;}
-.admin-mode .ps-dt-cell.ps-dt-editable{cursor:pointer;border-bottom:1px solid transparent;transition:border-color .15s;}
-.admin-mode .ps-dt-cell.ps-dt-editable:hover{border-bottom:1px solid rgba(31,46,62,.45);}
+.admin-mode .ps-dt-cell.ps-dt-editable{cursor:pointer;border-bottom:1px dashed rgba(0,57,129,.55);background:rgba(0,57,129,.05);transition:border-color .15s,background .15s;}
+.admin-mode .ps-dt-cell.ps-dt-editable:hover{border-bottom:1px solid rgba(0,57,129,.85);background:rgba(0,57,129,.10);}
 .ps-dt-input{font-family:inherit;font-size:11px;color:var(--navy);border:none;border-bottom:2px solid var(--navy);outline:none;background:transparent;width:120px;padding:0;}
 .ps-confirm-placeholder{background:none!important;border:1.5px solid rgba(31,46,62,.20)!important;color:rgba(31,46,62,.35)!important;cursor:default!important;box-shadow:none!important;}
 .ps-confirm-placeholder:hover{background:none!important;}
@@ -2710,7 +2712,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v860</div>
+    <div class="auth-version" id="authVersionBadge">v862</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2729,7 +2731,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v860</div>
+  <div class="proto-badge" id="versionBadge">v862</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -4415,6 +4417,15 @@ function laneOfInProj(proj,id){ if(proj.designLane.phases.find(p=>p.id===id))ret
 function laneOf(id){ const r=findPhase(id); return r?laneOfInProj(r.proj,id):null; }
 function tallySection(l){ return l==='production'?'production':'design'; }
 function todayWeek(){ return Math.floor((Date.now()-C.startDate)/(7*24*3600*1000)); }
+// Shared date-urgency scale (one source of truth for the Key Dates panel AND slot dates).
+// diff = target week - today. <=crit -> red ('crit'), <=warn -> orange ('warn'), else ''.
+function _dateUrgency(week, tw, crit, warn){
+  if(week==null) return '';
+  const d=week-tw;
+  if(d<=crit) return 'crit';
+  if(d<=warn) return 'warn';
+  return '';
+}
 // Visual-calendar aligned: returns the gantt week whose displayed Monday is the Monday of the current week.
 // todayWeek() counts raw 7-day periods from C.startDate (a Wednesday), so Mon–Tue fall one period
 // ahead of their visual column. Use this for today-wk highlights and today-stripes.
@@ -9485,6 +9496,8 @@ function buildPlanningSection(){
       const cell=el('div','ps-dt-cell');
       const label=dispWk!=null?wkDate(dispWk):'—';
       cell.textContent=label;
+      const _u=dispWk!=null?_dateUrgency(dispWk, todayWeek(), PANEL_THRESHOLDS.planning.crit, PANEL_THRESHOLDS.planning.warn):'';
+      if(_u) cell.classList.add(_u);
       if(!editable) return cell;
       cell.classList.add('ps-dt-editable');
       cell.addEventListener('click',e=>{
@@ -12345,10 +12358,7 @@ document.addEventListener('click',e=>{
   function dateColor(ms, tw, th){
     if(!ms) return 'empty';
     if(ms.status==='da-signed'||ms.status==='ca-signed') return 'signed';
-    const diff=ms.week-tw;
-    if(diff<=th.crit) return 'crit';
-    if(diff<=th.warn) return 'warn';
-    return '';
+    return _dateUrgency(ms.week, tw, th.crit, th.warn);
   }
   function fmtDate(wk){
     if(wk==null) return null;
@@ -12514,6 +12524,11 @@ document.addEventListener('click',e=>{
       })
       .sort((a,b)=>{
         if(section==='design') return a.proj.name.localeCompare(b.proj.name);
+        if(section==='planning'){
+          const ga=a.caWk<=tw?1:0, gb=b.caWk<=tw?1:0; // 0 = In Design (CA ahead), 1 = In Construction (CA passed)
+          if(ga!==gb) return ga-gb;
+          return a.caWk-b.caWk;
+        }
         if(a.isUnassigned!==b.isUnassigned) return a.isUnassigned?1:-1;
         return a.caWk-b.caWk;
       });
@@ -12540,17 +12555,23 @@ document.addEventListener('click',e=>{
     }
 
     const _clipSVG='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="8" height="9" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M3 11H2.5A1.5 1.5 0 011 9.5v-7A1.5 1.5 0 012.5 1h7A1.5 1.5 0 0111 2.5V3" stroke="currentColor" stroke-width="1.3"/></svg>';
-    let _lastWasAssigned=null;
-    dated.forEach(({proj,daMs,caMs,conPh,desPh,sales,designer,pm,isSlot,isUnassigned})=>{
-      if(isUnassigned&&_lastWasAssigned!==false){
-        const divider=document.createElement('div');
-        divider.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 0 4px;margin-top:4px;';
-        const line1=document.createElement('div'); line1.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
-        const lbl=document.createElement('span'); lbl.style.cssText='font-size:7.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a3a3;flex-shrink:0;';
-        lbl.textContent='Unassigned';
-        const line2=document.createElement('div'); line2.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
-        divider.appendChild(line1); divider.appendChild(lbl); divider.appendChild(line2);
-        dBody.appendChild(divider);
+    const _mkGrpDivider=(label)=>{
+      const divider=document.createElement('div');
+      divider.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 0 4px;margin-top:4px;';
+      const line1=document.createElement('div'); line1.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
+      const lbl=document.createElement('span'); lbl.style.cssText='font-size:7.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a3a3;flex-shrink:0;';
+      lbl.textContent=label;
+      const line2=document.createElement('div'); line2.style.cssText='height:1px;background:rgba(0,0,0,.18);flex:1;';
+      divider.appendChild(line1); divider.appendChild(lbl); divider.appendChild(line2);
+      dBody.appendChild(divider);
+    };
+    let _lastWasAssigned=null, _lastGrp=null;
+    dated.forEach(({proj,daMs,caMs,conPh,desPh,sales,designer,pm,isSlot,isUnassigned,caWk})=>{
+      if(section==='planning'){
+        const grp=caWk<=tw?'In Construction':'In Design';
+        if(grp!==_lastGrp){ _mkGrpDivider(grp); _lastGrp=grp; }
+      } else if(isUnassigned&&_lastWasAssigned!==false){
+        _mkGrpDivider('Unassigned');
       }
       _lastWasAssigned=!isUnassigned;
       const row=document.createElement('div'); row.className='pp-date-row'+(isUnassigned?' pp-date-row-unassigned':'');
@@ -12652,11 +12673,32 @@ document.addEventListener('click',e=>{
       } else {
         // ── Sales (planning): DA Sign | Des Start | CA Sign | Con Start | Con End | Est. Cost
         // DA Sign and Design Start are read-only here — edited on the main Sales Planning screen (v816+).
+        // v862: CA Sign is admin-editable here — a LOCAL move of the CA milestone only, no cascade.
         const conEndWk=conPh?conPh.startWeek+conPh.durWeeks:null;
         const costVal=proj.estimatedValue||proj.projBudget||'';
         _addCell(row,_copy,daMs?.week,daMs);
         _addCell(row,_copy,desPh?.startWeek,null);
-        _addCell(row,_copy,caMs?.week,caMs);
+        if(IS_ADMIN_MODE&&caMs){
+          const cCell=document.createElement('div'); cCell.className='pp-date-val';
+          const cInp=document.createElement('input'); cInp.type='date'; cInp.className='pp-date-input';
+          const _caToDS=w=>{const d=new Date(C.startDate.getTime()+w*7*24*3600*1000);return d.toISOString().slice(0,10);};
+          const _caFromDS=v=>{const d=new Date(v+'T12:00:00');return Math.round((d.getTime()-C.startDate)/(7*24*3600*1000));};
+          cInp.value=_caToDS(caMs.week);
+          let _caDone=false;
+          const _caCommit=()=>{ if(_caDone) return; _caDone=true;
+            if(!cInp.value){ cInp.value=_caToDS(caMs.week); return; }
+            let nw=_caFromDS(cInp.value); if(nw<0) nw=0;
+            if(nw===caMs.week) return;
+            pushHistory(proj.name+' — CA date changed');
+            caMs.week=nw; markDirty(proj); triggerSave();
+            rebuildSection('planning'); rebuildSection('design'); rebuildSection('production'); renderKeyDatesPanel();
+          };
+          cInp.addEventListener('change',_caCommit);
+          cInp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();_caCommit();} else if(e.key==='Escape'){e.preventDefault();_caDone=true;cInp.value=_caToDS(caMs.week);cInp.blur();} });
+          cCell.appendChild(cInp); row.appendChild(cCell); _copy.push(_caToDS(caMs.week));
+        } else {
+          _addCell(row,_copy,caMs?.week,caMs);
+        }
         _addCell(row,_copy,conPh?.startWeek,null);
         _addCell(row,_copy,conEndWk,null,false,true);
         _addTextCell(row,_copy,costVal,true);
@@ -12980,6 +13022,20 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v862', date: '2026-07-16',
+    entries: [
+      'The Sales Key Dates panel now lets you edit a project\u2019s CA signing date directly in admin mode \u2014 click the field, pick a new date, and only the CA milestone moves; nothing else on the schedule shifts. Construction dates stay managed in Production.',
+      'On the Sales screen, the dates you can edit in admin mode (DA and design start on the slot rows) now carry a dashed underline so it\u2019s clear at a glance which dates are editable \u2014 before, that cue only appeared when you hovered.',
+    ],
+  },
+  {
+    version: 'v861', date: '2026-07-16',
+    entries: [
+      'On the Sales screen, a slot\u2019s DA and design-start dates now turn orange when they\u2019re within three weeks and red when they\u2019re a week out or already past \u2014 the same colour scale the Key Dates panel uses.',
+      'The Sales Key Dates panel now groups projects into In Design (CA signing still ahead) and In Construction (CA already signed), each ordered by upcoming CA date. Proposed stays pinned last, as before.',
+    ],
+  },
   {
     version: 'v860', date: '2026-07-16',
     entries: [
