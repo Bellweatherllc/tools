@@ -151,6 +151,19 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
   z-index:10;border-radius:3px;
 }
 .fc-note-btn:hover{color:var(--navy);background:rgba(0,0,0,.08);}
+/* ── v877: milestone-set indicator. Sits immediately left of the pencil. Unlike the
+   pencil it is always visible — the point is scanning a column and seeing the gaps. ── */
+.fc-msset-btn{
+  position:absolute;top:50%;right:30px;transform:translateY(-50%);
+  width:26px;height:26px;border:none;background:none;padding:0;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  z-index:10;border-radius:3px;color:rgba(40,40,40,.30);
+  transition:color .12s,background .12s;cursor:default;
+}
+.fc-msset-btn.is-set{color:#003981;}
+.fc-msset-btn.is-editable{cursor:pointer;}
+.fc-msset-btn.is-editable:hover{background:rgba(0,57,129,.10);color:#003981;}
+.fc-msset-btn.is-readonly{opacity:.75;}
 .fc-note-btn.has-note{opacity:.7;color:var(--gold);}
 .fc-note-btn.has-note:hover{opacity:1;color:#b8912e;}
 .fc-proj-info:hover .fc-note-btn{opacity:1;}
@@ -2786,7 +2799,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v876</div>
+    <div class="auth-version" id="authVersionBadge">v877</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2805,7 +2818,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v876</div>
+  <div class="proto-badge" id="versionBadge">v877</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -2979,7 +2992,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v876';
+const CORE_VERSION = 'v877';
 'use strict';
 
 // ════════════════════════════════════════════════  PHASE LOAD PROFILES
@@ -4924,11 +4937,32 @@ function buildFcMsRow(proj, capacitySection){
   // DA/CA pills moved to hover tooltip — not on project card row
   if(!(capacitySection==='production'&&PROD_HIDE_DESIGN)) {} // da-pill removed
   // ca-pill removed
+  // ── v877: milestone-set indicator ──
+  // Editable in Design under admin; Production and read-only viewers see the same mark
+  // as information. The stamp is written on click — the click is the moment being recorded.
+  {
+    const set=!!(proj.msSet&&proj.msSet.at);
+    const editable=IS_ADMIN_MODE&&capacitySection==='design';
+    const b=el('button','fc-msset-btn'+(set?' is-set':'')+(editable?' is-editable':' is-readonly'));
+    b.innerHTML=set
+      ? `<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.6" fill="currentColor"/><path d="M5.2 8.2l1.9 1.9 3.7-4" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+      : `<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.4 2.2"/></svg>`;
+    const stamp=set
+      ? 'Milestones set '+briefFmtDate(new Date(proj.msSet.at))+(proj.msSet.by?' \u2014 '+proj.msSet.by:'')
+      : 'Milestones not set with designer';
+    b.dataset.tip=editable
+      ? stamp+(set?' \u00b7 click to clear':' \u00b7 click to mark set')
+      : stamp;
+    b.setAttribute('aria-label',stamp);
+    if(editable) b.dataset.msSetBtn=proj.id;
+    info.appendChild(b);
+  }
   info.appendChild(noteBtn);
   const chev=el('div','fc-chevron'+(proj.collapsed?' collapsed':'')); chev.dataset.chevron=proj.id; chev.dataset.toggleCollapse=proj.id; chev.textContent='▾';
   if(capacitySection==='production' && !proj.productionPM && (proj.isOpenSlot||/^Slot\b/i.test(proj.name))){
     // Slot row: [hdl][trash][info(name)][budget label][spacer][note][chev]
     info.removeChild(noteBtn);
+    info.querySelector('.fc-msset-btn')?.remove(); // v877 — slots have no designer meeting
     // DA/CA pills already removed from info row (now in tooltip only)
     info.style.flex='none';
     // Replace status col with trash icon
@@ -12344,6 +12378,28 @@ document.addEventListener('click',e=>{
   rebuildSection('planning'); triggerSave();
 });
 
+// v877 — milestone-set toggle. Admin-only by virtue of the attribute only being
+// written on Design rows in admin mode, but re-checked here so a stale DOM can't bypass it.
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-ms-set-btn]');
+  if(!b) return;
+  e.stopPropagation();
+  if(!IS_ADMIN_MODE) return;
+  const proj=PROJECTS.find(x=>x.id===b.dataset.msSetBtn);
+  if(!proj) return;
+  pushHistory((proj.clientName||proj.name)+' \u2014 milestones '+(proj.msSet?.at?'cleared':'marked set'));
+  if(proj.msSet&&proj.msSet.at){
+    proj.msSet=null;
+  } else {
+    let who='';
+    try{ const a=msalApp.getActiveAccount&&msalApp.getActiveAccount(); who=(a&&a.name)||''; }catch(_){}
+    proj.msSet={at:new Date().toISOString(),by:who};
+  }
+  markDirty(proj); triggerSave();
+  rebuildSection('design'); rebuildSection('production');
+  showToast(proj.msSet?'Milestones marked set.':'Milestone stamp cleared.',null);
+});
+
 // Delegate note button clicks
 document.addEventListener('click',e=>{
   const btn=e.target.closest('[data-note-btn]');
@@ -14583,6 +14639,9 @@ function generateBriefHTML(){
       if(isCa&&!du.ca) _hkRow(id+'-hk-ca',name,'Missing CA link — add to project record once CA is written.',proj);
       const hasHours=(proj.designLane?.phases||[]).some(ph=>(ph.totalHours||0)>0||(ph.hours||0)>0);
       if(!hasHours) _hkRow(id+'-hk-hours',name,'No design hours entered — add phase hours in Design Planning.',proj);
+      // v877: the designer milestone meeting. DA-signed only — by CA the question is moot.
+      if(!isCa&&!(proj.msSet&&proj.msSet.at))
+        _hkRow(id+'-hk-msset',name,'Milestones not set with designer — mark on the Design lens once met.',proj);
       // v873: LC check. Scoped to CA-signed only — logistics belongs to construction, and
       // flagging it at DA would fire on every project months before anyone could act.
       if(isCa&&!(proj.logisticsCoord1||'').trim()&&!(proj.logisticsCoord2||'').trim())
