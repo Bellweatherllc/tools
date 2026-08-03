@@ -2799,7 +2799,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v877</div>
+    <div class="auth-version" id="authVersionBadge">v878</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2818,7 +2818,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v877</div>
+  <div class="proto-badge" id="versionBadge">v878</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -2992,7 +2992,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v877';
+const CORE_VERSION = 'v878';
 'use strict';
 
 // ════════════════════════════════════════════════  PHASE LOAD PROFILES
@@ -13890,9 +13890,11 @@ function briefFmtDate(d){
 function briefFmtFull(d){
   return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
 }
-function wkToDate(w){
-  const d=new Date(C.startDate); d.setDate(d.getDate()+w*7); return d;
-}
+// v878: was C.startDate + 7w, which lands on a Wednesday because the calendar epoch
+// (1 Jan 2025) is one — five days adrift of the Monday the Gantt actually draws for that
+// column, so the Brief printed dates a working week earlier than the board showed.
+// wkMon() is the one source of truth for a week's date; defer to it.
+function wkToDate(w){ return wkMon(w); }
 
 function getPipelineVersion(){ return CORE_VERSION; }
 
@@ -14135,12 +14137,23 @@ function briefUpcomingMilestones(days=14){
   PROJECTS.forEach(proj=>{
     if(proj.status==='archived'||proj.status==='cancelled') return;
     (proj.milestones||[]).forEach(ms=>{
-      if(ms.status==='da-signed'||ms.status==='ca-signed') return;
+      if(_briefMsDone(proj,ms)) return; // v878
       const diff=ms.week-tw;
       if(diff>=0&&diff<=weeksAhead) out.push({proj,ms,weeksOut:diff});
     });
   });
   return out.sort((a,b)=>a.weeksOut-b.weeksOut);
+}
+// v878: a milestone's own status is only updated when a project is signed through the
+// status menu. A stage set in SharePoint, on import, or via the Key Dates panel leaves
+// the marker reading 'projected', so the Brief kept advertising signings already done.
+// The project's stage is the reliable signal; read it as well as the marker.
+// Read-only — nothing stored is rewritten.
+function _briefMsDone(proj,ms){
+  if(ms.status==='da-signed'||ms.status==='ca-signed') return true;
+  if(ms.name==='CA') return proj.status==='ca-signed';
+  if(ms.name==='DA') return proj.status==='da-signed'||proj.status==='ca-signed';
+  return false;
 }
 function briefOverdueFlags(){
   const tw=todayDisplayWeek(); // v874
@@ -14148,7 +14161,7 @@ function briefOverdueFlags(){
   PROJECTS.forEach(proj=>{
     if(['archived','cancelled','paused','lost'].includes(proj.status)) return;
     (proj.milestones||[]).forEach(ms=>{
-      if(ms.status==='da-signed'||ms.status==='ca-signed') return;
+      if(_briefMsDone(proj,ms)) return; // v878
       if(ms.week<tw) out.push({proj,ms,weeksLate:tw-ms.week});
     });
   });
@@ -14582,7 +14595,7 @@ function generateBriefHTML(){
   PROJECTS.forEach(proj=>{
     if(['archived','cancelled','projected','lost'].includes(proj.status)) return;
     (proj.milestones||[]).forEach(ms=>{
-      if(ms.status==='da-signed'||ms.status==='ca-signed') return;
+      if(_briefMsDone(proj,ms)) return; // v878
       const d=ms.week-tw; if(d<0||d>LOOK_AHEAD) return;
       if(ms.name==='CA') upCA.push({proj,ms,d}); else if(ms.name!=='DA') upOther.push({proj,ms,d});
     });
