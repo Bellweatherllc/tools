@@ -2861,7 +2861,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v893</div>
+    <div class="auth-version" id="authVersionBadge">v894</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2880,7 +2880,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v893</div>
+  <div class="proto-badge" id="versionBadge">v894</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -3054,7 +3054,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v893';
+const CORE_VERSION = 'v894';
 'use strict';
 
 // ════════════════════════════════════════════════  PHASE LOAD PROFILES
@@ -14245,6 +14245,50 @@ async function _saveBriefBugsToSP(){
     setSaveState('saved');
   }catch(e){ console.warn('[save] Brief bug log SP save failed:',e); setSaveState('error'); _showSaveError(['notes & requests']); }
 }
+// ── v894: bug screenshots — pasted or picked, uploaded to the snapshot library ──
+let _bugShotPending=null; // {blob,name,objUrl}
+function _bugShotPrevHTML(){
+  if(!_bugShotPending) return '';
+  return '<img src="'+_bugShotPending.objUrl+'" style="height:38px;border:1px solid var(--bdr);border-radius:4px;display:block;" alt="">'
+    +'<button data-bug-shot-remove="1" class="brief-ack-btn" data-tip="Remove screenshot" style="padding:1px 6px;">\u00d7</button>';
+}
+function _refreshBugShotPrev(){ const el=document.getElementById('briefBugShotPrev'); if(el) el.innerHTML=_bugShotPrevHTML(); }
+function _clearBugShot(){ if(_bugShotPending&&_bugShotPending.objUrl) URL.revokeObjectURL(_bugShotPending.objUrl); _bugShotPending=null; _refreshBugShotPrev(); }
+function _takeBugShotFile(f,fallbackName){
+  if(!f) return;
+  if(_bugShotPending&&_bugShotPending.objUrl) URL.revokeObjectURL(_bugShotPending.objUrl);
+  _bugShotPending={blob:f,name:f.name||fallbackName||('screenshot-'+Date.now()+'.png'),objUrl:URL.createObjectURL(f)};
+  _refreshBugShotPrev();
+}
+async function _uploadBugShot(p){
+  const drive=await _snapDrive(), token=await getToken();
+  const m=String(p.name||'').match(/\.(png|jpe?g|gif|webp)$/i);
+  const ext=m?m[1].toLowerCase():'png';
+  const safe='bug-screen-'+Date.now()+'.'+ext;
+  const url='https://graph.microsoft.com/v1.0/drives/'+drive+'/root:/'+encodeURIComponent(safe)+':/content';
+  const res=await fetch(url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':p.blob.type||'image/png'},body:p.blob});
+  if(!res.ok){ const t=await res.text(); throw new Error('shot upload '+res.status+': '+t.slice(0,150)); }
+  const d=await res.json();
+  return {name:safe,url:d.webUrl||'',itemId:d.id||''};
+}
+document.addEventListener('change',e=>{
+  if(e.target&&e.target.id==='briefBugShotFile'){
+    _takeBugShotFile(e.target.files&&e.target.files[0]);
+    e.target.value='';
+  }
+});
+document.addEventListener('paste',e=>{
+  const form=document.getElementById('briefBugForm');
+  if(!form||form.style.display==='none') return; // only while the bug form is open
+  const items=(e.clipboardData&&e.clipboardData.items)||[];
+  for(const it of items){
+    if(it.type&&it.type.indexOf('image/')===0){
+      const f=it.getAsFile(); if(!f) continue;
+      _takeBugShotFile(f,'pasted-'+Date.now()+'.png');
+      e.preventDefault(); break;
+    }
+  }
+});
 async function loadBriefBugsFromSP(){
   try{
     const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
@@ -14706,9 +14750,15 @@ function generateBriefHTML(){
         <button id="briefBugSave" class="brief-topbar-btn brief-btn-baseline" style="font-size:9px;padding:4px 12px;">Save</button>
         <button id="briefBugCancel" class="brief-topbar-btn brief-btn-back" style="font-size:9px;padding:4px 10px;">Cancel</button>
       </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:7px;font-size:10px;color:rgba(40,40,40,.45);">
+        <button id="briefBugShotBtn" class="brief-topbar-btn brief-btn-back" style="font-size:9px;padding:4px 10px;">Attach screenshot</button>
+        <input id="briefBugShotFile" type="file" accept="image/*" style="display:none;">
+        <span>or paste an image (Cmd/Ctrl-V)</span>
+        <span id="briefBugShotPrev" style="display:inline-flex;align-items:center;gap:5px;">${_bugShotPrevHTML()}</span>
+      </div>
     </div>
     ${openItems.length ? openItems.map((b,i)=>`<div class="brief-card-row" data-bug-id="${b.id}"><span class="bcr-lbl ${typeCls(b.type)}">${typeLbl(b.type)}</span><span class="bcr-text">${escH(b.title)}${(b.author||b.createdAt)?`<span style="color:rgba(0,0,0,.32);font-size:10px;margin-left:6px;">\u2014 ${escH((b.author||'?').split(' ')[0])}${b.createdAt?`, `+(new Date(b.createdAt)).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+(new Date(b.createdAt)).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>`:''}}</span>`
-    +`<span class="brief-ack-btns" style="gap:3px;"><button class="brief-bug-pencil" data-bug-edit="${b.id}" data-tip="Edit"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button><button class="brief-ack-btn" data-bug-move-up="${b.id}" data-tip="Move up" style="padding:1px 5px;${i===0?'visibility:hidden':''}">↑</button><button class="brief-ack-btn" data-bug-move-down="${b.id}" data-tip="Move down" style="padding:1px 5px;${i===openItems.length-1?'visibility:hidden':''}">↓</button> <button class="brief-ack-btn brief-ack-mark" data-close-bug="${b.id}">Resolve</button></span></div>`).join('')
+    +`<span class="brief-ack-btns" style="gap:3px;">${b.shot&&b.shot.url?`<a class="brief-bug-pencil" href="${escH(b.shot.url)}" target="_blank" rel="noopener" data-tip="View screenshot" style="text-decoration:none;display:inline-flex;align-items:center;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><circle cx="5.5" cy="6.5" r="1.2" fill="currentColor"/><path d="M2.5 11.5l3.5-3 2.5 2 2.5-2.5 2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></a>`:''}<button class="brief-bug-pencil" data-bug-edit="${b.id}" data-tip="Edit"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button><button class="brief-ack-btn" data-bug-move-up="${b.id}" data-tip="Move up" style="padding:1px 5px;${i===0?'visibility:hidden':''}">↑</button><button class="brief-ack-btn" data-bug-move-down="${b.id}" data-tip="Move down" style="padding:1px 5px;${i===openItems.length-1?'visibility:hidden':''}">↓</button> <button class="brief-ack-btn brief-ack-mark" data-close-bug="${b.id}">Resolve</button></span></div>`).join('')
     : `<div class="brief-card-row"><span class="bcr-lbl l-quiet">\u2014</span><span class="bcr-text quiet">Nothing logged yet.</span></div>`}
   </div>`;
 
@@ -15187,17 +15237,35 @@ document.addEventListener('click',e=>{
     return;
   }
 
-  // Save bug/feature
+  // v894: screenshot attach / remove
+  if(e.target.closest('#briefBugShotBtn')){ document.getElementById('briefBugShotFile')?.click(); return; }
+  if(e.target.closest('[data-bug-shot-remove]')){ _clearBugShot(); return; }
+  // Save bug/feature — uploads the pending screenshot first if there is one
   if(e.target.closest('#briefBugSave')){
     const titleEl=document.getElementById('briefBugTitle');
     const title=(titleEl?.value||'').trim();
     if(!title) return;
     const typeEl=document.querySelector('input[name="briefBugType"]:checked');
     const type=typeEl?.value||'bug';
-    BRIEF_BUGS.push({id:'bug-'+Date.now(),type,title,status:'open',createdAt:new Date().toISOString(),author:_histUser()});
-    saveBriefBugs();
-    const body=document.getElementById('briefBody');
-    if(body) body.innerHTML=generateBriefHTML();
+    const saveBtn=document.getElementById('briefBugSave');
+    const finish=shot=>{
+      const entry={id:'bug-'+Date.now(),type,title,status:'open',createdAt:new Date().toISOString(),author:_histUser()};
+      if(shot) entry.shot=shot;
+      BRIEF_BUGS.push(entry);
+      _clearBugShot();
+      saveBriefBugs();
+      const body=document.getElementById('briefBody');
+      if(body) body.innerHTML=generateBriefHTML();
+    };
+    if(_bugShotPending){
+      if(saveBtn){ saveBtn.textContent='Uploading\u2026'; saveBtn.disabled=true; }
+      _uploadBugShot(_bugShotPending)
+        .then(finish)
+        .catch(err=>{
+          console.warn('[bug shot]',err);
+          if(saveBtn){ saveBtn.textContent='Upload failed \u2014 Save to retry'; saveBtn.disabled=false; }
+        });
+    } else finish(null);
     return;
   }
 
