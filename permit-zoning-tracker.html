@@ -183,6 +183,8 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .ap-btn.secondary{border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.05);color:rgba(255,255,255,.65);}
 .ap-status{font-size:10.5px;color:rgba(255,255,255,.5);min-height:16px;margin-top:8px;}
 .empty-note{color:var(--ts);font-size:12px;padding:26px 0;text-align:center;}
+.board-readout{font-size:10.5px;color:var(--ts);margin:-6px 0 14px;line-height:1.5;}
+.board-readout a{color:#8a6c14;text-decoration:none;font-weight:600;}
 </style>
 </head>
 <body>
@@ -194,7 +196,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v26</div>
+    <div class="auth-version" id="authVersionBadge">v27</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -205,7 +207,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v26</div>
+  <div class="proto-badge" id="versionBadge">v27</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -231,6 +233,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 <div class="main">
   <div class="banner" id="bannerErr"></div>
   <div class="banner info" id="bannerInfo"></div>
+  <div class="board-readout" id="boardReadout"></div>
 
   <div class="view active" id="view-board">
     <div id="boardContent"><div class="empty-note">Loading&hellip;</div></div>
@@ -265,7 +268,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v26';
+const CORE_VERSION = 'v27';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -429,8 +432,9 @@ async function setConfigRow(key,val){
 }
 
 /* ═══ Trello load & model build ═══ */
+function normName(x){ return String(x==null?'':x).toLowerCase().replace(/[^a-z0-9]/g,''); }
 function cfValue(card,defs,label){
-  const def=defs.find(d=>(d.name||'').toLowerCase()===label);
+  const def=defs.find(d=>normName(d.name)===normName(label));
   if(!def) return '';
   const item=(card.customFieldItems||[]).find(i=>i.idCustomField===def.id);
   if(!item) return '';
@@ -449,7 +453,8 @@ function cfValue(card,defs,label){
 
 async function loadTrello(){
   const b=_trelloCfg.boardId;
-  const [lists,cards,defs,actions]=await Promise.all([
+  const [boardInfo,lists,cards,defs,actions]=await Promise.all([
+    tGet('boards/'+b,{fields:'name,url'}),
     tGet('boards/'+b+'/lists',{fields:'name,pos'}),
     tGet('boards/'+b+'/cards',{fields:'name,idList,labels,dateLastActivity,cardRole,shortUrl',
         customFieldItems:'true', checklists:'all', members:'true', member_fields:'fullName'}),
@@ -499,11 +504,13 @@ async function loadTrello(){
     }
     if(track) APPS.push(model); else INTAKE.push(model);
   });
-  window._pzDebug={lists,cards,defs,actions}; // raw API data for troubleshooting
+  window._pzDebug={boardInfo,lists,cards,defs,actions}; // raw API data for troubleshooting
   hideBanner('bannerInfo');
-  const defNames=new Set(defs.map(d=>String(d.name||'').toLowerCase()));
+  const ro=document.getElementById('boardReadout');
+  if(ro) ro.innerHTML='Reading board <a href="'+esc(boardInfo.url||'#')+'" target="_blank" rel="noopener">'+esc(boardInfo.name||'?')+'</a> · '+cards.length+' card'+(cards.length===1?'':'s')+' · custom fields: '+(defs.length?defs.map(d=>esc(d.name)).join(' | '):'<b>none defined</b>');
+  const defNames=new Set(defs.map(d=>normName(d.name)));
   const mirrors=cards.filter(c=>c.cardRole==='mirror');
-  if(!defNames.has(CF.track)){
+  if(!defNames.has(normName(CF.track))){
     showBanner('bannerInfo','The tracking board has no “Track Type” custom field defined. Custom field definitions are per-board and do not travel with mirrored cards — define the spec §2.2 fields on the tracking board itself, then set values on each card from this board’s side.');
   }else if(APPS.length===0&&mirrors.length>0){
     showBanner('bannerInfo','Track Type is defined on this board, but no mirrored card carries a value for it. Open a mirror from the tracking board and set its Track Type. If Trello won’t accept custom field values on a mirror, that’s the §2.2 contingency — report back and we’ll switch to reading fields from the source cards.');
