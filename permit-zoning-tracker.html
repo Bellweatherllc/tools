@@ -194,7 +194,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v24</div>
+    <div class="auth-version" id="authVersionBadge">v25</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -205,7 +205,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v24</div>
+  <div class="proto-badge" id="versionBadge">v25</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -265,7 +265,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v24';
+const CORE_VERSION = 'v25';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -348,16 +348,16 @@ async function graphGetAll(url){
   }
   return out;
 }
-async function graphPost(url,body){
-  const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok) throw new Error('Graph POST '+r.status);
+async function _graphWrite(method,url,body){
+  const r=await fetch(url,{method,headers:{Authorization:'Bearer '+_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){
+    let detail=''; try{ detail=(await r.text()).slice(0,300); }catch(e2){}
+    throw new Error('Graph '+method+' '+r.status+(detail?' — '+detail:''));
+  }
   return r.json();
 }
-async function graphPatch(url,body){
-  const r=await fetch(url,{method:'PATCH',headers:{Authorization:'Bearer '+_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok) throw new Error('Graph PATCH '+r.status);
-  return r.json();
-}
+async function graphPost(url,body){ return _graphWrite('POST',url,body); }
+async function graphPatch(url,body){ return _graphWrite('PATCH',url,body); }
 
 /* ═══ Trello helpers ═══ */
 function tURL(path,params){
@@ -571,17 +571,40 @@ function fieldsDiffer(f,row){
   }
   return false;
 }
+const REQUIRED_COLS=['TrelloCardId','SourceCardId','ProjectName','TrackType','PermitType','Jurisdiction','Stage','StageEnteredDate','SubmittedDate','ReviewDays','TargetDate','PermitNumber','Owners','Labels','StageHistory','IsClosed'];
+let _presentCols=null; // internal names verified against the live list (v25)
+async function verifyColumns(){
+  const cols=await graphGetAll(BWC_SITE+'/CORE_Permits/columns?$select=name,displayName');
+  const names=new Set(cols.map(c=>c.name));
+  _presentCols=REQUIRED_COLS.filter(c=>names.has(c));
+  const missing=REQUIRED_COLS.filter(c=>!names.has(c));
+  if(missing.length){
+    showBanner('bannerErr','CORE_Permits is missing these column internal names: '+missing.join(', ')+'. Columns renamed after creation keep their original internal name (spaces become _x0020_) — recreate them typing the exact spec name first. Syncing the '+_presentCols.length+' columns that do match.');
+  }
+}
+function pruneFields(f){
+  if(!_presentCols) return f;
+  const out={Title:f.Title};
+  _presentCols.forEach(k=>{ if(k in f) out[k]=f[k]; });
+  return out;
+}
 async function syncToSharePoint(){
   if(!_spListOk) return;
   setSave('syncing');
   try{
+    if(_presentCols===null) await verifyColumns();
     const items=await graphGetAll(BWC_SITE+'/CORE_Permits/items?$expand=fields&$select=id,fields&$top=200');
     SP_ROWS=items;
     const byCard={};
     items.forEach(it=>{ const cid=it.fields&&it.fields.TrelloCardId; if(cid) byCard[cid]=it; });
+    if(_presentCols&&_presentCols.indexOf('TrelloCardId')===-1){
+      setSave('err','No key column');
+      showBanner('bannerErr','CORE_Permits has no TrelloCardId column (the stable key) — sync is paused to avoid creating duplicate rows. Recreate that column with the exact internal name TrelloCardId, then reload.');
+      return;
+    }
     let writes=0;
     for(const a of APPS){
-      const f=appToFields(a);
+      const f=pruneFields(appToFields(a));
       const row=byCard[a.cardId];
       if(!row){
         await graphPost(BWC_SITE+'/CORE_Permits/items',{fields:f}); writes++;
@@ -598,7 +621,10 @@ async function syncToSharePoint(){
       _spListOk=false;
       showBanner('bannerErr','CORE_Permits list not found on BWCore — create it per the spec (§3). Displaying live Trello data without a SharePoint mirror.');
       setSave('err','No mirror');
-    }else setSave('err');
+    }else{
+      setSave('err');
+      showBanner('bannerErr','SharePoint sync failed: '+String(e.message||e).slice(0,300));
+    }
   }
 }
 
