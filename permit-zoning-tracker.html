@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Permit &amp; Zoning Tracker</title>
+<!-- Favicon — canonical CORE head block (see project-pipeline.html for rationale). -->
+<link rel="icon" type="image/png" sizes="32x32" href="https://bellweatherllc.github.io/tools/logos/favicon-32.png?v=6">
+<link rel="icon" type="image/x-icon" href="https://bellweatherllc.github.io/tools/logos/favicon.ico?v=6">
+<link rel="icon" type="image/svg+xml" sizes="any" href="https://bellweatherllc.github.io/tools/logos/favicon.svg?v=6">
+<link rel="apple-touch-icon" href="https://bellweatherllc.github.io/tools/logos/apple-touch-icon.png?v=6">
+<style>
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_DemiBold.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap;}
+
+/* ── Tokens: carried from project-pipeline.html v878 (the primary design reference) ── */
+:root{
+  --app-h:44px;
+  --navy:#282828;--gold:#d8b64f;--gl:#E5E1D8;
+  --bg:#FAF9F7;--sfc:#ffffff;
+  --ts:#9091A0;--tm:#B7A9A3;--bdr:#E5E1D8;
+  --sep:#D4D1CC;--proj-row:#f0f0f0;
+  /* Clock-state colors — functional indicators, aligned to pipeline tally semantics */
+  --st-ok:#3b7fa8;--st-warn:#d07820;--st-over:#ac2828;--st-hold:#8a8a8a;--st-done:#019425;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smoothing:antialiased;color:var(--navy);}
+@keyframes bw-spin{to{transform:rotate(360deg);}}
+
+/* ── APP HEADER ── */
+.app-header{background:var(--navy);padding:7px 18px;display:flex;align-items:center;gap:11px;position:fixed;top:0;left:0;right:0;z-index:400;height:var(--app-h);}
+.bw-logo{height:22px;width:auto;display:block;}
+.hd{width:1px;height:16px;background:rgba(255,255,255,.15);}
+.hdr-title{font-family:'Swear Text',serif;color:rgba(255,255,255,.55);font-size:13px;}
+.hsp{flex:1;}
+.proto-badge{font-size:10px;font-weight:600;letter-spacing:.08em;color:#ef4444;}
+.save-indicator{display:flex;align-items:center;gap:5px;font-size:11px;min-width:64px;justify-content:flex-end;margin-right:8px;}
+.save-indicator .si-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.save-indicator .si-spinner{width:11px;height:11px;border-radius:50%;border:2px solid rgba(255,255,255,.18);border-top-color:rgba(255,255,255,.75);animation:bw-spin .8s linear infinite;flex-shrink:0;}
+.save-indicator .si-txt{color:rgba(255,255,255,.4);}
+.sync-stamp{font-size:10px;color:rgba(255,255,255,.35);white-space:nowrap;}
+.view-nav{display:flex;gap:16px;margin-right:4px;flex-shrink:0;}
+.view-btn{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.50);background:transparent;border:none;border-bottom:2px solid transparent;padding:4px 2px 5px;cursor:pointer;transition:color .15s,border-color .2s;}
+.view-btn:hover{color:rgba(255,255,255,.80);}
+.view-btn.active{color:#fff;border-bottom-color:var(--gold);}
+.admin-btn{font-size:13px;background:none;border:none;color:rgba(255,255,255,.40);cursor:pointer;padding:2px 4px;}
+.admin-btn:hover{color:rgba(255,255,255,.85);}
+
+/* ── AUTH OVERLAY ── */
+#authOverlay{position:fixed;inset:0;background:var(--navy);z-index:1000;display:flex;align-items:center;justify-content:center;}
+#authOverlay.hidden{display:none;}
+.auth-card{display:flex;flex-direction:column;align-items:center;gap:18px;padding:40px 44px 36px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.40);min-width:320px;text-align:center;}
+.auth-logo{height:44px;width:auto;opacity:.90;}
+.auth-title{font-family:'Swear Text',serif;font-size:18px;font-weight:700;color:var(--gl);letter-spacing:.02em;}
+.auth-subtitle{font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.35);}
+.auth-version{font-size:9px;font-weight:700;letter-spacing:.10em;color:rgba(255,255,255,.20);margin-top:-8px;}
+.auth-sign-in{font-family:'TT Norms Pro',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:rgba(216,182,79,.18);color:var(--gold);border:1px solid rgba(216,182,79,.40);border-radius:6px;padding:10px 28px;cursor:pointer;transition:background .14s,border-color .14s,box-shadow .14s;margin-top:4px;}
+.auth-sign-in:hover{background:rgba(216,182,79,.28);border-color:rgba(216,182,79,.65);box-shadow:0 2px 12px rgba(216,182,79,.15);}
+.auth-sign-in:disabled{opacity:.4;cursor:default;pointer-events:none;}
+.auth-status{font-size:11px;color:rgba(255,255,255,.45);min-height:18px;transition:color .2s;}
+.auth-spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--gold);border-radius:50%;animation:bw-spin .7s linear infinite;display:none;}
+
+/* ── MAIN LAYOUT ── */
+.main{padding:calc(var(--app-h) + 22px) 26px 60px;max-width:1180px;margin:0 auto;}
+.view{display:none;}
+.view.active{display:block;}
+.banner{background:rgba(172,40,40,.08);border:1px solid rgba(172,40,40,.30);color:var(--st-over);border-radius:7px;padding:10px 14px;font-size:12px;margin-bottom:18px;display:none;}
+.banner.info{background:rgba(216,182,79,.10);border-color:rgba(216,182,79,.45);color:#8a6c14;}
+.banner.show{display:block;}
+
+/* ── PROJECT GROUPS (Board view) ── */
+.proj-group{background:var(--sfc);border:1px solid var(--bdr);border-radius:9px;margin-bottom:14px;overflow:hidden;}
+.proj-hdr{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--proj-row);cursor:pointer;border-bottom:1px solid var(--bdr);}
+.proj-name{font-family:'Swear Text',serif;font-size:14.5px;font-weight:600;color:var(--navy);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.roll-chip{font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-radius:4px;padding:3px 9px;color:#fff;flex-shrink:0;}
+.roll-ok{background:var(--st-ok);}
+.roll-warn{background:var(--st-warn);}
+.roll-over{background:var(--st-over);}
+.roll-hold{background:var(--st-hold);}
+.roll-done{background:var(--st-done);}
+.proj-meta{font-size:10.5px;color:var(--ts);flex-shrink:0;}
+.app-row{display:flex;align-items:center;gap:14px;padding:11px 16px;border-bottom:1px solid var(--bdr);cursor:pointer;transition:background .12s;}
+.app-row:last-child{border-bottom:none;}
+.app-row:hover{background:rgba(216,182,79,.05);}
+.track-chip{font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-radius:4px;padding:3px 8px;flex-shrink:0;min-width:64px;text-align:center;}
+.track-zoning{background:rgba(0,57,128,.10);color:#003980;border:1px solid rgba(0,57,128,.25);}
+.track-permit{background:rgba(0,82,27,.08);color:#00521b;border:1px solid rgba(0,82,27,.25);}
+.track-other{background:rgba(40,40,40,.06);color:var(--navy);border:1px solid var(--sep);}
+.badge{font-size:8.5px;font-weight:800;letter-spacing:.05em;border-radius:3px;padding:2px 5px;flex-shrink:0;}
+.badge.ez{background:rgba(216,182,79,.20);color:#8a6c14;border:1px solid rgba(216,182,79,.5);}
+.badge.hist{background:rgba(155,97,39,.12);color:#9b6127;border:1px solid rgba(155,97,39,.4);}
+.app-jur{font-size:10.5px;color:var(--ts);flex-shrink:0;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* Phase track */
+.ph-track{display:flex;align-items:flex-start;gap:0;flex:1;min-width:260px;}
+.ph-step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative;}
+.ph-step::before{content:'';position:absolute;top:5px;left:-50%;width:100%;height:2px;background:var(--bdr);}
+.ph-step:first-child::before{display:none;}
+.ph-step.done::before,.ph-step.active::before{background:var(--gold);}
+.ph-dot{width:11px;height:11px;border-radius:50%;background:var(--sfc);border:2px solid var(--bdr);z-index:1;}
+.ph-step.done .ph-dot{background:var(--gold);border-color:var(--gold);}
+.ph-step.active .ph-dot{border-color:var(--gold);background:#fff;box-shadow:0 0 0 3px rgba(216,182,79,.25);}
+.ph-step.active.st-over .ph-dot{border-color:var(--st-over);box-shadow:0 0 0 3px rgba(172,40,40,.22);}
+.ph-step.active.st-warn .ph-dot{border-color:var(--st-warn);box-shadow:0 0 0 3px rgba(208,120,32,.22);}
+.ph-step.done.st-done .ph-dot{background:var(--st-done);border-color:var(--st-done);}
+.ph-lbl{font-size:7.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--tm);margin-top:4px;white-space:nowrap;}
+.ph-step.done .ph-lbl,.ph-step.active .ph-lbl{color:var(--navy);}
+.ph-timer{font-size:8px;font-weight:700;margin-top:1px;white-space:nowrap;}
+.ph-timer.t-ok{color:var(--st-ok);}
+.ph-timer.t-warn{color:var(--st-warn);}
+.ph-timer.t-over{color:var(--st-over);}
+.ph-timer.t-age{color:var(--ts);}
+.state-chip{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:4px;padding:3px 8px;flex-shrink:0;}
+.state-hold{background:rgba(138,138,138,.14);color:var(--st-hold);border:1px solid rgba(138,138,138,.4);}
+.state-closed{background:rgba(40,40,40,.85);color:#fff;}
+.state-unknown{background:rgba(208,120,32,.10);color:var(--st-warn);border:1px solid rgba(208,120,32,.35);}
+
+/* Intake */
+.intake-wrap{margin-top:26px;}
+.sec-title{font-family:'Swear Text',serif;font-size:13px;font-weight:600;color:var(--navy);letter-spacing:.02em;margin-bottom:10px;}
+.intake-row{display:flex;align-items:center;gap:12px;background:var(--sfc);border:1px solid var(--bdr);border-radius:7px;padding:9px 14px;margin-bottom:7px;font-size:12px;}
+.intake-name{font-weight:600;flex:1;}
+.intake-note{font-size:10.5px;color:var(--ts);}
+
+/* ── DETAIL DRAWER ── */
+#detailOverlay{position:fixed;inset:0;background:rgba(40,40,40,.45);z-index:500;display:none;}
+#detailOverlay.open{display:block;}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,94vw);background:var(--sfc);z-index:501;box-shadow:-8px 0 32px rgba(0,0,0,.25);transform:translateX(102%);transition:transform .22s ease;overflow-y:auto;}
+.drawer.open{transform:translateX(0);}
+.drawer-hdr{background:var(--navy);padding:16px 20px;position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;}
+.drawer-title{font-family:'Swear Text',serif;font-size:16px;font-weight:700;color:var(--gl);flex:1;min-width:0;}
+.drawer-close{background:none;border:none;color:rgba(255,255,255,.55);font-size:18px;cursor:pointer;padding:2px 6px;}
+.drawer-close:hover{color:#fff;}
+.drawer-body{padding:18px 20px 40px;}
+.d-app{border:1px solid var(--bdr);border-radius:8px;margin-bottom:16px;overflow:hidden;}
+.d-app-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--proj-row);border-bottom:1px solid var(--bdr);}
+.d-app-name{font-weight:600;font-size:12.5px;flex:1;}
+.d-sec{padding:11px 14px;border-bottom:1px solid var(--bdr);}
+.d-sec:last-child{border-bottom:none;}
+.d-sec-title{font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ts);margin-bottom:7px;}
+.d-facts{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;font-size:11.5px;}
+.d-fact b{font-weight:600;}
+.d-fact span{color:var(--ts);font-size:10px;display:block;text-transform:uppercase;letter-spacing:.05em;}
+.hist-row{display:flex;gap:9px;font-size:11px;padding:3px 0;align-items:baseline;}
+.hist-dot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0;position:relative;top:1px;}
+.hist-stage{font-weight:600;min-width:110px;}
+.hist-at{color:var(--ts);font-size:10.5px;}
+.chk-row{display:flex;gap:8px;font-size:11.5px;padding:2.5px 0;align-items:baseline;}
+.chk-box{width:12px;height:12px;border-radius:3px;border:1.5px solid var(--sep);flex-shrink:0;position:relative;top:2px;font-size:9px;line-height:10px;text-align:center;color:#fff;}
+.chk-box.on{background:var(--st-done);border-color:var(--st-done);}
+.chk-txt.on{color:var(--ts);text-decoration:line-through;text-decoration-color:rgba(0,0,0,.25);}
+.chk-grp{font-size:10px;font-weight:700;color:var(--navy);margin:7px 0 3px;letter-spacing:.03em;}
+.d-owners{font-size:11.5px;}
+
+/* ── ABSOLUTES VIEW ── */
+.abs-table{width:100%;border-collapse:collapse;background:var(--sfc);border:1px solid var(--bdr);border-radius:9px;overflow:hidden;font-size:12px;}
+.abs-table th{font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ts);text-align:left;padding:10px 14px;background:var(--proj-row);border-bottom:1px solid var(--bdr);}
+.abs-table td{padding:9px 14px;border-bottom:1px solid var(--bdr);}
+.abs-table tr:last-child td{border-bottom:none;}
+.abs-proj{font-family:'Swear Text',serif;font-weight:600;font-size:13px;}
+.bin{font-size:9px;font-weight:800;letter-spacing:.07em;border-radius:4px;padding:3px 9px;color:#fff;display:inline-block;}
+.bin-on{background:var(--st-done);}
+.bin-off{background:var(--st-over);}
+.bin-na{background:none;color:var(--tm);border:1px solid var(--bdr);}
+.abs-note-pending{font-size:10.5px;color:var(--tm);font-style:italic;}
+
+/* ── ADMIN PANEL ── */
+#adminPanel{position:fixed;top:calc(var(--app-h) + 8px);right:14px;z-index:450;background:var(--navy);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:16px 18px;width:320px;box-shadow:0 10px 32px rgba(0,0,0,.4);display:none;}
+#adminPanel.open{display:block;}
+.ap-title{font-family:'Swear Text',serif;font-size:13px;font-weight:700;color:var(--gl);margin-bottom:12px;}
+.ap-field{margin-bottom:10px;}
+.ap-lbl{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.40);display:block;margin-bottom:4px;}
+.ap-inp{width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:5px;color:#fff;font-family:inherit;font-size:11.5px;padding:7px 9px;outline:none;}
+.ap-inp:focus{border-color:rgba(216,182,79,.6);}
+.ap-actions{display:flex;gap:8px;margin-top:12px;}
+.ap-btn{flex:1;font-family:inherit;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:5px;padding:8px 0;cursor:pointer;border:1px solid rgba(216,182,79,.40);background:rgba(216,182,79,.16);color:var(--gold);}
+.ap-btn:hover{background:rgba(216,182,79,.28);}
+.ap-btn.secondary{border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.05);color:rgba(255,255,255,.65);}
+.ap-status{font-size:10.5px;color:rgba(255,255,255,.5);min-height:16px;margin-top:8px;}
+.empty-note{color:var(--ts);font-size:12px;padding:26px 0;text-align:center;}
+</style>
+</head>
+<body>
+
+<div id="authOverlay">
+  <div class="auth-card">
+    <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
+    <div>
+      <div class="auth-title">Permit &amp; Zoning Tracker</div>
+      <div class="auth-subtitle">Bellweather Design Build</div>
+    </div>
+    <div class="auth-version" id="authVersionBadge">v24</div>
+    <div class="auth-spinner" id="authSpinner"></div>
+    <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
+    <div class="auth-status" id="authStatus"></div>
+  </div>
+</div>
+
+<div class="app-header">
+  <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
+  <div class="hd"></div>
+  <div class="hdr-title">Permit &amp; Zoning Tracker</div>
+  <div class="proto-badge" id="versionBadge">v24</div>
+  <div id="saveStatus" class="save-indicator"></div>
+  <div class="sync-stamp" id="syncStamp"></div>
+  <div class="hsp"></div>
+  <nav class="view-nav">
+    <button type="button" class="view-btn active" data-view="board" onclick="setView('board')">Board</button>
+    <button type="button" class="view-btn" data-view="absolutes" onclick="setView('absolutes')">Absolutes</button>
+  </nav>
+  <button class="admin-btn" onclick="toggleAdmin()" title="Setup">&#9881;</button>
+</div>
+
+<div id="adminPanel">
+  <div class="ap-title">Setup</div>
+  <div class="ap-field"><label class="ap-lbl">Trello API Key</label><input class="ap-inp" id="apKey" autocomplete="off"></div>
+  <div class="ap-field"><label class="ap-lbl">Trello Token</label><input class="ap-inp" id="apToken" type="password" autocomplete="off"></div>
+  <div class="ap-field"><label class="ap-lbl">Permit Tracking Board ID</label><input class="ap-inp" id="apBoard" autocomplete="off" placeholder="board id or short link id"></div>
+  <div class="ap-actions">
+    <button class="ap-btn secondary" onclick="testTrello()">Test</button>
+    <button class="ap-btn" onclick="saveAdmin()">Save to Config</button>
+  </div>
+  <div class="ap-status" id="apStatus"></div>
+</div>
+
+<div class="main">
+  <div class="banner" id="bannerErr"></div>
+  <div class="banner info" id="bannerInfo"></div>
+
+  <div class="view active" id="view-board">
+    <div id="boardContent"><div class="empty-note">Loading&hellip;</div></div>
+    <div class="intake-wrap" id="intakeWrap" style="display:none;">
+      <div class="sec-title">Incoming &mdash; awaiting permitting determination</div>
+      <div id="intakeContent"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-absolutes">
+    <div id="absContent"><div class="empty-note">Loading&hellip;</div></div>
+  </div>
+</div>
+
+<div id="detailOverlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-hdr">
+    <div class="drawer-title" id="drawerTitle"></div>
+    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════════
+   PERMIT & ZONING TRACKER — CORE tool
+   Spec: Permit_Zoning_Tracker_Spec.md. Versioning continues the permit
+   tracker prototype line (v23 → v24). Architecture: Trello is the working
+   surface, CORE_Permits on BWCore is the system of record, this page is
+   the sync agent (sync-on-view). Nobody edits permit status here; the fix
+   for wrong data is moving the card.
+   ═══════════════════════════════════════════════════════════════════════ */
+const CORE_VERSION = 'v24';
+
+const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
+const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
+const SP_SCOPES      = ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/User.Read'];
+const BWC_SITE       = 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
+
+/* Stage vocabulary — mirrors the Trello tracking board lists (spec §2.1).
+   clock: 'age' = days-in-stage timer; 'review' = SubmittedDate + ReviewDays
+   business-day clock; 'none' = no clock. Unknown list names pass through
+   unchanged and render neutrally (pass-unknown-through). */
+const STAGES = [
+  {name:'Incoming',                 clock:'none', intake:true},
+  {name:'Prep',                     clock:'age'},
+  {name:'With Arch/Eng',            clock:'age'},
+  {name:'Ready to Submit',          clock:'age'},
+  {name:'Submitted',                clock:'review'},
+  {name:'In Review',                clock:'review'},
+  {name:'Revisions Needed',         clock:'age'},
+  {name:'Approved',                 clock:'none', terminal:'done'},
+  {name:'On Hold',                  clock:'none', hold:true},
+  {name:'Closed — Denied/Withdrawn',clock:'none', terminal:'dead'}
+];
+const TRACK_STAGES = STAGES.filter(s=>!s.intake && !s.hold && s.terminal!=='dead'); // rendered phase track
+const WARN_DAYS = 3; // business days remaining → "due soon"
+
+/* Trello custom field names (spec §2.2) — matched case-insensitively */
+const CF = {project:'project', track:'track type', ptype:'permit type', jur:'jurisdiction',
+            submitted:'submitted date', reviewdays:'review days', permitnum:'permit number'};
+
+/* ── State ── */
+let _token=null;
+let _trelloCfg=null;          // {apiKey, token, boardId}
+let _cfgRows={};              // key → {id, value} from CORE_Config
+let APPS=[];                  // application cards (have Track Type)
+let INTAKE=[];                // cards without Track Type (project intake mirrors)
+let SP_ROWS=[];               // CORE_Permits items
+let _spListOk=true;
+let _view='board';
+
+/* ═══ MSAL ═══ */
+const msalApp = new msal.PublicClientApplication({
+  auth:{ clientId:MSAL_CLIENT_ID, authority:'https://login.microsoftonline.com/'+MSAL_TENANT,
+         redirectUri:location.origin+location.pathname },
+  cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:false }
+});
+
+function doSignIn(){
+  const btn=document.getElementById('authSignInBtn');
+  const sp=document.getElementById('authSpinner');
+  if(btn) btn.disabled=true;
+  if(sp) sp.style.display='block';
+  msalApp.loginRedirect({scopes:SP_SCOPES});
+}
+
+function setAuthStatus(msg){ const el=document.getElementById('authStatus'); if(el) el.textContent=msg||''; }
+
+async function getToken(){
+  const acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
+  if(!acct) throw new Error('no account');
+  try{
+    const r=await msalApp.acquireTokenSilent({scopes:SP_SCOPES,account:acct});
+    _token=r.accessToken; return _token;
+  }catch(e){
+    await msalApp.acquireTokenRedirect({scopes:SP_SCOPES,account:acct});
+  }
+}
+
+/* ═══ Graph helpers ═══ */
+async function graphGet(url){
+  const r=await fetch(url,{headers:{Authorization:'Bearer '+_token}});
+  if(!r.ok) throw new Error('Graph GET '+r.status+' '+url);
+  return r.json();
+}
+async function graphGetAll(url){
+  let out=[],next=url;
+  while(next){
+    const d=await graphGet(next);
+    out=out.concat(d.value||[]);
+    next=d['@odata.nextLink']||null;
+  }
+  return out;
+}
+async function graphPost(url,body){
+  const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok) throw new Error('Graph POST '+r.status);
+  return r.json();
+}
+async function graphPatch(url,body){
+  const r=await fetch(url,{method:'PATCH',headers:{Authorization:'Bearer '+_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok) throw new Error('Graph PATCH '+r.status);
+  return r.json();
+}
+
+/* ═══ Trello helpers ═══ */
+function tURL(path,params){
+  const p=new URLSearchParams(params||{});
+  p.set('key',_trelloCfg.apiKey); p.set('token',_trelloCfg.token);
+  return 'https://api.trello.com/1/'+path+'?'+p.toString();
+}
+async function tGet(path,params){
+  const r=await fetch(tURL(path,params));
+  if(!r.ok) throw new Error('Trello '+r.status+' /'+path);
+  return r.json();
+}
+
+/* ═══ Business-day math (weekends skipped; holidays not modeled in v1) ═══ */
+function addBusinessDays(date,n){
+  const d=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+  let left=Math.round(n);
+  while(left>0){ d.setDate(d.getDate()+1); const w=d.getDay(); if(w!==0&&w!==6) left--; }
+  return d;
+}
+function businessDaysBetween(a,b){ // signed: positive when b is after a
+  const s=new Date(a.getFullYear(),a.getMonth(),a.getDate());
+  const e=new Date(b.getFullYear(),b.getMonth(),b.getDate());
+  const sign=e>=s?1:-1;
+  let lo=sign===1?s:e, hi=sign===1?e:s, n=0;
+  const c=new Date(lo);
+  while(c<hi){ c.setDate(c.getDate()+1); const w=c.getDay(); if(w!==0&&w!==6) n++; }
+  return n*sign;
+}
+function calDays(a,b){ return Math.floor((b-a)/86400000); }
+function fmtDate(d){ return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ═══ Save indicator ═══ */
+function setSave(state,txt){
+  const el=document.getElementById('saveStatus'); if(!el) return;
+  if(state==='syncing') el.innerHTML='<div class="si-spinner"></div><span class="si-txt">'+esc(txt||'Syncing…')+'</span>';
+  else if(state==='ok') el.innerHTML='<div class="si-dot" style="background:#019425"></div><span class="si-txt">'+esc(txt||'Synced')+'</span>';
+  else if(state==='err') el.innerHTML='<div class="si-dot" style="background:#ac2828"></div><span class="si-txt">'+esc(txt||'Sync failed')+'</span>';
+  else el.innerHTML='';
+}
+function showBanner(id,msg){ const el=document.getElementById(id); if(el){ el.textContent=msg; el.classList.add('show'); } }
+function hideBanner(id){ const el=document.getElementById(id); if(el) el.classList.remove('show'); }
+
+/* ═══ Config (CORE_Config rows: TrelloApiKey / TrelloToken / TrelloPermitBoardId —
+       same row convention the Pipeline already uses for its Trello credentials) ═══ */
+async function loadConfig(){
+  const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields');
+  _cfgRows={};
+  items.forEach(it=>{
+    const k=(it.fields&&(it.fields.Title||it.fields.Key))||'';
+    if(k) _cfgRows[k]={id:it.id, value:(it.fields.Value!=null?it.fields.Value:(it.fields.Value0!=null?it.fields.Value0:''))};
+  });
+  const key=_cfgRows.TrelloApiKey?_cfgRows.TrelloApiKey.value:'';
+  const tok=_cfgRows.TrelloToken?_cfgRows.TrelloToken.value:'';
+  const brd=_cfgRows.TrelloPermitBoardId?_cfgRows.TrelloPermitBoardId.value:'';
+  if(key&&tok&&brd) _trelloCfg={apiKey:key,token:tok,boardId:brd};
+  const f=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||''; };
+  f('apKey',key); f('apToken',tok); f('apBoard',brd);
+}
+async function setConfigRow(key,val){
+  if(_cfgRows[key]){
+    await graphPatch(BWC_SITE+'/CORE_Config/items/'+_cfgRows[key].id+'/fields',{Value:val});
+    _cfgRows[key].value=val;
+  }else{
+    const d=await graphPost(BWC_SITE+'/CORE_Config/items',{fields:{Title:key,Key:key,Value:val}});
+    _cfgRows[key]={id:d.id,value:val};
+  }
+}
+
+/* ═══ Trello load & model build ═══ */
+function cfValue(card,defs,label){
+  const def=defs.find(d=>(d.name||'').toLowerCase()===label);
+  if(!def) return '';
+  const item=(card.customFieldItems||[]).find(i=>i.idCustomField===def.id);
+  if(!item) return '';
+  if(item.idValue&&def.options){
+    const opt=def.options.find(o=>o.id===item.idValue);
+    return opt&&opt.value&&opt.value.text?opt.value.text:'';
+  }
+  if(item.value){
+    if(item.value.text!=null) return item.value.text;
+    if(item.value.number!=null) return item.value.number;
+    if(item.value.date!=null) return item.value.date;
+    if(item.value.checked!=null) return item.value.checked;
+  }
+  return '';
+}
+
+async function loadTrello(){
+  const b=_trelloCfg.boardId;
+  const [lists,cards,defs,actions]=await Promise.all([
+    tGet('boards/'+b+'/lists',{fields:'name,pos'}),
+    tGet('boards/'+b+'/cards',{fields:'name,idList,labels,dateLastActivity,cardRole,shortUrl',
+        customFieldItems:'true', checklists:'all', members:'true', member_fields:'fullName'}),
+    tGet('boards/'+b+'/customFields',{}),
+    tGet('boards/'+b+'/actions',{filter:'updateCard:idList', limit:'1000',
+        fields:'data,date', memberCreator:'true', memberCreator_fields:'fullName'})
+  ]);
+  const listName={}; lists.forEach(l=>listName[l.id]=l.name);
+
+  // Per-card stage history from board actions (ascending)
+  const histByCard={};
+  actions.slice().reverse().forEach(a=>{
+    const cid=a.data&&a.data.card&&a.data.card.id;
+    const after=a.data&&a.data.listAfter&&a.data.listAfter.name;
+    if(!cid||!after) return;
+    (histByCard[cid]=histByCard[cid]||[]).push({stage:after, at:a.date,
+      by:(a.memberCreator&&a.memberCreator.fullName)||''});
+  });
+
+  APPS=[]; INTAKE=[];
+  cards.forEach(c=>{
+    const stage=listName[c.idList]||'';
+    const track=String(cfValue(c,defs,CF.track)||'');
+    const model={
+      cardId:c.id, sourceCardId:c.mirrorSourceId||'',
+      name:c.name, url:c.shortUrl||'', cardRole:c.cardRole||'',
+      stage, track,
+      project:String(cfValue(c,defs,CF.project)||'').trim(),
+      ptype:String(cfValue(c,defs,CF.ptype)||''),
+      jur:String(cfValue(c,defs,CF.jur)||''),
+      submitted:(function(){ const v=cfValue(c,defs,CF.submitted); return v?new Date(v):null; })(),
+      reviewDays:(function(){ const v=cfValue(c,defs,CF.reviewdays); return v!==''?Number(v):null; })(),
+      permitNum:String(cfValue(c,defs,CF.permitnum)||''),
+      labels:(c.labels||[]).map(l=>l.name).filter(Boolean),
+      owners:(c.members||[]).map(m=>m.fullName).filter(Boolean),
+      checklists:(c.checklists||[]).map(cl=>({name:cl.name,
+        items:(cl.checkItems||[]).sort((a2,b2)=>a2.pos-b2.pos).map(i=>({text:i.name,done:i.state==='complete'}))})),
+      history:histByCard[c.id]||[],
+      lastActivity:c.dateLastActivity?new Date(c.dateLastActivity):null
+    };
+    model.stageEntered=model.history.length
+      ? new Date(model.history[model.history.length-1].at)
+      : (model.lastActivity||new Date());
+    if(model.project&&!model.name.trim()) model.name=model.project;
+    if(!model.project){ // fall back to name up to the em/en dash convention "{Project} — Permit"
+      const m=model.name.split(/\s+[—–-]\s+/); if(m.length>1) model.project=m[0].trim(); else model.project=model.name.trim();
+    }
+    if(track) APPS.push(model); else INTAKE.push(model);
+  });
+  computeClocks();
+}
+
+/* ═══ Clocks ═══ */
+function stageMeta(name){ return STAGES.find(s=>s.name.toLowerCase()===String(name).toLowerCase())||null; }
+
+function computeClocks(){
+  const now=new Date();
+  APPS.forEach(a=>{
+    const meta=stageMeta(a.stage);
+    a.known=!!meta;
+    a.terminal=meta?meta.terminal||null:null;
+    a.hold=!!(meta&&meta.hold);
+    a.target=null; a.daysLeft=null; a.ageDays=calDays(a.stageEntered,now);
+    a.state='ok'; a.clockText='';
+    if(a.hold){ a.state='hold'; a.clockText='on hold'; return; }
+    if(a.terminal==='done'){ a.state='done'; a.clockText=''; return; }
+    if(a.terminal==='dead'){ a.state='closed'; return; }
+    if(!meta){ a.state='unknown'; a.clockText=a.stage||'no stage'; return; }
+    if(meta.clock==='review'){
+      if(a.submitted&&a.reviewDays!=null){
+        a.target=addBusinessDays(a.submitted,a.reviewDays);
+        a.daysLeft=businessDaysBetween(now,a.target);
+        if(a.daysLeft<0){ a.state='over'; a.clockText='+'+Math.abs(a.daysLeft)+'d overdue'; }
+        else if(a.daysLeft<=WARN_DAYS){ a.state='warn'; a.clockText=a.daysLeft+'d left'; }
+        else { a.state='ok'; a.clockText=a.daysLeft+'d left'; }
+      }else{
+        a.state='warn'; a.clockText=a.submitted?'no review days':'no submitted date';
+      }
+    }else if(meta.clock==='age'){
+      a.state='ok'; a.clockText=a.ageDays+'d in stage';
+    }
+  });
+}
+
+/* ═══ SharePoint mirror (CORE_Permits) ═══ */
+function appToFields(a){
+  return {
+    Title:a.name,
+    TrelloCardId:a.cardId,
+    SourceCardId:a.sourceCardId||'',
+    ProjectName:a.project,
+    TrackType:a.track,
+    PermitType:a.ptype,
+    Jurisdiction:a.jur,
+    Stage:a.stage,
+    StageEnteredDate:a.stageEntered?a.stageEntered.toISOString():null,
+    SubmittedDate:a.submitted?a.submitted.toISOString():null,
+    ReviewDays:a.reviewDays,
+    TargetDate:a.target?a.target.toISOString():null,
+    PermitNumber:a.permitNum,
+    Owners:a.owners.join(', '),
+    Labels:a.labels.join(', '),
+    StageHistory:JSON.stringify(a.history),
+    IsClosed:(a.terminal==='done'||a.terminal==='dead')
+  };
+}
+function fieldsDiffer(f,row){
+  const keys=Object.keys(f);
+  for(const k of keys){
+    let cur=row[k]; let neu=f[k];
+    if(neu==null&&(cur==null||cur==='')) continue;
+    if(k==='IsClosed'){ if(Boolean(cur)!==Boolean(neu)) return true; continue; }
+    if(k==='ReviewDays'){ if(Number(cur||0)!==Number(neu||0)) return true; continue; }
+    if(/Date$/.test(k)){
+      const a2=cur?new Date(cur).getTime():0, b2=neu?new Date(neu).getTime():0;
+      if(Math.abs(a2-b2)>60000) return true; continue;
+    }
+    if(String(cur==null?'':cur)!==String(neu==null?'':neu)) return true;
+  }
+  return false;
+}
+async function syncToSharePoint(){
+  if(!_spListOk) return;
+  setSave('syncing');
+  try{
+    const items=await graphGetAll(BWC_SITE+'/CORE_Permits/items?$expand=fields&$select=id,fields&$top=200');
+    SP_ROWS=items;
+    const byCard={};
+    items.forEach(it=>{ const cid=it.fields&&it.fields.TrelloCardId; if(cid) byCard[cid]=it; });
+    let writes=0;
+    for(const a of APPS){
+      const f=appToFields(a);
+      const row=byCard[a.cardId];
+      if(!row){
+        await graphPost(BWC_SITE+'/CORE_Permits/items',{fields:f}); writes++;
+      }else if(fieldsDiffer(f,row.fields||{})){
+        await graphPatch(BWC_SITE+'/CORE_Permits/items/'+row.id+'/fields',f); writes++;
+      }
+    }
+    setSave('ok', writes?('Synced ('+writes+')'):'Synced');
+    const st=document.getElementById('syncStamp');
+    if(st) st.textContent='last sync '+new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  }catch(e){
+    console.error('[sync]',e);
+    if(String(e).indexOf('404')>-1){
+      _spListOk=false;
+      showBanner('bannerErr','CORE_Permits list not found on BWCore — create it per the spec (§3). Displaying live Trello data without a SharePoint mirror.');
+      setSave('err','No mirror');
+    }else setSave('err');
+  }
+}
+
+/* ═══ Rendering ═══ */
+const STATE_RANK={over:0,warn:1,unknown:2,hold:3,ok:4,done:5,closed:6};
+function projectRollup(apps){
+  const active=apps.filter(a=>a.state!=='done'&&a.state!=='closed');
+  if(!active.length) return apps.length?'done':'ok';
+  return active.slice().sort((a,b)=>STATE_RANK[a.state]-STATE_RANK[b.state])[0].state;
+}
+const ROLL_LBL={ok:'On Track',warn:'Due Soon',over:'Overdue',hold:'On Hold',done:'Complete',unknown:'Check'};
+const ROLL_CLS={ok:'roll-ok',warn:'roll-warn',over:'roll-over',hold:'roll-hold',done:'roll-done',unknown:'roll-warn'};
+
+function trackChipCls(t){
+  const s=String(t).toLowerCase();
+  if(s.indexOf('zon')>-1) return 'track-zoning';
+  if(s.indexOf('permit')>-1) return 'track-permit';
+  return 'track-other';
+}
+function phaseTrackHtml(a){
+  const idx=TRACK_STAGES.findIndex(s=>s.name.toLowerCase()===String(a.stage).toLowerCase());
+  return '<div class="ph-track">'+TRACK_STAGES.map((s,i)=>{
+    const done=idx>-1&&i<idx, active=i===idx;
+    const stCls=active?(a.state==='over'?'st-over':a.state==='warn'?'st-warn':''):(done&&a.state==='done'?'st-done':'');
+    const timer=active&&a.clockText?('<div class="ph-timer '+(a.state==='over'?'t-over':a.state==='warn'?'t-warn':stageMeta(a.stage)&&stageMeta(a.stage).clock==='review'?'t-ok':'t-age')+'">'+esc(a.clockText)+'</div>'):'';
+    const shortLbl=s.name==='Closed — Denied/Withdrawn'?'Closed':s.name==='With Arch/Eng'?'Arch/Eng':s.name==='Ready to Submit'?'Ready':s.name==='Revisions Needed'?'Revisions':s.name;
+    return '<div class="ph-step '+(done?'done':'')+(active?' active':'')+' '+stCls+'"><div class="ph-dot"></div><div class="ph-lbl">'+esc(shortLbl)+'</div>'+timer+'</div>';
+  }).join('')+'</div>';
+}
+function appRowHtml(a){
+  const badges=a.labels.map(l=>{
+    const s=l.toLowerCase();
+    if(s==='ez') return '<span class="badge ez">EZ</span>';
+    if(s==='hist'||s.indexOf('histor')>-1) return '<span class="badge hist">HIST</span>';
+    return '';
+  }).join('');
+  let mid;
+  if(a.hold) mid='<span class="state-chip state-hold">On Hold</span><div class="hsp"></div>';
+  else if(a.state==='closed') mid='<span class="state-chip state-closed">'+esc(a.stage)+'</span><div class="hsp"></div>';
+  else if(a.state==='unknown') mid='<span class="state-chip state-unknown">'+esc(a.stage||'No stage')+'</span><div class="hsp"></div>';
+  else mid=phaseTrackHtml(a);
+  return '<div class="app-row" onclick="openDrawer(\''+esc(a.project).replace(/'/g,"\\'")+'\')">'+
+    '<span class="track-chip '+trackChipCls(a.track)+'">'+esc(a.track)+'</span>'+badges+
+    mid+'<span class="app-jur">'+esc(a.jur||'')+'</span></div>';
+}
+function renderBoard(){
+  const wrap=document.getElementById('boardContent');
+  const projects={};
+  APPS.forEach(a=>{ (projects[a.project]=projects[a.project]||[]).push(a); });
+  const names=Object.keys(projects).sort((a,b)=>{
+    const ra=STATE_RANK[projectRollup(projects[a])], rb=STATE_RANK[projectRollup(projects[b])];
+    return ra-rb||a.localeCompare(b);
+  });
+  if(!names.length){
+    wrap.innerHTML='<div class="empty-note">No application cards found on the tracking board yet. Cards need a Track Type custom field to appear here.</div>';
+  }else{
+    wrap.innerHTML=names.map(n=>{
+      const apps=projects[n];
+      const roll=projectRollup(apps);
+      return '<div class="proj-group"><div class="proj-hdr" onclick="openDrawer(\''+esc(n).replace(/'/g,"\\'")+'\')">'+
+        '<div class="proj-name">'+esc(n)+'</div>'+
+        '<div class="proj-meta">'+apps.length+' application'+(apps.length>1?'s':'')+'</div>'+
+        '<span class="roll-chip '+ROLL_CLS[roll]+'">'+ROLL_LBL[roll]+'</span></div>'+
+        apps.slice().sort((x,y)=>String(x.track).localeCompare(String(y.track))).map(appRowHtml).join('')+
+      '</div>';
+    }).join('');
+  }
+  const iw=document.getElementById('intakeWrap'), ic=document.getElementById('intakeContent');
+  if(INTAKE.length){
+    iw.style.display='block';
+    ic.innerHTML=INTAKE.map(c=>'<div class="intake-row"><span class="intake-name">'+esc(c.name)+'</span>'+
+      (c.cardRole==='mirror'?'<span class="intake-note">mirror</span>':'')+
+      '<span class="intake-note">'+esc(c.stage)+'</span></div>').join('');
+  }else iw.style.display='none';
+}
+
+function openDrawer(projectName){
+  const apps=APPS.filter(a=>a.project===projectName);
+  document.getElementById('drawerTitle').textContent=projectName;
+  const body=document.getElementById('drawerBody');
+  body.innerHTML=apps.map(a=>{
+    const facts='<div class="d-facts">'+
+      '<div class="d-fact"><span>Stage</span><b>'+esc(a.stage||'—')+'</b></div>'+
+      '<div class="d-fact"><span>Clock</span><b>'+esc(a.clockText||'—')+'</b></div>'+
+      '<div class="d-fact"><span>Jurisdiction</span><b>'+esc(a.jur||'—')+'</b></div>'+
+      '<div class="d-fact"><span>Permit Type</span><b>'+esc(a.ptype||'—')+'</b></div>'+
+      '<div class="d-fact"><span>Submitted</span><b>'+fmtDate(a.submitted)+'</b></div>'+
+      '<div class="d-fact"><span>Target</span><b>'+fmtDate(a.target)+'</b></div>'+
+      (a.permitNum?'<div class="d-fact"><span>Permit #</span><b>'+esc(a.permitNum)+'</b></div>':'')+
+      '</div>';
+    const hist=a.history.length
+      ? a.history.map(h=>'<div class="hist-row"><div class="hist-dot"></div><div class="hist-stage">'+esc(h.stage)+'</div><div class="hist-at">'+fmtDate(new Date(h.at))+(h.by?' · '+esc(h.by):'')+'</div></div>').join('')
+      : '<div class="hist-at">No list moves recorded yet.</div>';
+    const chks=a.checklists.length
+      ? a.checklists.map(cl=>'<div class="chk-grp">'+esc(cl.name)+'</div>'+cl.items.map(i=>
+          '<div class="chk-row"><div class="chk-box'+(i.done?' on':'')+'">'+(i.done?'✓':'')+'</div><div class="chk-txt'+(i.done?' on':'')+'">'+esc(i.text)+'</div></div>').join('')).join('')
+      : '<div class="hist-at">No checklists on this card.</div>';
+    return '<div class="d-app"><div class="d-app-hdr">'+
+      '<span class="track-chip '+trackChipCls(a.track)+'">'+esc(a.track)+'</span>'+
+      '<div class="d-app-name">'+esc(a.name)+'</div>'+
+      (a.url?'<a href="'+esc(a.url)+'" target="_blank" rel="noopener" style="font-size:10px;color:#8a6c14;font-weight:700;text-decoration:none;">OPEN CARD ↗</a>':'')+
+      '</div>'+
+      '<div class="d-sec"><div class="d-sec-title">Details</div>'+facts+'</div>'+
+      '<div class="d-sec"><div class="d-sec-title">Stage Journey</div>'+hist+'</div>'+
+      '<div class="d-sec"><div class="d-sec-title">Checklist (read-only — edit on the card)</div>'+chks+'</div>'+
+      (a.owners.length?'<div class="d-sec"><div class="d-sec-title">Owners</div><div class="d-owners">'+esc(a.owners.join(', '))+'</div></div>':'')+
+      '</div>';
+  }).join('')||'<div class="empty-note">No applications for this project.</div>';
+  document.getElementById('detailOverlay').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer(){
+  document.getElementById('detailOverlay').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+}
+
+function renderAbsolutes(){
+  const wrap=document.getElementById('absContent');
+  const projects={};
+  APPS.forEach(a=>{ (projects[a.project]=projects[a.project]||[]).push(a); });
+  const names=Object.keys(projects).sort();
+  if(!names.length){ wrap.innerHTML='<div class="empty-note">Nothing to aggregate yet.</div>'; return; }
+  const bin=apps=>{
+    if(!apps.length) return '<span class="bin bin-na">—</span>';
+    const r=projectRollup(apps);
+    if(r==='done') return '<span class="bin bin-on">DONE</span>';
+    if(r==='over'||r==='unknown') return '<span class="bin bin-off">OFF TRACK</span>';
+    if(r==='hold') return '<span class="bin bin-na">HOLD</span>';
+    return '<span class="bin bin-on">ON TRACK</span>';
+  };
+  wrap.innerHTML='<table class="abs-table"><thead><tr><th>Project</th><th>Zoning</th><th>Permit</th><th>Overall</th><th>Check-in Notes</th></tr></thead><tbody>'+
+    names.map(n=>{
+      const apps=projects[n];
+      const z=apps.filter(a=>String(a.track).toLowerCase().indexOf('zon')>-1);
+      const p=apps.filter(a=>String(a.track).toLowerCase().indexOf('permit')>-1);
+      return '<tr><td class="abs-proj">'+esc(n)+'</td><td>'+bin(z)+'</td><td>'+bin(p)+'</td><td>'+bin(apps)+'</td>'+
+        '<td class="abs-note-pending">weekly notes — storage home pending (spec §6.3)</td></tr>';
+    }).join('')+'</tbody></table>';
+}
+
+function setView(v){
+  _view=v;
+  document.querySelectorAll('.view-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id==='view-'+v));
+}
+
+/* ═══ Admin panel ═══ */
+function toggleAdmin(){ document.getElementById('adminPanel').classList.toggle('open'); }
+function apStatus(m){ document.getElementById('apStatus').textContent=m||''; }
+async function testTrello(){
+  const key=document.getElementById('apKey').value.trim();
+  const tok=document.getElementById('apToken').value.trim();
+  const brd=document.getElementById('apBoard').value.trim();
+  if(!key||!tok||!brd){ apStatus('All three fields are required.'); return; }
+  apStatus('Testing…');
+  try{
+    const r=await fetch('https://api.trello.com/1/boards/'+encodeURIComponent(brd)+'?fields=name&key='+encodeURIComponent(key)+'&token='+encodeURIComponent(tok));
+    if(!r.ok) throw new Error(r.status);
+    const d=await r.json();
+    apStatus('Connected: "'+d.name+'"');
+  }catch(e){ apStatus('Connection failed ('+e.message+').'); }
+}
+async function saveAdmin(){
+  const key=document.getElementById('apKey').value.trim();
+  const tok=document.getElementById('apToken').value.trim();
+  const brd=document.getElementById('apBoard').value.trim();
+  if(!key||!tok||!brd){ apStatus('All three fields are required.'); return; }
+  apStatus('Saving to CORE_Config…');
+  try{
+    await setConfigRow('TrelloApiKey',key);
+    await setConfigRow('TrelloToken',tok);
+    await setConfigRow('TrelloPermitBoardId',brd);
+    _trelloCfg={apiKey:key,token:tok,boardId:brd};
+    apStatus('Saved. Reloading data…');
+    await refreshAll();
+    apStatus('Saved.');
+  }catch(e){ console.error(e); apStatus('Save failed — check console.'); }
+}
+
+/* ═══ Boot ═══ */
+async function refreshAll(){
+  if(!_trelloCfg){ 
+    showBanner('bannerInfo','Trello isn\u2019t configured yet. Open Setup (\u2699) and enter the API key, token, and tracking board ID \u2014 they save to CORE_Config.');
+    document.getElementById('boardContent').innerHTML='<div class="empty-note">Waiting for Trello configuration.</div>';
+    document.getElementById('absContent').innerHTML='<div class="empty-note">Waiting for Trello configuration.</div>';
+    return;
+  }
+  hideBanner('bannerInfo');
+  try{
+    await loadTrello();
+  }catch(e){
+    console.error('[trello]',e);
+    showBanner('bannerErr','Couldn\u2019t read the Trello board \u2014 check the credentials and board ID in Setup (\u2699). '+e.message);
+    return;
+  }
+  hideBanner('bannerErr');
+  renderBoard(); renderAbsolutes();
+  syncToSharePoint(); // fire-and-monitor; render doesn't wait on the mirror
+}
+
+async function boot(){
+  setAuthStatus('Connecting to SharePoint…');
+  await getToken();
+  setAuthStatus('Loading configuration…');
+  try{ await loadConfig(); }
+  catch(e){ console.error('[config]',e); setAuthStatus('Config load failed — check console.'); return; }
+  document.getElementById('authOverlay').classList.add('hidden');
+  await refreshAll();
+}
+
+(function(){
+  const vb=document.getElementById('versionBadge'); if(vb) vb.textContent=CORE_VERSION;
+  const ab=document.getElementById('authVersionBadge'); if(ab) ab.textContent=CORE_VERSION;
+})();
+
+msalApp.handleRedirectPromise().then(resp=>{
+  if(resp&&resp.account) msalApp.setActiveAccount(resp.account);
+  const acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
+  if(acct){ msalApp.setActiveAccount(acct); boot().catch(e=>{ console.error('[boot]',e); setAuthStatus('Startup failed — check console.'); }); }
+}).catch(e=>{ console.error('[msal]',e); setAuthStatus('Sign-in error — check console.'); });
+</script>
+</body>
+</html>
