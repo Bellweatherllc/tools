@@ -314,8 +314,9 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .gdb-hover-cell{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.16);box-shadow:inset 0 0 0 1px rgba(0,0,0,.10);pointer-events:none;z-index:3;}
 .phase-bar{cursor:pointer;}
 .timeoff-block{cursor:pointer;}
+.tl-tally[data-person]{cursor:pointer;} /* v890: the week popup lives here — advertise it */
 .ms-tall:hover,.tier-dot:hover,.crit-dot:hover,.pd-dot:hover{filter:brightness(1.16);cursor:pointer;}
-.ms-tall.ms-ca{background:rgba(255,255,255,.55);border-radius:4px;} /* v889: separation when riding on top of a gantt bar */
+.ms-tall.ms-ca{box-shadow:0 0 0 3px rgba(255,255,255,.60);} /* v891: white backing ring — separation when riding on a gantt bar; box-shadow survives the status background rules */
 .fc-proj-tooltip .tt-edit-link{display:flex;align-items:center;gap:4px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.38);cursor:pointer;transition:color .1s;}
 .fc-proj-tooltip .tt-edit-link:hover{color:var(--gl);}
 /* MGR pill — compact rectangle replacing "Edit in Manager" */
@@ -2122,10 +2123,16 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 
 .lc-week-popup{
   position:fixed;z-index:660;background:var(--navy);
-  border:1px solid rgba(183,169,163,.28);border-radius:8px;
+  border:1px solid rgba(255,255,255,.14);border-radius:8px;
   padding:12px 14px;box-shadow:0 8px 28px rgba(0,0,0,.50);
   width:500px;display:none;
 }
+/* v890: same speech-bubble language as the date bubble and the card cascade */
+.lc-week-popup::after{content:'';position:absolute;left:var(--lcwp-ax,50%);bottom:-6px;margin-left:-5px;width:10px;height:10px;background:var(--navy);border-right:1px solid rgba(255,255,255,.14);border-bottom:1px solid rgba(255,255,255,.14);transform:rotate(45deg);}
+.lc-week-popup.below::after{bottom:auto;top:-6px;transform:rotate(225deg);}
+#lcWpProjects{max-height:56vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#555 transparent;padding-right:2px;} /* v893: composite view can run long */
+.section[data-s-type="design"] .tl-hdr .wk-cell{cursor:pointer;}
+.section[data-s-type="design"] .tl-hdr .wk-cell:hover{background:rgba(0,0,0,.06);} /* v893: the cross-section lives here */
 .lc-wp-cols{display:flex;gap:14px;}
 .lc-wp-col{flex:1;min-width:0;}
 .lc-wp-col+.lc-wp-col{border-left:1px solid rgba(255,255,255,.10);padding-left:14px;}
@@ -2854,7 +2861,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
       <div class="auth-title">Project Pipeline</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v889</div>
+    <div class="auth-version" id="authVersionBadge">v893</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -2873,7 +2880,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     </label>
     <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
   </div>
-  <div class="proto-badge" id="versionBadge">v889</div>
+  <div class="proto-badge" id="versionBadge">v893</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -3047,7 +3054,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v889';
+const CORE_VERSION = 'v893';
 'use strict';
 
 // ════════════════════════════════════════════════  PHASE LOAD PROFILES
@@ -4711,6 +4718,10 @@ function populateCollapsedRow(proj, rowEl, ww){
   proj.productionLane.phases.filter(ph=>ph.durWeeks>0).forEach(ph=>{
     laneIntervals.production.push({start:ph.startWeek,end:ph.startWeek+ph.durWeeks});
   });
+  // v892: every internal design phase boundary gets the LC-style fillet gap (Ph I|II, Ph II|III, and beyond)
+  const _desSplitWks=[];
+  { const _ivs=laneIntervals.design.slice().sort((a,b)=>a.start-b.start);
+    for(let i=1;i<_ivs.length;i++){ if(_ivs[i].start===_ivs[i-1].end) _desSplitWks.push(_ivs[i].start); } }
   const boundaries=new Set();
   const activeLanes=LANE_ORDER.filter(l=>allowedLanes.includes(l));
   activeLanes.forEach(lane=>laneIntervals[lane].forEach(({start,end})=>{boundaries.add(start);boundaries.add(end);}));
@@ -4744,11 +4755,17 @@ function populateCollapsedRow(proj, rowEl, ww){
         if(w1>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x1}px;width:${w1}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
         const x2=w2px(preConEnd)+1,w2=w2px(endW-preConEnd)-1;
         if(w2>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x2}px;width:${w2}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
-      }else if(lane==='design'&&phaseIEnd!==null&&startW<phaseIEnd&&endW>phaseIEnd){
-        const x1=w2px(startW),w1=w2px(phaseIEnd-startW)-2;
-        if(w1>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x1}px;width:${w1}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
-        const x2=w2px(phaseIEnd)+1,w2=w2px(endW-phaseIEnd)-1;
-        if(w2>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x2}px;width:${w2}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
+      }else if(lane==='design'){
+        // v892: split at every internal phase boundary — same gap/fillet math as the old
+        // single Phase I|II split, generalized (zero cuts collapses to one full piece)
+        const cuts=_desSplitWks.filter(wq=>wq>startW&&wq<endW);
+        const pts=[startW,...cuts,endW];
+        for(let i=0;i<pts.length-1;i++){
+          let x=w2px(pts[i]), w=w2px(pts[i+1]-pts[i]);
+          if(i>0){x+=1;w-=1;}
+          if(i<pts.length-2){w-=2;}
+          if(w>0){const b=el('div','');b.style.cssText=`position:absolute;left:${x}px;width:${w}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);}
+        }
       }else{
         const x=w2px(startW),w=w2px(endW-startW);
         const b=el('div','');b.style.cssText=`position:absolute;left:${x}px;width:${w}px;height:${sliceBot-sliceTop}px;top:${BAND_TOP+sliceTop}px;background:${bandRgba(lane)};${pn}`;rowEl.appendChild(b);
@@ -6897,9 +6914,9 @@ function setStatus(projId,ns){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
   if(proj.status!==ns){ const _sl={projected:'Projected','da-signed':'DA Signed','ca-signed':'CA Signed',paused:'Paused',cancelled:'Cancelled',lost:'Lost',archive:'Archive'}[ns]||ns; pushHistory(`${_projShortName(proj)} — status → ${_sl}`); }
   proj.status=ns;
-  if(ns==='projected'){ proj.milestones.forEach(ms=>{ ms.status='projected'; document.querySelectorAll(`.ms-tall[data-ms-id="${ms.id}"]`).forEach(m=>m.className='ms-tall projected'); }); }
-  if(ns==='da-signed'){ const da=proj.milestones.find(m=>m.name==='DA'); if(da){ da.status='da-signed'; document.querySelectorAll(`.ms-tall[data-ms-id="${da.id}"]`).forEach(m=>m.className='ms-tall da-signed'); } }
-  if(ns==='ca-signed'){ const ca=proj.milestones.find(m=>m.name==='CA'); if(ca){ ca.status='ca-signed'; document.querySelectorAll(`.ms-tall[data-ms-id="${ca.id}"]`).forEach(m=>m.className='ms-tall ca-signed'); } const da=proj.milestones.find(m=>m.name==='DA'); if(da){ da.status='da-signed'; document.querySelectorAll(`.ms-tall[data-ms-id="${da.id}"]`).forEach(m=>m.className='ms-tall da-signed'); } }
+  if(ns==='projected'){ proj.milestones.forEach(ms=>{ ms.status='projected'; const _x=ms.name==='DA'?' ms-da':ms.name==='CA'?' ms-ca':''; document.querySelectorAll(`.ms-tall[data-ms-id="${ms.id}"]`).forEach(m=>m.className='ms-tall projected'+_x); }); } // v891: keep ms-da/ms-ca through status rewrites
+  if(ns==='da-signed'){ const da=proj.milestones.find(m=>m.name==='DA'); if(da){ da.status='da-signed'; document.querySelectorAll(`.ms-tall[data-ms-id="${da.id}"]`).forEach(m=>m.className='ms-tall da-signed ms-da'); } }
+  if(ns==='ca-signed'){ const ca=proj.milestones.find(m=>m.name==='CA'); if(ca){ ca.status='ca-signed'; document.querySelectorAll(`.ms-tall[data-ms-id="${ca.id}"]`).forEach(m=>m.className='ms-tall ca-signed ms-ca'); } const da=proj.milestones.find(m=>m.name==='DA'); if(da){ da.status='da-signed'; document.querySelectorAll(`.ms-tall[data-ms-id="${da.id}"]`).forEach(m=>m.className='ms-tall da-signed ms-da'); } }
   applyStatusStyles(proj); renderTally('design'); renderTally('production'); refreshMsOpacity(projId); if(typeof refreshRevenueRow==='function') refreshRevenueRow();
   if(proj.collapsed) renderCollapsedBand(projId);
   markDirty(proj); triggerSave();
@@ -7406,7 +7423,16 @@ function initDrag(){
       const _tw=parseInt(prodSec?.dataset?.weekW)||Math.round(C.weekW*PROD_ZOOM);
       const rect=lcTally.getBoundingClientRect();
       const week=Math.max(0,Math.min(C.numWeeks-1,Math.floor((e.clientX-rect.left)/_tw)));
-      openLcWeekPopup(lcTally.dataset.person,week,e.clientX,e.clientY);
+      openLcWeekPopup(lcTally.dataset.person,week,rect.left+week*_tw+_tw/2,rect.top,rect.bottom); // v890: anchored to the cell
+      return;
+    }
+    const wkHdrCell=e.target.closest('.section[data-s-type="design"] .tl-hdr .wk-cell'); // v893
+    if(wkHdrCell){
+      const hdrEl=wkHdrCell.closest('.tl-hdr');
+      const hr=hdrEl.getBoundingClientRect();
+      const week=Math.max(0,Math.min(C.numWeeks-1,Math.floor((e.clientX-hr.left)/hr.width*C.numWeeks)));
+      const cr=wkHdrCell.getBoundingClientRect();
+      openDesignWeekCrossSection(week,cr.left+cr.width/2,cr.top,cr.bottom);
       return;
     }
     const desTally=e.target.closest('.tl-tally[data-section="design"][data-person]');
@@ -7415,7 +7441,7 @@ function initDrag(){
       const _tw=parseInt(desSec?.dataset?.weekW)||Math.round(C.weekW*PROD_ZOOM);
       const rect=desTally.getBoundingClientRect();
       const week=Math.max(0,Math.min(C.numWeeks-1,Math.floor((e.clientX-rect.left)/_tw)));
-      openDesignerWeekPopup(desTally.dataset.person,week,e.clientX,e.clientY);
+      openDesignerWeekPopup(desTally.dataset.person,week,rect.left+week*_tw+_tw/2,rect.top,rect.bottom); // v890: anchored to the cell
       return;
     }
     if(e.target.closest('[data-toggle-unassigned-collapse]')){ PROD_UNASSIGNED_COLLAPSED=!PROD_UNASSIGNED_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
@@ -8471,7 +8497,7 @@ function critTT(crit,e){
 // math — immune to lens offsets, constrained mode, and scroll position by construction.
 const GDB=document.createElement('div'); GDB.id='ganttDateBubble'; document.body.appendChild(GDB);
 let _gdbKey=null, _gdbDragGuard=0, _gdbHoverCell=null;
-document.addEventListener('pointerup',()=>{ if(DRAG) _gdbDragGuard=Date.now(); },true);
+document.addEventListener('pointerup',ev=>{ if(DRAG&&(DRAG.startX==null||Math.abs(ev.clientX-DRAG.startX)>3)) _gdbDragGuard=Date.now(); },true); // v890: armed-but-unmoved drags (pan arm, bar select) don't suppress the click
 function gdbHide(){ GDB.classList.remove('show'); _gdbKey=null; }
 function gdbShowAt(px,py,key,html){
   GDB.innerHTML=html; GDB.classList.add('show'); _gdbKey=key;
@@ -8503,7 +8529,7 @@ function pdBubbleHTML(pd){
 }
 // Hover: tint the week column the click would capture
 document.addEventListener('mousemove',e=>{
-  const t=e.target.closest&&(e.target.closest('.phase-bar')||e.target.closest('.lanes-wrap.proj-collapsed .lane-row'));
+  const t=e.target.closest&&(e.target.closest('.phase-bar')||e.target.closest('.lanes-wrap.proj-collapsed .lane-row')||e.target.closest('.tl-tally[data-person]')); // v890: time strips too
   if(_gdbHoverCell&&(!t||_gdbHoverCell.parentNode!==t)){ _gdbHoverCell.remove(); _gdbHoverCell=null; }
   if(!t||DRAG) return;
   const isBar=t.classList.contains('phase-bar');
@@ -8511,7 +8537,7 @@ document.addEventListener('mousemove',e=>{
   if(!dur) return;
   const r=t.getBoundingClientRect(); if(r.width<=0) return;
   const idx=Math.max(0,Math.min(dur-1,Math.floor((e.clientX-r.left)/r.width*dur)));
-  if(!isBar){ // collapsed band: only where bars actually exist (v889)
+  if(!isBar&&t.dataset.spanStart!=null){ // collapsed band: only where bars actually exist (v889); time strips have no span and tint everywhere (v890)
     const ss=parseInt(t.dataset.spanStart), se=parseInt(t.dataset.spanEnd);
     if(isNaN(ss)||idx<ss||idx>=se){ if(_gdbHoverCell){ _gdbHoverCell.remove(); _gdbHoverCell=null; } return; }
   }
@@ -11887,7 +11913,7 @@ function buildLcWpCopyText(lc,target,monday,rows,total){
   }
   return t;
 }
-function openLcWeekPopup(lcId,week,clientX,clientY){
+function openLcWeekPopup(lcId,week,cellCX,cellTop,cellBottom){
   const lc=LC_COORDS.find(l=>l.id===lcId); if(!lc) return;
   const target=getTarget(lcId);
   const fmtShort=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
@@ -11979,59 +12005,61 @@ function openLcWeekPopup(lcId,week,clientX,clientY){
   });
   LC_WEEK_POPUP._copyText=copyT;
   LC_WEEK_POPUP.classList.add('open'); _lcWpOpen=true;
-  requestAnimationFrame(()=>{
-    const pw=LC_WEEK_POPUP.offsetWidth||280,ph=LC_WEEK_POPUP.offsetHeight||200;
-    let left=clientX-pw/2,top=clientY+10;
-    if(left<8) left=8;
-    if(left+pw>window.innerWidth-8) left=window.innerWidth-pw-8;
-    if(top+ph>window.innerHeight-8) top=clientY-ph-8;
-    LC_WEEK_POPUP.style.left=left+'px'; LC_WEEK_POPUP.style.top=top+'px';
-  });
+  _placeWeekPopup(cellCX,cellTop,cellBottom); // v890
 }
 function closeLcWeekPopup(){ LC_WEEK_POPUP.classList.remove('open'); _lcWpOpen=false; }
-function openDesignerWeekPopup(designerId,week,clientX,clientY){
+// v890: centered above the clicked week cell, arrow at the cell — flips below when the strip is at the top
+function _placeWeekPopup(cellCX,cellTop,cellBottom){
+  requestAnimationFrame(()=>{
+    const pw=LC_WEEK_POPUP.offsetWidth||500, ph=LC_WEEK_POPUP.offsetHeight||220;
+    const vw=window.innerWidth;
+    let left=Math.max(8,Math.min(cellCX-pw/2,vw-pw-8));
+    let top=cellTop-ph-10, below=false;
+    if(top<8){ top=cellBottom+12; below=true; }
+    LC_WEEK_POPUP.classList.toggle('below',below);
+    LC_WEEK_POPUP.style.left=left+'px'; LC_WEEK_POPUP.style.top=top+'px';
+    LC_WEEK_POPUP.style.setProperty('--lcwp-ax',Math.max(12,Math.min(pw-12,cellCX-left))+'px');
+  });
+}
+// v893: one source of truth for a designer's week rows — the individual popup and the
+// all-designers cross-section both read from here.
+function _designerWeekRows(designerId,wk){
+  const rows=[];
+  PROJECTS.filter(p=>isVisible(p)&&p.designer===designerId).forEach(proj=>{
+    proj.designLane.phases.forEach(ph=>{
+      if(!ph.durWeeks||ph.startWeek==null) return;
+      if(wk<ph.startWeek||wk>=ph.startWeek+ph.durWeeks) return;
+      ensureTiers(proj); ensurePencilsDown(proj); ensureCrits(proj);
+      const [t1,t2,t3]=proj.tiers;
+      const [c1,c2]=proj.crits;
+      let tierLabel=null;
+      if(wk>=t3.week) tierLabel='T3';
+      else if(wk>=t2.week) tierLabel='T2';
+      else if(wk>=t1.week) tierLabel='T1';
+      const weekHours=designPhaseWeeklyHrs(ph,designerId)[wk]||0;
+      const events=[];
+      const daMs=proj.milestones.find(m=>m.name==='DA');
+      if(daMs&&daMs.week===wk) events.push('DA');
+      const caMs=proj.milestones.find(m=>m.name==='CA');
+      if(caMs&&caMs.week===wk) events.push('CA');
+      if(t1.week===wk) events.push('T1');
+      if(t2.week===wk) events.push('T2');
+      if(t3.week===wk) events.push('T3');
+      if(c1.week===wk) events.push('C1');
+      if(c2.week===wk) events.push('C2');
+      if(proj.pencilsDown?.week===wk) events.push('PD');
+      rows.push({name:proj.name, hours:weekHours, phase:ph.name, da:daMs, ca:caMs, tierLabel,
+        pdWeek:proj.pencilsDown?.week??null, events});
+    });
+  });
+  return rows;
+}
+function openDesignerWeekPopup(designerId,week,cellCX,cellTop,cellBottom){
   const des=DESIGNERS.find(d=>d.id===designerId); if(!des) return;
   const target=getTarget(designerId);
   const fmtShort=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   const fmtFull=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-
-  // Gather rows for a given gantt week
-  function getWeekRows(wk){
-    const rows=[];
-    PROJECTS.filter(p=>isVisible(p)&&p.designer===designerId).forEach(proj=>{
-      proj.designLane.phases.forEach(ph=>{
-        if(!ph.durWeeks||ph.startWeek==null) return;
-        if(wk<ph.startWeek||wk>=ph.startWeek+ph.durWeeks) return;
-        ensureTiers(proj); ensurePencilsDown(proj); ensureCrits(proj);
-        const [t1,t2,t3]=proj.tiers;
-        const [c1,c2]=proj.crits;
-        let tierLabel=null;
-        if(wk>=t3.week) tierLabel='T3';
-        else if(wk>=t2.week) tierLabel='T2';
-        else if(wk>=t1.week) tierLabel='T1';
-        const weekHours=designPhaseWeeklyHrs(ph,designerId)[wk]||0;
-        // Collect milestone events occurring in this specific week
-        const events=[];
-        const daMs=proj.milestones.find(m=>m.name==='DA');
-        if(daMs&&daMs.week===wk) events.push('DA');
-        const caMs=proj.milestones.find(m=>m.name==='CA');
-        if(caMs&&caMs.week===wk) events.push('CA');
-        if(t1.week===wk) events.push('T1');
-        if(t2.week===wk) events.push('T2');
-        if(t3.week===wk) events.push('T3');
-        if(c1.week===wk) events.push('C1');
-        if(c2.week===wk) events.push('C2');
-        if(proj.pencilsDown?.week===wk) events.push('PD');
-        rows.push({
-          name:proj.name, hours:weekHours, phase:ph.name,
-          da:daMs, ca:caMs, tierLabel,
-          pdWeek:proj.pencilsDown?.week??null,
-          events
-        });
-      });
-    });
-    return rows;
-  }
+  const getWeekRows=wk=>_designerWeekRows(designerId,wk); // v893: shared collector
 
   const rows1=getWeekRows(week), rows2=getWeekRows(week+1);
   const tot1=rows1.reduce((s,r)=>s+r.hours,0), tot2=rows2.reduce((s,r)=>s+r.hours,0);
@@ -12125,16 +12153,108 @@ function openDesignerWeekPopup(designerId,week,clientX,clientY){
 
   LC_WEEK_POPUP._copyText=copyT;
   LC_WEEK_POPUP.classList.add('open'); _lcWpOpen=true;
-  requestAnimationFrame(()=>{
-    const pw=LC_WEEK_POPUP.offsetWidth||280, popH=LC_WEEK_POPUP.offsetHeight||200;
-    // Appear to the right of cursor, vertically centered; flip left if no room
-    let left=clientX+14, top=clientY-Math.round(popH/2);
-    if(left+pw>window.innerWidth-8) left=clientX-pw-14;
-    if(left<8) left=8;
-    if(top<8) top=8;
-    if(top+popH>window.innerHeight-8) top=window.innerHeight-popH-8;
-    LC_WEEK_POPUP.style.left=left+'px'; LC_WEEK_POPUP.style.top=top+'px';
+  _placeWeekPopup(cellCX,cellTop,cellBottom); // v890
+}
+// v893: Design date-header cross-section — everything happening that week across all
+// designers. Same format and machinery as the single-designer popup; just a composite.
+function openDesignWeekCrossSection(week,cellCX,cellTop,cellBottom){
+  const fmtShort=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const fmtFull=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const d1=wkMon(week), d2=wkMon(week+1);
+  const perDes=DESIGNERS.map(des=>({des,
+    rows1:_designerWeekRows(des.id,week),
+    rows2:_designerWeekRows(des.id,week+1)}));
+  const tot1=perDes.reduce((s,p)=>s+p.rows1.reduce((a,r)=>a+r.hours,0),0);
+  const tot2=perDes.reduce((s,p)=>s+p.rows2.reduce((a,r)=>a+r.hours,0),0);
+  const targetSum=DESIGNERS.reduce((s,d)=>s+getTarget(d.id),0);
+  document.getElementById('lcWpDate').textContent=fmtShort(d1)+' & '+fmtShort(d2);
+  document.getElementById('lcWpName').textContent='All Designers';
+  document.getElementById('lcWpTarget').textContent='Combined target: '+targetSum.toFixed(1)+'h/wk';
+  const projList=document.getElementById('lcWpProjects'); projList.innerHTML='';
+  function mkPill(label,bg){
+    const p=document.createElement('span');
+    p.style.cssText='display:inline-flex;align-items:center;font-size:8px;font-weight:800;letter-spacing:.04em;border-radius:3px;padding:1px 5px;background:'+bg+';color:rgba(255,255,255,.92);line-height:1.5;flex-shrink:0;';
+    p.textContent=label; return p;
+  }
+  function rowEl(row){
+    const item=document.createElement('div'); item.className='lc-wp-row';
+    if(row.events&&row.events.length>0){
+      const msWrap=document.createElement('span');
+      msWrap.style.cssText='display:inline-flex;align-items:center;gap:2px;flex-shrink:0;';
+      row.events.forEach(ev=>{
+        let b;
+        if(ev==='T1'||ev==='T2'||ev==='T3') b=msBadgeEl(ev,false);
+        else if(ev==='C1'||ev==='C2') b=msBadgeEl(ev,true);
+        else if(ev==='PD') b=msPencilBadgeEl(18);
+        else if(ev==='DA') b=mkPill('DA','rgba(155,97,39,.90)');
+        else if(ev==='CA') b=mkPill('CA','rgba(0,82,27,.90)');
+        if(b) msWrap.appendChild(b);
+      });
+      item.appendChild(msWrap);
+    }
+    const nm=document.createElement('span'); nm.className='lc-wp-proj-name'; nm.textContent=row.name;
+    const h=document.createElement('span'); h.className='lc-wp-hours'; h.textContent=row.hours.toFixed(1)+'h';
+    item.appendChild(nm); item.appendChild(h);
+    return item;
+  }
+  function buildCol(weekDate,total,col,isFirst){
+    const wkLabel=document.createElement('div');
+    wkLabel.style.cssText='font-size:8px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.38);padding:2px 0 4px;';
+    wkLabel.textContent=(isFirst?'Week at a glance — ':'Upcoming — ')+fmtFull(weekDate);
+    col.appendChild(wkLabel);
+    let any=false;
+    perDes.forEach(({des,rows1,rows2})=>{
+      const rows=isFirst?rows1:rows2;
+      if(!rows.length) return;
+      any=true;
+      const sub=rows.reduce((a,r)=>a+r.hours,0);
+      const dh=document.createElement('div');
+      dh.style.cssText='display:flex;justify-content:space-between;align-items:baseline;padding:7px 0 1px;font-size:9.5px;font-weight:800;color:rgba(255,255,255,.85);';
+      const dn=document.createElement('span'); dn.textContent=des.label;
+      const dt=document.createElement('span'); dt.style.cssText='font-size:9px;font-weight:700;color:rgba(255,255,255,.45);'; dt.textContent=sub.toFixed(1)+'h';
+      dh.appendChild(dn); dh.appendChild(dt);
+      col.appendChild(dh);
+      rows.forEach(r=>col.appendChild(rowEl(r)));
+    });
+    if(!any){
+      const em=document.createElement('div'); em.className='lc-wp-empty';
+      em.textContent='No scheduled hours.'; col.appendChild(em);
+    } else {
+      const sep=document.createElement('div'); sep.className='lc-wp-sep'; col.appendChild(sep);
+      const tot=document.createElement('div'); tot.className='lc-wp-total-row';
+      const tl=document.createElement('span'); tl.textContent='All designers';
+      const tv=document.createElement('span'); tv.className='lc-wp-hours'; tv.textContent=total.toFixed(1)+'h';
+      tot.appendChild(tl); tot.appendChild(tv); col.appendChild(tot);
+    }
+  }
+  const colWrap=document.createElement('div'); colWrap.className='lc-wp-cols';
+  const col1=document.createElement('div'); col1.className='lc-wp-col';
+  const col2=document.createElement('div'); col2.className='lc-wp-col';
+  colWrap.appendChild(col1); colWrap.appendChild(col2);
+  projList.appendChild(colWrap);
+  buildCol(d1,tot1,col1,true);
+  buildCol(d2,tot2,col2,false);
+  let copyT='All Designers\nCombined target: '+targetSum.toFixed(1)+'h/wk\n\n';
+  [[true,d1,tot1,'Week at a glance'],[false,d2,tot2,'Upcoming']].forEach(([first,date,tot,lbl])=>{
+    copyT+=lbl+' \u2014 '+fmtFull(date)+':\n';
+    let anyC=false;
+    perDes.forEach(({des,rows1,rows2})=>{
+      const rows=first?rows1:rows2;
+      if(!rows.length) return;
+      anyC=true;
+      copyT+='  '+des.label+' ('+rows.reduce((a,r)=>a+r.hours,0).toFixed(1)+'h):\n';
+      rows.forEach(r=>{
+        const evStr=r.events&&r.events.length>0?' ['+r.events.map(ev=>ev==='PD'?'Pencils Down':ev==='C1'?'Crit 1':ev==='C2'?'Crit 2':ev).join(', ')+']':'';
+        copyT+='    \u2022 '+r.name+': '+r.hours.toFixed(1)+'h'+evStr+'\n';
+      });
+    });
+    if(!anyC) copyT+='  No scheduled hours.\n';
+    else copyT+='  Total: '+tot.toFixed(1)+'h\n';
+    copyT+='\n';
   });
+  LC_WEEK_POPUP._copyText=copyT;
+  LC_WEEK_POPUP.classList.add('open'); _lcWpOpen=true;
+  _placeWeekPopup(cellCX,cellTop,cellBottom);
 }
 document.getElementById('lcWpClose').addEventListener('click',closeLcWeekPopup);
 document.getElementById('lcWpCopy').addEventListener('click',()=>{
