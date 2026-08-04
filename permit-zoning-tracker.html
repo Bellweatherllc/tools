@@ -196,7 +196,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v28</div>
+    <div class="auth-version" id="authVersionBadge">v29</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -207,7 +207,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v28</div>
+  <div class="proto-badge" id="versionBadge">v29</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -268,7 +268,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v28';
+const CORE_VERSION = 'v29';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -307,6 +307,8 @@ let INTAKE=[];                // cards without Track Type (project intake mirror
 let SP_ROWS=[];               // CORE_Permits items
 let _spListOk=true;
 let _view='board';
+let _deepLinked=false;
+let DESIGNER_BY_PROJECT={}; // normalized project name → designer of record (read-only borrow from CORE_Projects GanttData)
 
 /* ═══ MSAL ═══ */
 const msalApp = new msal.PublicClientApplication({
@@ -420,6 +422,31 @@ async function loadConfig(){
   if(key&&tok&&brd) _trelloCfg={apiKey:key,token:tok,boardId:brd};
   const f=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||''; };
   f('apKey',key); f('apToken',tok); f('apBoard',brd);
+}
+/* v29: designer of record per project — read-only borrow from the Pipeline's domain.
+   CORE_Projects.GanttData carries a designer person id ('sp-person-{itemId}') that
+   resolves through CORE_TeamMembers.EmployeeName. Defensive throughout: any parse
+   failure yields no owner, never an error. One-way read; the tracker never writes
+   project or team data. */
+async function loadProjectDesigners(){
+  try{
+    const [team,projs]=await Promise.all([
+      graphGetAll(BWC_SITE+'/CORE_TeamMembers/items?$expand=fields&$select=id,fields'),
+      graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,fields')
+    ]);
+    const personName={};
+    team.forEach(it=>{ personName['sp-person-'+it.id]=(it.fields&&(it.fields.EmployeeName||it.fields.Title))||''; });
+    DESIGNER_BY_PROJECT={};
+    projs.forEach(it=>{
+      const f=it.fields||{};
+      const name=f.ProjectName||f.ClientName||f.Title||'';
+      if(!name) return;
+      let dId=null;
+      if(f.GanttData){ try{ const gd=JSON.parse(f.GanttData); dId=(gd&&gd.designer)||null; }catch(e2){} }
+      const dn=(dId&&personName[dId])||'';
+      if(dn) DESIGNER_BY_PROJECT[normName(name)]=dn;
+    });
+  }catch(e){ console.warn('[designers]',e); }
 }
 async function setConfigRow(key,val){
   if(_cfgRows[key]){
@@ -771,13 +798,14 @@ function renderAbsolutes(){
     if(r==='hold') return '<span class="bin bin-na">HOLD</span>';
     return '<span class="bin bin-on">ON TRACK</span>';
   };
-  wrap.innerHTML='<table class="abs-table"><thead><tr><th>Project</th><th>Zoning</th><th>Permit</th><th>Overall</th><th>Check-in Notes</th></tr></thead><tbody>'+
+  wrap.innerHTML='<table class="abs-table"><thead><tr><th>Project</th><th>Owner</th><th>Zoning</th><th>Permit</th><th>Overall</th><th>Check-in Notes</th></tr></thead><tbody>'+
     names.map(n=>{
       const apps=projects[n];
       const z=apps.filter(a=>String(a.track).toLowerCase().indexOf('zon')>-1);
       const p=apps.filter(a=>String(a.track).toLowerCase().indexOf('permit')>-1);
-      return '<tr><td class="abs-proj">'+esc(n)+'</td><td>'+bin(z)+'</td><td>'+bin(p)+'</td><td>'+bin(apps)+'</td>'+
-        '<td class="abs-note-pending">weekly notes — storage home pending (spec §6.3)</td></tr>';
+      const owner=DESIGNER_BY_PROJECT[normName(n)]||'\u2014'; // designer of record (v29)
+      return '<tr><td class="abs-proj">'+esc(n)+'</td><td>'+esc(owner)+'</td><td>'+bin(z)+'</td><td>'+bin(p)+'</td><td>'+bin(apps)+'</td>'+
+        '<td class="abs-note-pending">weekly notes \u2014 storage home pending (spec \u00A76.3)</td></tr>';
     }).join('')+'</tbody></table>';
 }
 
@@ -838,6 +866,17 @@ async function refreshAll(){
   }
   hideBanner('bannerErr');
   renderBoard(); renderAbsolutes();
+  // v29: ?project= deep link — open straight into that project's drawer (the
+  // Pipeline's Permit & Zoning zone links here so nobody lands on a wall of projects)
+  if(!_deepLinked){
+    _deepLinked=true;
+    const want=new URLSearchParams(location.search).get('project');
+    if(want){
+      const hit=APPS.find(a=>normName(a.project)===normName(want));
+      if(hit) openDrawer(hit.project);
+      else showBanner('bannerInfo','No permit applications on record yet for \u201C'+want+'\u201D.');
+    }
+  }
   syncToSharePoint(); // fire-and-monitor; render doesn't wait on the mirror
 }
 
@@ -848,6 +887,7 @@ async function boot(){
   try{ await loadConfig(); }
   catch(e){ console.error('[config]',e); setAuthStatus('Config load failed — check console.'); return; }
   document.getElementById('authOverlay').classList.add('hidden');
+  loadProjectDesigners().then(()=>{ if(APPS.length) renderAbsolutes(); }).catch(()=>{}); // v29: non-blocking
   await refreshAll();
 }
 
