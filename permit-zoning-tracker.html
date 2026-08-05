@@ -94,6 +94,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .badge{font-size:8.5px;font-weight:800;letter-spacing:.05em;border-radius:3px;padding:2px 5px;flex-shrink:0;}
 .badge.ez{background:rgba(216,182,79,.20);color:#8a6c14;border:1px solid rgba(216,182,79,.5);}
 .badge.hist{background:rgba(155,97,39,.12);color:#9b6127;border:1px solid rgba(155,97,39,.4);}
+.cmt-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--ts);border:1px solid var(--bdr);border-radius:10px;padding:1px 7px;flex-shrink:0;} /* v35 */
 .app-jur{font-size:12px;color:var(--ts);flex-shrink:0;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* Phase track */
@@ -108,12 +109,13 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .ph-step.active.st-over .ph-dot{border-color:var(--st-over);box-shadow:0 0 0 3px rgba(172,40,40,.22);}
 .ph-step.active.st-warn .ph-dot{border-color:var(--st-warn);box-shadow:0 0 0 3px rgba(208,120,32,.22);}
 .ph-step.done.st-done .ph-dot{background:var(--st-done);border-color:var(--st-done);}
+.ph-step.active.st-done .ph-dot{border-color:var(--st-done);box-shadow:0 0 0 3px rgba(1,148,37,.22);} /* v33 */
 .ph-lbl{font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--tm);margin-top:4px;white-space:nowrap;}
 .ph-step.done .ph-lbl,.ph-step.active .ph-lbl{color:var(--navy);}
 .ph-timer{font-size:9.5px;font-weight:700;margin-top:1px;white-space:nowrap;}
 .ph-timer.t-ok{color:var(--st-ok);}
 .ph-timer.t-warn{color:var(--st-warn);}
-.ph-timer.t-over{color:var(--st-over);}
+.ph-timer.t-over{color:var(--st-over);font-weight:800;} /* v35 */
 .ph-timer.t-age{color:var(--ts);}
 .state-chip{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:4px;padding:3px 8px;flex-shrink:0;}
 .state-hold{background:rgba(138,138,138,.14);color:var(--st-hold);border:1px solid rgba(138,138,138,.4);}
@@ -144,6 +146,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .d-sec:last-child{border-bottom:none;}
 .d-sec-title{font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ts);margin-bottom:7px;}
 .d-facts{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;font-size:11.5px;}
+.d-fact b.over{color:var(--st-over);font-weight:800;} /* v35: overdue clock and target */
 .d-fact b{font-weight:600;}
 .d-fact span{color:var(--ts);font-size:10px;display:block;text-transform:uppercase;letter-spacing:.05em;}
 .hist-row{display:flex;gap:9px;font-size:11px;padding:3px 0;align-items:baseline;}
@@ -199,7 +202,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v32</div>
+    <div class="auth-version" id="authVersionBadge">v35</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -210,7 +213,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v32</div>
+  <div class="proto-badge" id="versionBadge">v35</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -271,7 +274,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v32';
+const CORE_VERSION = 'v35';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -291,6 +294,8 @@ const STAGES = [
   {name:'In Review',                clock:'review'},
   {name:'Revisions Needed',         clock:'age'},
   {name:'Approved',                 clock:'none', terminal:'done'},
+  {name:'Amendment',                clock:'age',  conditional:true}, // v33: appears on a card's track only while the card sits in it
+  {name:'Completed',                clock:'none', terminal:'done'},  // v33: final terminal after Approved
   {name:'On Hold',                  clock:'none', hold:true},
   {name:'Closed — Denied/Withdrawn',clock:'none', terminal:'dead'}
 ];
@@ -535,6 +540,7 @@ async function loadTrello(){
       reviewDays:(function(){ const v=cfValue(c,defs,CF.reviewdays); return v!==''?Number(v):null; })(),
       permitNum:String(cfValue(c,defs,CF.permitnum)||''),
       cardOwner:String(cfValue(c,defs,CF.owner)||'').trim(), // v32: the managing owner
+      engOwner:(String(cfValue(c,defs,'arch eng owner')||'')||String(cfValue(c,defs,'eng owner')||'')).trim(), // v34: who owns the engineering dependency (blank = CardOwner)
       labels:(c.labels||[]).map(l=>l.name).filter(Boolean),
       owners:(c.members||[]).map(m=>m.fullName).filter(Boolean),
       desc:c.desc||'',
@@ -569,6 +575,7 @@ async function loadTrello(){
 
 /* ═══ Clocks ═══ */
 function stageMeta(name){ return STAGES.find(s=>s.name.toLowerCase()===String(name).toLowerCase())||null; }
+function stageRank(name){ return STAGES.findIndex(s=>s.name.toLowerCase()===String(name).toLowerCase()); } // v34
 
 function computeClocks(){
   const now=new Date();
@@ -710,12 +717,13 @@ function trackChipCls(t){
   return 'track-other';
 }
 function phaseTrackHtml(a){
-  const idx=TRACK_STAGES.findIndex(s=>s.name.toLowerCase()===String(a.stage).toLowerCase());
-  return '<div class="ph-track">'+TRACK_STAGES.map((s,i)=>{
+  const stages=TRACK_STAGES.filter(s=>!s.conditional||s.name.toLowerCase()===String(a.stage).toLowerCase()); // v33
+  const idx=stages.findIndex(s=>s.name.toLowerCase()===String(a.stage).toLowerCase());
+  return '<div class="ph-track">'+stages.map((s,i)=>{
     const done=idx>-1&&i<idx, active=i===idx;
-    const stCls=active?(a.state==='over'?'st-over':a.state==='warn'?'st-warn':''):(done&&a.state==='done'?'st-done':'');
+    const stCls=active?(a.state==='over'?'st-over':a.state==='warn'?'st-warn':a.state==='done'?'st-done':''):(done&&a.state==='done'?'st-done':''); // v33: terminal dot goes green
     const timer=active&&a.clockText?('<div class="ph-timer '+(a.state==='over'?'t-over':a.state==='warn'?'t-warn':stageMeta(a.stage)&&stageMeta(a.stage).clock==='review'?'t-ok':'t-age')+'">'+esc(a.clockText)+'</div>'):'';
-    const shortLbl=s.name==='Closed — Denied/Withdrawn'?'Closed':s.name==='With Arch/Eng'?'Arch/Eng':s.name==='Ready to Submit'?'Ready':s.name==='Revisions Needed'?'Revisions':s.name;
+    const shortLbl=s.name==='Closed — Denied/Withdrawn'?'Closed':s.name==='With Arch/Eng'?'Arch/Eng':s.name==='Ready to Submit'?'Ready':s.name==='Revisions Needed'?'Revisions':s.name==='Completed'?'Complete':s.name;
     return '<div class="ph-step '+(done?'done':'')+(active?' active':'')+' '+stCls+'"><div class="ph-dot"></div><div class="ph-lbl">'+esc(shortLbl)+'</div>'+timer+'</div>';
   }).join('')+'</div>';
 }
@@ -731,8 +739,11 @@ function appRowHtml(a){
   else if(a.state==='closed') mid='<span class="state-chip state-closed">'+esc(a.stage)+'</span><div class="hsp"></div>';
   else if(a.state==='unknown') mid='<span class="state-chip state-unknown">'+esc(a.stage||'No stage')+'</span><div class="hsp"></div>';
   else mid=phaseTrackHtml(a);
+  const cmt=a.comments&&a.comments.length?('<span class="cmt-badge" title="'+a.comments.length+' comment'+(a.comments.length>1?'s':'')+' — open for details">'
+    +'<svg width="10" height="10" viewBox="0 0 16 16"><path d="M2 3h12v8H6l-4 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>'
+    +a.comments.length+'</span>'):''; // v35: comments (not general activity) get a presence badge
   return '<div class="app-row" onclick="openDrawer(\''+esc(a.project).replace(/'/g,"\\'")+'\')">'+
-    '<span class="track-chip '+trackChipCls(a.track)+'">'+esc(a.track)+'</span>'+badges+
+    '<span class="track-chip '+trackChipCls(a.track)+'">'+esc(a.track)+'</span>'+badges+cmt+
     mid+'<span class="app-jur">'+esc(a.jur||'')+'</span></div>';
 }
 function renderBoard(){
@@ -773,12 +784,13 @@ function openDrawer(projectName){
   body.innerHTML=apps.map(a=>{
     const facts='<div class="d-facts">'+
       '<div class="d-fact"><span>Stage</span><b>'+esc(a.stage||'—')+'</b></div>'+
-      '<div class="d-fact"><span>Clock</span><b>'+esc(a.clockText||'—')+'</b></div>'+
+      '<div class="d-fact"><span>Clock</span><b'+(a.state==='over'?' class="over"':'')+'>'+esc(a.clockText||'—')+'</b></div>'+
       '<div class="d-fact"><span>Jurisdiction</span><b>'+esc(a.jur||'—')+'</b></div>'+
       '<div class="d-fact"><span>Permit Type</span><b>'+esc(a.ptype||'—')+'</b></div>'+
       '<div class="d-fact"><span>Submitted</span><b>'+fmtDate(a.submitted)+'</b></div>'+
-      '<div class="d-fact"><span>Target</span><b>'+fmtDate(a.target)+'</b></div>'+
+      '<div class="d-fact"><span>Target</span><b'+(a.state==='over'?' class="over"':'')+'>'+fmtDate(a.target)+'</b></div>'+
       (a.permitNum?'<div class="d-fact"><span>Permit #</span><b>'+esc(a.permitNum)+'</b></div>':'')+
+      (a.engOwner?'<div class="d-fact"><span>Arch/Eng Owner</span><b>'+esc(a.engOwner)+'</b></div>':'')+
       '</div>';
     const hist=a.history.length
       ? a.history.map(h=>'<div class="hist-row"><div class="hist-dot"></div><div class="hist-stage">'+esc(h.stage)+'</div><div class="hist-at">'+fmtDate(new Date(h.at))+(h.by?' · '+esc(h.by):'')+'</div></div>').join('')
@@ -823,7 +835,7 @@ function renderAbsolutes(){
     if(r==='hold') return '<span class="bin bin-na">HOLD</span>';
     return '<span class="bin bin-on">ON TRACK</span>';
   };
-  wrap.innerHTML='<table class="abs-table"><thead><tr><th>Project</th><th>Owner</th><th>Zoning</th><th>Permit</th><th>Overall</th><th>Check-in Notes</th></tr></thead><tbody>'+
+  wrap.innerHTML='<table class="abs-table"><thead><tr><th>Project</th><th>Owner</th><th>Arch/Eng</th><th>Zoning</th><th>Permit</th><th>Overall</th><th>Check-in Notes</th></tr></thead><tbody>'+
     names.map(n=>{
       const apps=projects[n];
       const z=apps.filter(a=>String(a.track).toLowerCase().indexOf('zon')>-1);
@@ -832,7 +844,18 @@ function renderAbsolutes(){
         const set=[]; apps.forEach(a2=>{ if(a2.cardOwner&&set.indexOf(a2.cardOwner)===-1) set.push(a2.cardOwner); });
         return set.length?set.join(' / '):'\u2014';
       })();
-      return '<tr><td class="abs-proj">'+esc(n)+'</td><td>'+esc(owner)+'</td><td>'+bin(z)+'</td><td>'+bin(p)+'</td><td>'+bin(apps)+'</td>'+
+      const ae=(function(){ // v34: Arch/Eng dependency — name of who owns it + where it stands
+        const AE=stageRank('With Arch/Eng');
+        const rel=apps.filter(a2=>String(a2.track).toLowerCase().indexOf('zon')===-1); // permit + engineering tracks
+        if(!rel.length) return '<span class="bin bin-na">\u2014</span>';
+        const nm=(function(){ const st=[]; rel.forEach(a2=>{ const o=a2.engOwner||a2.cardOwner; if(o&&st.indexOf(o)===-1) st.push(o); }); return st.join(' / '); })();
+        const nmHtml=nm?'<div style="font-size:11px;margin-bottom:2px;">'+esc(nm)+'</div>':'';
+        if(rel.some(a2=>stageRank(a2.stage)===AE)) return nmHtml+'<span class="bin bin-on">ON TRACK</span>';
+        if(rel.some(a2=>a2.hold)) return nmHtml+'<span class="bin bin-na">HOLD</span>';
+        if(rel.every(a2=>a2.terminal||stageRank(a2.stage)>AE)) return nmHtml+'<span class="bin bin-on">DONE</span>';
+        return nmHtml+'<span class="bin bin-na">\u2014</span>';
+      })();
+      return '<tr><td class="abs-proj">'+esc(n)+'</td><td>'+esc(owner)+'</td><td>'+ae+'</td><td>'+bin(z)+'</td><td>'+bin(p)+'</td><td>'+bin(apps)+'</td>'+
         '<td class="abs-note-pending">weekly notes \u2014 storage home pending (spec \u00A76.3)</td></tr>';
     }).join('')+'</tbody></table>';
 }
