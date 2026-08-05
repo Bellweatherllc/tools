@@ -3054,7 +3054,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v898';
+const CORE_VERSION = 'v899';
 'use strict';
 
 // ════════════════════════════════════════════════  PHASE LOAD PROFILES
@@ -15308,8 +15308,10 @@ async function runFolderAnchorBackfill(quiet){
 }
 
 // ════════════════  DOC LINKER — STAGE 2: FILL EMPTY PILLS (v898)
-// For every anchored project, fills EMPTY document link slots from the folder
-// conventions observed in real data. Never overwrites a populated slot. Links
+// For every anchored project, fills empty document link slots and re-evaluates
+// its own past auto links (upgrading to better candidates, e.g. Scope Outline
+// V3 over V2). Manual and pinned links are never touched; a hand-edited auto
+// link is detected by href drift and promoted to manual. Links
 // are written in the GUID-anchored Doc.aspx form so they survive phase-folder
 // moves. Matterport .url shortcut files are opened and the inner address is
 // linked, so the pill opens the walkthrough rather than downloading a shortcut.
@@ -15379,23 +15381,34 @@ async function dlFillLinks(quiet){
   for(var ti=0;ti<targets.length;ti++){
     var proj=targets[ti];
     proj.docUrls=proj.docUrls||{};
-    var empty=Object.keys(DL_DOC_RULES).filter(function(k){ return !proj.docUrls[k]; });
-    // Expected-but-missing accounting also covers kinds we cannot auto-fill yet
-    if(!empty.length) continue;
-    var cache={},patch={},soHref=null,wrote=false;
     proj.docLinkMeta=proj.docLinkMeta||{};
     var metaLinks=proj.docLinkMeta.links=proj.docLinkMeta.links||{};
-    for(var ei=0;ei<empty.length;ei++){
-      var kind=empty[ei],rule=DL_DOC_RULES[kind],items=null;
+    var wrote=false;
+    // Which slots does this pass own? Empty ones, plus its own past auto links
+    // (re-evaluated for upgrades). Manual, pinned, and hand-edited links: never.
+    var kinds=Object.keys(DL_DOC_RULES).filter(function(k){
+      var cur=proj.docUrls[k],m=metaLinks[k];
+      if(!cur) return true;
+      if(m&&m.src==='auto'){
+        if(m.href&&cur!==m.href){ m.src='manual'; wrote=true; return false; } // hand-edited — promote and back off
+        return true;
+      }
+      return false;
+    });
+    if(!kinds.length&&!wrote) continue;
+    var cache={},patch={},soHref=null;
+    for(var ei=0;ei<kinds.length;ei++){
+      var kind=kinds[ei],rule=DL_DOC_RULES[kind],items=null;
       for(var pi=0;pi<rule.paths.length;pi++){
         var pth=rule.paths[pi];
         if(pth in cache){ if(cache[pth]){ items=cache[pth]; break; } continue; }
         try{ items=await dlListSub(drive,proj.spFolderItemId,pth); cache[pth]=items; break; }
         catch(e){ cache[pth]=null; }
       }
-      if(!items){ if(dlExpected(proj,kind)) missing.push({proj:proj,kind:kind,why:'folder not found'}); continue; }
-      var files=items.filter(function(it){ return it.file&&rule.match(it.name); });
-      if(!files.length){ if(dlExpected(proj,kind)) missing.push({proj:proj,kind:kind,why:'no matching file'}); continue; }
+      if(!items){ if(!proj.docUrls[kind]&&dlExpected(proj,kind)) missing.push({proj:proj,kind:kind,why:'folder not found'}); continue; }
+      var _rej=(metaLinks[kind]&&metaLinks[kind].rejected)||[];
+      var files=items.filter(function(it){ return it.file&&rule.match(it.name)&&_rej.indexOf(it.id)<0; });
+      if(!files.length){ if(!proj.docUrls[kind]&&dlExpected(proj,kind)) missing.push({proj:proj,kind:kind,why:_rej.length?'only rejected file(s) match':'no matching file'}); continue; }
       files.sort(function(a,b){
         if(rule.pick==='version'){
           var d=dlVersionRank(b.name)-dlVersionRank(a.name);
@@ -15404,6 +15417,8 @@ async function dlFillLinks(quiet){
         return String(b.lastModifiedDateTime||'').localeCompare(String(a.lastModifiedDateTime||''));
       });
       var top=files[0],href;
+      // Re-evaluation landed on the same file it already linked — nothing to do.
+      if(metaLinks[kind]&&metaLinks[kind].src==='auto'&&metaLinks[kind].id===top.id&&proj.docUrls[kind]) continue;
       if(rule.extract){
         try{ href=await dlExtractUrlFile(drive,top); }
         catch(e){ console.warn(APP_VER+' Doc Linker: .url read failed for '+proj.name,e); errors++; continue; }
@@ -15412,10 +15427,11 @@ async function dlFillLinks(quiet){
         href=dlDocAspxUrl(top);
         if(!href) continue;
       }
+      var wasUpgrade=!!proj.docUrls[kind];
       if(rule.field==='__so__') soHref=href; else patch[rule.field]=href;
-      metaLinks[kind]={id:top.id,name:top.name,at:new Date().toISOString(),src:'auto'};
+      metaLinks[kind]={id:top.id,name:top.name,href:href,at:new Date().toISOString(),src:'auto',rejected:_rej.length?_rej:undefined};
       proj.docUrls[kind]=href;
-      filled.push({proj:proj,kind:kind,file:top.name});
+      filled.push({proj:proj,kind:kind,file:top.name,fileId:top.id,upgrade:wasUpgrade});
       wrote=true;
     }
     if(wrote){
@@ -15440,6 +15456,30 @@ async function runDocLinks(quiet){
   if(a.ok||!a.stats.total) fill=await dlFillLinks(quiet);
   if(fill.filled.length){ try{ buildAll(); }catch(e){ console.warn(APP_VER+' Doc Linker: rebuild after fill failed',e); } }
   if(!quiet) dlOpenPanel(a.review,a.stats,a.scan,fill);
+}
+
+// Pin a link (frozen forever) or reject it (clear field, remember the file so
+// the next run picks the next-best candidate or leaves it for manual paste).
+async function dlPinLink(proj,kind){
+  var m=(proj.docLinkMeta.links=proj.docLinkMeta.links||{})[kind]||{};
+  m.src='pinned'; m.href=proj.docUrls[kind]||m.href; proj.docLinkMeta.links[kind]=m;
+  await graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{DocLinkMeta:JSON.stringify(proj.docLinkMeta)});
+}
+async function dlRejectLink(proj,kind,fileId){
+  var links=proj.docLinkMeta.links=proj.docLinkMeta.links||{};
+  var m=links[kind]||{};
+  var rej=m.rejected||[]; if(fileId&&rej.indexOf(fileId)<0) rej.push(fileId);
+  links[kind]={src:'rejected',rejected:rej};
+  var rule=DL_DOC_RULES[kind];
+  var patch={DocLinkMeta:JSON.stringify(proj.docLinkMeta)};
+  if(rule&&rule.field&&rule.field!=='__so__') patch[rule.field]=null;
+  await graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',patch);
+  if(rule&&rule.field==='__so__'){
+    try{ await graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{ScopeOutline:null}); }
+    catch(e){ await graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{ScopeOutline:''}); }
+  }
+  proj.docUrls[kind]='';
+  try{ buildAll(); }catch(e){}
 }
 
 // ── Review panel ──
@@ -15485,11 +15525,37 @@ function dlOpenPanel(review,stats,scan,fill){
     h.textContent=title; body.appendChild(h); return h;
   }
   if(fill.filled.length){
-    _dlSection('Links written this run','#019425');
+    _dlSection('Links written this run \u2014 click a filename to verify; correct links need no action','#019425');
     fill.filled.forEach(x=>{
       const r=document.createElement('div');
-      r.style.cssText='padding:4px 0;font-size:11.5px;color:#1f2e3e;border-bottom:1px solid rgba(228,218,196,.55);';
-      r.innerHTML='<strong>'+String(x.proj.clientName||x.proj.name).replace(/</g,'&lt;')+'</strong> \u2014 '+(DL_LABELS[x.kind]||x.kind)+': <span style="color:#7a7a7a;">'+String(x.file).replace(/</g,'&lt;')+'</span>';
+      r.style.cssText='padding:5px 0;font-size:11.5px;color:#1f2e3e;border-bottom:1px solid rgba(228,218,196,.55);display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+      const txt=document.createElement('span'); txt.style.flex='1'; txt.style.minWidth='200px';
+      const href=x.proj.docUrls[x.kind]||'';
+      txt.innerHTML='<strong>'+String(x.proj.clientName||x.proj.name).replace(/</g,'&lt;')+'</strong> \u2014 '+(DL_LABELS[x.kind]||x.kind)+(x.upgrade?' <span style="color:#3b7fa8;font-size:9px;font-weight:700;">UPGRADED</span>':'')+': '
+        +(href?'<a href="'+href.replace(/"/g,'&quot;')+'" target="_blank" rel="noopener" style="color:#1f2e3e;text-decoration:underline;text-underline-offset:2px;">':'<span style="color:#7a7a7a;">')
+        +String(x.file).replace(/</g,'&lt;')+(href?'</a>':'</span>');
+      r.appendChild(txt);
+      const keepB=document.createElement('button');
+      keepB.style.cssText='padding:3px 9px;border:1px solid #019425;background:#fff;border-radius:5px;font-size:10px;color:#019425;cursor:pointer;font-family:inherit;font-weight:700;';
+      keepB.textContent='Pin';
+      keepB.dataset.tip='Freeze this link \u2014 the linker will never re-evaluate or replace it.';
+      keepB.addEventListener('click',()=>{
+        keepB.disabled=true;
+        dlPinLink(x.proj,x.kind)
+          .then(()=>{ keepB.textContent='Pinned'; keepB.style.background='#019425'; keepB.style.color='#fff'; wrongB.remove(); })
+          .catch(e=>{ keepB.disabled=false; alert('Pin failed: '+e.message); });
+      });
+      const wrongB=document.createElement('button');
+      wrongB.style.cssText='padding:3px 9px;border:1px solid #ac2828;background:#fff;border-radius:5px;font-size:10px;color:#ac2828;cursor:pointer;font-family:inherit;font-weight:700;';
+      wrongB.textContent='Wrong file';
+      wrongB.dataset.tip='Clear this link and exclude this file \u2014 the next run picks the next-best candidate, or leaves it for manual paste.';
+      wrongB.addEventListener('click',()=>{
+        wrongB.disabled=true;
+        dlRejectLink(x.proj,x.kind,x.fileId)
+          .then(()=>{ r.style.opacity='.45'; keepB.remove(); wrongB.textContent='Cleared \u2014 rerun Doc Links for next candidate'; wrongB.style.border='none'; wrongB.style.cursor='default'; })
+          .catch(e=>{ wrongB.disabled=false; alert('Reject failed: '+e.message); });
+      });
+      r.appendChild(keepB); r.appendChild(wrongB);
       body.appendChild(r);
     });
   }
