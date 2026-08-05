@@ -3055,7 +3055,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v913';
+const CORE_VERSION = 'v914';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11809,18 +11809,45 @@ document.addEventListener('pointerdown',e=>{
 // click opened. Reset on outside click, scroll, or choosing an entry.
 let _dlPickerOpen=false;
 let _dlPickerBtn=null; // v909 — the pill the hover-opened picker currently serves
-// v907/v908 — click-opened popovers cover the pill instead of floating below
-// it. The cursor is inside the popover from the first frame, so there is no
-// pill\u2192popover mouse travel during which a pointer-out or tooltip collapse
-// could close it. Shared by the document picker and dim-pill recovery.
+let _dlCloseT=null,_dlOverEl=null;
+document.addEventListener('pointermove',e=>{ _dlOverEl=e.target;
+  if(_dlPickerOpen){ const pop=document.getElementById('tt-upcoming-pop');
+    const safe=e.target&&((e.target.closest&&e.target.closest('[data-upcoming-pill]'))||(pop&&pop.contains(e.target))||e.target===_dlBridge);
+    if(safe){ clearTimeout(_dlCloseT); }
+  }
+},true);
+// v914 — click/hover-opened popovers sit just BELOW the pill (leaving it
+// visible and clickable) with a short gap, and an invisible hover bridge spans
+// that gap so the cursor is always over a live target on the way down — no
+// dead space where a pointer-out could fire. The submenu-bridge pattern; no
+// timer needed for the common straight-down move. Shared by picker + recovery.
+const _DL_GAP=6;
+let _dlBridge=null;
+function _dlClearBridge(){ if(_dlBridge){ _dlBridge.remove(); _dlBridge=null; } }
 function _dlOverlayOnPill(btn,pop){
   const r=btn.getBoundingClientRect();
-  pop.style.top=Math.max(8,r.top-8)+'px';
-  pop.style.left=Math.max(8,r.left-10)+'px';
+  pop.style.top=(r.bottom+_DL_GAP)+'px';
+  pop.style.left=Math.max(8,r.left-4)+'px';
   requestAnimationFrame(()=>{
     const pw=pop.offsetWidth,ph=pop.offsetHeight;
-    if(parseFloat(pop.style.left)+pw>window.innerWidth-10) pop.style.left=Math.max(8,window.innerWidth-pw-10)+'px';
-    if(parseFloat(pop.style.top)+ph>window.innerHeight-10) pop.style.top=Math.max(8,window.innerHeight-ph-10)+'px';
+    let left=parseFloat(pop.style.left), top=parseFloat(pop.style.top);
+    if(left+pw>window.innerWidth-10){ left=Math.max(8,window.innerWidth-pw-10); pop.style.left=left+'px'; }
+    // Flip above the pill if there isn't room below.
+    let below=true;
+    if(top+ph>window.innerHeight-10 && r.top-_DL_GAP-ph>8){ top=r.top-_DL_GAP-ph; pop.style.top=top+'px'; below=false; }
+    // Build the bridge: a thin invisible strip covering pill + gap, wide enough
+    // to keep the cursor over a hover target during the vertical move.
+    _dlClearBridge();
+    const br=document.createElement('div');
+    const bx=Math.min(left,r.left)-2, bw=Math.max(left+pw,r.right)-bx+2;
+    let by,bh;
+    if(below){ by=r.top-2; bh=(top)-(r.top)+4; }
+    else { by=top+ph-2; bh=(r.bottom)-(top+ph)+4; }
+    br.style.cssText='position:fixed;z-index:11999;background:transparent;left:'+bx+'px;top:'+by+'px;width:'+bw+'px;height:'+Math.max(6,bh)+'px;';
+    // Keep the popover open while over the bridge; entering the popover ends it.
+    br.addEventListener('pointerenter',()=>{ if(pop.style.display==='block'){ /* stay open */ } });
+    document.body.appendChild(br);
+    _dlBridge=br;
   });
 }
 // v905 — folder-browse + paste-link recovery, shared by the dim-pill popover
@@ -11858,13 +11885,13 @@ function _dlRecoveryUI(act,dlProj,type,pop){
           if(!/^https?:\/\//i.test(v)){ inp.style.borderColor='#ff6b5e'; return; }
           saveB.disabled=true; saveB.textContent='Saving\u2026';
           dlManualLink(dlProj,type,v)
-            .then(()=>{ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; })
+            .then(()=>{ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); })
             .catch(err=>{ saveB.disabled=false; saveB.textContent='Save'; alert('Save failed: '+err.message); });
         });
         const cancB=document.createElement('button');
         cancB.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.7);cursor:pointer;font-family:inherit;';
         cancB.textContent='Cancel';
-        cancB.addEventListener('pointerdown',x=>{ x.stopPropagation(); pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; });
+        cancB.addEventListener('pointerdown',x=>{ x.stopPropagation(); pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); });
         row.appendChild(saveB); row.appendChild(cancB);
         act.appendChild(inp); act.appendChild(row);
         setTimeout(()=>inp.focus(),0);
@@ -11966,7 +11993,7 @@ function _dlShowDocPicker(btn){
         } else {
           const u=dlDocAspxUrl(it); if(u) window.open(u,'_blank','noopener');
         }
-        pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null;
+        pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge();
       });
       act.appendChild(b);
     });
@@ -11977,7 +12004,7 @@ function _dlShowDocPicker(btn){
       ev.stopPropagation();
       const w=window.open('about:blank','_blank');
       dlFolderWebUrl(proj,type).then(u=>{ if(u&&w) w.location=u; else if(w) w.close(); }).catch(()=>{ if(w) w.close(); });
-      pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null;
+      pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge();
     });
     act.appendChild(fb);
   }).catch(e=>{
@@ -11993,13 +12020,14 @@ document.addEventListener('pointerdown',e=>{
     if((t==='mp'||t==='so')&&upBtn.dataset.dlProj){ if(!_dlPickerOpen||_dlPickerBtn!==upBtn) _dlShowDocPicker(upBtn); return; } // v909: hover already opened it on pointer devices; this covers touch
     const url=upBtn.dataset.upcomingUrl;
     if(url){ window.open(url,'_blank','noopener'); return; }
-    // v908 — a dim pill with recovery options pins and overlaps on click, so
+    // v908/v914 — a dim pill with recovery options pins on click and opens the
+    // recovery popover below it (with hover bridge), so
     // Browse-folder and Paste-link are reachable without a hover journey.
     const _rp=upBtn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===upBtn.dataset.dlProj):null;
     if(t!=='pt'&&_rp&&_rp.spFolderItemId){ _dlPickerOpen=true; _showUpcomingPop(upBtn); _dlOverlayOnPill(upBtn,pop); return; }
     _showUpcomingPop(upBtn); return;
   }
-  if(pop&&!pop.contains(e.target)){ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; }
+  if(pop&&!pop.contains(e.target)){ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null;  _dlClearBridge(); }
 },true);
 // v876: hover info for every pill on every screen — Sales chips and cards, Design and
 // Production rows, LC rows. Delegated, so it covers markup that has not been built yet.
@@ -12021,17 +12049,24 @@ document.addEventListener('pointerover',e=>{
 document.addEventListener('scroll',e=>{
   const pop=document.getElementById('tt-upcoming-pop');
   const t=e.target;
-  if(pop&&pop.style.display==='block'&&!(t instanceof Node&&pop.contains(t))){ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; }
+  if(pop&&pop.style.display==='block'&&!(t instanceof Node&&pop.contains(t))){ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null;  _dlClearBridge(); }
   if(typeof _hideAllTips==='function') _hideAllTips();
 },true);
 document.addEventListener('pointerout',e=>{
   const pop=document.getElementById('tt-upcoming-pop');
   if(_dlPickerOpen){
-    // v909 — hover-opened picker: close only when the pointer leaves BOTH the
-    // pill and the popover (so travelling from pill into the list is safe).
+    // v909/v914 — hover-opened picker: stay open while the pointer is over the
+    // pill, the popover, or the invisible bridge spanning the gap between them.
     const to=e.relatedTarget;
-    const stillOn=to&&to.closest&&(to.closest('[data-upcoming-pill]')||(pop&&pop.contains(to)));
-    if(!stillOn){ if(pop) pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; }
+    const stillOn=to&&((to.closest&&to.closest('[data-upcoming-pill]'))||(pop&&pop.contains(to))||to===_dlBridge);
+    if(!stillOn){
+      // Backstop grace period for a fast diagonal exit that skips all three.
+      clearTimeout(_dlCloseT);
+      _dlCloseT=setTimeout(()=>{
+        const overSafe=_dlOverEl&&((_dlOverEl.closest&&_dlOverEl.closest('[data-upcoming-pill]'))||(pop&&pop.contains(_dlOverEl))||_dlOverEl===_dlBridge);
+        if(!overSafe){ if(pop) pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); }
+      },120);
+    }
     return;
   }
   const btn=e.target.closest&&e.target.closest('[data-upcoming-pill]');
