@@ -3054,7 +3054,13 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v902';
+const CORE_VERSION = 'v905';
+// Stamp the version badges the moment the constant exists — the auth overlay
+// shows before init runs, and the splash must always carry the version (the
+// overlay blocks the topbar when testing locally). Markup badges are empty by
+// design (v900): only CORE_VERSION ever paints them, so no stale flash.
+(()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
+       const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 'use strict';
 
 // ════════════════════════════════════════════════  PHASE LOAD PROFILES
@@ -11779,40 +11785,9 @@ document.addEventListener('pointerdown',e=>{
 },true);
 // v876: every pill explains itself on hover, whether or not it has a link behind it.
 // The footer line is the only difference — a live link says so, a dead one says why.
-function _showUpcomingPop(btn){
-  const type=btn.dataset.upcomingPill;
-  const pop=document.getElementById('tt-upcoming-pop');
-  if(!pop)return;
-  const info=UPCOMING_INFO[type]||{label:type.toUpperCase(),desc:'Integration coming soon.'};
-  const hasUrl=!!btn.dataset.upcomingUrl;
-  const permWrap=document.getElementById('tt-up-permits');
-  if(permWrap){ permWrap.classList.remove('on'); permWrap.innerHTML=''; }
-  pop.classList.remove('pt-wide');
-  const descEl=document.getElementById('tt-up-desc'); descEl.style.display='';
-  document.getElementById('tt-up-label').textContent=info.label;
-  descEl.textContent=info.desc;
-  const soon=pop.querySelector('.tt-up-soon');
-  soon.style.display='';
-  // v879: PT pill renders the live permit status panel when the mirror has rows
-  if(type==='pt'&&_renderPtPanel(btn)){
-    pop.classList.add('pt-wide');
-    document.getElementById('tt-up-label').textContent='Permit & Zoning \u2014 '+(btn.dataset.ptProject||'');
-    descEl.style.display='none';
-    soon.textContent='Click to open tracker'; soon.style.color='rgba(150,225,180,.85)';
-  }
-  else if(type==='pt'){
-    soon.textContent=hasUrl?'No applications on record \u00b7 click opens tracker':'Coming soon';
-    soon.style.color=hasUrl?'rgba(150,225,180,.85)':'rgba(255,200,80,.80)';
-  }
-  else if(hasUrl){ soon.textContent='Click to open'; soon.style.color='rgba(150,225,180,.85)'; }
-  else { soon.textContent='No link yet'; soon.style.color='rgba(255,150,140,.80)'; }
-  // v901 — dim pills on anchored projects offer recovery: browse the folder
-  // where the document belongs, or paste its link right here.
-  const act=document.getElementById('tt-up-dl-actions');
-  if(act){
-    act.innerHTML='';
-    const dlProj=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
-    if(!hasUrl&&type!=='pt'&&dlProj&&dlProj.spFolderItemId){
+// v905 — folder-browse + paste-link recovery, shared by the dim-pill popover
+// and the document picker's empty state.
+function _dlRecoveryUI(act,dlProj,type,pop){
       act.style.cssText='margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;gap:5px;';
       const openB=document.createElement('button');
       openB.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.85);cursor:pointer;font-family:inherit;text-align:left;';
@@ -11857,6 +11832,43 @@ function _showUpcomingPop(btn){
         setTimeout(()=>inp.focus(),0);
       });
       act.appendChild(pasteB);
+}
+function _showUpcomingPop(btn){
+  const type=btn.dataset.upcomingPill;
+  const pop=document.getElementById('tt-upcoming-pop');
+  if(!pop)return;
+  const info=UPCOMING_INFO[type]||{label:type.toUpperCase(),desc:'Integration coming soon.'};
+  const hasUrl=!!btn.dataset.upcomingUrl;
+  const permWrap=document.getElementById('tt-up-permits');
+  if(permWrap){ permWrap.classList.remove('on'); permWrap.innerHTML=''; }
+  pop.classList.remove('pt-wide');
+  const descEl=document.getElementById('tt-up-desc'); descEl.style.display='';
+  document.getElementById('tt-up-label').textContent=info.label;
+  descEl.textContent=info.desc;
+  const soon=pop.querySelector('.tt-up-soon');
+  soon.style.display='';
+  // v879: PT pill renders the live permit status panel when the mirror has rows
+  if(type==='pt'&&_renderPtPanel(btn)){
+    pop.classList.add('pt-wide');
+    document.getElementById('tt-up-label').textContent='Permit & Zoning \u2014 '+(btn.dataset.ptProject||'');
+    descEl.style.display='none';
+    soon.textContent='Click to open tracker'; soon.style.color='rgba(150,225,180,.85)';
+  }
+  else if(type==='pt'){
+    soon.textContent=hasUrl?'No applications on record \u00b7 click opens tracker':'Coming soon';
+    soon.style.color=hasUrl?'rgba(150,225,180,.85)':'rgba(255,200,80,.80)';
+  }
+  else if(hasUrl&&(type==='mp'||type==='so')&&btn.dataset.dlProj){ soon.textContent='Click to choose from folder'; soon.style.color='rgba(150,225,180,.85)'; }
+  else if(hasUrl){ soon.textContent='Click to open'; soon.style.color='rgba(150,225,180,.85)'; }
+  else { soon.textContent='No link yet'; soon.style.color='rgba(255,150,140,.80)'; }
+  // v901 — dim pills on anchored projects offer recovery: browse the folder
+  // where the document belongs, or paste its link right here.
+  const act=document.getElementById('tt-up-dl-actions');
+  if(act){
+    act.innerHTML='';
+    const dlProj=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
+    if(!hasUrl&&type!=='pt'&&dlProj&&dlProj.spFolderItemId){
+      _dlRecoveryUI(act,dlProj,type,pop);
     } else { act.style.cssText='display:none;'; }
   }
   pop.style.display='block';
@@ -11867,10 +11879,75 @@ function _showUpcomingPop(btn){
     if(r.left+pw>window.innerWidth-10) pop.style.left=Math.max(8,window.innerWidth-pw-10)+'px';
   });
 }
+// v905 — MP and SO can legitimately have several documents; the pill lists the
+// folder's actual contents live instead of assuming one choice. Newest first;
+// SO ordered by version rank (V3 > V2, FINAL on top, DRAFT last), MP by date.
+function _dlShowDocPicker(btn){
+  const type=btn.dataset.upcomingPill;
+  const proj=PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj);
+  const pop=document.getElementById('tt-upcoming-pop');
+  if(!pop||!proj){ const u=btn.dataset.upcomingUrl; if(u) window.open(u,'_blank','noopener'); return; }
+  _showUpcomingPop(btn);
+  const act=document.getElementById('tt-up-dl-actions');
+  const soon=pop.querySelector('.tt-up-soon');
+  if(!act) return;
+  act.style.cssText='margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;gap:5px;max-height:210px;overflow:auto;';
+  act.innerHTML='<div style="font-size:10px;color:rgba(255,255,255,.55);">Scanning folder\u2026</div>';
+  dlListForKind(proj,type).then(items=>{
+    const rule=DL_DOC_RULES[type];
+    const files=(items||[]).filter(it=>it.file&&rule.match(it.name));
+    files.sort((a,b)=>{
+      if(rule.pick==='version'){ const d=dlVersionRank(b.name)-dlVersionRank(a.name); if(d) return d; }
+      return String(b.lastModifiedDateTime||'').localeCompare(String(a.lastModifiedDateTime||''));
+    });
+    act.innerHTML='';
+    if(!files.length){
+      if(soon){ soon.textContent='No '+(DL_LABELS[type]||type).toLowerCase()+' detected'; soon.style.color='rgba(255,150,140,.80)'; }
+      _dlRecoveryUI(act,proj,type,pop);
+      return;
+    }
+    if(soon){ soon.textContent=files.length+' document'+(files.length===1?'':'s')+' \u2014 newest first'; soon.style.color='rgba(150,225,180,.85)'; }
+    files.slice(0,10).forEach(it=>{
+      const b=document.createElement('button');
+      b.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.20);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.88);cursor:pointer;font-family:inherit;text-align:left;line-height:1.35;';
+      const d=(it.lastModifiedDateTime||'').slice(0,10);
+      b.innerHTML=String(it.name).replace(/</g,'&lt;')+(d?' <span style="color:rgba(255,255,255,.40);font-size:9px;">'+d+'</span>':'');
+      b.addEventListener('pointerdown',ev=>{
+        ev.stopPropagation();
+        if(type==='mp'){
+          const w=window.open('about:blank','_blank');
+          dlCustomersDriveId().then(dr=>dlExtractUrlFile(dr,it))
+            .then(u=>{ if(u&&w) w.location=u; else if(w){ w.close(); alert('Shortcut had no address inside.'); } })
+            .catch(err=>{ if(w) w.close(); alert('Could not read shortcut: '+err.message); });
+        } else {
+          const u=dlDocAspxUrl(it); if(u) window.open(u,'_blank','noopener');
+        }
+        pop.style.display='none';
+      });
+      act.appendChild(b);
+    });
+    const fb=document.createElement('button');
+    fb.style.cssText='padding:3px 8px;border:none;background:transparent;font-size:9.5px;color:rgba(255,255,255,.45);cursor:pointer;font-family:inherit;text-align:left;';
+    fb.textContent='Browse folder \u2197';
+    fb.addEventListener('pointerdown',ev=>{
+      ev.stopPropagation();
+      const w=window.open('about:blank','_blank');
+      dlFolderWebUrl(proj,type).then(u=>{ if(u&&w) w.location=u; else if(w) w.close(); }).catch(()=>{ if(w) w.close(); });
+    });
+    act.appendChild(fb);
+  }).catch(e=>{
+    act.innerHTML='<div style="font-size:10px;color:rgba(255,150,140,.85);">Folder scan failed \u2014 '+String(e.message).replace(/</g,'&lt;')+'</div>';
+  });
+}
 document.addEventListener('pointerdown',e=>{
   const upBtn=e.target.closest('[data-upcoming-pill]');
   const pop=document.getElementById('tt-upcoming-pop');
-  if(upBtn){ e.stopPropagation(); const url=upBtn.dataset.upcomingUrl; if(url) window.open(url,'_blank','noopener'); else _showUpcomingPop(upBtn); return; }
+  if(upBtn){
+    e.stopPropagation();
+    const t=upBtn.dataset.upcomingPill;
+    if((t==='mp'||t==='so')&&upBtn.dataset.dlProj){ _dlShowDocPicker(upBtn); return; }
+    const url=upBtn.dataset.upcomingUrl; if(url) window.open(url,'_blank','noopener'); else _showUpcomingPop(upBtn); return;
+  }
   if(pop&&!pop.contains(e.target)) pop.style.display='none';
 },true);
 // v876: hover info for every pill on every screen — Sales chips and cards, Design and
@@ -11879,6 +11956,16 @@ document.addEventListener('pointerover',e=>{
   const btn=e.target.closest&&e.target.closest('[data-upcoming-pill]');
   if(btn) _showUpcomingPop(btn);
 });
+// v903 — hover surfaces are position-anchored to elements that scroll away
+// beneath them. Any scroll (page or inner container) closes them; re-hovering
+// rebuilds at the correct position. Scrolling inside the popover itself
+// (e.g. while pasting a link) does not close it.
+document.addEventListener('scroll',e=>{
+  const pop=document.getElementById('tt-upcoming-pop');
+  const t=e.target;
+  if(pop&&pop.style.display==='block'&&!(t instanceof Node&&pop.contains(t))) pop.style.display='none';
+  if(typeof _hideAllTips==='function') _hideAllTips();
+},true);
 document.addEventListener('pointerout',e=>{
   const btn=e.target.closest&&e.target.closest('[data-upcoming-pill]');
   if(!btn) return;
@@ -15453,6 +15540,10 @@ async function dlFillLinks(quiet){
     // Which slots does this pass own? Empty ones, plus its own past auto links
     // (re-evaluated for upgrades). Manual, pinned, and hand-edited links: never.
     var kinds=Object.keys(DL_DOC_RULES).filter(function(k){
+      // v903 — Matterport and Scope Outline are design-phase documents; a lead
+      // has neither, so don't spend Graph calls looking. Matching starts the
+      // moment the project enters Design (DA signed).
+      if((k==='mp'||k==='so')&&proj.isLead) return false;
       var cur=proj.docUrls[k],m=metaLinks[k];
       if(!cur) return true;
       if(m&&m.src==='auto'){
@@ -15583,6 +15674,18 @@ async function dlManualLink(proj,kind,href){
   if(field==='__so__') await dlPatchSoLink(proj._spItemId,href);
   proj.docUrls=proj.docUrls||{}; proj.docUrls[kind]=href;
   try{ buildAll(); }catch(e){}
+}
+
+// Live folder listing for one project + document kind (alias-aware). Used by
+// the pill document picker; returns raw driveItems or null if no folder found.
+async function dlListForKind(proj,kind){
+  var rule=DL_DOC_RULES[kind];
+  if(!rule||!proj.spFolderItemId) return null;
+  var drive=await dlCustomersDriveId();
+  for(var i=0;i<rule.paths.length;i++){
+    try{ return await dlListSub(drive,proj.spFolderItemId,rule.paths[i]); }catch(e){}
+  }
+  return null;
 }
 
 // ── Review panel ──
