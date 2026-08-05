@@ -3054,7 +3054,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v905';
+const CORE_VERSION = 'v906';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11785,6 +11785,9 @@ document.addEventListener('pointerdown',e=>{
 },true);
 // v876: every pill explains itself on hover, whether or not it has a link behind it.
 // The footer line is the only difference — a live link says so, a dead one says why.
+// v906 — click-opened pickers pin the popover: hover-out must not close what a
+// click opened. Reset on outside click, scroll, or choosing an entry.
+let _dlPickerOpen=false;
 // v905 — folder-browse + paste-link recovery, shared by the dim-pill popover
 // and the document picker's empty state.
 function _dlRecoveryUI(act,dlProj,type,pop){
@@ -11820,13 +11823,13 @@ function _dlRecoveryUI(act,dlProj,type,pop){
           if(!/^https?:\/\//i.test(v)){ inp.style.borderColor='#ff6b5e'; return; }
           saveB.disabled=true; saveB.textContent='Saving\u2026';
           dlManualLink(dlProj,type,v)
-            .then(()=>{ pop.style.display='none'; })
+            .then(()=>{ pop.style.display='none'; _dlPickerOpen=false; })
             .catch(err=>{ saveB.disabled=false; saveB.textContent='Save'; alert('Save failed: '+err.message); });
         });
         const cancB=document.createElement('button');
         cancB.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.7);cursor:pointer;font-family:inherit;';
         cancB.textContent='Cancel';
-        cancB.addEventListener('pointerdown',x=>{ x.stopPropagation(); pop.style.display='none'; });
+        cancB.addEventListener('pointerdown',x=>{ x.stopPropagation(); pop.style.display='none'; _dlPickerOpen=false; });
         row.appendChild(saveB); row.appendChild(cancB);
         act.appendChild(inp); act.appendChild(row);
         setTimeout(()=>inp.focus(),0);
@@ -11883,6 +11886,7 @@ function _showUpcomingPop(btn){
 // folder's actual contents live instead of assuming one choice. Newest first;
 // SO ordered by version rank (V3 > V2, FINAL on top, DRAFT last), MP by date.
 function _dlShowDocPicker(btn){
+  _dlPickerOpen=true;
   const type=btn.dataset.upcomingPill;
   const proj=PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj);
   const pop=document.getElementById('tt-upcoming-pop');
@@ -11922,7 +11926,7 @@ function _dlShowDocPicker(btn){
         } else {
           const u=dlDocAspxUrl(it); if(u) window.open(u,'_blank','noopener');
         }
-        pop.style.display='none';
+        pop.style.display='none'; _dlPickerOpen=false;
       });
       act.appendChild(b);
     });
@@ -11933,6 +11937,7 @@ function _dlShowDocPicker(btn){
       ev.stopPropagation();
       const w=window.open('about:blank','_blank');
       dlFolderWebUrl(proj,type).then(u=>{ if(u&&w) w.location=u; else if(w) w.close(); }).catch(()=>{ if(w) w.close(); });
+      pop.style.display='none'; _dlPickerOpen=false;
     });
     act.appendChild(fb);
   }).catch(e=>{
@@ -11948,11 +11953,12 @@ document.addEventListener('pointerdown',e=>{
     if((t==='mp'||t==='so')&&upBtn.dataset.dlProj){ _dlShowDocPicker(upBtn); return; }
     const url=upBtn.dataset.upcomingUrl; if(url) window.open(url,'_blank','noopener'); else _showUpcomingPop(upBtn); return;
   }
-  if(pop&&!pop.contains(e.target)) pop.style.display='none';
+  if(pop&&!pop.contains(e.target)){ pop.style.display='none'; _dlPickerOpen=false; }
 },true);
 // v876: hover info for every pill on every screen — Sales chips and cards, Design and
 // Production rows, LC rows. Delegated, so it covers markup that has not been built yet.
 document.addEventListener('pointerover',e=>{
+  if(_dlPickerOpen) return;
   const btn=e.target.closest&&e.target.closest('[data-upcoming-pill]');
   if(btn) _showUpcomingPop(btn);
 });
@@ -11963,10 +11969,11 @@ document.addEventListener('pointerover',e=>{
 document.addEventListener('scroll',e=>{
   const pop=document.getElementById('tt-upcoming-pop');
   const t=e.target;
-  if(pop&&pop.style.display==='block'&&!(t instanceof Node&&pop.contains(t))) pop.style.display='none';
+  if(pop&&pop.style.display==='block'&&!(t instanceof Node&&pop.contains(t))){ pop.style.display='none'; _dlPickerOpen=false; }
   if(typeof _hideAllTips==='function') _hideAllTips();
 },true);
 document.addEventListener('pointerout',e=>{
+  if(_dlPickerOpen) return; // click-opened picker: only outside click / scroll / selection closes it
   const btn=e.target.closest&&e.target.closest('[data-upcoming-pill]');
   if(!btn) return;
   const to=e.relatedTarget;
@@ -15586,7 +15593,7 @@ async function dlFillLinks(quiet){
       }
       var wasUpgrade=!!proj.docUrls[kind];
       if(rule.field==='__so__') soHref=href; else patch[rule.field]=href;
-      metaLinks[kind]={id:top.id,name:top.name,href:href,at:new Date().toISOString(),src:'auto',rejected:_rej.length?_rej:undefined};
+      metaLinks[kind]={id:top.id,name:top.name,href:href,at:new Date().toISOString(),src:'auto',n:files.length,rejected:_rej.length?_rej:undefined};
       proj.docUrls[kind]=href;
       filled.push({proj:proj,kind:kind,file:top.name,fileId:top.id,upgrade:wasUpgrade});
       wrote=true;
@@ -15740,9 +15747,11 @@ function dlOpenPanel(review,stats,scan,fill){
     const badge=tag==='pinned'?' <span style="color:#019425;font-size:9px;font-weight:700;">PINNED</span>'
       :tag==='manual'?' <span style="color:#a3a3a3;font-size:9px;font-weight:700;">MANUAL</span>'
       :tag==='upgrade'?' <span style="color:#3b7fa8;font-size:9px;font-weight:700;">UPGRADED</span>':'';
+    const _mMeta=((proj.docLinkMeta||{}).links||{})[kind];
+    const _multi=(_mMeta&&_mMeta.n>1)?' <span style="color:#3b7fa8;font-size:9px;font-weight:700;" title="The pill on the board lists all of them, newest first.">+'+(_mMeta.n-1)+' MORE IN FOLDER</span>':'';
     txt.innerHTML='<strong>'+String(proj.clientName||proj.name).replace(/</g,'&lt;')+'</strong> \u2014 '+(DL_LABELS[kind]||kind)+badge+': '
       +(href?'<a href="'+href.replace(/"/g,'&quot;')+'" target="_blank" rel="noopener" style="color:#1f2e3e;text-decoration:underline;text-underline-offset:2px;">':'<span style="color:#7a7a7a;">')
-      +String(fileName||'(link)').replace(/</g,'&lt;')+(href?'</a>':'</span>');
+      +String(fileName||'(link)').replace(/</g,'&lt;')+(href?'</a>':'</span>')+_multi;
     r.appendChild(txt);
     const wrongB=document.createElement('button');
     if(tag!=='pinned'){
@@ -15871,11 +15880,11 @@ function dlOpenPanel(review,stats,scan,fill){
     });
     const noneBtn=document.createElement('button');
     noneBtn.style.cssText='padding:5px 10px;border:1px solid #d4d1cc;background:transparent;border-radius:6px;font-size:11px;color:#7a7a7a;cursor:pointer;font-family:inherit;';
-    noneBtn.textContent='No folder yet';
+    noneBtn.textContent='No folder \u2014 never ask';
     noneBtn.addEventListener('click',()=>{
       noneBtn.disabled=true;
       dlWriteNoFolder(item.proj)
-        .then(()=>{ row.style.opacity='.45'; btns.querySelectorAll('button').forEach(x=>x.disabled=true); sub.textContent='Marked "no folder" \u2014 excluded from future runs. Use "Re-check these" in this panel if that ever changes.'; })
+        .then(()=>{ row.style.opacity='.45'; btns.querySelectorAll('button').forEach(x=>x.disabled=true); sub.textContent='Dismissed permanently \u2014 this project is excluded from all future runs. "Re-check these" in this panel is the only way back.'; })
         .catch(e=>{ noneBtn.disabled=false; alert('Write failed: '+e.message); });
     });
     btns.appendChild(noneBtn);
