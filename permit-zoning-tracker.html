@@ -94,7 +94,8 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .badge{font-size:8.5px;font-weight:800;letter-spacing:.05em;border-radius:3px;padding:2px 5px;flex-shrink:0;}
 .badge.ez{background:rgba(216,182,79,.20);color:#8a6c14;border:1px solid rgba(216,182,79,.5);}
 .badge.hist{background:rgba(155,97,39,.12);color:#9b6127;border:1px solid rgba(155,97,39,.4);}
-.cmt-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--ts);border:1px solid var(--bdr);border-radius:10px;padding:1px 7px;flex-shrink:0;} /* v35 */
+.cmt-badge{display:inline-flex;align-items:center;justify-content:center;gap:3px;width:38px;font-size:10px;font-weight:700;color:var(--ts);border:1px solid var(--bdr);border-radius:10px;padding:1px 0;flex-shrink:0;} /* v35; v38: fixed width */
+.cmt-badge.none{visibility:hidden;} /* v38: placeholder holds the slot so the timeline never shifts */
 .app-jur{font-size:12px;color:var(--ts);flex-shrink:0;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* Phase track */
@@ -174,6 +175,16 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .bin-off{background:var(--st-over);}
 .bin-na{background:none;color:var(--tm);border:1px solid var(--bdr);}
 .abs-note-pending{font-size:10.5px;color:var(--tm);font-style:italic;}
+/* v39: check-in notes — the Absolutes ritual's written trace */
+.abs-note-cell{position:relative;min-width:220px;padding-right:34px!important;}
+.abs-note-body{font-size:12px;line-height:1.45;white-space:pre-wrap;}
+.abs-note-hint{color:var(--tm);font-style:italic;font-size:11px;}
+.abs-note-meta{font-size:9.5px;color:var(--ts);margin-top:2px;}
+.abs-note-pencil{position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--tm);padding:3px;border-radius:4px;opacity:0;transition:opacity .12s;line-height:0;}
+.abs-note-cell:hover .abs-note-pencil{opacity:1;}
+.abs-note-pencil:hover{color:var(--navy);background:rgba(0,0,0,.07);}
+.abs-note-pencil.has-note{opacity:.6;color:#8a6c14;}
+.abs-note-edit{width:100%;min-height:52px;font-family:inherit;font-size:12px;line-height:1.45;padding:6px 8px;border:1px solid var(--gold);border-radius:5px;outline:none;resize:vertical;background:#fffdf6;}
 
 /* ── ADMIN PANEL ── */
 #adminPanel{position:fixed;top:calc(var(--app-h) + 8px);right:14px;z-index:450;background:var(--navy);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:16px 18px;width:320px;box-shadow:0 10px 32px rgba(0,0,0,.4);display:none;}
@@ -202,7 +213,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v37</div>
+    <div class="auth-version" id="authVersionBadge">v39</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -213,7 +224,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v37</div>
+  <div class="proto-badge" id="versionBadge">v39</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -274,7 +285,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v37';
+const CORE_VERSION = 'v39';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -318,6 +329,7 @@ let _spListOk=true;
 let _view='board';
 let _deepLinked=false;
 let DESIGNER_BY_PROJECT={}; // normalized project name → designer of record (read-only borrow from CORE_Projects GanttData)
+let CHECKINS={}; // v39: weekly check-in notes — normalized project → {note,by,at}; lives in CORE_Config 'pz_checkins'
 
 /* ═══ MSAL ═══ */
 const msalApp = new msal.PublicClientApplication({
@@ -425,6 +437,7 @@ async function loadConfig(){
     const k=(it.fields&&(it.fields.Title||it.fields.Key))||'';
     if(k) _cfgRows[k]={id:it.id, value:(it.fields.Value!=null?it.fields.Value:(it.fields.Value0!=null?it.fields.Value0:''))};
   });
+  try{ CHECKINS=_cfgRows.pz_checkins&&_cfgRows.pz_checkins.value?JSON.parse(_cfgRows.pz_checkins.value):{}; }catch(e2){ CHECKINS={}; } // v39
   const key=_cfgRows.TrelloApiKey?_cfgRows.TrelloApiKey.value:'';
   const tok=_cfgRows.TrelloToken?_cfgRows.TrelloToken.value:'';
   const brd=_cfgRows.TrelloPermitBoardId?_cfgRows.TrelloPermitBoardId.value:'';
@@ -456,6 +469,32 @@ async function loadProjectDesigners(){
       if(dn) DESIGNER_BY_PROJECT[normName(name)]=dn;
     });
   }catch(e){ console.warn('[designers]',e); }
+}
+async function saveCheckins(){ // v39
+  setSave('syncing','Saving note…');
+  try{ await setConfigRow('pz_checkins',JSON.stringify(CHECKINS)); setSave('ok','Saved'); }
+  catch(e){ console.error('[checkins]',e); setSave('err','Note not saved'); }
+}
+function _checkinEdit(cell){
+  const proj=cell.dataset.proj;
+  const cur=CHECKINS[proj]&&CHECKINS[proj].note||'';
+  cell.innerHTML='<textarea class="abs-note-edit">'+esc(cur)+'</textarea>';
+  const ta=cell.querySelector('textarea');
+  ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+  ta.addEventListener('keydown',ev=>{
+    if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); ta.blur(); }
+    if(ev.key==='Escape'){ ta.value=cur; ta.blur(); }
+  });
+  ta.addEventListener('blur',()=>{
+    const v=ta.value.trim();
+    if(v!==cur){
+      const acct=msalApp.getActiveAccount();
+      if(v) CHECKINS[proj]={note:v,by:(acct&&acct.name)||'',at:new Date().toISOString()};
+      else delete CHECKINS[proj];
+      saveCheckins();
+    }
+    renderAbsolutes();
+  });
 }
 async function setConfigRow(key,val){
   if(_cfgRows[key]){
@@ -739,9 +778,10 @@ function appRowHtml(a){
   else if(a.state==='closed') mid='<span class="state-chip state-closed">'+esc(a.stage)+'</span><div class="hsp"></div>';
   else if(a.state==='unknown') mid='<span class="state-chip state-unknown">'+esc(a.stage||'No stage')+'</span><div class="hsp"></div>';
   else mid=phaseTrackHtml(a);
-  const cmt=a.comments&&a.comments.length?('<span class="cmt-badge" title="'+a.comments.length+' comment'+(a.comments.length>1?'s':'')+' — open for details">'
+  const _n=a.comments?a.comments.length:0; // v38: the slot always renders — invisible when empty — so rows align
+  const cmt='<span class="cmt-badge'+(_n?'':' none')+'"'+(_n?' title="'+_n+' comment'+(_n>1?'s':'')+' — open for details"':'')+'>'
     +'<svg width="10" height="10" viewBox="0 0 16 16"><path d="M2 3h12v8H6l-4 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>'
-    +a.comments.length+'</span>'):''; // v35: comments (not general activity) get a presence badge
+    +(_n||'')+'</span>';
   return '<div class="app-row" onclick="openDrawer(\''+esc(a.project).replace(/'/g,"\\'")+'\')">'+
     '<span class="track-chip '+trackChipCls(a.track)+'">'+esc(a.track)+'</span>'+badges+cmt+
     mid+'<span class="app-jur">'+esc(a.jur||'')+'</span></div>';
@@ -845,7 +885,7 @@ function renderAbsolutes(){
       })();
       const ae=(function(){ // v34: Arch/Eng dependency — name of who owns it + where it stands
         const AE=stageRank('With Arch/Eng');
-        const rel=apps.filter(a2=>String(a2.track).toLowerCase().indexOf('zon')===-1); // permit + engineering tracks
+        const rel=apps.slice(); // v39: all tracks — zoning applications carry their own arch/eng dependency too
         if(!rel.length) return '<span class="bin bin-na">\u2014</span>';
         const nm=(function(){ const st=[]; rel.forEach(a2=>{ const o=a2.engOwner||a2.cardOwner; if(o&&st.indexOf(o)===-1) st.push(o); }); return st.join(' / '); })();
         const nmHtml=nm?'<div style="font-size:11px;margin-bottom:2px;">'+esc(nm)+'</div>':'';
@@ -855,10 +895,21 @@ function renderAbsolutes(){
         return nmHtml+'<span class="bin bin-na">\u2014</span>';
       })();
       return '<tr><td class="abs-proj">'+esc(n)+'</td><td>'+esc(owner)+'</td><td>'+ae+'</td><td>'+bin(z)+'</td><td>'+bin(p)+'</td><td>'+bin(apps)+'</td>'+
-        '<td class="abs-note-pending">weekly notes \u2014 storage home pending (spec \u00A76.3)</td></tr>';
+        '<td class="abs-note-cell" data-proj="'+esc(normName(n))+'">'+(function(){
+          const ci=CHECKINS[normName(n)];
+          const meta=ci?'<div class="abs-note-meta">'+esc(ci.by||'')+(ci.at?' \u00b7 '+fmtDate(new Date(ci.at)):'')+'</div>':'';
+          return '<div class="abs-note-body">'+(ci?esc(ci.note):'<span class="abs-note-hint">Add note</span>')+'</div>'+meta+
+            '<button class="abs-note-pencil'+(ci?' has-note':'')+'" title="Edit check-in note"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button>';
+        })()+'</td></tr>';
     }).join('')+'</tbody></table>';
 }
 
+document.addEventListener('click',e=>{ // v39: check-in note editing
+  const pen=e.target.closest&&e.target.closest('.abs-note-pencil');
+  if(!pen) return;
+  const cell=pen.closest('.abs-note-cell');
+  if(cell&&!cell.querySelector('textarea')) _checkinEdit(cell);
+});
 function setView(v){
   _view=v;
   document.querySelectorAll('.view-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
