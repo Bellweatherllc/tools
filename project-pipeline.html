@@ -3054,7 +3054,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v895';
+const CORE_VERSION = 'v896';
 'use strict';
 
 // ════════════════════════════════════════════════  PHASE LOAD PROFILES
@@ -15202,12 +15202,14 @@ async function dlFolderInventory(){
   const drive=await dlCustomersDriveId();
   const root=await graphGetAll('https://graph.microsoft.com/v1.0/drives/'+drive+'/root/children?$select=id,name,folder');
   const phases=root.filter(c=>c.folder&&!/^template$/i.test((c.name||'').trim())&&!/^forms$/i.test((c.name||'').trim()));
-  const inv=[];
+  const inv=[]; const scan={driveId:drive,rootChildren:root.map(c=>c.name+(c.folder?'/':'')),phases:[]};
   for(const ph of phases){
     const kids=await graphGetAll('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+ph.id+'/children?$select=id,name,folder');
-    kids.forEach(k=>{ if(k.folder) inv.push({id:k.id,name:k.name,phase:ph.name}); });
+    let n=0; kids.forEach(k=>{ if(k.folder){ inv.push({id:k.id,name:k.name,phase:ph.name}); n++; } });
+    scan.phases.push({name:ph.name,folders:n,children:kids.length});
   }
-  return inv;
+  console.log(APP_VER+' Doc Linker scan:',JSON.stringify(scan,null,1));
+  return {inv:inv,scan:scan};
 }
 
 function dlNorm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim(); }
@@ -15262,22 +15264,30 @@ async function dlWriteNoFolder(proj){
   proj.spFolderItemId=''; proj.docLinkMeta=meta;
 }
 
-function dlUnanchored(){
+// includeFlagged=true (manual runs) re-offers projects previously marked
+// "no folder yet" — picking a folder clears the flag. The quiet load pass
+// keeps skipping them so it stays cheap.
+function dlUnanchored(includeFlagged){
   return PROJECTS.filter(p=>p._spItemId&&!p.spFolderItemId
-    &&!(p.docLinkMeta&&p.docLinkMeta.noFolder)
+    &&(includeFlagged||!(p.docLinkMeta&&p.docLinkMeta.noFolder))
     &&!/^Slot\b/i.test(p.name||''));
 }
 
 // quiet=true: load-time pass — auto-writes unique matches, never opens UI.
 // quiet=false: button-triggered — auto-writes, then opens review for the rest.
 async function runFolderAnchorBackfill(quiet){
-  const pending=dlUnanchored();
-  if(!pending.length){ if(!quiet) dlOpenPanel([],{auto:0,total:0}); return; }
-  let inv;
-  try{ inv=await dlFolderInventory(); }
+  const pending=dlUnanchored(!quiet);
+  if(!pending.length){ if(!quiet) dlOpenPanel([],{auto:0,total:0},null); return; }
+  let inv,scan;
+  try{ const res=await dlFolderInventory(); inv=res.inv; scan=res.scan; }
   catch(e){
     console.warn(APP_VER+' Doc Linker: inventory failed —',e);
     if(!quiet) alert('Doc Links: could not read the Customers library.\n'+e.message);
+    return;
+  }
+  if(!inv.length){
+    console.warn(APP_VER+' Doc Linker: inventory came back EMPTY — see scan above.');
+    if(!quiet) dlOpenPanel([],{auto:0,total:pending.length},scan);
     return;
   }
   const review=[]; let auto=0;
@@ -15291,13 +15301,13 @@ async function runFolderAnchorBackfill(quiet){
     }
   }
   console.log(APP_VER+' Doc Linker: '+auto+' anchor(s) written, '+review.length+' queued for review, '+pending.length+' unanchored project(s) considered.');
-  if(!quiet) dlOpenPanel(review,{auto:auto,total:pending.length});
+  if(!quiet) dlOpenPanel(review,{auto:auto,total:pending.length},scan);
 }
 
 // ── Review panel ──
 function dlClosePanel(){ const p=document.getElementById('dlPanel'); if(p) p.remove(); }
 
-function dlOpenPanel(review,stats){
+function dlOpenPanel(review,stats,scan){
   dlClosePanel();
   const wrap=document.createElement('div'); wrap.id='dlPanel';
   wrap.style.cssText='position:fixed;inset:0;z-index:9500;background:rgba(31,46,62,.55);display:flex;align-items:flex-start;justify-content:center;padding:60px 20px 40px;overflow:auto;';
@@ -15315,10 +15325,28 @@ function dlOpenPanel(review,stats){
   card.appendChild(hdr);
   const body=document.createElement('div');
   body.style.cssText='padding:6px 18px 16px;max-height:62vh;overflow:auto;';
+  if(scan){
+    const sc=document.createElement('div');
+    sc.style.cssText='margin:10px 0 4px;padding:9px 11px;background:#fff;border:1px solid #e4dac4;border-radius:7px;font-size:10.5px;color:#7a7a7a;line-height:1.55;';
+    if(!scan.phases.length){
+      sc.innerHTML='<strong style="color:#ac2828;">Library scan found no phase folders.</strong> Top-level items in the Customers drive (folders end with /): '
+        +(scan.rootChildren.length?scan.rootChildren.map(n=>String(n).replace(/</g,'&lt;')).join(' \u00b7 '):'<em>none at all</em>')
+        +'. This is what the tool needs to diagnose \u2014 the library it reached is not the one expected.';
+    } else {
+      const total=scan.phases.reduce((a,p)=>a+p.folders,0);
+      sc.innerHTML='<strong style="color:#1f2e3e;">Library scan:</strong> '
+        +scan.phases.map(p=>String(p.name).replace(/</g,'&lt;')+' ('+p.folders+')').join(' \u00b7 ')
+        +' \u2014 '+total+' project folder'+(total===1?'':'s')+' total.'
+        +(total===0?' <strong style="color:#ac2828;">Phase folders exist but contain no folders</strong> \u2014 only files were found inside them, which means the drive reached is not the expected Customers structure.':'');
+    }
+    body.appendChild(sc);
+  }
   if(!review.length){
     const p=document.createElement('div');
     p.style.cssText='padding:22px 4px;font-size:12.5px;color:#7a7a7a;';
-    p.textContent=stats.total===0?'Nothing to do \u2014 all anchors are in place.':'All '+stats.auto+' resolved without help. Nothing needs review.';
+    p.textContent=stats.total===0?'Nothing to do \u2014 all anchors are in place.'
+      :(stats.auto===0?'No matching was attempted \u2014 the scan above shows why. '+stats.total+' project(s) remain unanchored and untouched.'
+        :'All '+stats.auto+' resolved without help. Nothing needs review.');
     body.appendChild(p);
   }
   review.forEach(item=>{
