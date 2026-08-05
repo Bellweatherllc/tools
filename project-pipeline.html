@@ -316,7 +316,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .timeoff-block{cursor:pointer;}
 .tl-tally[data-person]{cursor:pointer;} /* v890: the week popup lives here — advertise it */
 .ms-tall:hover,.tier-dot:hover,.crit-dot:hover,.pd-dot:hover{filter:brightness(1.16);cursor:pointer;}
-.ms-tall.ms-ca{box-shadow:0 0 0 3px rgba(255,255,255,.60);} /* v891: white backing ring — separation when riding on a gantt bar; box-shadow survives the status background rules */
+.ms-tall.ms-ca{box-shadow:0 0 0 1px #fff;} /* v909: crisp opaque 1px white stroke, signed & unsigned (was a semi-transparent white backing) */
 .fc-proj-tooltip .tt-edit-link{display:flex;align-items:center;gap:4px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.38);cursor:pointer;transition:color .1s;}
 .fc-proj-tooltip .tt-edit-link:hover{color:var(--gl);}
 /* MGR pill — compact rectangle replacing "Edit in Manager" */
@@ -446,6 +446,7 @@ body.is-transitioning .section:not(.is-focus-outgoing){animation:hdrFadeIn 200ms
 .sticky-cal-clip .tl-hdr{will-change:transform;border-bottom:none;}
 .wk-cell{flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-right:1px solid rgba(255,255,255,.07);}
 .wk-cell.today-wk{background:rgba(204,150,0,.40);}
+.wk-cell.gdb-active{box-shadow:inset 0 0 0 1px var(--gl);border-radius:3px;} /* v909: gold ring on the week the hover column is over */
 .wk-mo{font-size:7px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(140,200,255,.85);line-height:1;}
 .wk-d{font-size:9px;font-weight:600;letter-spacing:.01em;color:rgba(255,255,255,.68);line-height:1;}
 .wk-cell.today-wk .wk-d{color:var(--gl);}
@@ -3054,7 +3055,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v908';
+const CORE_VERSION = 'v909';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -8542,7 +8543,7 @@ function pdBubbleHTML(pd){
 document.addEventListener('mousemove',e=>{
   const t=e.target.closest&&(e.target.closest('.phase-bar')||e.target.closest('.lanes-wrap.proj-collapsed .lane-row')||e.target.closest('.tl-tally[data-person]')); // v890: time strips too
   if(_gdbHoverCell&&(!t||_gdbHoverCell.parentNode!==t)){ _gdbHoverCell.remove(); _gdbHoverCell=null; }
-  if(!t||DRAG) return;
+  if(!t||DRAG){ if(typeof _gdbClearHeaderRing==='function') _gdbClearHeaderRing(); return; }
   const isBar=t.classList.contains('phase-bar');
   const dur=isBar?parseInt(t.dataset.phDur||'0'):C.numWeeks;
   if(!dur) return;
@@ -8550,11 +8551,28 @@ document.addEventListener('mousemove',e=>{
   const idx=Math.max(0,Math.min(dur-1,Math.floor((e.clientX-r.left)/r.width*dur)));
   if(!isBar&&t.dataset.spanStart!=null){ // collapsed band: only where bars actually exist (v889); time strips have no span and tint everywhere (v890)
     const ss=parseInt(t.dataset.spanStart), se=parseInt(t.dataset.spanEnd);
-    if(isNaN(ss)||idx<ss||idx>=se){ if(_gdbHoverCell){ _gdbHoverCell.remove(); _gdbHoverCell=null; } return; }
+    if(isNaN(ss)||idx<ss||idx>=se){ if(_gdbHoverCell){ _gdbHoverCell.remove(); _gdbHoverCell=null; } if(typeof _gdbClearHeaderRing==='function') _gdbClearHeaderRing(); return; }
   }
   if(!_gdbHoverCell){ _gdbHoverCell=document.createElement('div'); _gdbHoverCell.className='gdb-hover-cell'; t.appendChild(_gdbHoverCell); }
   _gdbHoverCell.style.left=(idx/dur*100)+'%'; _gdbHoverCell.style.width=(100/dur)+'%';
+  // v909 — mirror the highlight onto the date row: absolute week = bar start + idx
+  // for phase bars; idx is already absolute for collapsed bands and time strips.
+  var _absWk=isBar?(parseInt(t.dataset.phStart||'0')+idx):idx;
+  _gdbRingHeaderWeek(t,_absWk);
 });
+// Ring the header week-cell that corresponds to the hovered column, in the same
+// section (Design/Production) as the bar under the cursor.
+let _gdbRingedCell=null;
+function _gdbClearHeaderRing(){ if(_gdbRingedCell){ _gdbRingedCell.classList.remove('gdb-active'); _gdbRingedCell=null; } }
+function _gdbRingHeaderWeek(fromEl,absWk){
+  var sec=fromEl.closest&&fromEl.closest('.section');
+  var hdr=sec?sec.querySelector('.sticky-cal-hdr .tl-hdr'):null;
+  if(!hdr){ _gdbClearHeaderRing(); return; }
+  var cell=hdr.children[absWk];
+  if(cell===_gdbRingedCell) return;
+  _gdbClearHeaderRing();
+  if(cell){ cell.classList.add('gdb-active'); _gdbRingedCell=cell; }
+}
 // Click: date bubble above the clicked week; outside clicks dismiss
 document.addEventListener('click',e=>{
   if(!e.target||!e.target.closest) return;
@@ -11788,6 +11806,7 @@ document.addEventListener('pointerdown',e=>{
 // v906 — click-opened pickers pin the popover: hover-out must not close what a
 // click opened. Reset on outside click, scroll, or choosing an entry.
 let _dlPickerOpen=false;
+let _dlPickerBtn=null; // v909 — the pill the hover-opened picker currently serves
 // v907/v908 — click-opened popovers cover the pill instead of floating below
 // it. The cursor is inside the popover from the first frame, so there is no
 // pill\u2192popover mouse travel during which a pointer-out or tooltip collapse
@@ -11837,13 +11856,13 @@ function _dlRecoveryUI(act,dlProj,type,pop){
           if(!/^https?:\/\//i.test(v)){ inp.style.borderColor='#ff6b5e'; return; }
           saveB.disabled=true; saveB.textContent='Saving\u2026';
           dlManualLink(dlProj,type,v)
-            .then(()=>{ pop.style.display='none'; _dlPickerOpen=false; })
+            .then(()=>{ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; })
             .catch(err=>{ saveB.disabled=false; saveB.textContent='Save'; alert('Save failed: '+err.message); });
         });
         const cancB=document.createElement('button');
         cancB.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.7);cursor:pointer;font-family:inherit;';
         cancB.textContent='Cancel';
-        cancB.addEventListener('pointerdown',x=>{ x.stopPropagation(); pop.style.display='none'; _dlPickerOpen=false; });
+        cancB.addEventListener('pointerdown',x=>{ x.stopPropagation(); pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; });
         row.appendChild(saveB); row.appendChild(cancB);
         act.appendChild(inp); act.appendChild(row);
         setTimeout(()=>inp.focus(),0);
@@ -11904,7 +11923,7 @@ function _showUpcomingPop(btn){
 // folder's actual contents live instead of assuming one choice. Newest first;
 // SO ordered by version rank (V3 > V2, FINAL on top, DRAFT last), MP by date.
 function _dlShowDocPicker(btn){
-  _dlPickerOpen=true;
+  _dlPickerOpen=true; _dlPickerBtn=btn;
   const type=btn.dataset.upcomingPill;
   const proj=PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj);
   const pop=document.getElementById('tt-upcoming-pop');
@@ -11945,7 +11964,7 @@ function _dlShowDocPicker(btn){
         } else {
           const u=dlDocAspxUrl(it); if(u) window.open(u,'_blank','noopener');
         }
-        pop.style.display='none'; _dlPickerOpen=false;
+        pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null;
       });
       act.appendChild(b);
     });
@@ -11956,7 +11975,7 @@ function _dlShowDocPicker(btn){
       ev.stopPropagation();
       const w=window.open('about:blank','_blank');
       dlFolderWebUrl(proj,type).then(u=>{ if(u&&w) w.location=u; else if(w) w.close(); }).catch(()=>{ if(w) w.close(); });
-      pop.style.display='none'; _dlPickerOpen=false;
+      pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null;
     });
     act.appendChild(fb);
   }).catch(e=>{
@@ -11969,7 +11988,7 @@ document.addEventListener('pointerdown',e=>{
   if(upBtn){
     e.stopPropagation();
     const t=upBtn.dataset.upcomingPill;
-    if((t==='mp'||t==='so')&&upBtn.dataset.dlProj){ _dlShowDocPicker(upBtn); return; }
+    if((t==='mp'||t==='so')&&upBtn.dataset.dlProj){ if(!_dlPickerOpen||_dlPickerBtn!==upBtn) _dlShowDocPicker(upBtn); return; } // v909: hover already opened it on pointer devices; this covers touch
     const url=upBtn.dataset.upcomingUrl;
     if(url){ window.open(url,'_blank','noopener'); return; }
     // v908 — a dim pill with recovery options pins and overlaps on click, so
@@ -11978,14 +11997,20 @@ document.addEventListener('pointerdown',e=>{
     if(t!=='pt'&&_rp&&_rp.spFolderItemId){ _dlPickerOpen=true; _showUpcomingPop(upBtn); _dlOverlayOnPill(upBtn,pop); return; }
     _showUpcomingPop(upBtn); return;
   }
-  if(pop&&!pop.contains(e.target)){ pop.style.display='none'; _dlPickerOpen=false; }
+  if(pop&&!pop.contains(e.target)){ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; }
 },true);
 // v876: hover info for every pill on every screen — Sales chips and cards, Design and
 // Production rows, LC rows. Delegated, so it covers markup that has not been built yet.
 document.addEventListener('pointerover',e=>{
   if(_dlPickerOpen) return;
   const btn=e.target.closest&&e.target.closest('[data-upcoming-pill]');
-  if(btn) _showUpcomingPop(btn);
+  if(!btn) return;
+  // v909 — MP/SO on an anchored project: hovering opens the pinned document
+  // picker directly, so the list is reachable without a click-then-click. All
+  // other pills keep the lightweight hover preview.
+  const t=btn.dataset.upcomingPill;
+  if((t==='mp'||t==='so')&&btn.dataset.dlProj){ if(_dlPickerBtn!==btn) _dlShowDocPicker(btn); return; }
+  _showUpcomingPop(btn);
 });
 // v903 — hover surfaces are position-anchored to elements that scroll away
 // beneath them. Any scroll (page or inner container) closes them; re-hovering
@@ -11994,16 +12019,23 @@ document.addEventListener('pointerover',e=>{
 document.addEventListener('scroll',e=>{
   const pop=document.getElementById('tt-upcoming-pop');
   const t=e.target;
-  if(pop&&pop.style.display==='block'&&!(t instanceof Node&&pop.contains(t))){ pop.style.display='none'; _dlPickerOpen=false; }
+  if(pop&&pop.style.display==='block'&&!(t instanceof Node&&pop.contains(t))){ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; }
   if(typeof _hideAllTips==='function') _hideAllTips();
 },true);
 document.addEventListener('pointerout',e=>{
-  if(_dlPickerOpen) return; // click-opened picker: only outside click / scroll / selection closes it
+  const pop=document.getElementById('tt-upcoming-pop');
+  if(_dlPickerOpen){
+    // v909 — hover-opened picker: close only when the pointer leaves BOTH the
+    // pill and the popover (so travelling from pill into the list is safe).
+    const to=e.relatedTarget;
+    const stillOn=to&&to.closest&&(to.closest('[data-upcoming-pill]')||(pop&&pop.contains(to)));
+    if(!stillOn){ if(pop) pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; }
+    return;
+  }
   const btn=e.target.closest&&e.target.closest('[data-upcoming-pill]');
   if(!btn) return;
   const to=e.relatedTarget;
   if(to&&to.closest&&to.closest('[data-upcoming-pill]')) return; // sliding along the row
-  const pop=document.getElementById('tt-upcoming-pop');
   if(pop) pop.style.display='none';
 });
 function _showTip(info, e, anchor, belowEl){
