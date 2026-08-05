@@ -3054,7 +3054,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v897';
+const CORE_VERSION = 'v898';
 'use strict';
 
 // ════════════════════════════════════════════════  PHASE LOAD PROFILES
@@ -11361,7 +11361,7 @@ async function initFromSharePoint(){
     loadBriefAcksFromSP().catch(()=>{});
     // v895 — Doc Linker silent pass: anchor any new unanchored projects on load.
     // Unique-candidate matches only; never opens UI. Once per session.
-    setTimeout(()=>{ if(!_dlSilentRan){ _dlSilentRan=true; if(dlUnanchored().length) runFolderAnchorBackfill(true).catch(e=>console.warn(APP_VER+' Doc Linker silent pass failed:',e)); } },4000);
+    setTimeout(()=>{ if(!_dlSilentRan){ _dlSilentRan=true; runDocLinks(true).catch(e=>console.warn(APP_VER+' Doc Linker silent pass failed:',e)); } },4000);
     // Restore Key Dates panel state
 if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('prodPanel'); if(pp){ pp.classList.add('is-open'); document.querySelectorAll('[data-toggle-prod-panel]').forEach(b=>b.classList.toggle('is-open',b.dataset.toggleProdPanel===PANEL_ACTIVE_SECTION)); const _th=PANEL_THRESHOLDS[PANEL_ACTIVE_SECTION]; const _ua=document.getElementById('ppThreshValUA'); if(_ua) _ua.textContent=_th.unassigned+' wk'; const _w=document.getElementById('ppThreshValWarn'); if(_w) _w.textContent=_th.warn+' wk'; const _c=document.getElementById('ppThreshValCrit'); if(_c) _c.textContent=_th.crit+' wk'; if(typeof renderProdPanel==='function') renderProdPanel(); } }
     document.querySelectorAll('.section[data-s-type]').forEach(sec=>{
@@ -15281,18 +15281,17 @@ function dlUnanchored(includeFlagged){
 // quiet=false: button-triggered — auto-writes, then opens review for the rest.
 async function runFolderAnchorBackfill(quiet){
   const pending=dlUnanchored(!quiet);
-  if(!pending.length){ if(!quiet) dlOpenPanel([],{auto:0,total:0},null); return; }
+  if(!pending.length) return {review:[],stats:{auto:0,total:0},scan:null,ok:true};
   let inv,scan;
   try{ const res=await dlFolderInventory(); inv=res.inv; scan=res.scan; }
   catch(e){
     console.warn(APP_VER+' Doc Linker: inventory failed —',e);
     if(!quiet) alert('Doc Links: could not read the Customers library.\n'+e.message);
-    return;
+    return {review:[],stats:{auto:0,total:pending.length},scan:null,ok:false};
   }
   if(!inv.length){
     console.warn(APP_VER+' Doc Linker: inventory came back EMPTY — see scan above.');
-    if(!quiet) dlOpenPanel([],{auto:0,total:pending.length},scan);
-    return;
+    return {review:[],stats:{auto:0,total:pending.length},scan:scan,ok:false};
   }
   const review=[]; let auto=0;
   for(const proj of pending){
@@ -15305,26 +15304,161 @@ async function runFolderAnchorBackfill(quiet){
     }
   }
   console.log(APP_VER+' Doc Linker: '+auto+' anchor(s) written, '+review.length+' queued for review, '+pending.length+' unanchored project(s) considered.');
-  if(!quiet) dlOpenPanel(review,{auto:auto,total:pending.length},scan);
+  return {review:review,stats:{auto:auto,total:pending.length},scan:scan,ok:true};
+}
+
+// ════════════════  DOC LINKER — STAGE 2: FILL EMPTY PILLS (v898)
+// For every anchored project, fills EMPTY document link slots from the folder
+// conventions observed in real data. Never overwrites a populated slot. Links
+// are written in the GUID-anchored Doc.aspx form so they survive phase-folder
+// moves. Matterport .url shortcut files are opened and the inner address is
+// linked, so the pill opens the walkthrough rather than downloading a shortcut.
+// Selections Sheet and Project Basis have no naming convention yet — no rule,
+// stays manual until real examples exist.
+const DL_LABELS={est:'Estimate',pb:'Project Basis',da:'DA',mp:'Matterport',so:'Scope Outline',ca:'CA',ss:'Selections Sheet'};
+const DL_DOC_RULES={
+  est:{paths:['8. Estimating'],field:'EstimateUrl',pick:'modified',
+       match:function(n){ return /estimat/i.test(n); }},
+  da: {paths:['1. Contracts & Change Orders/0. Signed Contract Documents'],field:'DAUrl',pick:'modified',
+       match:function(n){ return /\bDA\b/.test(n)&&!/\bCA\b/.test(n); }},
+  ca: {paths:['1. Contracts & Change Orders/0. Signed Contract Documents'],field:'CAUrl',pick:'modified',
+       match:function(n){ return /\bCA\b/.test(n)&&!/\bDA\b/.test(n); }},
+  so: {paths:['1. Contracts & Change Orders/1. DAs','1. Contracts & Change Orders/1. IDEA & FDDA'],field:'__so__',pick:'version',
+       match:function(n){ return /scope\s*outline/i.test(n)&&!/^FORM\b/i.test(n)&&!/sample/i.test(n); }},
+  mp: {paths:['0. Matterport Files'],field:'MatterportUrl',pick:'modified',extract:true,
+       match:function(n){ return /\.url$/i.test(n); }}
+};
+// Version rank for scope outlines: FINAL beats numbers, DRAFT loses to all,
+// template-style version tokens elsewhere (COMP Estimating V4) never reach
+// this — estimates rank by modified date instead.
+function dlVersionRank(n){
+  if(/\bfinal\b/i.test(n)) return 1e6;
+  var m=n.match(/\bv\.?\s*(\d+)/i)||n.match(/\brev\.?\s*(\d+)/i);
+  if(m) return +m[1];
+  if(/\bdraft\b/i.test(n)) return -1;
+  return 0;
+}
+function dlDocAspxUrl(item){
+  var g=((item.sharepointIds&&item.sharepointIds.listItemUniqueId)||'').toUpperCase();
+  if(!g) return item.webUrl||'';
+  return 'https://bellweather.sharepoint.com/sites/BWC/_layouts/15/Doc.aspx?sourcedoc=%7B'+g+'%7D&file='+encodeURIComponent(item.name)+'&action=default&mobileredirect=true';
+}
+async function dlListSub(drive,anchorId,path){
+  var enc=path.split('/').map(encodeURIComponent).join('/');
+  return graphGetAll('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+anchorId+':/'+enc+':/children?$select=id,name,file,folder,lastModifiedDateTime,webUrl,sharepointIds');
+}
+async function dlExtractUrlFile(drive,item){
+  var token=await getToken();
+  var res=await fetch('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+item.id+'/content',{headers:{Authorization:'Bearer '+token}});
+  if(!res.ok) throw new Error('shortcut fetch '+res.status);
+  var txt=await res.text();
+  var m=txt.match(/^URL=(.+)$/mi);
+  return m?m[1].trim():'';
+}
+// Stage expectations — silence is correct for a Lead; absence is a flag once signing says the doc should exist.
+function dlExpected(proj,kind){
+  var st=proj.status||'';
+  if(kind==='da'||kind==='so') return st==='da-signed'||st==='ca-signed';
+  if(kind==='ca') return st==='ca-signed';
+  return false;
+}
+async function dlPatchSoLink(itemId,href){
+  var url=BWC_SITE+'/CORE_Projects/items/'+itemId+'/fields';
+  try{ await graphPatch(url,{ScopeOutline:{Url:href,Description:'Scope Outline'}}); }
+  catch(e){
+    console.warn(APP_VER+' Doc Linker: SO hyperlink write rejected, retrying as text:',e.message);
+    await graphPatch(url,{ScopeOutline:href});
+  }
+}
+async function dlFillLinks(quiet){
+  var drive;
+  try{ drive=await dlCustomersDriveId(); }
+  catch(e){ console.warn(APP_VER+' Doc Linker fill: drive resolution failed —',e); return {filled:[],missing:[],errors:1}; }
+  var filled=[],missing=[],errors=0;
+  var targets=PROJECTS.filter(function(p){ return p._spItemId&&p.spFolderItemId&&!/^Slot\b/i.test(p.name||''); });
+  for(var ti=0;ti<targets.length;ti++){
+    var proj=targets[ti];
+    proj.docUrls=proj.docUrls||{};
+    var empty=Object.keys(DL_DOC_RULES).filter(function(k){ return !proj.docUrls[k]; });
+    // Expected-but-missing accounting also covers kinds we cannot auto-fill yet
+    if(!empty.length) continue;
+    var cache={},patch={},soHref=null,wrote=false;
+    proj.docLinkMeta=proj.docLinkMeta||{};
+    var metaLinks=proj.docLinkMeta.links=proj.docLinkMeta.links||{};
+    for(var ei=0;ei<empty.length;ei++){
+      var kind=empty[ei],rule=DL_DOC_RULES[kind],items=null;
+      for(var pi=0;pi<rule.paths.length;pi++){
+        var pth=rule.paths[pi];
+        if(pth in cache){ if(cache[pth]){ items=cache[pth]; break; } continue; }
+        try{ items=await dlListSub(drive,proj.spFolderItemId,pth); cache[pth]=items; break; }
+        catch(e){ cache[pth]=null; }
+      }
+      if(!items){ if(dlExpected(proj,kind)) missing.push({proj:proj,kind:kind,why:'folder not found'}); continue; }
+      var files=items.filter(function(it){ return it.file&&rule.match(it.name); });
+      if(!files.length){ if(dlExpected(proj,kind)) missing.push({proj:proj,kind:kind,why:'no matching file'}); continue; }
+      files.sort(function(a,b){
+        if(rule.pick==='version'){
+          var d=dlVersionRank(b.name)-dlVersionRank(a.name);
+          if(d) return d;
+        }
+        return String(b.lastModifiedDateTime||'').localeCompare(String(a.lastModifiedDateTime||''));
+      });
+      var top=files[0],href;
+      if(rule.extract){
+        try{ href=await dlExtractUrlFile(drive,top); }
+        catch(e){ console.warn(APP_VER+' Doc Linker: .url read failed for '+proj.name,e); errors++; continue; }
+        if(!href){ missing.push({proj:proj,kind:kind,why:'shortcut had no URL'}); continue; }
+      } else {
+        href=dlDocAspxUrl(top);
+        if(!href) continue;
+      }
+      if(rule.field==='__so__') soHref=href; else patch[rule.field]=href;
+      metaLinks[kind]={id:top.id,name:top.name,at:new Date().toISOString(),src:'auto'};
+      proj.docUrls[kind]=href;
+      filled.push({proj:proj,kind:kind,file:top.name});
+      wrote=true;
+    }
+    if(wrote){
+      patch.DocLinkMeta=JSON.stringify(proj.docLinkMeta);
+      try{ await graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',patch); }
+      catch(e){ console.warn(APP_VER+' Doc Linker: link write failed for '+proj.name,e); errors++; }
+      if(soHref){
+        try{ await dlPatchSoLink(proj._spItemId,soHref); }
+        catch(e){ console.warn(APP_VER+' Doc Linker: SO write failed for '+proj.name,e); errors++; }
+      }
+    }
+  }
+  console.log(APP_VER+' Doc Linker fill: '+filled.length+' link(s) written, '+missing.length+' expected-but-missing, '+errors+' error(s).');
+  return {filled:filled,missing:missing,errors:errors};
+}
+
+// Orchestrator: anchors, then fill, one panel. Quiet at load; full UI on the button.
+async function runDocLinks(quiet){
+  const a=await runFolderAnchorBackfill(quiet);
+  if(!a) return;
+  let fill={filled:[],missing:[],errors:0};
+  if(a.ok||!a.stats.total) fill=await dlFillLinks(quiet);
+  if(fill.filled.length){ try{ buildAll(); }catch(e){ console.warn(APP_VER+' Doc Linker: rebuild after fill failed',e); } }
+  if(!quiet) dlOpenPanel(a.review,a.stats,a.scan,fill);
 }
 
 // ── Review panel ──
 function dlClosePanel(){ const p=document.getElementById('dlPanel'); if(p) p.remove(); }
 
-function dlOpenPanel(review,stats,scan){
+function dlOpenPanel(review,stats,scan,fill){
   dlClosePanel();
+  fill=fill||{filled:[],missing:[],errors:0};
   const wrap=document.createElement('div'); wrap.id='dlPanel';
   wrap.style.cssText='position:fixed;inset:0;z-index:9500;background:rgba(31,46,62,.55);display:flex;align-items:flex-start;justify-content:center;padding:60px 20px 40px;overflow:auto;';
   const card=document.createElement('div');
   card.style.cssText='background:#f5f3ee;border-radius:10px;max-width:640px;width:100%;box-shadow:0 18px 60px rgba(0,0,0,.35);overflow:hidden;font-family:inherit;';
   const hdr=document.createElement('div');
   hdr.style.cssText='background:#1f2e3e;color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;';
-  const done=stats.total-review.length;
-  hdr.innerHTML='<div><div style="font-size:14px;font-weight:700;">Doc Links \u2014 Folder Anchors</div>'
-    +'<div style="font-size:10.5px;color:rgba(255,255,255,.55);margin-top:2px;">'
-    +(stats.total===0?'Every project on the board already has a folder anchor.'
-      :stats.auto+' matched silently \u00b7 '+review.length+' need'+(review.length===1?'s':'')+' a decision')
-    +'</div></div>'
+  const _anchorLine=(stats.total===0?'Anchors: all in place'
+      :'Anchors: '+stats.auto+' matched silently \u00b7 '+review.length+' need'+(review.length===1?'s':'')+' a decision');
+  const _linkLine='Links: '+fill.filled.length+' written \u00b7 '+fill.missing.length+' expected but missing'+(fill.errors?' \u00b7 '+fill.errors+' error(s)':'');
+  hdr.innerHTML='<div><div style="font-size:14px;font-weight:700;">Doc Links</div>'
+    +'<div style="font-size:10.5px;color:rgba(255,255,255,.55);margin-top:2px;">'+_anchorLine+' \u2014 '+_linkLine+'</div></div>'
     +'<button id="dlCloseBtn" style="background:none;border:none;color:rgba(255,255,255,.65);font-size:20px;cursor:pointer;line-height:1;padding:4px;">\u00d7</button>';
   card.appendChild(hdr);
   const body=document.createElement('div');
@@ -15345,12 +15479,36 @@ function dlOpenPanel(review,stats,scan){
     }
     body.appendChild(sc);
   }
-  if(!review.length){
+  function _dlSection(title,color){
+    const h=document.createElement('div');
+    h.style.cssText='margin:14px 0 2px;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:'+color+';';
+    h.textContent=title; body.appendChild(h); return h;
+  }
+  if(fill.filled.length){
+    _dlSection('Links written this run','#019425');
+    fill.filled.forEach(x=>{
+      const r=document.createElement('div');
+      r.style.cssText='padding:4px 0;font-size:11.5px;color:#1f2e3e;border-bottom:1px solid rgba(228,218,196,.55);';
+      r.innerHTML='<strong>'+String(x.proj.clientName||x.proj.name).replace(/</g,'&lt;')+'</strong> \u2014 '+(DL_LABELS[x.kind]||x.kind)+': <span style="color:#7a7a7a;">'+String(x.file).replace(/</g,'&lt;')+'</span>';
+      body.appendChild(r);
+    });
+  }
+  if(fill.missing.length){
+    _dlSection('Expected but missing','#d07820');
+    fill.missing.forEach(x=>{
+      const r=document.createElement('div');
+      r.style.cssText='padding:4px 0;font-size:11.5px;color:#1f2e3e;border-bottom:1px solid rgba(228,218,196,.55);';
+      r.innerHTML='<strong>'+String(x.proj.clientName||x.proj.name).replace(/</g,'&lt;')+'</strong> \u2014 '+(DL_LABELS[x.kind]||x.kind)+' <span style="color:#a3a3a3;">('+String(x.why).replace(/</g,'&lt;')+' \u00b7 stage says it should exist)</span>';
+      body.appendChild(r);
+    });
+  }
+  if(review.length) _dlSection('Folder anchors needing a decision','#1f2e3e');
+  if(!review.length&&!fill.filled.length&&!fill.missing.length){
     const p=document.createElement('div');
     p.style.cssText='padding:22px 4px;font-size:12.5px;color:#7a7a7a;';
-    p.textContent=stats.total===0?'Nothing to do \u2014 all anchors are in place.'
-      :(stats.auto===0?'No matching was attempted \u2014 the scan above shows why. '+stats.total+' project(s) remain unanchored and untouched.'
-        :'All '+stats.auto+' resolved without help. Nothing needs review.');
+    p.textContent=stats.total===0?'Nothing to do \u2014 anchors are in place and every fillable pill is already linked.'
+      :(stats.auto===0&&stats.total>0?'No matching was attempted \u2014 the scan above shows why. '+stats.total+' project(s) remain unanchored and untouched.'
+        :'All '+stats.auto+' anchor(s) resolved without help. Nothing needs review.');
     body.appendChild(p);
   }
   review.forEach(item=>{
@@ -15402,7 +15560,7 @@ function dlOpenPanel(review,stats,scan){
 }
 
 document.addEventListener('click',e=>{
-  if(e.target.closest('[data-doc-linker]')){ runFolderAnchorBackfill(false); }
+  if(e.target.closest('[data-doc-linker]')){ runDocLinks(false); }
 });
 
 // Brief button handlers via delegation
