@@ -3054,7 +3054,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v907';
+const CORE_VERSION = 'v908';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11788,6 +11788,20 @@ document.addEventListener('pointerdown',e=>{
 // v906 — click-opened pickers pin the popover: hover-out must not close what a
 // click opened. Reset on outside click, scroll, or choosing an entry.
 let _dlPickerOpen=false;
+// v907/v908 — click-opened popovers cover the pill instead of floating below
+// it. The cursor is inside the popover from the first frame, so there is no
+// pill\u2192popover mouse travel during which a pointer-out or tooltip collapse
+// could close it. Shared by the document picker and dim-pill recovery.
+function _dlOverlayOnPill(btn,pop){
+  const r=btn.getBoundingClientRect();
+  pop.style.top=Math.max(8,r.top-8)+'px';
+  pop.style.left=Math.max(8,r.left-10)+'px';
+  requestAnimationFrame(()=>{
+    const pw=pop.offsetWidth,ph=pop.offsetHeight;
+    if(parseFloat(pop.style.left)+pw>window.innerWidth-10) pop.style.left=Math.max(8,window.innerWidth-pw-10)+'px';
+    if(parseFloat(pop.style.top)+ph>window.innerHeight-10) pop.style.top=Math.max(8,window.innerHeight-ph-10)+'px';
+  });
+}
 // v905 — folder-browse + paste-link recovery, shared by the dim-pill popover
 // and the document picker's empty state.
 function _dlRecoveryUI(act,dlProj,type,pop){
@@ -11863,7 +11877,11 @@ function _showUpcomingPop(btn){
   }
   else if(hasUrl&&(type==='mp'||type==='so')&&btn.dataset.dlProj){ soon.textContent='Click to choose from folder'; soon.style.color='rgba(150,225,180,.85)'; }
   else if(hasUrl){ soon.textContent='Click to open'; soon.style.color='rgba(150,225,180,.85)'; }
-  else { soon.textContent='No link yet'; soon.style.color='rgba(255,150,140,.80)'; }
+  else {
+    const _hp=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
+    soon.textContent=(type!=='pt'&&_hp&&_hp.spFolderItemId)?'No link yet \u2014 click for options':'No link yet';
+    soon.style.color='rgba(255,150,140,.80)';
+  }
   // v901 — dim pills on anchored projects offer recovery: browse the folder
   // where the document belongs, or paste its link right here.
   const act=document.getElementById('tt-up-dl-actions');
@@ -11892,19 +11910,7 @@ function _dlShowDocPicker(btn){
   const pop=document.getElementById('tt-upcoming-pop');
   if(!pop||!proj){ const u=btn.dataset.upcomingUrl; if(u) window.open(u,'_blank','noopener'); return; }
   _showUpcomingPop(btn);
-  // v907 — cover the pill instead of floating below it. The cursor is inside
-  // the popover from the first frame, so there is no pill→popover mouse travel
-  // during which a pointer-out or tooltip collapse could close it.
-  {
-    const r=btn.getBoundingClientRect();
-    pop.style.top=Math.max(8,r.top-8)+'px';
-    pop.style.left=Math.max(8,r.left-10)+'px';
-    requestAnimationFrame(()=>{
-      const pw=pop.offsetWidth,ph=pop.offsetHeight;
-      if(parseFloat(pop.style.left)+pw>window.innerWidth-10) pop.style.left=Math.max(8,window.innerWidth-pw-10)+'px';
-      if(parseFloat(pop.style.top)+ph>window.innerHeight-10) pop.style.top=Math.max(8,window.innerHeight-ph-10)+'px';
-    });
-  }
+  _dlOverlayOnPill(btn,pop);
   const act=document.getElementById('tt-up-dl-actions');
   const soon=pop.querySelector('.tt-up-soon');
   if(!act) return;
@@ -11964,7 +11970,13 @@ document.addEventListener('pointerdown',e=>{
     e.stopPropagation();
     const t=upBtn.dataset.upcomingPill;
     if((t==='mp'||t==='so')&&upBtn.dataset.dlProj){ _dlShowDocPicker(upBtn); return; }
-    const url=upBtn.dataset.upcomingUrl; if(url) window.open(url,'_blank','noopener'); else _showUpcomingPop(upBtn); return;
+    const url=upBtn.dataset.upcomingUrl;
+    if(url){ window.open(url,'_blank','noopener'); return; }
+    // v908 — a dim pill with recovery options pins and overlaps on click, so
+    // Browse-folder and Paste-link are reachable without a hover journey.
+    const _rp=upBtn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===upBtn.dataset.dlProj):null;
+    if(t!=='pt'&&_rp&&_rp.spFolderItemId){ _dlPickerOpen=true; _showUpcomingPop(upBtn); _dlOverlayOnPill(upBtn,pop); return; }
+    _showUpcomingPop(upBtn); return;
   }
   if(pop&&!pop.contains(e.target)){ pop.style.display='none'; _dlPickerOpen=false; }
 },true);
