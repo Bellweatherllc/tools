@@ -3059,7 +3059,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v921';
+const CORE_VERSION = 'v922';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11755,6 +11755,77 @@ const UPCOMING_INFO={
 const PZ_TRACKER_URL='https://bellweatherllc.github.io/tools/permit-zoning-tracker.html';
 let PZ_BY_PROJECT=null; // normalized project name → {apps:[], lastSync:Date}
 function _pzNorm(x){ return String(x==null?'':x).toLowerCase().replace(/[^a-z0-9]/g,''); }
+// ── v922: live Trello stage read ──
+const _PZ_CF={project:'project'}; // only the project custom field is needed for stage overlay
+let _pzTrelloCfg=null;            // {apiKey,token,boardId} from CORE_Config
+let _pzLiveStage=null;            // normProject → {stageByTrack:{}, at:Date} (built from live cards)
+let _pzLiveAt=0;                  // ms timestamp of last live fetch
+let _pzLiveInflight=null;         // de-dupe concurrent hovers
+const _PZ_LIVE_TTL=60000;         // 60s cache
+
+async function _pzLoadTrelloCfg(){
+  if(_pzTrelloCfg!==null) return _pzTrelloCfg;
+  try{
+    const data=await graphGet(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields');
+    const rows={}; (data.value||[]).forEach(it=>{ const f=it.fields||{}; const k=f.Title||f.Key; if(k) rows[k]=(f.Value!=null?f.Value:(f.Value0!=null?f.Value0:'')); });
+    const key=rows.TrelloApiKey||'', tok=rows.TrelloToken||'', brd=rows.TrelloPermitBoardId||'';
+    _pzTrelloCfg=(key&&tok&&brd)?{apiKey:key,token:tok,boardId:brd}:false;
+  }catch(e){ console.warn('[v922] Trello cfg load failed:',e.message||e); _pzTrelloCfg=false; }
+  return _pzTrelloCfg;
+}
+function _pzTrelloUrl(path,params){
+  const p=new URLSearchParams(params||{});
+  p.set('key',_pzTrelloCfg.apiKey); p.set('token',_pzTrelloCfg.token);
+  return 'https://api.trello.com/1/'+path+'?'+p.toString();
+}
+function _pzCfProject(card,defs){
+  const def=defs.find(d=>_pzNorm(d.name)===_pzNorm(_PZ_CF.project));
+  if(!def) return '';
+  const item=(card.customFieldItems||[]).find(i=>i.idCustomField===def.id);
+  if(!item) return '';
+  if(item.idValue&&def.options){ const o=def.options.find(o=>o.id===item.idValue); return o&&o.value&&o.value.text?o.value.text:''; }
+  if(item.value&&item.value.text!=null) return item.value.text;
+  return '';
+}
+// Fetch the board once (cached 60s), building normProject → live stage per track.
+async function _pzFetchLiveStages(){
+  if(Date.now()-_pzLiveAt<_PZ_LIVE_TTL&&_pzLiveStage) return _pzLiveStage;
+  if(_pzLiveInflight) return _pzLiveInflight;
+  const cfg=await _pzLoadTrelloCfg();
+  if(!cfg) return null;
+  _pzLiveInflight=(async()=>{
+    try{
+      const b=cfg.boardId;
+      const [lists,cards,defs]=await Promise.all([
+        fetch(_pzTrelloUrl('boards/'+b+'/lists',{fields:'name'})).then(r=>r.json()),
+        fetch(_pzTrelloUrl('boards/'+b+'/cards',{fields:'name,idList,cardRole,isTemplate,labels',customFieldItems:'true'})).then(r=>r.json()),
+        fetch(_pzTrelloUrl('boards/'+b+'/customFields',{})).then(r=>r.json())
+      ]);
+      const listName={}; (lists||[]).forEach(l=>listName[l.id]=l.name);
+      const map={};
+      (cards||[]).forEach(c=>{
+        if(c.isTemplate) return;
+        if((c.labels||[]).some(l=>_pzNorm(l.name)==='ignore')) return;
+        let proj=String(_pzCfProject(c,defs||[])||'').trim();
+        if(!proj){ const m=String(c.name||'').split(/\s+[\u2014\u2013-]\s+/); proj=(m.length>1?m[0]:c.name||'').trim(); }
+        if(!proj) return;
+        const key=_pzNorm(proj);
+        const stage=listName[c.idList]||'';
+        (map[key]=map[key]||[]).push({name:c.name,stage:stage});
+      });
+      _pzLiveStage=map; _pzLiveAt=Date.now();
+      return map;
+    }catch(e){ console.warn('[v922] live Trello stage fetch failed:',e.message||e); return null; }
+    finally{ _pzLiveInflight=null; }
+  })();
+  return _pzLiveInflight;
+}
+// Given the mirror rec for a project, return a normStage→liveStage lookup so the
+// renderer can swap in the current stage. Matching is best-effort by track/name.
+function _pzApplyLive(projName){
+  const live=_pzLiveStage&&_pzLiveStage[_pzNorm(projName)];
+  return live||null;
+}
 function _pzBizDays(a,b){
   const s=new Date(a.getFullYear(),a.getMonth(),a.getDate());
   const e=new Date(b.getFullYear(),b.getMonth(),b.getDate());
@@ -11838,18 +11909,41 @@ function _fillPzZone(zone){
   // bubble is the useful surface. Container kept but always empty (:empty hides it).
   if(dots) dots.innerHTML='';
   if(bubble){
+    // v922 — overlay LIVE Trello stage when available; clocks stay from mirror.
+    const live=_pzApplyLive(projName); // [{name,stage}] or null
+    const _liveStageFor=(f)=>{
+      if(!live) return null;
+      // match by card/app name first, then by track keyword, else single-app fallback
+      const fn=_pzNorm(f.ProjectName||''), tk=_pzNorm(f.TrackType||'');
+      let hit=live.find(l=>_pzNorm(l.name).indexOf(tk)>-1 && tk);
+      if(!hit&&live.length===1) hit=live[0];
+      if(!hit&&apps.length===1&&live.length) hit=live[0];
+      return hit?hit.stage:null;
+    };
+    let anyLive=false;
     const rows=apps.map(f=>{
       const t=String(f.TrackType||''); const tn=_pzNorm(t);
       const tCls=tn.indexOf('zon')>-1?'z':tn.indexOf('permit')>-1?'p':'o';
+      const liveStage=_liveStageFor(f);
+      const showStage=liveStage||f.Stage||'\u2014';
+      const isLive=!!liveStage&&_pzNorm(liveStage)!==_pzNorm(f.Stage||'');
+      if(liveStage) anyLive=true;
       const ck=_pzClock(f);
       return '<div class="ptp-row"><span class="ptp-track '+tCls+'">'+escH(t||'?')+'</span>'+
-        '<span class="ptp-stage">'+escH(f.Stage||'\u2014')+'</span>'+
+        '<span class="ptp-stage">'+escH(showStage)+(isLive?' <span style="color:#3b7fa8;font-size:8px;font-weight:800;">LIVE</span>':'')+'</span>'+
         (ck.txt?'<span class="ptp-clock '+ck.cls+'">'+escH(ck.txt)+'</span>':'')+'</div>';
     }).join('');
-    const sync=rec.lastSync?('last synced '+rec.lastSync.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+rec.lastSync.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
+    const footer=_pzLiveStage
+      ? '<div class="ptp-sync">stage live from Trello \u00b7 clocks as of mirror sync</div>'
+      : (rec.lastSync?('<div class="ptp-sync">last synced '+escH(rec.lastSync.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+rec.lastSync.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}))+'</div>'):'');
     bubble.innerHTML='<div class="tt-pz-b-title">Permit &amp; Zoning \u2014 '+escH(projName)+'</div>'+rows+
-      (sync?'<div class="ptp-sync">'+escH(sync)+'</div>':'')+
-      '<div class="tt-pz-b-open">Click to open in the tracker</div>';
+      footer+'<div class="tt-pz-b-open">Click to open in the tracker</div>';
+  }
+  // v922 — kick a live stage fetch; when it lands, re-fill this zone so the
+  // hover reflects Trello the moment you looked. Cached 60s, so re-hovers are
+  // instant and don't re-hit Trello.
+  if(!_pzLiveStage||Date.now()-_pzLiveAt>=_PZ_LIVE_TTL){
+    _pzFetchLiveStages().then(m=>{ if(m&&zone.matches(':hover')) _fillPzZone(zone); }).catch(()=>{});
   }
 }
 document.addEventListener('pointerover',e=>{
