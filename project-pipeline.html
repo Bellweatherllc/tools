@@ -3059,7 +3059,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v917';
+const CORE_VERSION = 'v918';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11917,37 +11917,64 @@ function _dlRecoveryUI(act,dlProj,type,pop){
       act.appendChild(openB);
       }
       const pasteB=document.createElement('button');
-      pasteB.style.cssText=openB.style.cssText;
+      pasteB.style.cssText=(_noFolder?'padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.85);cursor:pointer;font-family:inherit;text-align:left;':openB.style.cssText);
       pasteB.textContent='Paste link\u2026';
-      pasteB.addEventListener('pointerdown',ev=>{
-        ev.stopPropagation();
-        act.innerHTML='';
-        const inp=document.createElement('input');
-        inp.type='text'; inp.placeholder='Paste SharePoint link';
-        inp.style.cssText='width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid rgba(255,255,255,.30);border-radius:4px;background:rgba(255,255,255,.08);color:#fff;font-size:10px;font-family:inherit;';
-        inp.addEventListener('pointerdown',x=>x.stopPropagation());
-        const row=document.createElement('div'); row.style.cssText='display:flex;gap:5px;margin-top:5px;';
-        const saveB=document.createElement('button');
-        saveB.style.cssText='flex:1;padding:4px 8px;border:none;background:#019425;border-radius:5px;font-size:10px;color:#fff;cursor:pointer;font-family:inherit;font-weight:700;';
-        saveB.textContent='Save';
-        saveB.addEventListener('pointerdown',x=>{
-          x.stopPropagation();
-          const v=(inp.value||'').trim();
-          if(!/^https?:\/\//i.test(v)){ inp.style.borderColor='#ff6b5e'; return; }
-          saveB.disabled=true; saveB.textContent='Saving\u2026';
-          dlManualLink(dlProj,type,v)
-            .then(()=>{ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); })
-            .catch(err=>{ saveB.disabled=false; saveB.textContent='Save'; alert('Save failed: '+err.message); });
-        });
-        const cancB=document.createElement('button');
-        cancB.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.7);cursor:pointer;font-family:inherit;';
-        cancB.textContent='Cancel';
-        cancB.addEventListener('pointerdown',x=>{ x.stopPropagation(); pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); });
-        row.appendChild(saveB); row.appendChild(cancB);
-        act.appendChild(inp); act.appendChild(row);
-        setTimeout(()=>inp.focus(),0);
-      });
+      pasteB.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); _dlPasteEditor(act,dlProj,type,pop,'',(type==='trl'?'Paste Trello board link':'Paste SharePoint link')); });
       act.appendChild(pasteB);
+}
+// v918 — the paste/edit input, reusable pre-filled. Used by dim-pill recovery
+// (empty) and by lit TRL pills (pre-filled with the current URL for editing).
+function _dlPasteEditor(act,dlProj,type,pop,prefill,placeholder){
+  act.innerHTML='';
+  const inp=document.createElement('input');
+  inp.type='text'; inp.placeholder=placeholder||'Paste link'; inp.value=prefill||'';
+  inp.style.cssText='width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid rgba(255,255,255,.30);border-radius:4px;background:rgba(255,255,255,.08);color:#fff;font-size:10px;font-family:inherit;';
+  inp.addEventListener('pointerdown',x=>x.stopPropagation());
+  const row=document.createElement('div'); row.style.cssText='display:flex;gap:5px;margin-top:5px;';
+  const saveB=document.createElement('button');
+  saveB.style.cssText='flex:1;padding:4px 8px;border:none;background:#019425;border-radius:5px;font-size:10px;color:#fff;cursor:pointer;font-family:inherit;font-weight:700;';
+  saveB.textContent='Save';
+  saveB.addEventListener('pointerdown',x=>{
+    x.stopPropagation();
+    const v=(inp.value||'').trim();
+    if(!/^https?:\/\//i.test(v)){ inp.style.borderColor='#ff6b5e'; return; }
+    saveB.disabled=true; saveB.textContent='Saving\u2026';
+    dlManualLink(dlProj,type,v)
+      .then(()=>{ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); })
+      .catch(err=>{ saveB.disabled=false; saveB.textContent='Save'; alert('Save failed: '+err.message); });
+  });
+  const cancB=document.createElement('button');
+  cancB.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.7);cursor:pointer;font-family:inherit;';
+  cancB.textContent='Cancel';
+  cancB.addEventListener('pointerdown',x=>{ x.stopPropagation(); pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); });
+  row.appendChild(saveB); row.appendChild(cancB);
+  act.appendChild(inp); act.appendChild(row);
+  setTimeout(()=>{ inp.focus(); inp.select(); },0);
+}
+// v918 — lit TRL pill: a small popover offering Open board + Edit link
+// (pre-filled). Trello is permanently manual, so editing is the expected verb.
+function _dlTrelloMenu(btn){
+  const proj=PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj);
+  const pop=document.getElementById('tt-upcoming-pop');
+  const url=btn.dataset.upcomingUrl||'';
+  if(!pop||!proj){ if(url) window.open(url,'_blank','noopener'); return; }
+  _dlPickerOpen=true; _dlPickerBtn=btn;
+  _showUpcomingPop(btn); _dlOverlayOnPill(btn,pop);
+  const act=document.getElementById('tt-up-dl-actions');
+  const soon=pop.querySelector('.tt-up-soon');
+  if(soon){ soon.textContent='Trello project board'; soon.style.color='rgba(140,205,255,.9)'; }
+  if(!act) return;
+  act.style.cssText='margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;gap:5px;';
+  act.innerHTML='';
+  const openB=document.createElement('button');
+  openB.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.85);cursor:pointer;font-family:inherit;text-align:left;';
+  openB.textContent='Open board \u2197';
+  openB.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); if(url) window.open(url,'_blank','noopener'); pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); });
+  const editB=document.createElement('button');
+  editB.style.cssText=openB.style.cssText;
+  editB.textContent='Edit link\u2026';
+  editB.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); _dlPasteEditor(act,proj,'trl',pop,url,'Paste Trello board link'); });
+  act.appendChild(openB); act.appendChild(editB);
 }
 function _showUpcomingPop(btn){
   const type=btn.dataset.upcomingPill;
@@ -12070,6 +12097,9 @@ document.addEventListener('pointerdown',e=>{
     const t=upBtn.dataset.upcomingPill;
     if((t==='mp'||t==='so')&&upBtn.dataset.dlProj){ if(!_dlPickerOpen||_dlPickerBtn!==upBtn) _dlShowDocPicker(upBtn); return; } // v909: hover already opened it on pointer devices; this covers touch
     const url=upBtn.dataset.upcomingUrl;
+    // v918 — lit TRL: open/edit menu rather than a bare open, since Trello is
+    // permanently manual and swapping the board link must be reachable.
+    if(t==='trl'&&url&&upBtn.dataset.dlProj){ if(!_dlPickerOpen||_dlPickerBtn!==upBtn) _dlTrelloMenu(upBtn); return; }
     if(url){ window.open(url,'_blank','noopener'); return; }
     const _rp=upBtn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===upBtn.dataset.dlProj):null;
     // v916 — Trello is permanently manual with no SharePoint home: a dim TRL
