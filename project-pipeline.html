@@ -3059,7 +3059,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v923';
+const CORE_VERSION = 'v925';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11756,11 +11756,69 @@ const PZ_TRACKER_URL='https://bellweatherllc.github.io/tools/permit-zoning-track
 let PZ_BY_PROJECT=null; // normalized project name → {apps:[], lastSync:Date}
 function _pzNorm(x){ return String(x==null?'':x).toLowerCase().replace(/[^a-z0-9]/g,''); }
 // ── v922: live Trello stage read ──
-const _PZ_CF={project:'project'}; // only the project custom field is needed for stage overlay
+const _PZ_CF={project:'project'};
+const _PZ_CF_SUBMITTED='submitted date';
+const _PZ_CF_REVIEWDAYS='review days';
+let _pzLiveByCard=null; // v925 — cardId → {stage,submitted,reviewDays,...} for clock join
+const _PZ_WARN_DAYS=3;
+// Stage clock model — ported verbatim from the tracker's STAGES table so the
+// pipeline computes the SAME clock. 'review' = submitted + reviewDays business
+// days; 'age' = days-in-stage; 'none' = no clock. Unknown stages pass through.
+const _PZ_STAGES={
+  'incoming':{clock:'none',intake:true},'prep':{clock:'age'},'witharcheng':{clock:'age'},
+  'readytosubmit':{clock:'age'},'submitted':{clock:'review'},'inreview':{clock:'review'},
+  'revisionsneeded':{clock:'age'},'approved':{clock:'none',terminal:'done'},
+  'amendment':{clock:'age'},'completed':{clock:'none',terminal:'done'},
+  'onhold':{clock:'none',hold:true},'closeddeniedwithdrawn':{clock:'none',terminal:'dead'}
+};
+function _pzStageMeta(stage){ return _PZ_STAGES[_pzNorm(stage)]||null; }
+function _pzCfDate(card,defs,label){
+  const def=(defs||[]).find(d=>_pzNorm(d.name)===_pzNorm(label)); if(!def) return null;
+  const item=(card.customFieldItems||[]).find(i=>i.idCustomField===def.id); if(!item) return null;
+  const v=item.value&&item.value.date!=null?item.value.date:(item.value&&item.value.text!=null?item.value.text:'');
+  return v?new Date(v):null;
+}
+function _pzCfNum(card,defs,label){
+  const def=(defs||[]).find(d=>_pzNorm(d.name)===_pzNorm(label)); if(!def) return null;
+  const item=(card.customFieldItems||[]).find(i=>i.idCustomField===def.id); if(!item) return null;
+  const v=item.value&&item.value.number!=null?item.value.number:(item.value&&item.value.text!=null?item.value.text:'');
+  return v!==''&&v!=null?Number(v):null;
+}
+function _pzAddBizDays(date,n){
+  const d=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+  let added=0; while(added<n){ d.setDate(d.getDate()+1); const w=d.getDay(); if(w!==0&&w!==6) added++; }
+  return d;
+}
+// Compute the clock for a live card the tracker's way, against NOW. Returns the
+// same {cls,txt} shape the bubble renderer already uses.
+function _pzLiveClock(card){
+  const now=new Date(); const meta=_pzStageMeta(card.stage);
+  if(meta&&meta.hold) return {cls:'c-hold',txt:'on hold'};
+  if(meta&&meta.terminal==='done') return {cls:'c-done',txt:_pzNorm(card.stage)==='approved'?'approved':'done'};
+  if(meta&&meta.terminal==='dead') return {cls:'c-hold',txt:'closed'};
+  if(!meta) return {cls:'c-hold',txt:''}; // unknown stage — neutral
+  if(meta.clock==='review'){
+    if(card.submitted&&card.reviewDays!=null){
+      const target=_pzAddBizDays(card.submitted,card.reviewDays);
+      const left=_pzBizDays(now,target);
+      if(left<0) return {cls:'c-over',txt:'+'+Math.abs(left)+'d overdue'};
+      if(left<=_PZ_WARN_DAYS) return {cls:'c-warn',txt:left+'d left'};
+      return {cls:'c-ok',txt:left+'d left'};
+    }
+    return {cls:'c-warn',txt:card.submitted?'no review days':'no submitted date'};
+  }
+  if(meta.clock==='age'){
+    const from=card.lastActivity||now;
+    const age=Math.floor((now-from)/86400000);
+    return {cls:'c-ok',txt:age+'d in stage'};
+  }
+  return {cls:'c-hold',txt:''};
+}
 let _pzTrelloCfg=null;            // {apiKey,token,boardId} from CORE_Config
 let _pzLiveStage=null;            // normProject → {stageByTrack:{}, at:Date} (built from live cards)
 let _pzLiveAt=0;                  // ms timestamp of last live fetch
 let _pzLiveInflight=null;         // de-dupe concurrent hovers
+let _pzOpenZone=null;             // v924 — the permit zone currently showing a bubble
 const _PZ_LIVE_TTL=60000;         // 60s cache
 
 async function _pzLoadTrelloCfg(){
@@ -11802,7 +11860,7 @@ async function _pzFetchLiveStages(){
         fetch(_pzTrelloUrl('boards/'+b+'/customFields',{})).then(r=>r.json())
       ]);
       const listName={}; (lists||[]).forEach(l=>listName[l.id]=l.name);
-      const map={};
+      const map={}; const byCard={};
       (cards||[]).forEach(c=>{
         if(c.isTemplate) return;
         if((c.labels||[]).some(l=>_pzNorm(l.name)==='ignore')) return;
@@ -11811,9 +11869,17 @@ async function _pzFetchLiveStages(){
         if(!proj) return;
         const key=_pzNorm(proj);
         const stage=listName[c.idList]||'';
-        (map[key]=map[key]||[]).push({name:c.name,stage:stage});
+        // v925 — pull the clock inputs so the pipeline can compute the review
+        // clock live against now (submitted date + review days). stageEntered
+        // approximated by dateLastActivity (no heavy actions fetch on hover).
+        const sub=_pzCfDate(c,defs,_PZ_CF_SUBMITTED);
+        const rdv=_pzCfNum(c,defs,_PZ_CF_REVIEWDAYS);
+        const rec={cardId:c.id,name:c.name,stage:stage,submitted:sub,reviewDays:rdv,
+                   lastActivity:c.dateLastActivity?new Date(c.dateLastActivity):null};
+        (map[key]=map[key]||[]).push(rec);
+        byCard[c.id]=rec;
       });
-      _pzLiveStage=map; _pzLiveAt=Date.now();
+      _pzLiveStage=map; _pzLiveByCard=byCard; _pzLiveAt=Date.now();
       return map;
     }catch(e){ console.warn('[v922] live Trello stage fetch failed:',e.message||e); return null; }
     finally{ _pzLiveInflight=null; }
@@ -11888,6 +11954,7 @@ function _renderPtPanel(btn){
 // project (?project=), which opens that project's drawer directly. ══
 const _PZ_DOT_COLOR={'c-ok':'rgba(120,190,235,.95)','c-warn':'rgba(255,180,90,.95)','c-over':'rgba(255,120,110,.95)','c-hold':'rgba(255,255,255,.40)','c-done':'rgba(130,230,160,.95)'};
 function _fillPzZone(zone){
+  _pzOpenZone=zone; // v924
   const bubble=zone.querySelector('.tt-pz-bubble');
   const dots=zone.querySelector('.tt-pz-dots');
   const projName=zone.dataset.pzProject||'';
@@ -11909,33 +11976,33 @@ function _fillPzZone(zone){
   // bubble is the useful surface. Container kept but always empty (:empty hides it).
   if(dots) dots.innerHTML='';
   if(bubble){
-    // v922 — overlay LIVE Trello stage when available; clocks stay from mirror.
-    const live=_pzApplyLive(projName); // [{name,stage}] or null
-    const _liveStageFor=(f)=>{
-      if(!live) return null;
-      // match by card/app name first, then by track keyword, else single-app fallback
-      const fn=_pzNorm(f.ProjectName||''), tk=_pzNorm(f.TrackType||'');
-      let hit=live.find(l=>_pzNorm(l.name).indexOf(tk)>-1 && tk);
-      if(!hit&&live.length===1) hit=live[0];
-      if(!hit&&apps.length===1&&live.length) hit=live[0];
-      return hit?hit.stage:null;
-    };
-    let anyLive=false;
+    // v925 — join each mirror row to its live Trello card by TrelloCardId, then
+    // compute BOTH stage and clock live against now. Fall back to the mirror's
+    // stored values (clearly flagged "may be stale") only when Trello is down.
+    const liveOk=!!_pzLiveByCard;
     const rows=apps.map(f=>{
       const t=String(f.TrackType||''); const tn=_pzNorm(t);
       const tCls=tn.indexOf('zon')>-1?'z':tn.indexOf('permit')>-1?'p':'o';
-      const liveStage=_liveStageFor(f);
-      const showStage=liveStage||f.Stage||'\u2014';
-      const isLive=!!liveStage&&_pzNorm(liveStage)!==_pzNorm(f.Stage||'');
-      if(liveStage) anyLive=true;
-      const ck=_pzClock(f);
+      const card=liveOk&&f.TrelloCardId?_pzLiveByCard[f.TrelloCardId]:null;
+      let showStage, ck, isLive=false;
+      if(card){
+        showStage=card.stage||f.Stage||'\u2014';
+        ck=_pzLiveClock(card);
+        isLive=true;
+      } else {
+        showStage=f.Stage||'\u2014';
+        ck=_pzClock(f); // mirror-derived, possibly stale
+      }
       return '<div class="ptp-row"><span class="ptp-track '+tCls+'">'+escH(t||'?')+'</span>'+
-        '<span class="ptp-stage">'+escH(showStage)+(isLive?' <span style="color:#3b7fa8;font-size:8px;font-weight:800;">LIVE</span>':'')+'</span>'+
-        (ck.txt?'<span class="ptp-clock '+ck.cls+'">'+escH(ck.txt)+'</span>':'')+'</div>';
+        '<span class="ptp-stage">'+escH(showStage)+'</span>'+
+        (ck.txt?'<span class="ptp-clock '+ck.cls+'">'+escH(ck.txt)+(isLive?'':' <span style="opacity:.6;font-size:8px;">?</span>')+'</span>':'')+'</div>';
     }).join('');
-    const footer=_pzLiveStage
-      ? '<div class="ptp-sync">stage live from Trello \u00b7 clocks as of mirror sync</div>'
-      : (rec.lastSync?('<div class="ptp-sync">last synced '+escH(rec.lastSync.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+rec.lastSync.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}))+'</div>'):'');
+    const anyStale=apps.some(f=>!(liveOk&&f.TrelloCardId&&_pzLiveByCard[f.TrelloCardId]));
+    const footer=liveOk&&!anyStale
+      ? '<div class="ptp-sync">live from Trello</div>'
+      : (liveOk&&anyStale
+          ? '<div class="ptp-sync" style="color:#d07820;">some rows may be stale \u2014 not matched live</div>'
+          : '<div class="ptp-sync" style="color:#d07820;">Trello unreachable \u2014 showing last mirror sync'+(rec.lastSync?' ('+escH(rec.lastSync.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+rec.lastSync.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}))+')':'')+', may be stale</div>');
     bubble.innerHTML='<div class="tt-pz-b-title">Permit &amp; Zoning \u2014 '+escH(projName)+'</div>'+rows+
       footer+'<div class="tt-pz-b-open">Click to open in the tracker</div>';
   }
@@ -11943,12 +12010,20 @@ function _fillPzZone(zone){
   // hover reflects Trello the moment you looked. Cached 60s, so re-hovers are
   // instant and don't re-hit Trello.
   if(!_pzLiveStage||Date.now()-_pzLiveAt>=_PZ_LIVE_TTL){
-    _pzFetchLiveStages().then(m=>{ if(m&&zone.matches(':hover')) _fillPzZone(zone); }).catch(()=>{});
+    _pzFetchLiveStages().then(m=>{
+      // v924 — re-render whatever permit bubble is open now (if any), rather
+      // than depending on a :hover match that the overlay defeats.
+      if(m&&_pzOpenZone&&_pzOpenZone.querySelector('.tt-pz-bubble')&&_pzOpenZone.offsetParent!==null) _fillPzZone(_pzOpenZone);
+    }).catch(()=>{});
   }
 }
 document.addEventListener('pointerover',e=>{
   const z=e.target.closest&&e.target.closest('.tt-pz-zone');
   if(z) _fillPzZone(z);
+});
+document.addEventListener('pointerout',e=>{
+  const z=e.target.closest&&e.target.closest('.tt-pz-zone');
+  if(z&&_pzOpenZone===z){ const to=e.relatedTarget; if(!(to&&to.closest&&to.closest('.tt-pz-zone'))) _pzOpenZone=null; }
 });
 document.addEventListener('pointerdown',e=>{
   const z=e.target.closest&&e.target.closest('.tt-pz-zone');
