@@ -216,7 +216,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v40</div>
+    <div class="auth-version" id="authVersionBadge">v43</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -227,7 +227,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v40</div>
+  <div class="proto-badge" id="versionBadge">v43</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -265,6 +265,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 
   <div class="view" id="view-absolutes">
     <div class="abs-intro">Tracks permit and zoning progress to protect the CA signing date and production start.</div>
+    <div class="abs-intro" id="runwayAssumptions"></div>
     <div id="absContent"><div class="empty-note">Loading&hellip;</div></div>
   </div>
 </div>
@@ -289,7 +290,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v42';
+const CORE_VERSION = 'v43';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -317,16 +318,53 @@ const STAGES = [
 const TRACK_STAGES = STAGES.filter(s=>!s.intake && !s.hold && s.terminal!=='dead'); // rendered phase track
 const WARN_DAYS = 3; // business days remaining → "due soon"
 
+/* ═══ CA-protection clock (third clock) — v43, computation only ═══
+   Forward-looking: given the current CA date (from the Pipeline via CORE_Projects)
+   and where the permit sits today, is there enough runway left before the permit
+   threatens CA? Gate = Approved; nothing past Approved affects CA. On Hold suspends.
+   Computed live, never stored. Resolution = weeks. See CORE_Permit_CAClock_Design.md.
+
+   RUNWAY_WEEKS — PLACEHOLDER estimates of how long a permit typically spends in
+   each Trello list. Deliberately rough v1 values, shown openly on the Absolutes
+   page; correct them here (and bump the version) once real numbers exist. */
+const RUNWAY_WEEKS = {
+  'Incoming': 2, 'Prep': 2, 'With Arch/Eng': 4, 'Ready to Submit': 1,
+  'Submitted': 1, 'In Review': 3, 'Revisions Needed': 3
+};
+/* Which lists still lie ahead of a card (inclusive of its current list) on the
+   road to Approved. Explicit map — the journey isn't strictly linear (Revisions
+   loops back through review). weeksNeeded = sum of RUNWAY_WEEKS over this path. */
+const RUNWAY_PATH = {
+  'Incoming':         ['Incoming','Prep','With Arch/Eng','Ready to Submit','Submitted','In Review'],
+  'Prep':             ['Prep','With Arch/Eng','Ready to Submit','Submitted','In Review'],
+  'With Arch/Eng':    ['With Arch/Eng','Ready to Submit','Submitted','In Review'],
+  'Ready to Submit':  ['Ready to Submit','Submitted','In Review'],
+  'Submitted':        ['Submitted','In Review'],
+  'In Review':        ['In Review'],
+  'Revisions Needed': ['Revisions Needed','In Review']
+};
+const RUNWAY_YELLOW_SLACK = 2; // slack ≤ this → at-risk; slack ≤ 0 → critical
+
+/* Week-index → calendar date. MUST mirror the Pipeline's wkMon()/CAL_ABS_EARLIEST
+   (project-pipeline.html) exactly — CA dates live in GanttData as integer weeks
+   from this fixed epoch. If the Pipeline's epoch ever changes (it promises not to),
+   this must change with it. */
+const CA_EPOCH = new Date('2025-01-01');
+const _CA_MON_OFFSET = (()=>{ const d=CA_EPOCH.getDay(); return d===1?0:d===0?1:8-d; })();
+function caWeekToDate(w){ return new Date(CA_EPOCH.getTime()+(w*7+_CA_MON_OFFSET)*24*3600*1000); }
+
 /* Trello custom field names (spec §2.2) — matched case-insensitively */
 const CF = {project:'project', track:'track type', ptype:'permit type', jur:'jurisdiction',
             submitted:'submitted date', reviewdays:'review days', permitnum:'permit number',
-            owner:'card owner'}; // v32: matches 'CardOwner' — normName strips case and spacing
+            owner:'card owner',   // v32: matches 'CardOwner'
+            runway:'runway weeks'}; // v43: per-card override — total weeks this permit still needs to reach Approved. normName strips case and spacing throughout.
 
 /* ── State ── */
 let _token=null;
 let _trelloCfg=null;          // {apiKey, token, boardId}
 let _cfgRows={};              // key → {id, value} from CORE_Config
 let APPS=[];                  // application cards (have Track Type)
+let CA_BY_PROJECT={};         // v43: normName(project) → {week, date, status} from CORE_Projects GanttData
 let INTAKE=[];                // cards without Track Type (project intake mirrors)
 let SP_ROWS=[];               // CORE_Permits items
 let _spListOk=true;
@@ -479,6 +517,77 @@ async function loadProjectDesigners(){
     });
   }catch(e){ console.warn('[designers]',e); }
 }
+/* v43: CA milestone per project — same read-only borrow from the Pipeline's domain
+   as loadProjectDesigners above. The CA date is NOT a SharePoint column: it lives
+   inside CORE_Projects.GanttData as {milestones:[{name:'CA', week:<int>, status}]}.
+   week counts from CA_EPOCH (see caWeekToDate). status: projected | da-signed |
+   ca-signed. Defensive throughout — any parse failure yields no entry, never an
+   error. One-way read; the tracker never writes project data. */
+async function loadProjectCAs(){
+  try{
+    const projs=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,fields');
+    CA_BY_PROJECT={};
+    projs.forEach(it=>{
+      const f=it.fields||{};
+      const name=f.ProjectName||f.ClientName||f.Title||'';
+      if(!name||!f.GanttData) return;
+      try{
+        const gd=JSON.parse(f.GanttData);
+        const ca=(gd&&gd.milestones||[]).find(m=>m&&m.name==='CA');
+        if(!ca) return;
+        const wk=(ca.week!=null&&isFinite(ca.week))?ca.week:null;
+        CA_BY_PROJECT[normName(name)]={week:wk, date:wk!=null?caWeekToDate(wk):null, status:ca.status||'projected'};
+      }catch(e2){}
+    });
+  }catch(e){ console.warn('[ca-clock]',e); }
+}
+
+/* v43: the CA-protection runway verdict for one application card. Pure — reads the
+   card, CA_BY_PROJECT, and the clock; touches nothing. States:
+   comfortable / at-risk / critical  — the live verdict (slack in weeks decides)
+   paused    — On Hold suspends the clock
+   quiet     — nothing left to protect (CA signed, permit ≥ Approved, or application dead)
+   no-data   — can't assess (no CA date, or unknown stage with no override) */
+function computeCARunway(a){
+  const meta=stageMeta(a.stage);
+  if(meta&&meta.terminal==='dead') return {state:'quiet', why:'application closed'};
+  if(meta&&meta.hold) return {state:'paused', why:'On Hold'}; // before the rank check — On Hold sits below Approved in STAGES but is a parking lot, not a journey position
+  const ca=CA_BY_PROJECT[normName(a.project)];
+  if(!ca||ca.week==null) return {state:'no-data', why:'no CA date in Pipeline'};
+  if(ca.status==='ca-signed') return {state:'quiet', why:'CA signed'};
+  const apRank=stageRank('Approved');
+  if(meta&&(meta.terminal==='done'||stageRank(a.stage)>=apRank))
+    return {state:'quiet', why:'permit at/past Approved', weeksNeeded:0, caDate:ca.date};
+  let weeksNeeded=null, src='defaults';
+  if(a.runwayWeeks!=null){ weeksNeeded=a.runwayWeeks; src='card override'; }
+  else{
+    const path=RUNWAY_PATH[a.stage];
+    if(!path) return {state:'no-data', why:'unknown stage "'+a.stage+'" — no runway estimate', caDate:ca.date};
+    weeksNeeded=path.reduce((t,st)=>t+(RUNWAY_WEEKS[st]||0),0);
+  }
+  const weeksAvailable=Math.floor((ca.date.getTime()-Date.now())/(7*24*3600*1000));
+  const slack=weeksAvailable-weeksNeeded;
+  const state=slack<=0?'critical':(slack<=RUNWAY_YELLOW_SLACK?'at-risk':'comfortable');
+  return {state, weeksNeeded, weeksAvailable, slack, caDate:ca.date, src};
+}
+
+/* v43: verification surface — run window.dumpCARunway() in the console against the
+   live board and eyeball the math before any of this reaches the UI. */
+window.dumpCARunway=function(){
+  const rows=APPS.map(a=>{
+    const r=computeCARunway(a);
+    return {project:a.project, track:a.track, stage:a.stage,
+      caDate:r.caDate?r.caDate.toISOString().slice(0,10):'—',
+      needed:r.weeksNeeded!=null?r.weeksNeeded:'—',
+      available:r.weeksAvailable!=null?r.weeksAvailable:'—',
+      slack:r.slack!=null?r.slack:'—',
+      state:r.state, note:r.why||r.src||''};
+  });
+  console.table(rows);
+  const missing=Object.keys(CA_BY_PROJECT).length;
+  console.log('[ca-clock] '+rows.length+' cards · '+missing+' projects with a CA milestone in CORE_Projects · runway defaults:',RUNWAY_WEEKS);
+  return rows;
+};
 async function saveCheckins(){ // v39
   setSave('syncing','Saving note…');
   try{ await setConfigRow('pz_checkins',JSON.stringify(CHECKINS)); setSave('ok','Saved'); }
@@ -588,6 +697,7 @@ async function loadTrello(){
       reviewDays:(function(){ const v=cfValue(c,defs,CF.reviewdays); return v!==''?Number(v):null; })(),
       permitNum:String(cfValue(c,defs,CF.permitnum)||''),
       cardOwner:String(cfValue(c,defs,CF.owner)||'').trim(), // v32: the managing owner
+      runwayWeeks:(function(){ const v=cfValue(c,defs,CF.runway); return v!==''&&v!=null&&isFinite(Number(v))?Number(v):null; })(), // v43: override, null = use RUNWAY_WEEKS defaults
       engOwner:(String(cfValue(c,defs,'arch eng owner')||'')||String(cfValue(c,defs,'eng owner')||'')).trim(), // v34: who owns the engineering dependency (blank = CardOwner)
       labels:(c.labels||[]).map(l=>l.name).filter(Boolean),
       owners:(c.members||[]).map(m=>m.fullName).filter(Boolean),
@@ -1012,12 +1122,18 @@ async function boot(){
   catch(e){ console.error('[config]',e); setAuthStatus('Config load failed — check console.'); return; }
   document.getElementById('authOverlay').classList.add('hidden');
   // v32: designer-of-record fetch retired — CardOwner on the cards is the managing owner now (loadProjectDesigners kept above for possible reuse)
+  await loadProjectCAs(); // v43: CA dates for the CA-protection clock — defensive, never throws
   await refreshAll();
 }
 
 (function(){
   const vb=document.getElementById('versionBadge'); if(vb) vb.textContent=CORE_VERSION;
   const ab=document.getElementById('authVersionBadge'); if(ab) ab.textContent=CORE_VERSION;
+  // v43: state the runway assumptions on the page itself — visible, adjustable, never hidden
+  const ra=document.getElementById('runwayAssumptions');
+  if(ra) ra.textContent='Runway estimates (weeks a permit typically spends in each list — placeholder values, adjust in RUNWAY_WEEKS): '
+    +Object.keys(RUNWAY_WEEKS).map(k=>k+' '+RUNWAY_WEEKS[k]).join(' · ')
+    +'. A "Runway Weeks" custom field on a card overrides these with that card\u2019s own total.';
 })();
 
 msalApp.handleRedirectPromise().then(resp=>{
