@@ -287,7 +287,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v40';
+const CORE_VERSION = 'v41';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -396,6 +396,11 @@ function tURL(path,params){
 async function tGet(path,params){
   const r=await fetch(tURL(path,params));
   if(!r.ok) throw new Error('Trello '+r.status+' /'+path);
+  return r.json();
+}
+async function tPut(path,params){
+  const r=await fetch(tURL(path,params),{method:'PUT'});
+  if(!r.ok) throw new Error('Trello PUT '+r.status+' /'+path);
   return r.json();
 }
 
@@ -533,7 +538,7 @@ async function loadTrello(){
   const [boardInfo,lists,cards,defs,actions]=await Promise.all([
     tGet('boards/'+b,{fields:'name,url'}),
     tGet('boards/'+b+'/lists',{fields:'name,pos'}),
-    tGet('boards/'+b+'/cards',{fields:'name,idList,labels,dateLastActivity,cardRole,shortUrl,isTemplate,desc',
+    tGet('boards/'+b+'/cards',{fields:'name,idList,labels,dateLastActivity,cardRole,shortUrl,isTemplate,desc,due',
         customFieldItems:'true', checklists:'all', members:'true', member_fields:'fullName'}),
     tGet('boards/'+b+'/customFields',{}),
     tGet('boards/'+b+'/actions',{filter:'updateCard:idList,commentCard', limit:'1000',
@@ -589,7 +594,8 @@ async function loadTrello(){
       checklists:(c.checklists||[]).map(cl=>({name:cl.name,
         items:(cl.checkItems||[]).sort((a2,b2)=>a2.pos-b2.pos).map(i=>({text:i.name,done:i.state==='complete'}))})),
       history:histByCard[c.id]||[],
-      lastActivity:c.dateLastActivity?new Date(c.dateLastActivity):null
+      lastActivity:c.dateLastActivity?new Date(c.dateLastActivity):null,
+      due:c.due?new Date(c.due):null
     };
     model.stageEntered=model.history.length
       ? new Date(model.history[model.history.length-1].at)
@@ -724,6 +730,7 @@ async function syncToSharePoint(){
       }else if(fieldsDiffer(f,row.fields||{})){
         await graphPatch(BWC_SITE+'/CORE_Permits/items/'+row.id+'/fields',f); writes++;
       }
+      await _reconcileCardDue(a);
     }
     setSave('ok', writes?('Synced ('+writes+')'):'Synced');
     const st=document.getElementById('syncStamp');
@@ -739,6 +746,18 @@ async function syncToSharePoint(){
       showBanner('bannerErr','SharePoint sync failed: '+String(e.message||e).slice(0,300));
     }
   }
+}
+
+async function _reconcileCardDue(a){
+  try{
+    const want=a.target||null;
+    const have=a.due||null;
+    const sameDay=(x,y)=>x&&y&&x.getFullYear()===y.getFullYear()&&x.getMonth()===y.getMonth()&&x.getDate()===y.getDate();
+    if(want&&have&&sameDay(want,have)) return;
+    if(!want&&!have) return;
+    await tPut('cards/'+a.cardId,{due: want?want.toISOString():''});
+    a.due=want;
+  }catch(e){ console.warn('[due sync]',a.cardId,e.message||e); }
 }
 
 /* ═══ Rendering ═══ */
