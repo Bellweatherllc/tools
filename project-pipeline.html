@@ -3076,7 +3076,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v931';
+const CORE_VERSION = 'v932';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -6000,24 +6000,6 @@ function buildPersonSep(){
   const tcSep=el('div',''); tcSep.style.cssText=`height:${C.personSepH}px;width:${w2px(C.numWeeks)}px;background:rgba(0,0,0,.30);border-top:1px solid rgba(0,0,0,.35);`;
   return[fcSep,tcSep];
 }
-function calcPersonGroupH(person, section){
-  const field=DESIGNERS.find(d=>d.id===person.id)?'designer':'productionPM';
-  // Unified model: one lane-row per project; height is BAND_H collapsed, C.laneH expanded
-  const projH=PROJECTS.filter(p=>isVisible(p)&&p[field]===person.id).reduce((sum,proj)=>{
-    return sum+(proj.collapsed?BAND_H:C.laneH);
-  },0);
-  // Include ghost rows for pending planning cards proposed to this designer
-  const ghostCount=(section==='design')
-    ?(PLANNING_PROJECTS||[]).filter(pp=>!pp.parked&&pp.ppStatus!=='lost'&&pp.proposedDesigner===person.id&&pp.slotId).length
-    :0;
-  return projH+ghostCount*C.laneH+8; // +8 for 4px top + 4px bottom inner spacers
-}
-function refreshTimeoffOverlayH(personId, section){
-  const person=personById(personId); if(!person)return;
-  const h=calcPersonGroupH(person,section);
-  document.querySelectorAll(`.timeoff-overlay-cap[data-person-id="${personId}"][data-section="${section}"]`).forEach(ov=>ov.style.height=h+'px');
-}
-
 // ════════════════════════════════════════════════  TIME-OFF (day-granular — v929)
 // person.timeOff is a sorted array of 'YYYY-MM-DD' weekday strings. Weekends carry
 // no meaning anywhere: the calendar renders Mon–Fri only, and because Friday's
@@ -6286,8 +6268,10 @@ function buildDesignSection(){
         });
         const botTlSpD=el('div',''); botTlSpD.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(botTlSpD);
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=person.id; ov.dataset.section='design';
-        const ovH=calcPersonGroupH(person,'design');
-        ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:${ovH}px;pointer-events:none;z-index:10;`;
+        // v932: height:100% of the relative group — the DOM is the truth. The old
+        // arithmetic (calcPersonGroupH) overshot when ghost slot rows were counted
+        // at full lane height but rendered collapsed, skipped, or double-assigned.
+        ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:100%;pointer-events:none;z-index:10;`;
         appendTimeoffStrips(ov,person,'design');
         grp.appendChild(ov); tc.appendChild(grp);
       }
@@ -6587,8 +6571,7 @@ function buildProdSection(){
         projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,-9,['DA'],[])));
         const botTlSp=el('div',''); botTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(botTlSp);
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=pmId; ov.dataset.section='production';
-        const ovH=calcPersonGroupH(person,'production');
-        ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:${ovH}px;pointer-events:none;z-index:10;`;
+        ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:100%;pointer-events:none;z-index:10;`;
         appendTimeoffStrips(ov,person,'production');
         grp.appendChild(ov); tl_els.push(grp);
       }
@@ -14383,6 +14366,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v932', date: '2026-08-08',
+    entries: [
+      'Fixed time-off bands on the Design screen occasionally extending past the bottom of a designer\u2019s group into the next person\u2019s rows. Bands now always end exactly where the group ends, on every screen.',
+    ],
+  },
   {
     version: 'v931', date: '2026-08-08',
     entries: [
