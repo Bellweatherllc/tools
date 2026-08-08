@@ -3059,7 +3059,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v926';
+const CORE_VERSION = 'v927';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -9487,6 +9487,7 @@ function buildPlanningSection(){
     _psProjTT.dataset.anchorKey=anchorKey;
     _psProjTT.style.left='0px'; _psProjTT.style.top='0px';
     _psProjTT.classList.add('tt-visible');
+    _pzPrefetchLive(); // v927 — head start for the permit hover
     const r=anchorEl.getBoundingClientRect();
     requestAnimationFrame(()=>{
       const tw=_psProjTT.offsetWidth||300, th=_psProjTT.offsetHeight||120;
@@ -11886,6 +11887,12 @@ async function _pzFetchLiveStages(){
   })();
   return _pzLiveInflight;
 }
+// v927 — kick the live Trello check the moment a project tooltip opens, so the
+// answer has usually landed before the pointer reaches the permit button.
+// De-duped and TTL-gated inside _pzFetchLiveStages; safe to call freely.
+function _pzPrefetchLive(){
+  if(!_pzLiveStage||Date.now()-_pzLiveAt>=_PZ_LIVE_TTL) _pzFetchLiveStages().catch(()=>{});
+}
 // Given the mirror rec for a project, return a normStage→liveStage lookup so the
 // renderer can swap in the current stage. Matching is best-effort by track/name.
 function _pzApplyLive(projName){
@@ -11953,7 +11960,7 @@ function _renderPtPanel(btn){
 // mirror loads async after render. Click opens the tracker deep-linked to the
 // project (?project=), which opens that project's drawer directly. ══
 const _PZ_DOT_COLOR={'c-ok':'rgba(120,190,235,.95)','c-warn':'rgba(255,180,90,.95)','c-over':'rgba(255,120,110,.95)','c-hold':'rgba(255,255,255,.40)','c-done':'rgba(130,230,160,.95)'};
-function _fillPzZone(zone){
+function _fillPzZone(zone,force){ // v927: force=true → render whatever we have (fetch failed), labeled honestly
   _pzOpenZone=zone; // v924
   const bubble=zone.querySelector('.tt-pz-bubble');
   const dots=zone.querySelector('.tt-pz-dots');
@@ -11983,6 +11990,20 @@ function _fillPzZone(zone){
   // bubble is the useful surface. Container kept but always empty (:empty hides it).
   if(dots) dots.innerHTML='';
   if(bubble){
+    // v927 — never paint stale rows while a fresh Trello answer is still possible.
+    // If the live data is missing or older than the TTL and we haven't already
+    // failed, show a brief "checking" state and fill in when the fetch lands
+    // (usually already in flight via the tooltip-open prefetch).
+    const fresh=!!_pzLiveByCard&&(Date.now()-_pzLiveAt<_PZ_LIVE_TTL);
+    if(!fresh&&!force){
+      bubble.innerHTML='<div class="tt-pz-b-title">Permit &amp; Zoning \u2014 '+escH(projName)+'</div>'+
+        '<div class="tt-pz-b-empty">Checking Trello\u2026</div>'+
+        '<div class="tt-pz-b-open">Click to open in the tracker</div>';
+      _pzFetchLiveStages()
+        .then(m=>{ if(_pzOpenZone===zone&&zone.offsetParent!==null) _fillPzZone(zone,!m); })
+        .catch(()=>{ if(_pzOpenZone===zone&&zone.offsetParent!==null) _fillPzZone(zone,true); });
+      return;
+    }
     // v925 — join each mirror row to its live Trello card by TrelloCardId, then
     // compute BOTH stage and clock live against now. Fall back to the mirror's
     // stored values (clearly flagged "may be stale") only when Trello is down.
@@ -12005,7 +12026,10 @@ function _fillPzZone(zone){
         (ck.txt?'<span class="ptp-clock '+ck.cls+'">'+escH(ck.txt)+(isLive?'':' <span style="opacity:.6;font-size:8px;">?</span>')+'</span>':'')+'</div>';
     }).join('');
     const anyStale=apps.some(f=>!(liveOk&&f.TrelloCardId&&_pzLiveByCard[f.TrelloCardId]));
-    const footer=liveOk&&!anyStale
+    const liveExpired=force&&liveOk&&(Date.now()-_pzLiveAt>=_PZ_LIVE_TTL); // v927
+    const footer=liveExpired
+      ? '<div class="ptp-sync" style="color:#d07820;">Trello unreachable \u2014 showing last check ('+escH(new Date(_pzLiveAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}))+'), may be stale</div>'
+      : liveOk&&!anyStale
       ? '<div class="ptp-sync">live from Trello</div>'
       : (liveOk&&anyStale
           ? '<div class="ptp-sync" style="color:#d07820;">some rows may be stale \u2014 not matched live</div>'
@@ -12013,16 +12037,8 @@ function _fillPzZone(zone){
     bubble.innerHTML='<div class="tt-pz-b-title">Permit &amp; Zoning \u2014 '+escH(projName)+'</div>'+rows+
       footer+'<div class="tt-pz-b-open">Click to open in the tracker</div>';
   }
-  // v922 — kick a live stage fetch; when it lands, re-fill this zone so the
-  // hover reflects Trello the moment you looked. Cached 60s, so re-hovers are
-  // instant and don't re-hit Trello.
-  if(!_pzLiveStage||Date.now()-_pzLiveAt>=_PZ_LIVE_TTL){
-    _pzFetchLiveStages().then(m=>{
-      // v924 — re-render whatever permit bubble is open now (if any), rather
-      // than depending on a :hover match that the overlay defeats.
-      if(m&&_pzOpenZone&&_pzOpenZone.querySelector('.tt-pz-bubble')&&_pzOpenZone.offsetParent!==null) _fillPzZone(_pzOpenZone);
-    }).catch(()=>{});
-  }
+  // v927 — the fetch-and-refill now lives in the "checking" branch above; no
+  // trailing kick needed. (Was v922/v924.)
 }
 document.addEventListener('pointerover',e=>{
   const z=e.target.closest&&e.target.closest('.tt-pz-zone');
@@ -12339,6 +12355,7 @@ function _showTip(info, e, anchor, belowEl){
   }
   tip.style.left=x+'px'; tip.style.top=y+'px';
   tip.classList.add('tt-visible');
+  _pzPrefetchLive(); // v927 — head start for the permit hover
   // Clamp after render so we know the tooltip width
   requestAnimationFrame(()=>{
     const tw=tip.offsetWidth, th=tip.offsetHeight;
@@ -12357,6 +12374,7 @@ function _showTipAt(nameEl, tip){
   tip.style.left=(r.right+10)+'px';
   tip.style.top=r.top+'px';
   tip.classList.add('tt-visible');
+  _pzPrefetchLive(); // v927 — head start for the permit hover
   requestAnimationFrame(()=>{
     const tw=tip.offsetWidth, th=tip.offsetHeight, vw=window.innerWidth, vh=window.innerHeight;
     let y=r.top+r.height/2-th/2;           // center on the row
@@ -14247,6 +14265,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v927', date: '2026-08-07',
+    entries: [
+      'The Permit & Zoning hover no longer flashes out-of-date information before updating. It now checks Trello as soon as a project card opens, shows a brief \u201cChecking Trello\u2026\u201d if the answer hasn\u2019t arrived yet, and only ever shows older information \u2014 clearly labeled with when it was last checked \u2014 if Trello can\u2019t be reached.',
+    ],
+  },
   {
     version: 'v863', date: '2026-07-16',
     entries: [
