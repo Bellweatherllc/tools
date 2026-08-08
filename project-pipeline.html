@@ -3059,7 +3059,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v927';
+const CORE_VERSION = 'v928';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -7274,7 +7274,6 @@ function initDrag(){
     }
 
     const rh=e.target.closest('[data-reorder-proj]');
-    if(rh&&!canEdit()) return;
     if(rh){
       e.preventDefault();
       const projId=rh.dataset.reorderProj;
@@ -7282,13 +7281,22 @@ function initDrag(){
       if(!capSection) return;
       // Reorder only works in grouped-PM mode; flat view has no person targets to drop onto
       if(capSection==='production'&&!PROD_SHOW_PMS) return;
-      const ghost=document.createElement('div'); ghost.className='proj-reorder-ghost';
       const proj=PROJECTS.find(p=>p.id===projId);
-      ghost.innerHTML=`<span class="ghost-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L7 13M7 1L4 4M7 1L10 4M7 13L4 10M7 13L10 10M1 7L13 7M1 7L4 4M1 7L4 10M13 7L10 4M13 7L10 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="ghost-text"><span class="ghost-name">${proj?escH(proj.name):''}</span><span class="ghost-hint">Drag to relocate</span></span>`;
+      // v928: non-admin drag is clamped to the project's current person — reorder only.
+      // Cross-person moves and unassign stay admin-only. Unassigned projects have no
+      // person to reorder within, so they remain admin-only too.
+      let restrictPerson=null;
+      if(!canEdit()){
+        const _fld=capSection==='design'?'designer':capSection==='lc'?'lc1':'productionPM';
+        restrictPerson=proj?proj[_fld]:null;
+        if(!restrictPerson) return;
+      }
+      const ghost=document.createElement('div'); ghost.className='proj-reorder-ghost';
+      ghost.innerHTML=`<span class="ghost-icon"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L7 13M7 1L4 4M7 1L10 4M7 13L4 10M7 13L10 10M1 7L13 7M1 7L4 4M1 7L4 10M13 7L10 4M13 7L10 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="ghost-text"><span class="ghost-name">${proj?escH(proj.name):''}</span><span class="ghost-hint">${restrictPerson?'Drag to reorder':'Drag to relocate'}</span></span>`;
       document.body.appendChild(ghost);
       ghost.style.left=e.clientX+12+'px'; ghost.style.top=e.clientY-14+'px';
       document.body.classList.add('is-reordering');
-      DRAG={type:'projCapacityReorder',projId,ghost,startY:e.clientY,origIdx:PROJECTS.findIndex(p=>p.id===projId),capacitySection:capSection};
+      DRAG={type:'projCapacityReorder',projId,ghost,startY:e.clientY,origIdx:PROJECTS.findIndex(p=>p.id===projId),capacitySection:capSection,restrictPerson};
       capture(rh,e.pointerId); return;
     }
 
@@ -8143,6 +8151,7 @@ function onMove(e){
     // If cursor is above first person header or inside the unassigned group — unassigned target
     const inUnassigned=DRAG.capacitySection!=='lc'&&unassignedGroup&&unassignedGroup.getBoundingClientRect().top<=e.clientY&&e.clientY<=unassignedGroup.getBoundingClientRect().bottom;
     if((firstHdr&&e.clientY<firstHdr.getBoundingClientRect().top)||inUnassigned){
+      if(DRAG.restrictPerson){ DRAG.targetPerson=undefined; DRAG.targetAfterProj=null; DROP_IND.style.display='none'; return; }
       resolveUnassignedDrop(e.clientY);
       return;
     }
@@ -8170,6 +8179,9 @@ function onMove(e){
         targetPerson=curPerson;
         indicatorEl=it.el; indicatorY=r.bottom;
       }
+    }
+    if(DRAG.restrictPerson&&targetPerson!==DRAG.restrictPerson){
+      DRAG.targetPerson=undefined; DRAG.targetAfterProj=null; DROP_IND.style.display='none'; return;
     }
     DRAG.targetPerson=targetPerson; DRAG.targetAfterProj=targetAfterProj;
     // ── Drag diagnostic (throttled) ──
@@ -14265,6 +14277,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v928', date: '2026-08-08',
+    entries: [
+      'Projects can now be dragged into a different order within a designer\u2019s or PM\u2019s group without turning on Admin mode. Moving a project to a different person, or into or out of Unassigned, still requires Admin mode.',
+    ],
+  },
   {
     version: 'v927', date: '2026-08-07',
     entries: [
