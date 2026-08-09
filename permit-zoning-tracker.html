@@ -138,11 +138,10 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .cardpop-title{display:flex;align-items:center;gap:10px;flex:1;min-width:0;overflow:hidden;}
 .cardpop-hdr .drawer-close{color:rgba(40,40,40,.40);}
 .cardpop-hdr .drawer-close:hover{color:var(--navy);}
-.cp-sec{border-bottom:1px solid var(--bdr);padding:12px 2px 14px;}
-.cp-sec:last-child{border-bottom:none;}
+.cp-sec{padding:0;} /* v51: each section is a full application card with its own chrome */
 .cp-sec-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
 .cp-sec-name{font-size:12px;font-weight:600;color:var(--ts);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.cardpop-body{overflow-y:auto;max-height:min(62vh,560px);padding:14px 16px 18px;scrollbar-width:thin;}
+.cardpop-body{overflow-y:auto;flex:1;min-height:0;padding:14px 16px 18px;scrollbar-width:thin;} /* v53: height comes from the project group */
 .cardpop-arrow{position:absolute;width:12px;height:12px;transform:rotate(45deg);}
 .cardpop-arrow{left:-7px;top:var(--cp-ay,60px);background:var(--sfc);border-left:1px solid var(--sep);border-bottom:1px solid var(--sep);} /* v49: horizontal only — the caret slides vertically */
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,94vw);background:var(--sfc);z-index:501;box-shadow:-8px 0 32px rgba(0,0,0,.25);transform:translateX(102%);transition:transform .22s ease;overflow-y:auto;}
@@ -228,7 +227,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v50</div>
+    <div class="auth-version" id="authVersionBadge">v53</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -239,7 +238,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v50</div>
+  <div class="proto-badge" id="versionBadge">v53</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -301,7 +300,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v50';
+const CORE_VERSION = 'v53';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -1045,19 +1044,13 @@ function _popOrderedApps(){
   names.forEach(n=>{ projects[n].slice().sort((x,y)=>String(x.track).localeCompare(String(y.track))).forEach(a=>out.push(a)); });
   return out;
 }
-function _popBuildBody(){
+function _popBuildBody(projectName){
+  // v51: the window holds ONE project — every one of its applications in full detail
+  // (facts, runway, journey, checklists, comments, owners), scrolling as a set.
   const body=document.getElementById('cardPopBody');
-  body.innerHTML=_popOrderedApps().map(a=>{
-    const chks=a.checklists.length
-      ? a.checklists.map(cl=>'<div class="chk-grp">'+esc(cl.name)+'</div>'+cl.items.map(it=>
-          '<div class="chk-row"><div class="chk-box'+(it.done?' on':'')+'">'+(it.done?'\u2713':'')+'</div><div class="chk-txt'+(it.done?' on':'')+'">'+esc(it.text)+'</div></div>').join('')).join('')
-      : '<div class="hist-at">No checklists on this card.</div>';
-    return '<div class="cp-sec" data-cp-card="'+esc(a.cardId)+'"><div class="cp-sec-hdr">'+
-      '<span class="track-chip '+trackChipCls(a.track)+'">'+esc(a.track)+'</span>'+
-      '<span class="cp-sec-name">'+esc(a.name)+'</span>'+
-      (a.url?'<a href="'+esc(a.url)+'" target="_blank" rel="noopener" style="font-size:9px;color:#8a6c14;font-weight:700;text-decoration:none;flex-shrink:0;">OPEN \u2197</a>':'')+
-      '</div>'+chks+'</div>';
-  }).join('');
+  const apps=APPS.filter(x=>x.project===projectName).sort((x,y)=>String(x.track).localeCompare(String(y.track)));
+  body.innerHTML=apps.map(a=>'<div class="cp-sec" data-cp-card="'+esc(a.cardId)+'">'+appDetailHtml(a)+'</div>').join('')
+    ||'<div class="empty-note">No applications for this project.</div>';
 }
 function _popSyncTitle(){
   const a=APPS.find(x=>x.cardId===_popCardId); if(!a) return;
@@ -1073,8 +1066,7 @@ function openCardPopById(cardId,el){
   const pop=document.getElementById('cardPop');
   if(_popCardId===cardId&&pop.classList.contains('open')){ closeCardPop(); return; }
   const fresh=!pop.classList.contains('open');
-  if(fresh){ delete pop.dataset.popTop; _popBuildBody(); }
-  else if(!document.querySelector('.cp-sec[data-cp-card="'+cardId+'"]')) _popBuildBody();
+  if(fresh||pop.dataset.popProject!==a.project){ _popBuildBody(a.project); pop.dataset.popProject=a.project; } // v51: one project per window; v53: position derives from the group
   _popCardId=cardId;
   _popAnchor=el||document.querySelector('[data-card-id="'+cardId+'"]');
   pop.classList.add('open');
@@ -1109,20 +1101,24 @@ function closeCardPop(){
   _popCardId=null; _popAnchor=null;
 }
 function _popReposition(){
-  // v49: one window, one place — pinned to the right edge, vertically settled once.
-  // Only the caret moves, sliding along the left edge to point at the anchored row.
+  // v53: the window belongs to its project group — top edge ~10px above the group's
+  // header, bottom edge ~10px below its last row, riding with it through scroll.
   const pop=document.getElementById('cardPop');
   if(!pop.classList.contains('open')) return;
   if(_popAnchor&&!document.body.contains(_popAnchor)) _popAnchor=document.querySelector('[data-card-id="'+_popCardId+'"]');
   if(!_popAnchor){ closeCardPop(); return; }
+  const grp=_popAnchor.closest('.proj-group');
+  const g=(grp||_popAnchor).getBoundingClientRect();
   const r=_popAnchor.getBoundingClientRect();
-  const pw=pop.offsetWidth, ph=pop.offsetHeight, vw=window.innerWidth, vh=window.innerHeight;
+  const pw=pop.offsetWidth, vw=window.innerWidth, vh=window.innerHeight;
   pop.style.left=Math.max(8,vw-pw-18)+'px';
-  let top=parseFloat(pop.dataset.popTop);
-  if(isNaN(top)){ top=Math.max(58,Math.min((vh-ph)/2, r.top)); pop.dataset.popTop=top; }
-  top=Math.max(8,Math.min(top,vh-ph-8)); // keep on screen through resizes
+  let top=Math.max(8,g.top-10);
+  let bottom=Math.min(vh-8,g.bottom+10);
+  let h=Math.max(160,bottom-top);            // floor for tiny groups
+  if(top+h>vh-8) top=Math.max(8,vh-8-h);     // keep fully on screen
   pop.style.top=top+'px';
-  pop.style.setProperty('--cp-ay',Math.max(52,Math.min(ph-26,r.top+r.height/2-top-6))+'px');
+  pop.style.height=h+'px';
+  pop.style.setProperty('--cp-ay',Math.max(52,Math.min(h-26,r.top+r.height/2-top-6))+'px');
 }
 window.addEventListener('scroll',_popReposition,true);
 window.addEventListener('resize',_popReposition);
