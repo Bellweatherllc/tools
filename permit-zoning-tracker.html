@@ -184,6 +184,9 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .d-fact span{color:var(--ts);font-size:10px;display:block;text-transform:uppercase;letter-spacing:.05em;}
 .hist-row{display:flex;gap:9px;font-size:11px;padding:3px 0;align-items:baseline;}
 .hist-dot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0;position:relative;top:1px;}
+.hist-dot-inferred{background:rgba(0,0,0,.18);} /* v56: rung inferred, not witnessed */
+#cardPop .hist-dot-inferred{background:rgba(255,255,255,.25);}
+.hist-inferred{font-style:italic;opacity:.75;}
 .hist-stage{font-weight:600;min-width:110px;}
 .hist-at{color:var(--ts);font-size:10.5px;}
 .chk-row{display:flex;gap:8px;font-size:11.5px;padding:2.5px 0;align-items:baseline;}
@@ -248,7 +251,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v55</div>
+    <div class="auth-version" id="authVersionBadge">v56</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -259,7 +262,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v55</div>
+  <div class="proto-badge" id="versionBadge">v56</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -318,7 +321,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v55';
+const CORE_VERSION = 'v56';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -1025,9 +1028,23 @@ function appDetailHtml(a){
       (a.permitNum?'<div class="d-fact"><span>Permit #</span><b>'+esc(a.permitNum)+'</b></div>':'')+
       (a.engOwner?'<div class="d-fact"><span>Arch/Eng Owner</span><b>'+esc(a.engOwner)+'</b></div>':'')+
       '</div>';
-    const hist=a.history.length
-      ? a.history.map(h=>'<div class="hist-row"><div class="hist-dot"></div><div class="hist-stage">'+esc(h.stage)+'</div><div class="hist-at">'+fmtDate(new Date(h.at))+(h.by?' · '+esc(h.by):'')+'</div></div>').join('')
-      : '<div class="hist-at">No list moves recorded yet.</div>';
+    const hist=(function(){ // v56: every stage up to the current one — dated where
+      // witnessed, marked inferred where the move predates tracking
+      const stages=TRACK_STAGES.filter(st=>!st.conditional||st.name.toLowerCase()===String(a.stage).toLowerCase());
+      const idx=stages.findIndex(st=>st.name.toLowerCase()===String(a.stage).toLowerCase());
+      if(idx===-1){
+        return a.history.length
+          ? a.history.map(h=>'<div class="hist-row"><div class="hist-dot"></div><div class="hist-stage">'+esc(h.stage)+'</div><div class="hist-at">'+fmtDate(new Date(h.at))+(h.by?' \u00b7 '+esc(h.by):'')+'</div></div>').join('')
+          : '<div class="hist-at">No list moves recorded yet.</div>';
+      }
+      const byStage={};
+      a.history.forEach(h=>{ byStage[normName(h.stage)]=h; }); // ascending — latest visit wins
+      return stages.slice(0,idx+1).map(st=>{
+        const h=byStage[normName(st.name)];
+        const meta=h?(fmtDate(new Date(h.at))+(h.by?' \u00b7 '+esc(h.by):'')):'no date recorded';
+        return '<div class="hist-row"><div class="hist-dot'+(h?'':' hist-dot-inferred')+'"></div><div class="hist-stage">'+esc(st.name)+'</div><div class="hist-at'+(h?'':' hist-inferred')+'">'+meta+'</div></div>';
+      }).join('');
+    })();
     const chks=a.checklists.length
       ? a.checklists.map(cl=>'<div class="chk-grp">'+esc(cl.name)+'</div>'+cl.items.map(i=>
           '<div class="chk-row"><div class="chk-box'+(i.done?' on':'')+'">'+(i.done?'✓':'')+'</div><div class="chk-txt'+(i.done?' on':'')+'">'+esc(i.text)+'</div></div>').join('')).join('')
@@ -1121,7 +1138,7 @@ function _popReposition(){
   pop.style.left=Math.max(8,vw-pw-18)+'px';
   let top=Math.max(8,g.top-10);
   let bottom=Math.min(vh-8,g.bottom+10);
-  let h=Math.max(160,(bottom-top)*1.3);      // v54: 30% taller, growing downward
+  let h=Math.max(160,(bottom-top)*1.625);    // v54: +30%; v56: +25% more, still growing downward
   if(top+h>vh-8) h=vh-8-top;                 // clamp to the viewport floor
   pop.style.top=top+'px';
   pop.style.height=h+'px';
