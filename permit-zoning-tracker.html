@@ -216,7 +216,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v45</div>
+    <div class="auth-version" id="authVersionBadge">v46</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -227,7 +227,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v45</div>
+  <div class="proto-badge" id="versionBadge">v46</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -290,7 +290,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v45';
+const CORE_VERSION = 'v46';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -531,7 +531,7 @@ async function loadProjectDesigners(){
    error. One-way read; the tracker never writes project data. */
 async function loadProjectCAs(){
   try{
-    const projs=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,fields');
+    const projs=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields($select=ProjectName,ClientName,Title,GanttData)&$select=id,fields'); // v46: only what the CA read needs
     CA_BY_PROJECT={};
     projs.forEach(it=>{
       const f=it.fields||{};
@@ -1130,7 +1130,12 @@ async function boot(){
   catch(e){ console.error('[config]',e); setAuthStatus('Config load failed — check console.'); return; }
   document.getElementById('authOverlay').classList.add('hidden');
   // v32: designer-of-record fetch retired — CardOwner on the cards is the managing owner now (loadProjectDesigners kept above for possible reuse)
-  await loadProjectCAs(); // v43: CA dates for the CA-protection clock — defensive, never throws
+  // v46: the CA borrow is the heaviest read in CORE (GanttData for every project) —
+  // it no longer blocks first paint. The board renders from Trello immediately; the
+  // CA-protection runway verdicts recompute and re-render the moment their data lands.
+  loadProjectCAs().then(()=>{
+    if(APPS.length){ computeClocks(); renderBoard(); renderAbsolutes(); }
+  }).catch(e=>console.warn('[ca-clock]',e));
   await refreshAll();
 }
 
