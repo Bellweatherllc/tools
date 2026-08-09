@@ -187,6 +187,12 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .fc-mp-btn:hover{background:rgba(0,0,0,.07);opacity:.7;}
 .fc-mp-btn.has-scans{filter:none;opacity:1;}
 .fc-mp-btn.lc-col{right:10px;} /* v938: LC rows — under the header eye */
+/* v944: Key Dates Matterport cell */
+.pp-mp-btn{display:inline-flex;align-items:center;gap:3px;border:none;background:none;padding:2px 4px;cursor:pointer;font-size:9.5px;font-weight:600;color:inherit;border-radius:3px;}
+.pp-mp-btn:hover{background:rgba(0,0,0,.06);}
+.pp-mp-btn.is-empty{filter:grayscale(1);opacity:.30;}
+.pp-mp-btn.is-empty:hover{opacity:.7;}
+.pp-mp-extra{font-size:7.5px;font-weight:800;color:#7a7a7a;align-self:flex-start;}
 .mp-marker{
   position:absolute;width:16px;height:22px;top:50%;transform:translateY(calc(-50% - 0.5px));
   background:#fff;border:1px solid rgba(0,0,0,.18);border-radius:4px;
@@ -3104,7 +3110,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v943';
+const CORE_VERSION = 'v944';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -6247,7 +6253,7 @@ function openMatterportCal(projId, anchorEl){
     title:()=>(proj.clientName||proj.name)+' \u2014 Matterport',
     days:()=>proj.matterport,
     setDays:a=>{ proj.matterport=a; },
-    afterChange:()=>{ renderMatterportMarkers(projId); triggerSave(proj); },
+    afterChange:()=>{ renderMatterportMarkers(projId); if(PROD_PANEL_OPEN&&typeof window.renderKeyDatesPanel==='function') window.renderKeyDatesPanel(); triggerSave(proj); },
     historyLabel:verb=>`${proj.clientName||proj.name} \u2014 Matterport scans ${verb}`,
     countLabel:n=>n+(n===1?' scan scheduled':' scans scheduled'),
   },anchorEl);
@@ -13909,8 +13915,8 @@ document.addEventListener('click',e=>{
     document.getElementById('prodPanel')?.classList.toggle('pp-wide',section==='design');
 
     const _colDefs={
-      production:['CA Sign','Con Start','Con End','Est. Cost','% Cmplt'],
-      design:    ['DA Sign','Ph I Start','Ph II Start','T1','C1','T2','T3','C2','PD','CA Sign','Ph III Start'],
+      production:['CA Sign','Con Start','Con End','MP','Est. Cost','% Cmplt'],
+      design:    ['DA Sign','Ph I Start','Ph II Start','T1','C1','T2','T3','C2','PD','CA Sign','Ph III Start','MP'],
       planning:  ['DA Sign','Des Start','CA Sign','Con Start','Con End','Est. Cost']
     };
     const _cols=_colDefs[section]||_colDefs.planning;
@@ -13957,6 +13963,9 @@ document.addEventListener('click',e=>{
       } else if(section==='design'&&lbl==='PD'){
         h.innerHTML=_PD_SVG; // v849: the pencil says it
         h.dataset.tip='Pencils down date';
+      } else if(lbl==='MP'){
+        h.innerHTML='<span style="display:inline-flex;width:14px;height:14px;margin-top:2px;">'+MATTERPORT_SVG+'</span>';
+        h.dataset.tip='Matterport scans \u2014 click a cell to schedule';
       } else {
         h.textContent=lbl;
       }
@@ -14010,6 +14019,34 @@ document.addEventListener('click',e=>{
       if(wide) cell.style.cssText='width:90px;min-width:90px;flex-shrink:0;';
       cell.textContent=val||'—'; copyArr.push(val||'');
       row.appendChild(cell);
+    }
+    // v944: Matterport cell — next scheduled scan (+n more), or a faint pinwheel to
+    // schedule. Direct listener: the panel lives on document.body, outside the gantt's
+    // click delegation, so [data-mp-btn] alone would never fire here.
+    function _addMpCell(row, copyArr, proj){
+      const cell=document.createElement('div'); cell.className='pp-date-val';
+      const btn=document.createElement('button');
+      btn.className='pp-mp-btn'; btn.dataset.mpBtn=proj.id;
+      const scans=Array.isArray(proj.matterport)?[...proj.matterport].sort():[];
+      if(scans.length){
+        const t=_isoDate(new Date());
+        const iso=scans.find(x=>x>=t)||scans[scans.length-1];
+        const d=new Date(iso+'T12:00:00');
+        const extra=scans.length-1;
+        btn.innerHTML='<span style="display:inline-flex;width:11px;height:11px;flex-shrink:0;">'+MATTERPORT_SVG+'</span>'
+          +'<span>'+d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</span>'
+          +(extra>0?'<span class="pp-mp-extra">+'+extra+'</span>':'');
+        btn.dataset.tocMonth=iso;
+        btn.dataset.tip=scans.length+(scans.length===1?' Matterport scan':' Matterport scans')+' \u00b7 click to edit';
+        copyArr.push(d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+(extra>0?' +'+extra:''));
+      } else {
+        btn.classList.add('is-empty');
+        btn.innerHTML='<span style="display:inline-flex;width:12px;height:12px;">'+MATTERPORT_SVG+'</span>';
+        btn.dataset.tip='Schedule Matterport scans';
+        copyArr.push('');
+      }
+      btn.addEventListener('click',e=>{ e.stopPropagation(); openMatterportCal(proj.id,btn); });
+      cell.appendChild(btn); row.appendChild(cell);
     }
     // v864: Sales lens estimated cost — opens the dialog rather than editing in place.
     function _addCostCell(row, copyArr, proj, val){
@@ -14084,6 +14121,7 @@ document.addEventListener('click',e=>{
         _addCell(row,_copy,pdWk!=null?pdWk:null,null,true);
         _addCell(row,_copy,caMs?.week,caMs);
         _addCell(row,_copy,ph3?.startWeek,null);
+        _addMpCell(row,_copy,proj);
 
       } else if(section==='production'){
         // ── Production: CA Sign | Con Start | Con End (admin-editable) | Est. Cost (admin-editable) | % Cmplt
@@ -14106,6 +14144,7 @@ document.addEventListener('click',e=>{
           });
           cell.appendChild(inp); row.appendChild(cell); _copy.push(inp.value);
         } else { _addCell(row,_copy,conEndWk,null,false,true); }
+        _addMpCell(row,_copy,proj);
         // Est. Cost
         if(IS_ADMIN_MODE){
           const costCell=document.createElement('div'); costCell.className='pp-date-val'; costCell.style.cssText='width:90px;min-width:90px;flex-shrink:0;';
@@ -14493,6 +14532,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v944', date: '2026-08-09',
+    entries: [
+      'Matterport scans joined the Key Data panel in both Design and Production. Each project row shows its next scheduled scan (with a +n count when more are booked) or a faint pinwheel when none are \u2014 clicking either opens the same scheduling calendar used on the board, and the panel updates as dates are toggled.',
+    ],
+  },
   {
     version: 'v943', date: '2026-08-09',
     entries: [
