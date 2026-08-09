@@ -170,7 +170,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
    indicator. LC rows have no milestone-set indicator, so there it takes that slot. ── */
 .fc-mp-btn{
   position:absolute;top:50%;right:58px;transform:translateY(-50%);
-  width:26px;height:26px;border:none;background:none;padding:4px;cursor:pointer;
+  width:18px;height:18px;border:none;background:none;padding:3px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
   z-index:10;border-radius:3px;transition:background .12s,filter .12s,opacity .12s;
   filter:grayscale(1);opacity:.35;
@@ -3095,7 +3095,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v933';
+const CORE_VERSION = 'v934';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -6233,12 +6233,16 @@ function openMatterportCal(projId, anchorEl){
     countLabel:n=>n+(n===1?' scan scheduled':' scans scheduled'),
   },anchorEl);
 }
-function buildMpMarker(proj, iso){
+function buildMpMarker(proj, iso, ww){
+  // ww: effective weekW of the destination section. During section builds C.weekW
+  // holds the section being built (same convention tier dots rely on), so build
+  // paths omit it; live repaints MUST pass the section's stored weekW — global
+  // w2px is wrong outside build functions (see _effWW note).
   const q=_toParse(iso); if(!q) return null;
-  const w1=w2px(1), dw=w1/5;
+  const _ww=ww||C.weekW, dw=_ww/5;
   const m=el('div','mp-marker');
   m.dataset.mpMarker=proj.id; m.dataset.tocMonth=iso;
-  m.style.left=Math.round(w2px(q.week)+(q.dow+0.5)*dw-8)+'px';
+  m.style.left=Math.round(q.week*_ww+(q.dow+0.5)*dw-8)+'px';
   const d=_linDate(q.lin);
   m.dataset.tip=d.toLocaleDateString('en-US',{weekday:'short'})+', '+d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' \u2014 Matterport scan \u00b7 click to edit';
   m.innerHTML=MATTERPORT_SVG;
@@ -6248,7 +6252,9 @@ function renderMatterportMarkers(projId){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
   document.querySelectorAll(`.mp-marker[data-mp-marker="${projId}"]`).forEach(m=>m.remove());
   document.querySelectorAll(`.ms-overlay[data-proj-id="${projId}"]`).forEach(ov=>{
-    (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso); if(mk) ov.appendChild(mk); });
+    const secEl=ov.closest('.section');
+    const ww=parseInt(secEl?.dataset?.weekW)||C.weekW;
+    (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso,ww); if(mk) ov.appendChild(mk); });
   });
   document.querySelectorAll(`[data-mp-btn="${projId}"]`).forEach(b=>b.classList.toggle('has-scans',!!(proj.matterport&&proj.matterport.length)));
 }
@@ -14466,6 +14472,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v934', date: '2026-08-08',
+    entries: [
+      'Fixed Matterport markers landing at the wrong spot on the timeline after scheduling a scan \u2014 the marker was being placed using the wrong week width for the section. The row button is also smaller, matching the milestone toggle.',
+    ],
+  },
   {
     version: 'v933', date: '2026-08-08',
     entries: [
