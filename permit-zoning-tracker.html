@@ -216,7 +216,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v46</div>
+    <div class="auth-version" id="authVersionBadge">v47</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -227,7 +227,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v46</div>
+  <div class="proto-badge" id="versionBadge">v47</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -290,7 +290,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v46';
+const CORE_VERSION = 'v47';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -367,6 +367,7 @@ let APPS=[];                  // application cards (have Track Type)
 let CA_BY_PROJECT={};         // v43: normName(project) → {week, date, status} from CORE_Projects GanttData
 let INTAKE=[];                // cards without Track Type (project intake mirrors)
 let SP_ROWS=[];               // CORE_Permits items
+let _spRowsPromise=null;      // v47: mirror read starts alongside the Trello calls
 let _spListOk=true;
 let _view='board';
 let _deepLinked=false;
@@ -660,7 +661,7 @@ async function loadTrello(){
     tGet('boards/'+b+'/cards',{fields:'name,idList,labels,dateLastActivity,cardRole,shortUrl,isTemplate,desc,due',
         customFieldItems:'true', checklists:'all', members:'true', member_fields:'fullName'}),
     tGet('boards/'+b+'/customFields',{}),
-    tGet('boards/'+b+'/actions',{filter:'updateCard:idList,commentCard', limit:'1000',
+    tGet('boards/'+b+'/actions',{filter:'updateCard:idList,commentCard', limit:'200', // v47: recent moves only — older history lives in the mirror's StageHistory
         fields:'data,type,date', memberCreator:'true', memberCreator_fields:'fullName'}) // v36: 'type' was missing — the comment filter had nothing to read
   ]);
   const listName={}; lists.forEach(l=>listName[l.id]=l.name);
@@ -827,12 +828,34 @@ function pruneFields(f){
   _presentCols.forEach(k=>{ if(k in f) out[k]=f[k]; });
   return out;
 }
+// v47: prepend the mirror's stored StageHistory to each card's recent-action history.
+// Trello only serves the last 200 actions now; anything older was written down by a
+// previous sync and lives in CORE_Permits — one source of long-term memory.
+async function mergeMirrorHistory(){
+  const items=await _spRowsPromise;
+  if(!items) return;
+  SP_ROWS=items;
+  const byCard={};
+  items.forEach(it=>{ const cid=it.fields&&it.fields.TrelloCardId; if(cid) byCard[cid]=it; });
+  APPS.forEach(a=>{
+    const row=byCard[a.cardId]; if(!row||!row.fields||!row.fields.StageHistory) return;
+    let stored=[]; try{ stored=JSON.parse(row.fields.StageHistory)||[]; }catch(e){ return; }
+    if(!stored.length) return;
+    const seen=new Set(a.history.map(h=>h.stage+'|'+String(h.at).slice(0,19)));
+    const older=stored.filter(h=>h&&h.stage&&!seen.has(h.stage+'|'+String(h.at).slice(0,19)));
+    if(older.length){
+      a.history=older.concat(a.history).sort((x,y)=>new Date(x.at)-new Date(y.at));
+      a.stageEntered=a.history.length?new Date(a.history[a.history.length-1].at):a.stageEntered;
+    }
+  });
+  computeClocks();
+}
 async function syncToSharePoint(){
   if(!_spListOk) return;
   setSave('syncing');
   try{
     if(_presentCols===null) await verifyColumns();
-    const items=await graphGetAll(BWC_SITE+'/CORE_Permits/items?$expand=fields&$select=id,fields&$top=200');
+    const items=SP_ROWS.length?SP_ROWS:await graphGetAll(BWC_SITE+'/CORE_Permits/items?$expand=fields&$select=id,fields&$top=200'); // v47: reuse the parallel read
     SP_ROWS=items;
     const byCard={};
     items.forEach(it=>{ const cid=it.fields&&it.fields.TrelloCardId; if(cid) byCard[cid]=it; });
@@ -1099,8 +1122,11 @@ async function refreshAll(){
     return;
   }
   hideBanner('bannerInfo');
+  // v47: start the mirror read in parallel — its StageHistory is the long-term memory
+  _spRowsPromise=_spListOk?graphGetAll(BWC_SITE+'/CORE_Permits/items?$expand=fields&$select=id,fields&$top=200').catch(e=>{ console.warn('[mirror]',e); return null; }):Promise.resolve(null);
   try{
     await loadTrello();
+    await mergeMirrorHistory(); // v47: stored history + recent actions, deduped
   }catch(e){
     console.error('[trello]',e);
     showBanner('bannerErr','Couldn\u2019t read the Trello board \u2014 check the credentials and board ID in Setup (\u2699). '+e.message);
