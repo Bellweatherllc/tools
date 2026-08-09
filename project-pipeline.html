@@ -168,6 +168,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .fc-msset-btn.is-set{background:#2152a1;border-color:transparent;border-style:solid;color:#fff;}
 .fc-msset-btn.is-editable{cursor:pointer;}
 .fc-msset-btn.is-editable:hover{filter:brightness(1.14);border-color:rgba(33,82,161,.6);color:rgba(33,82,161,.8);}
+.fc-msset-btn.ms-muted{filter:grayscale(1);opacity:.45;} /* v937: designer's T toggle is off */
 .fc-msset-btn.is-readonly{opacity:.75;}
 /* ── v933: Matterport scan button. Design rows: immediately left of the milestone-set
    indicator. LC rows have no milestone-set indicator, so there it takes that slot. ── */
@@ -180,6 +181,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 }
 .fc-mp-btn:hover{background:rgba(0,0,0,.07);opacity:.7;}
 .fc-mp-btn.has-scans{filter:none;opacity:1;}
+.fc-mp-btn.lc-col{right:6px;} /* v937: LC rows — under the header eye */
 .mp-marker{
   position:absolute;width:16px;height:22px;top:50%;transform:translateY(calc(-50% - 0.5px));
   background:#fff;border:1px solid rgba(0,0,0,.18);border-radius:4px;
@@ -3097,7 +3099,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v936';
+const CORE_VERSION = 'v937';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5088,13 +5090,12 @@ function buildFcMsRow(proj, capacitySection){
     mp.innerHTML=MATTERPORT_SVG;
     info.appendChild(mp);
   }
-  // ── v877: milestone-set indicator ──
-  // Editable in Design under admin; Production and read-only viewers see the same mark
-  // as information. The stamp is written on click — the click is the moment being recorded.
-  {
+  // ── v877/v937: milestone-set indicator — Design rows only (removed from Production).
+  // Editable under admin; grays out when the designer's T toggle hides milestones.
+  if(capacitySection==='design'){
     const set=!!(proj.msSet&&proj.msSet.at);
-    const editable=IS_ADMIN_MODE&&capacitySection==='design';
-    const b=el('button','fc-msset-btn'+(set?' is-set':'')+(editable?' is-editable':' is-readonly'));
+    const editable=IS_ADMIN_MODE;
+    const b=el('button','fc-msset-btn'+(set?' is-set':'')+(editable?' is-editable':' is-readonly')+(DES_MS_HIDDEN.has(proj.designer)?' ms-muted':''));
     // v935: the rectangle itself is the shape (dashed via CSS when unset) — only the check is drawn
     b.innerHTML=set
       ? `<svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M3.4 8.4l3.2 3.2L12.8 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
@@ -5206,21 +5207,21 @@ function buildFcTallyPerson(person, section){
     const tBtn=el('button','lc-ms-toggle'+(DES_MS_HIDDEN.has(person.id)?'':' ms-on'));
     tBtn.textContent='T'; tBtn.dataset.tip='Show/hide T1, T2, T3, C1, C2 and Pencils Down';
     tBtn.dataset.toggleDesMilestones=person.id;
-    tBtn.style.cssText='position:absolute;top:50%;right:31px;transform:translateY(-50%);';
+    tBtn.style.cssText='position:absolute;top:50%;right:39px;transform:translateY(-50%);';
     c.appendChild(tBtn);
     const _screened=document.querySelector('.tl-tally[data-section="design"][data-person="'+person.id+'"].person-screened')?true:false;
     const desEye=el('button','person-eye-btn'+(_screened?' is-screened':''));
     desEye.dataset.personEye=person.id; desEye.dataset.eyeSection='design';
     desEye.innerHTML=eyeSvg(_screened); desEye.dataset.tip='Toggle capacity tracking';
-    desEye.style.cssText='position:absolute;top:50%;right:53px;transform:translateY(-50%);margin:0;';
+    desEye.style.cssText='position:absolute;top:50%;right:61px;transform:translateY(-50%);margin:0;';
     c.appendChild(desEye);
     const hrsCluster=el('div','fc-cap-hrs');
-    hrsCluster.style.cssText='display:flex;align-items:center;gap:3px;flex-shrink:0;position:absolute;top:50%;right:0;transform:translateY(-50%);';
+    hrsCluster.style.cssText='display:flex;align-items:center;gap:3px;flex-shrink:0;position:absolute;top:50%;right:5px;transform:translateY(-50%);';
     const capInp=_makeCapInp(getTarget(person.id),v=>{ PERSON_TARGETS[person.id]=v; renderTally('design'); triggerSave(); });
     hrsCluster.appendChild(capInp); hrsCluster.appendChild(_capSuf());
     c.appendChild(hrsCluster);
     // Reserve the columns' width so Time Off and the name never slide beneath them
-    const sp=el('div',''); sp.style.cssText='width:74px;flex-shrink:0;'; rWrap.appendChild(sp);
+    const sp=el('div',''); sp.style.cssText='width:84px;flex-shrink:0;'; rWrap.appendChild(sp);
     c.appendChild(rWrap);
   } else {
     const lbl=el('div','fc-tally-label'); lbl.textContent=person.label;
@@ -5309,19 +5310,19 @@ function buildFcLcPersonHeader(lc,key){
   lcRWrap.appendChild(toBtn);
   // v936: mirrors the Design header — eye over the Matterport column, T over the
   // (empty here) milestone-set column, hours over the chevrons at the row edge.
-  msToggle.style.cssText='position:absolute;top:50%;right:31px;transform:translateY(-50%);';
+  msToggle.style.cssText='position:absolute;top:50%;right:61px;transform:translateY(-50%);'; // v937: swapped with the eye
   c.appendChild(msToggle);
   const _lcScr=document.querySelector('.tl-tally[data-section="lc"][data-person="'+lc.id+'"].person-screened')?true:false;
   const lcEye=el('button','person-eye-btn'+(_lcScr?' is-screened':''));
   lcEye.dataset.personEye=lc.id; lcEye.dataset.eyeSection='lc';
   lcEye.innerHTML=eyeSvg(_lcScr); lcEye.dataset.tip='Toggle capacity tracking';
-  lcEye.style.cssText='position:absolute;top:50%;right:53px;transform:translateY(-50%);margin:0;';
+  lcEye.style.cssText='position:absolute;top:50%;right:38px;transform:translateY(-50%);margin:0;';
   c.appendChild(lcEye);
   const lcHrsC=el('div','fc-cap-hrs');
-  lcHrsC.style.cssText='display:flex;align-items:center;gap:3px;flex-shrink:0;position:absolute;top:50%;right:0;transform:translateY(-50%);';
+  lcHrsC.style.cssText='display:flex;align-items:center;gap:3px;flex-shrink:0;position:absolute;top:50%;right:5px;transform:translateY(-50%);';
   lcHrsC.appendChild(capInp); lcHrsC.appendChild(_capSuf());
   c.appendChild(lcHrsC);
-  const lcSp=el('div',''); lcSp.style.cssText='width:74px;flex-shrink:0;'; lcRWrap.appendChild(lcSp);
+  const lcSp=el('div',''); lcSp.style.cssText='width:84px;flex-shrink:0;'; lcRWrap.appendChild(lcSp);
   c.appendChild(lcRWrap); return c;
 }
 function buildFcLcProjectRow(proj,lcId){
@@ -5415,8 +5416,8 @@ function buildFcLcProjectRow(proj,lcId){
     pillsWrap.appendChild(caTip2);
     footer.appendChild(pillsWrap); tip.appendChild(footer); }
   info.appendChild(tip);
-  // ── v936: Matterport scan button — same column as Design ──
-  { const mp=el('button','fc-mp-btn'+((proj.matterport&&proj.matterport.length)?' has-scans':''));
+  // ── v937: Matterport scan button — lines up under the LC header's eye ──
+  { const mp=el('button','fc-mp-btn lc-col'+((proj.matterport&&proj.matterport.length)?' has-scans':''));
     mp.dataset.mpBtn=proj.id;
     mp.dataset.tip=(proj.matterport&&proj.matterport.length)
       ? proj.matterport.length+(proj.matterport.length===1?' Matterport scan scheduled':' Matterport scans scheduled')+' \u00b7 click to edit'
@@ -14476,6 +14477,13 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v937', date: '2026-08-09',
+    entries: [
+      'The milestone-set check rectangles no longer appear on Production project rows \u2014 they are a Design-only mark. In Design, turning a designer\u2019s T toggle off now also grays out their check rectangles.',
+      'Header buttons in Design nudged left so the eye, T, and hours sit centered over the Matterport, milestone-set, and chevron columns below. In the LC area the T toggle and eye swapped places, and the Matterport button moved right to line up in a column beneath the eye.',
+    ],
+  },
   {
     version: 'v936', date: '2026-08-08',
     entries: [
