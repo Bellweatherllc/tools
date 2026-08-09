@@ -3104,7 +3104,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v940';
+const CORE_VERSION = 'v943';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -4663,7 +4663,14 @@ function findCrit(id){ for(const proj of PROJECTS){ ensureCrits(proj); const c=p
 function laneOfInProj(proj,id){ if(proj.designLane.phases.find(p=>p.id===id))return'design'; if(id===proj.permitting.id)return'permitting'; return'production'; }
 function laneOf(id){ const r=findPhase(id); return r?laneOfInProj(r.proj,id):null; }
 function tallySection(l){ return l==='production'?'production':'design'; }
-function todayWeek(){ return Math.floor((Date.now()-C.startDate)/(7*24*3600*1000)); }
+function todayWeek(){
+  // v941: the "now" week rolls forward on Saturday morning. Mon–Fri belong to
+  // their own week; from Saturday 00:00 local, "now" is the week starting the
+  // coming Monday. The old form measured raw elapsed time from the Jan-1 epoch,
+  // which rolled the week on Tuesday evening local — nobody's mental model.
+  // Calendar-day math (same _dayNum convention as time off) — DST- and clock-proof.
+  return Math.floor((_dayNum(new Date())-_toW0()+2)/7);
+}
 // Shared date-urgency scale (one source of truth for the Key Dates panel AND slot dates).
 // diff = target week - today. <=crit -> red ('crit'), <=warn -> orange ('warn'), else ''.
 function _dateUrgency(week, tw, crit, warn){
@@ -11659,7 +11666,11 @@ async function initFromSharePoint(){
     buildAll();
     applyAdminEligibility();
     // Load brief data from SP (async, non-blocking — in-memory state used when brief opens)
-    loadBriefBaselineFromSP().catch(()=>{});
+    loadBriefBaselineFromSP().then(()=>{
+      // v943: rolling baseline — if none has ever been stored, seed one from the
+      // current state so change tracking starts now rather than never.
+      if(!WEEKLY_BASELINE&&PROJECTS.length) saveBriefBaseline(snapshotPipeline()).catch(()=>{});
+    }).catch(()=>{});
     loadBriefBugsFromSP().catch(()=>{});
     loadBriefAcksFromSP().catch(()=>{});
     // v895 — Doc Linker silent pass: anchor any new unanchored projects on load.
@@ -14483,6 +14494,25 @@ document.addEventListener('click',e=>{
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v943', date: '2026-08-09',
+    entries: [
+      'The Weekly Review now works on a resolve model. Every change \u2014 status, dates, schedule moves, assignments, notes, costs, new or removed projects, planning-board changes \u2014 stays in the review, week after week, until someone clicks Mark Reviewed. Reviewing resolves the item for everyone: it disappears and stays gone unless that same thing changes again, in which case it comes back. Nothing needs a baseline reset and nothing expires on a schedule.',
+      'One-time effect on first open: because the old comparison point was long out of date, the review will list everything that has changed since then. Work through it once with Mark Reviewed; after that it only ever shows the live, unresolved changes.',
+    ],
+  },
+  {
+    version: 'v942', date: '2026-08-09',
+    entries: [
+      'Fixed new project notes not appearing in the Weekly Review. Marking a note reviewed used to flag the whole project forever, silently hiding every later note on it. Reviewing now hides only that exact note text \u2014 a new or edited note always reappears. One-time side effect: notes reviewed before this fix will show up once more and need a fresh Mark Reviewed.',
+    ],
+  },
+  {
+    version: 'v941', date: '2026-08-09',
+    entries: [
+      'The \u201cnow\u201d week now rolls forward on Saturday morning. Previously it advanced on Tuesday evening (a leftover of how weeks were counted from the calendar\u2019s start date), which made the Weekly Review\u2019s \u201cthis week\u201d and upcoming-date math lag most of a week behind. Everything keyed to the current week \u2014 the today marker, the Weekly Review\u2019s Upcoming section, and \u201cthis week / next week\u201d labels \u2014 follows the new boundary.',
+    ],
+  },
+  {
     version: 'v940', date: '2026-08-09',
     entries: [
       'The Matterport button is back to its previous shade \u2014 the earlier change targeted the wrong control. With a designer\u2019s milestones toggled off, the milestone-set mark is now a true light gray box rather than a dimmed blue.',
@@ -15167,9 +15197,7 @@ function wkToDate(w){ return wkMon(w); }
 function getPipelineVersion(){ return CORE_VERSION; }
 
 // ── Snapshot ─────────────────────────────────────────────────────────────────
-function snapshotPipeline(){
-  const projects={};
-  PROJECTS.forEach(p=>{
+function _snapProjForBrief(p){
     const cPh=p.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
     const designPhases=(p.designLane?.phases||[])
       .filter(ph=>!ph.isDesignProd)
@@ -15177,7 +15205,7 @@ function snapshotPipeline(){
     const prodPhases=(p.productionLane?.phases||[])
       .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
     ensureTiers(p); ensurePencilsDown(p);
-    projects[p.id]={
+    return {
       name:briefProjName(p),
       status:p.status||'projected',
       designer:p.designer||null,
@@ -15196,13 +15224,14 @@ function snapshotPipeline(){
       designPhases,
       prodPhases
     };
-  });
+}
+function snapshotPipeline(){
+  const projects={};
+  PROJECTS.forEach(p=>{ projects[p.id]=_snapProjForBrief(p); });
   return {ts:new Date().toISOString(), version:getPipelineVersion(), projects, planning:snapshotPlanning()};
 }
-function snapshotPlanning(){
-  const planning={};
-  PLANNING_PROJECTS.forEach(pp=>{
-    planning[pp.id]={
+function _snapPlanForBrief(pp){
+    return {
       name:pp.name,
       slotId:pp.slotId||null,
       slotWeek:pp.slotWeek??null,
@@ -15211,8 +15240,71 @@ function snapshotPlanning(){
       parked:!!pp.parked,
       notes:pp.notes||'',
     };
-  });
+}
+function snapshotPlanning(){
+  const planning={};
+  PLANNING_PROJECTS.forEach(pp=>{ planning[pp.id]=_snapPlanForBrief(pp); });
   return planning;
+}
+
+// ══ v943 RESOLVE-TO-FOLD ════════════════════════════════════════════════════
+// Mark Reviewed on a diff row no longer hides it — it RESOLVES it by folding the
+// current value of that one fact into the stored baseline and saving to CORE_Config.
+// Changed facts appear; unresolved facts persist week after week; resolved facts
+// vanish and stay gone unless they change again. The baseline advances organically,
+// one resolved fact at a time — no scheduled photo, no manual Set Baseline.
+async function _briefFold(spec){
+  // Re-fetch first so concurrent reviewers don't clobber each other's folds.
+  await loadBriefBaselineFromSP().catch(()=>{});
+  if(!WEEKLY_BASELINE) WEEKLY_BASELINE={ts:new Date().toISOString(),version:getPipelineVersion(),projects:{},planning:{}};
+  const base=WEEKLY_BASELINE.projects=WEEKLY_BASELINE.projects||{};
+  const plan=WEEKLY_BASELINE.planning=WEEKLY_BASELINE.planning||{};
+  const proj=spec.p?PROJECTS.find(pr=>pr.id===spec.p):null;
+  const snap=(spec.p&&base[spec.p])||null;
+  switch(spec.k){
+    case 'new':     if(proj) base[proj.id]=_snapProjForBrief(proj); break;
+    case 'removed': delete base[spec.p]; break;
+    case 'status':  if(proj&&snap) snap.status=proj.status||'projected'; break;
+    case 'assign':  if(proj&&snap){ if(spec.f==='des') snap.designer=proj.designer||null; else snap.pm=proj.productionPM||null; } break;
+    case 'value':   if(proj&&snap){ if(spec.f==='cost') snap.estValue=proj.estimatedValue||proj.projBudget||''; else snap.soUrl=(proj.docUrls&&proj.docUrls.so)||''; } break;
+    case 'note':    if(proj&&snap) snap.notes=proj.notes||''; break;
+    case 'pnote':   { const pp=(PLANNING_PROJECTS||[]).find(x=>x.id===spec.p); if(pp){ plan[pp.id]=plan[pp.id]||_snapPlanForBrief(pp); plan[pp.id].notes=pp.notes||''; } } break;
+    case 'plan':    { const pp=(PLANNING_PROJECTS||[]).find(x=>x.id===spec.p); if(pp) plan[pp.id]=_snapPlanForBrief(pp); else delete plan[spec.p]; } break;
+    case 'ms':      if(proj&&snap){ const cur=(proj.milestones||[]).find(m=>m.id===spec.id); if(cur){ snap.milestones=snap.milestones||[]; const bm=snap.milestones.find(m=>m.id===spec.id); if(bm){ bm.status=cur.status; bm.week=cur.week; } else snap.milestones.push({id:cur.id,name:cur.name,status:cur.status,week:cur.week}); } } break;
+    case 'sched':   if(proj&&snap) _briefFoldSched(proj,snap,spec.f); break;
+  }
+  WEEKLY_BASELINE.version=getPipelineVersion();
+  await saveBriefBaseline(WEEKLY_BASELINE);
+  updateBriefBaselineLbl();
+}
+function _briefFoldSched(proj,snap,field){
+  const f=field||'';
+  if(f==='Pencils Down'){ ensurePencilsDown(proj); snap.pd=proj.pencilsDown?{id:proj.pencilsDown.id,week:proj.pencilsDown.week}:null; return; }
+  if(/ Selection$/.test(f)){ // one tier only — T2's unresolved move stays visible when T1 is resolved
+    ensureTiers(proj); const nm=f.replace(/ Selection$/,'');
+    const cur=(proj.tiers||[]).find(t=>t.name===nm); if(!cur) return;
+    snap.tiers=Array.isArray(snap.tiers)?snap.tiers:[];
+    const bt=snap.tiers.find(t=>t.id===cur.id);
+    if(bt) bt.week=cur.week; else snap.tiers.push({id:cur.id,name:cur.name,week:cur.week});
+    return; }
+  if(/^Crit /.test(f)){ const nm=f==='Crit 1'?'C1':'C2';
+    const cur=(proj.crits||[]).find(c=>c.name===nm); if(!cur) return;
+    snap.crits=Array.isArray(snap.crits)?snap.crits:[];
+    const bc=snap.crits.find(c=>c.id===cur.id);
+    if(bc) bc.week=cur.week; else snap.crits.push({id:cur.id,name:cur.name,week:cur.week});
+    return; }
+  if(f==='Construction'){ const cPh=proj.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
+    snap.constrStart=cPh?.startWeek??null; snap.constrDur=cPh?.durWeeks??null;
+    if(cPh&&Array.isArray(snap.prodPhases)){ const bp=snap.prodPhases.find(x=>x.id===cPh.id); if(bp){ bp.startWeek=cPh.startWeek; bp.durWeeks=cPh.durWeeks; } }
+    return; }
+  // Named phase — fold just that phase entry
+  const all=[...(proj.designLane?.phases||[]),...(proj.productionLane?.phases||[])];
+  const cur=all.find(ph=>ph.name===f); if(!cur) return;
+  const upd=arr=>{ if(!Array.isArray(arr)) return false; const b=arr.find(x=>x.id===cur.id); if(b){ b.startWeek=cur.startWeek; b.durWeeks=cur.durWeeks; return true; } return false; };
+  if(!upd(snap.designPhases)) upd(snap.prodPhases);
+  snap.designStart=proj.designLane?.phases?.[0]?.startWeek??snap.designStart??null;
+  snap.prodStart=proj.productionLane?.phases?.[0]?.startWeek??snap.prodStart??null;
+  if(/^construction$/i.test(cur.name?.trim()||'')){ snap.constrStart=cur.startWeek; snap.constrDur=cur.durWeeks; }
 }
 
 // ── Baseline save / load ──────────────────────────────────────────────────────
@@ -15360,7 +15452,7 @@ function diffPlanning(){
   PLANNING_PROJECTS.forEach(pp=>{
     const snap=base[pp.id];
     if(!snap){
-      changes.push({type:'added',name:pp.name,detail:'Added to planning board'});
+      changes.push({type:'added',name:pp.name,detail:'Added to planning board',ppId:pp.id});
       return;
     }
     // Slot change
@@ -15371,28 +15463,28 @@ function diffPlanning(){
       const fromName=fromProj?fromProj.name:snapSlotWk!=null?'week of '+wkDate(snapSlotWk):'Unattached';
       const toProj=curSlotId?PROJECTS.find(p=>p.id===curSlotId):null;
       const toName=toProj?toProj.name:curSlotWk!=null?'week of '+wkDate(curSlotWk):'Unattached';
-      changes.push({type:'moved',name:pp.name,detail:`Moved: ${fromName} → ${toName}`});
+      changes.push({type:'moved',name:pp.name,detail:`Moved: ${fromName} → ${toName}`,ppId:pp.id});
     }
     // Sales person
     if((snap.salesPerson||'')!==(pp.salesPerson||'')){
-      changes.push({type:'updated',name:pp.name,detail:`Sales: ${snap.salesPerson||'—'} → ${pp.salesPerson||'—'}`});
+      changes.push({type:'updated',name:pp.name,detail:`Sales: ${snap.salesPerson||'—'} → ${pp.salesPerson||'—'}`,ppId:pp.id});
     }
     // Proposed designer
     const curDes=pp.proposedDesigner||null, snapDes=snap.proposedDesigner||null;
     if(snapDes!==curDes){
       const fl=snapDes==='any'?'Any':snapDes?personById(snapDes)?.label||snapDes:'—';
       const tl=curDes==='any'?'Any':curDes?personById(curDes)?.label||curDes:'—';
-      changes.push({type:'updated',name:pp.name,detail:`Proposed designer: ${fl} → ${tl}`});
+      changes.push({type:'updated',name:pp.name,detail:`Proposed designer: ${fl} → ${tl}`,ppId:pp.id});
     }
     // Parked
     if(!!snap.parked!==!!pp.parked){
-      changes.push({type:'updated',name:pp.name,detail:pp.parked?'Parked':'Un-parked'});
+      changes.push({type:'updated',name:pp.name,detail:pp.parked?'Parked':'Un-parked',ppId:pp.id});
     }
   });
   // Removed from board
   Object.keys(base).forEach(id=>{
     if(!PLANNING_PROJECTS.find(pp=>pp.id===id))
-      changes.push({type:'removed',name:base[id].name,detail:'Removed from planning board'});
+      changes.push({type:'removed',name:base[id].name,detail:'Removed from planning board',ppId:id});
   });
   return changes;
 }
@@ -15477,10 +15569,18 @@ let _briefReviewedItems = [];   // populated during generateBriefHTML, rendered 
 // from eighteen months ago should stay buried once it has been waved off. The tray at
 // the foot of the section is the way back if something was dismissed in error.
 let HK_SHOW_DISMISSED=false;
-function briefAckRow(ackId,lblCls,label,text){
-  const st=BRIEF_ACKS[ackId];
-  if(st==='archived'||st==='reviewed') return ''; // gone — no reviewed archive
-  const btn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Mark Reviewed</button>`;
+function briefAckRow(ackId,lblCls,label,text,fold){
+  // v943: rows with a fold spec are baseline-diff rows — Mark Reviewed RESOLVES them
+  // (folds the fact into the baseline) instead of hiding them, and BRIEF_ACKS is not
+  // consulted: the diff itself stops producing the row once resolved. Rows without a
+  // fold spec (flags, events, housekeeping) keep the original hide-on-ack behavior.
+  if(!fold){
+    const st=BRIEF_ACKS[ackId];
+    if(st==='archived'||st==='reviewed') return ''; // gone — no reviewed archive
+  }
+  const btn=fold
+    ? `<button class="brief-ack-btn brief-ack-mark" data-fold='${escH(JSON.stringify(fold))}'>Mark Reviewed</button>`
+    : `<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Mark Reviewed</button>`;
   return `<div class="brief-card-row"><span class="bcr-lbl ${lblCls}">${label}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${btn}</span></div>`;
 }
 function briefChangelogRow(ackId,text){
@@ -15511,12 +15611,12 @@ function briefHealthSummary(diff,flags){
   const parts=[];
   parts.push(`${active.length} active project${active.length!==1?'s':''} in the pipeline — ${inProd} in production, ${inDesign} in design.`);
   if(!WEEKLY_BASELINE){
-    parts.push('No baseline set — week-over-week changes cannot be tracked yet. Set a baseline to begin.');
+    parts.push('Baseline initializing — change tracking begins on the next open.');
   } else {
     const {statusChanges,msChanges,newProjs,assignmentChanges,removedProjs,scheduleChanges,noteChanges,valueChanges,versionChange}=diff;
     const total=statusChanges.length+msChanges.length+newProjs.length+assignmentChanges.length+removedProjs.length+(scheduleChanges||[]).length+(noteChanges||[]).length+(valueChanges||[]).length+(versionChange?1:0);
     if(total===0){
-      parts.push('No tracked changes since the last baseline.');
+      parts.push('No unresolved changes — everything reviewed.');
     } else {
       const cp=[];
       if(statusChanges.length) cp.push(`${statusChanges.length} status change${statusChanges.length!==1?'s':''}`);
@@ -15526,7 +15626,7 @@ function briefHealthSummary(diff,flags){
       if(assignmentChanges.length) cp.push(`${assignmentChanges.length} assignment change${assignmentChanges.length!==1?'s':''}`);
       if((valueChanges||[]).length) cp.push(`${valueChanges.length} cost or scope outline update${valueChanges.length!==1?'s':''}`);
       if(versionChange) cp.push('tool update');
-      parts.push('Changes since baseline: '+cp.join(', ')+'.');
+      parts.push('Unresolved changes: '+cp.join(', ')+'.');
     }
   }
   const attnCount=overdue.length+stalls.length;
@@ -15596,9 +15696,10 @@ function generateBriefHTML(){
     : `<button data-note-btn="${projId}" data-tip="Edit note" style="background:rgba(216,182,79,.12);border:1px solid rgba(216,182,79,.35);border-radius:3px;cursor:pointer;color:var(--gold);padding:2px 5px;display:flex;align-items:center;flex-shrink:0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button>`;
   const notesBySection={pipeline:[],sales:[],design:[],production:[]};
   (noteChanges||[]).forEach(({proj,isNew,note})=>{
-    const ackId=proj.id+'-note';
-    if(BRIEF_ACKS[ackId]==='archived'||BRIEF_ACKS[ackId]==='reviewed') return;
-    const ackBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Mark Reviewed</button>`;
+    // v943: reviewing a note RESOLVES it — the note text folds into the baseline.
+    // A later edit is a new disagreement and reappears; identical text stays resolved.
+    const fold={k:proj._isPlanningNote?'pnote':'note',p:proj.id};
+    const ackBtn=`<button class="brief-ack-btn brief-ack-mark" data-fold='${escH(JSON.stringify(fold))}'>Mark Reviewed</button>`;
     const noteHtml=escH(note).replace(/\n/g,'<br>').replace(/(<br>)(— [^<]+)/g,'$1<span style="color:rgba(0,0,0,.32);font-size:9.5px;font-style:italic;">$2</span>');
     const newBadge=isNew?'<strong style="color:#c0434a;font-size:10px;font-weight:700;margin-right:5px;letter-spacing:.04em;">NEW</strong>':'';
     const row=`<div class="brief-card-row"><span class="bcr-lbl l-note">${newBadge}${escH(briefProjName(proj))}</span><span class="bcr-text" style="white-space:pre-wrap;">${noteHtml}</span><span class="brief-ack-btns">${PENCIL_BTN(proj.id,!!proj._isPlanningNote)}${ackBtn}</span></div>`;
@@ -15678,7 +15779,7 @@ function generateBriefHTML(){
     const planRows=[], salesGroups=[];
 
     removedProjs.forEach(({id,name})=>{
-      const h=briefAckRow(id+'-removed','l-warn','Removed','Removed from active pipeline.');
+      const h=briefAckRow(id+'-removed','l-warn','Removed','Removed from active pipeline.',{k:'removed',p:id});
       // v875: once acked, briefAckRow returns '' — push nothing. Pushing the wrapper
       // regardless left a headed group with no row and no button in it, which read as a
       // message that could not be dismissed. Every other group here is guarded the same way.
@@ -15693,7 +15794,7 @@ function generateBriefHTML(){
     PROJECTS.filter(p=>isVisible(p)).forEach(proj=>{
       const id=proj.id, pd=diffByProj[id];
       const rows=[];
-      if(pd?.isNew) rows.push(briefAckRow(id+'-new','l-new','New','Added to pipeline since last baseline.'));
+      if(pd?.isNew) rows.push(briefAckRow(id+'-new','l-new','New','Added to pipeline since last baseline.',{k:'new',p:id}));
       if(overdueByProj[id]) overdueByProj[id].forEach(({ms,weeksLate})=>
         rows.push(briefAckRow(id+'-overdue-'+ms.name.toLowerCase(),'l-urgent','Overdue',
           `${ms.name} is ${weeksLate} week${weeksLate!==1?'s':''} past due.`)));
@@ -15702,14 +15803,14 @@ function generateBriefHTML(){
       if(daNoCaSet.has(id)) rows.push(briefAckRow(id+'-da-no-ca','l-warn','CA not set',
         'DA signed but no CA date scheduled.'));
       if(pd?.statusChange){ const {from,to}=pd.statusChange;
-        rows.push(briefAckRow(id+'-status-'+from+'-'+to,'l-change','Status',`${briefStatusLabel(from)} \u2192 ${briefStatusLabel(to)}.`)); }
+        rows.push(briefAckRow(id+'-status-'+from+'-'+to,'l-change','Status',`${briefStatusLabel(from)} \u2192 ${briefStatusLabel(to)}.`,{k:'status',p:id})); }
       if(pd?.valueChanges) pd.valueChanges.forEach(({field,from,to})=>{
         if(field==='Est. cost'){
           rows.push(briefAckRow(id+'-val-cost','l-change','Est. cost',
-            `${escH(from||'not set')} \u2192 ${escH(to||'not set')}.`));
+            `${escH(from||'not set')} \u2192 ${escH(to||'not set')}.`,{k:'value',p:id,f:'cost'}));
         } else {
           rows.push(briefAckRow(id+'-val-so','l-change','Scope outline',
-            to?(from?'Link replaced.':'Link added.'):'Link removed.'));
+            to?(from?'Link replaced.':'Link added.'):'Link removed.',{k:'value',p:id,f:'so'}));
         }
       });
       if(pd?.msChanges) pd.msChanges.filter(x=>x.ms.name==='DA'||x.ms.name==='CA').forEach(({ms,fromStatus,fromWeek})=>{
@@ -15717,7 +15818,7 @@ function generateBriefHTML(){
         if(fromStatus!==ms.status) parts.push(`status ${fromStatus} \u2192 ${ms.status}`);
         if(fromWeek!==ms.week&&fromWeek!=null&&ms.week!=null)
           parts.push(`date ${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(ms.week))}`);
-        rows.push(briefAckRow(id+'-ms-'+ms.name.toLowerCase(),'l-change',ms.name,`${parts.join('; ')||ms.name+' updated'}.`));
+        rows.push(briefAckRow(id+'-ms-'+ms.name.toLowerCase(),'l-change',ms.name,`${parts.join('; ')||ms.name+' updated'}.`,{k:'ms',p:id,id:ms.id}));
       });
       const active=rows.filter(Boolean); salesCount+=active.length;
       if(active.length) salesGroups.push(renderProjGroup(proj,active));
@@ -15727,7 +15828,7 @@ function generateBriefHTML(){
       const ackId='plan-'+c.type+'-'+c.name.replace(/\s+/g,'-').toLowerCase().slice(0,24);
       const lbl=c.type==='added'?'Added':c.type==='removed'?'Removed':c.type==='moved'?'Moved':'Updated';
       const cls=c.type==='removed'?'l-warn':c.type==='added'?'l-note':c.type==='moved'?'l-change':'l-quiet';
-      const h=briefAckRow(ackId,cls,lbl,`${escH(c.name)} \u2014 ${escH(c.detail)}`); if(h){salesCount++;planRows.push(h);}
+      const h=briefAckRow(ackId,cls,lbl,`${escH(c.name)} \u2014 ${escH(c.detail)}`,{k:'plan',p:c.ppId}); if(h){salesCount++;planRows.push(h);}
     });
     planningActivity.forEach(e=>{
       const ackId='plan-act-'+e.ts;
@@ -15768,14 +15869,14 @@ function generateBriefHTML(){
       const id=proj.id, pd=diffByProj[id];
       const rows=[];
       if(pd?.assignmentChanges) pd.assignmentChanges.filter(x=>x.field==='Designer').forEach(({from,to})=>
-        rows.push(briefAckRow(id+'-assign-des','l-change','Designer',`${escH(from)} \u2192 ${escH(to)}.`)));
+        rows.push(briefAckRow(id+'-assign-des','l-change','Designer',`${escH(from)} \u2192 ${escH(to)}.`,{k:'assign',p:id,f:'des'})));
       if(pd?.scheduleChanges) pd.scheduleChanges.filter(x=>_isDesignField(x.field)).forEach(({field,fromWeek,toWeek,fromDur,toDur})=>{
         const parts=[];
         if(fromWeek!=null&&toWeek!=null&&fromWeek!==toWeek)
           parts.push(fromDur==null?`${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(toWeek))}`
             :`start ${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(toWeek))}`);
         if(fromDur!=null&&toDur!=null&&fromDur!==toDur) parts.push(`duration ${fromDur}w \u2192 ${toDur}w`);
-        rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',field,`${parts.join('; ')}.`));
+        rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',field,`${parts.join('; ')}.`,{k:'sched',p:id,f:field}));
       });
       const active=rows.filter(Boolean); designCount+=active.length;
       if(active.length) designGroups.push(renderProjGroup(proj,active));
@@ -15834,14 +15935,14 @@ function generateBriefHTML(){
       const id=proj.id, pd=diffByProj[id];
       const rows=[];
       if(pd?.assignmentChanges) pd.assignmentChanges.filter(x=>x.field==='PM').forEach(({from,to})=>
-        rows.push(briefAckRow(id+'-assign-pm','l-change','PM',`${escH(from)} \u2192 ${escH(to)}.`)));
+        rows.push(briefAckRow(id+'-assign-pm','l-change','PM',`${escH(from)} \u2192 ${escH(to)}.`,{k:'assign',p:id,f:'pm'})));
       if(pd?.scheduleChanges) pd.scheduleChanges.filter(x=>!_isDesignField(x.field)).forEach(({field,fromWeek,toWeek,fromDur,toDur})=>{
         const parts=[];
         if(fromWeek!=null&&toWeek!=null&&fromWeek!==toWeek)
           parts.push(fromDur==null?`${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(toWeek))}`
             :`start ${briefFmtDate(wkToDate(fromWeek))} \u2192 ${briefFmtDate(wkToDate(toWeek))}`);
         if(fromDur!=null&&toDur!=null&&fromDur!==toDur) parts.push(`duration ${fromDur}w \u2192 ${toDur}w`);
-        rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',field,`${parts.join('; ')}.`));
+        rows.push(briefAckRow(id+'-sch-'+field.toLowerCase().replace(/[^a-z0-9]/g,'-'),'l-change',field,`${parts.join('; ')}.`,{k:'sched',p:id,f:field}));
       });
       const active=rows.filter(Boolean); prodCount+=active.length;
       if(active.length) prodGroups.push(renderProjGroup(proj,active));
@@ -15971,8 +16072,8 @@ function updateBriefBaselineLbl(){
   const lbl=document.getElementById('briefBaselineLbl');
   if(!lbl) return;
   lbl.textContent=WEEKLY_BASELINE
-    ?('Baseline: '+briefFmtFull(new Date(WEEKLY_BASELINE.ts)))
-    :'No baseline set';
+    ?('Last resolved: '+briefFmtFull(new Date(WEEKLY_BASELINE.ts)))
+    :'Baseline initializing';
 }
 function openBrief(){
   const panel=document.getElementById('briefPanel');
@@ -16602,6 +16703,20 @@ document.addEventListener('click',e=>{
     delete BRIEF_ACKS[hkRestore.dataset.hkRestore];
     saveBriefAcks();
     const body=document.getElementById('briefBody'); if(body) body.innerHTML=generateBriefHTML();
+    return;
+  }
+
+  // v943: Resolve — fold the fact into the baseline, then drop the row
+  const foldBtn=e.target.closest('[data-fold]');
+  if(foldBtn){
+    let spec=null; try{ spec=JSON.parse(foldBtn.dataset.fold); }catch(_){ }
+    if(spec) _briefFold(spec).catch(err=>console.warn('[brief] fold failed:',err));
+    const row=foldBtn.closest('.brief-card-row');
+    if(row){
+      const grp=row.closest('[data-brief-grp]');
+      row.remove();
+      if(grp&&!grp.querySelector('.brief-card-row')) grp.remove();
+    }
     return;
   }
 
