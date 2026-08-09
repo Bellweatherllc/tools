@@ -166,6 +166,25 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .fc-msset-btn.is-editable{cursor:pointer;}
 .fc-msset-btn.is-editable:hover{background:rgba(0,57,129,.10);color:#003981;}
 .fc-msset-btn.is-readonly{opacity:.75;}
+/* ── v933: Matterport scan button. Design rows: immediately left of the milestone-set
+   indicator. LC rows have no milestone-set indicator, so there it takes that slot. ── */
+.fc-mp-btn{
+  position:absolute;top:50%;right:58px;transform:translateY(-50%);
+  width:26px;height:26px;border:none;background:none;padding:4px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  z-index:10;border-radius:3px;transition:background .12s,filter .12s,opacity .12s;
+  filter:grayscale(1);opacity:.35;
+}
+.fc-mp-btn.lc-slot{right:30px;}
+.fc-mp-btn:hover{background:rgba(0,0,0,.07);opacity:.7;}
+.fc-mp-btn.has-scans{filter:none;opacity:1;}
+.mp-marker{
+  position:absolute;width:16px;height:22px;top:50%;transform:translateY(calc(-50% - 0.5px));
+  background:#fff;border:1px solid rgba(0,0,0,.18);border-radius:4px;
+  display:flex;align-items:center;justify-content:center;padding:2px;
+  z-index:4;cursor:pointer;pointer-events:auto;user-select:none;
+}
+.mp-marker:hover{filter:brightness(1.05);box-shadow:0 1px 6px rgba(0,0,0,.25);}
 .fc-note-btn.has-note{opacity:.7;color:var(--gold);}
 .fc-note-btn.has-note:hover{opacity:1;color:#b8912e;}
 .fc-proj-info:hover .fc-note-btn{opacity:1;}
@@ -3076,7 +3095,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v932';
+const CORE_VERSION = 'v933';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5058,6 +5077,16 @@ function buildFcMsRow(proj, capacitySection){
   // DA/CA pills moved to hover tooltip — not on project card row
   if(!(capacitySection==='production'&&PROD_HIDE_DESIGN)) {} // da-pill removed
   // ca-pill removed
+  // ── v933: Matterport scan button — Design rows only ──
+  if(capacitySection==='design'){
+    const mp=el('button','fc-mp-btn'+((proj.matterport&&proj.matterport.length)?' has-scans':''));
+    mp.dataset.mpBtn=proj.id;
+    mp.dataset.tip=(proj.matterport&&proj.matterport.length)
+      ? proj.matterport.length+(proj.matterport.length===1?' Matterport scan scheduled':' Matterport scans scheduled')+' \u00b7 click to edit'
+      : 'Schedule Matterport scans';
+    mp.innerHTML=MATTERPORT_SVG;
+    info.appendChild(mp);
+  }
   // ── v877: milestone-set indicator ──
   // Editable in Design under admin; Production and read-only viewers see the same mark
   // as information. The stamp is written on click — the click is the moment being recorded.
@@ -5379,6 +5408,14 @@ function buildFcLcProjectRow(proj,lcId){
     pillsWrap.appendChild(caTip2);
     footer.appendChild(pillsWrap); tip.appendChild(footer); }
   info.appendChild(tip);
+  // ── v933: Matterport scan button — LC rows take the milestone-set slot ──
+  { const mp=el('button','fc-mp-btn lc-slot'+((proj.matterport&&proj.matterport.length)?' has-scans':''));
+    mp.dataset.mpBtn=proj.id;
+    mp.dataset.tip=(proj.matterport&&proj.matterport.length)
+      ? proj.matterport.length+(proj.matterport.length===1?' Matterport scan scheduled':' Matterport scans scheduled')+' \u00b7 click to edit'
+      : 'Schedule Matterport scans';
+    mp.innerHTML=MATTERPORT_SVG;
+    info.appendChild(mp); }
   // Pencil / note button — absolutely positioned within fc-proj-info, same as all other rows
   const noteBtn=el('button','fc-note-btn'+(proj.notes?' has-note pp-pencil-noted':''));
   noteBtn.dataset.noteBtn=proj.id; noteBtn.dataset.tip='Add note';
@@ -5450,6 +5487,7 @@ function buildTlLcProject(proj,lcId){
     ensureTiers(proj); proj.tiers.forEach(t=>ov.appendChild(buildTierDot(proj,t))); ensureCrits(proj); proj.crits.forEach(c=>ov.appendChild(buildCritDot(proj,c)));
     ensurePencilsDown(proj); ov.appendChild(buildPencilsDot(proj));
   }
+  (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso); if(mk) ov.appendChild(mk); }); // v933: not gated by the designer-milestone toggle
   wrap.appendChild(ov);
   return wrap;
 }
@@ -5947,6 +5985,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   const msToRender=skipMsNames?proj.milestones.filter(ms=>!skipMsNames.includes(ms.name)):proj.milestones;
   msToRender.forEach(ms=>{ const mEl=buildMsTall(proj,ms,rowH,rowH,[],0); overlay.appendChild(mEl); }); // top:1px from buildMsTall default
   if(laneIds.includes('design')&&!hideTierDots){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); ensureCrits(proj); proj.crits.forEach(c=>overlay.appendChild(buildCritDot(proj,c))); ensurePencilsDown(proj); overlay.appendChild(buildPencilsDot(proj)); }
+  (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso); if(mk) overlay.appendChild(mk); }); // v933: always visible, all sections
   wrap.appendChild(overlay); return wrap;
 }
 
@@ -6069,12 +6108,24 @@ function renderTimeoffOverlay(personId, section){
   PROJECTS.filter(p=>p[field]===personId&&p.collapsed).forEach(p=>renderCollapsedBand(p.id));
 }
 
-// ── Time-off calendar popup ──
-let _tocState=null; // {personId, section, month:Date(first of month), changed}
+// ── Day-set picker (v933) — one popup component, two consumers ──
+// Powers both Time Off (per-person, shared-state) and Matterport scans
+// (per-project, GanttData). cfg supplies identity, title, the day array's
+// getter/setter, what to repaint/save after a change, history labels, and
+// the footer count wording. Grid behavior — Mon–Fri only, click toggles,
+// stays open until closed deliberately — is identical for both.
+let _tocState=null; // {cfg, month:Date(first of month), changed}
 const _TOC_MO=['January','February','March','April','May','June','July','August','September','October','November','December'];
-function _tocMark(person,verb){
+function _tocMark(verb){
   if(_tocState.changed) return;
-  pushHistory(`${person.label} \u2014 ${verb}`); _tocState.changed=true;
+  pushHistory(_tocState.cfg.historyLabel(verb)); _tocState.changed=true;
+}
+function _tocApply(mutate){
+  const cfg=_tocState&&_tocState.cfg; if(!cfg) return;
+  const days=[...cfg.days()];
+  if(mutate(days)===false) return;
+  cfg.setDays([...new Set(days)].sort());
+  cfg.afterChange(); _tocRender();
 }
 function _tocEl(){
   let p=document.getElementById('tocPop');
@@ -6086,37 +6137,31 @@ function _tocEl(){
     +'<div class="toc-grid"></div>'
     +'<div class="toc-foot"><span class="toc-count"></span><button class="toc-clear">Clear all</button></div>';
   document.body.appendChild(p);
-  p.querySelector('.toc-x').addEventListener('click',closeTimeoffCal);
+  p.querySelector('.toc-x').addEventListener('click',closeDayPicker);
   p.querySelector('.toc-prev').addEventListener('click',()=>{ if(!_tocState)return; _tocState.month=new Date(_tocState.month.getFullYear(),_tocState.month.getMonth()-1,1); _tocRender(); });
   p.querySelector('.toc-next').addEventListener('click',()=>{ if(!_tocState)return; _tocState.month=new Date(_tocState.month.getFullYear(),_tocState.month.getMonth()+1,1); _tocRender(); });
   p.querySelector('.toc-clear').addEventListener('click',()=>{
-    const person=personById(_tocState&&_tocState.personId); if(!person||!person.timeOff.length) return;
-    _tocMark(person,'time off cleared');
-    person.timeOff=[];
-    renderTimeoffOverlay(_tocState.personId,_tocState.section); _tocRender(); triggerSave();
+    _tocApply(days=>{ if(!days.length) return false; _tocMark('cleared'); days.length=0; });
   });
   p.querySelector('.toc-grid').addEventListener('click',e=>{
-    const cell=e.target.closest('.toc-day[data-iso]'); if(!cell) return;
-    const person=personById(_tocState&&_tocState.personId); if(!person) return;
+    const cell=e.target.closest('.toc-day[data-iso]'); if(!cell||!_tocState) return;
     const iso=cell.dataset.iso;
-    _tocMark(person,'time off edited');
-    const i=person.timeOff.indexOf(iso);
-    if(i>=0) person.timeOff.splice(i,1); else { person.timeOff.push(iso); person.timeOff.sort(); }
-    renderTimeoffOverlay(_tocState.personId,_tocState.section); _tocRender(); triggerSave();
+    _tocApply(days=>{
+      _tocMark('edited');
+      const i=days.indexOf(iso);
+      if(i>=0) days.splice(i,1); else days.push(iso);
+    });
   });
   return p;
 }
-function openTimeoffCal(personId, section, anchorEl){
-  // v930: the popup stays open until the × is clicked, Escape is pressed, or the
-  // same person's Time Off button is clicked again (toggle). Outside clicks no
-  // longer close it — day toggling rebuilds the grid, which made any click look
-  // like an outside click to a document-level closer.
-  if(_tocState&&_tocState.personId===personId&&anchorEl&&anchorEl.dataset&&anchorEl.dataset.addTimeoff!==undefined){ closeTimeoffCal(); return; }
-  const person=personById(personId); if(!person) return;
-  if(!Array.isArray(person.timeOff)) person.timeOff=[];
+function _openDayPicker(cfg, anchorEl){
+  // The popup stays open until the \u00d7 is clicked, Escape is pressed, or the same
+  // opener button is clicked again (toggle — handled by the callers). Outside
+  // clicks never close it: day toggling rebuilds the grid, which would make any
+  // click look like an outside click to a document-level closer.
   const p=_tocEl();
   const m=(anchorEl&&anchorEl.dataset&&anchorEl.dataset.tocMonth)?new Date(anchorEl.dataset.tocMonth+'T12:00:00'):new Date();
-  _tocState={personId,section,month:new Date(m.getFullYear(),m.getMonth(),1),changed:false};
+  _tocState={cfg,month:new Date(m.getFullYear(),m.getMonth(),1),changed:false};
   _tocRender();
   p.style.display='block';
   const r=anchorEl?anchorEl.getBoundingClientRect():{right:innerWidth/2,left:innerWidth/2,top:innerHeight/3};
@@ -6125,15 +6170,14 @@ function openTimeoffCal(personId, section, anchorEl){
   let y=r.top; if(y+ph>innerHeight-8) y=Math.max(8,innerHeight-ph-8);
   p.style.left=Math.round(x)+'px'; p.style.top=Math.round(y)+'px';
 }
-function closeTimeoffCal(){
+function closeDayPicker(){
   const p=document.getElementById('tocPop'); if(p) p.style.display='none';
   _tocState=null;
 }
 function _tocRender(){
   const p=_tocEl(); const st=_tocState; if(!st) return;
-  const person=personById(st.personId); if(!person) return;
-  const off=new Set(person.timeOff);
-  p.querySelector('.toc-name').textContent=(person.fullLabel||person.label)+' \u2014 Time Off';
+  const on=new Set(st.cfg.days());
+  p.querySelector('.toc-name').textContent=st.cfg.title();
   p.querySelector('.toc-month').textContent=_TOC_MO[st.month.getMonth()]+' '+st.month.getFullYear();
   const grid=p.querySelector('.toc-grid'); grid.innerHTML='';
   const todayIso=_isoDate(new Date());
@@ -6145,15 +6189,69 @@ function _tocRender(){
     while(grid.children.length%5!==dow){ const bl=document.createElement('div'); bl.className='toc-day is-blank'; grid.appendChild(bl); }
     const iso=_isoDate(d);
     const cell=document.createElement('button'); cell.type='button';
-    cell.className='toc-day'+(off.has(iso)?' is-off':'')+(iso===todayIso?' is-today':'');
+    cell.className='toc-day'+(on.has(iso)?' is-off':'')+(iso===todayIso?' is-today':'');
     cell.dataset.iso=iso; cell.textContent=day;
     grid.appendChild(cell);
   }
-  const count=(person.timeOff||[]).filter(iso=>_toParse(iso)).length;
-  p.querySelector('.toc-count').textContent=count+(count===1?' day off total':' days off total');
+  const count=st.cfg.days().filter(iso=>_toParse(iso)).length;
+  p.querySelector('.toc-count').textContent=st.cfg.countLabel(count);
   p.querySelector('.toc-clear').style.display=count?'':'none';
 }
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&_tocState) closeTimeoffCal(); });
+function openTimeoffCal(personId, section, anchorEl){
+  if(_tocState&&_tocState.cfg.id==='to:'+personId&&anchorEl&&anchorEl.dataset&&anchorEl.dataset.addTimeoff!==undefined){ closeDayPicker(); return; }
+  const person=personById(personId); if(!person) return;
+  if(!Array.isArray(person.timeOff)) person.timeOff=[];
+  _openDayPicker({
+    id:'to:'+personId,
+    title:()=>(person.fullLabel||person.label)+' \u2014 Time Off',
+    days:()=>person.timeOff,
+    setDays:a=>{ person.timeOff=a; },
+    afterChange:()=>{ renderTimeoffOverlay(personId,section); triggerSave(); },
+    historyLabel:verb=>`${person.label} \u2014 time off ${verb}`,
+    countLabel:n=>n+(n===1?' day off total':' days off total'),
+  },anchorEl);
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&_tocState) closeDayPicker(); });
+
+// ════════════════════════════════════════════════  MATTERPORT SCANS (v933)
+// proj.matterport is a sorted array of 'YYYY-MM-DD' strings — it persists inside
+// GanttData automatically (projectGanttPayload spreads every non-SP field) and
+// syncs through the normal project save path. Canonical mark: /logos/Matterport.svg
+// in the tools repo; inlined here so the file stays self-contained.
+const MATTERPORT_SVG='<svg viewBox="0 0 941 927" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block" aria-hidden="true"><g transform="matrix(3.125,0,0,3.125,0,0)"><g transform="matrix(1,0,0,1,0,-0.754638)"><path d="M125.631,1.691C127.297,0.493 130.005,0.436 131.696,1.568L183.287,36.281C184.998,37.468 185.42,39.811 184.239,41.525L147.811,91.661C146.617,93.312 144.052,94.193 142.057,93.658L42.393,66.064C40.423,65.487 40.148,63.996 41.806,62.757L125.631,1.691Z" fill="rgb(255,49,88)"/></g><g transform="matrix(1,0,0,1,0,-0.754638)"><path d="M56.065,92.326L92.341,142.598C93.532,144.241 93.584,146.98 92.444,148.68L35.489,235.28C34.324,237.005 32.843,236.799 32.182,234.852L0.223,135.969C-0.418,134.009 0.371,131.394 1.959,130.146L50.817,91.617C52.466,90.361 54.809,90.694 56.065,92.326Z" fill="rgb(255,49,88)"/></g><g transform="matrix(1,0,0,1,0,-0.754638)"><path d="M204.943,20.395L209.593,124.042C209.659,126.101 211.312,128.259 213.237,128.909L272.042,148.173C274.025,148.761 276.104,147.624 276.712,145.669L293.668,85.68C294.21,83.724 293.323,81.13 291.665,79.932L207.895,18.807C206.208,17.608 204.883,18.32 204.943,20.395Z"/></g><g transform="matrix(1,0,0,1,0,-0.754638)"><path d="M298.411,161.371L201.598,197.844C199.69,198.553 198.135,200.797 198.135,202.836L198.057,264.889C198.102,266.959 199.8,268.619 201.873,268.562L263.949,266.206C265.984,266.128 268.147,264.481 268.778,262.538L300.832,163.714C301.44,161.72 300.339,160.667 298.411,161.371Z"/></g><g transform="matrix(1,0,0,1,0,-0.754638)"><path d="M193.68,294.222L129.216,213.101C127.956,211.5 125.333,210.688 123.404,211.318L64.563,230.401C62.601,231.092 61.572,233.222 62.257,235.202L83.649,293.72C84.371,295.623 86.604,297.183 88.643,297.183L192.222,297.245C194.283,297.212 194.952,295.87 193.68,294.222Z"/></g></g></svg>';
+function openMatterportCal(projId, anchorEl){
+  if(_tocState&&_tocState.cfg.id==='mp:'+projId&&anchorEl&&anchorEl.dataset&&anchorEl.dataset.mpBtn!==undefined){ closeDayPicker(); return; }
+  const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
+  if(!Array.isArray(proj.matterport)) proj.matterport=[];
+  _openDayPicker({
+    id:'mp:'+projId,
+    title:()=>(proj.clientName||proj.name)+' \u2014 Matterport',
+    days:()=>proj.matterport,
+    setDays:a=>{ proj.matterport=a; },
+    afterChange:()=>{ renderMatterportMarkers(projId); triggerSave(proj); },
+    historyLabel:verb=>`${proj.clientName||proj.name} \u2014 Matterport scans ${verb}`,
+    countLabel:n=>n+(n===1?' scan scheduled':' scans scheduled'),
+  },anchorEl);
+}
+function buildMpMarker(proj, iso){
+  const q=_toParse(iso); if(!q) return null;
+  const w1=w2px(1), dw=w1/5;
+  const m=el('div','mp-marker');
+  m.dataset.mpMarker=proj.id; m.dataset.tocMonth=iso;
+  m.style.left=Math.round(w2px(q.week)+(q.dow+0.5)*dw-8)+'px';
+  const d=_linDate(q.lin);
+  m.dataset.tip=d.toLocaleDateString('en-US',{weekday:'short'})+', '+d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' \u2014 Matterport scan \u00b7 click to edit';
+  m.innerHTML=MATTERPORT_SVG;
+  return m;
+}
+function renderMatterportMarkers(projId){
+  const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
+  document.querySelectorAll(`.mp-marker[data-mp-marker="${projId}"]`).forEach(m=>m.remove());
+  document.querySelectorAll(`.ms-overlay[data-proj-id="${projId}"]`).forEach(ov=>{
+    (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso); if(mk) ov.appendChild(mk); });
+  });
+  document.querySelectorAll(`[data-mp-btn="${projId}"]`).forEach(b=>b.classList.toggle('has-scans',!!(proj.matterport&&proj.matterport.length)));
+}
 
 
 // ════════════════════════════════════════════════  SPLIT PANE HELPER
@@ -7258,7 +7356,7 @@ function initDrag(){
   if(DRAG_INIT)return; DRAG_INIT=true;
   const iw=document.getElementById('iw');
   iw.addEventListener('pointerdown',e=>{
-    if(e.target.closest('[data-open-status-menu],[data-open-pp-lead-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-open-timeoff-cal],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta],[data-toggle-des-milestones],[data-toggle-lc-design-ms]')||e.target.classList.contains('phase-hrs-input'))return;
+    if(e.target.closest('[data-open-status-menu],[data-open-pp-lead-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-open-timeoff-cal],[data-mp-btn],[data-mp-marker],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta],[data-toggle-des-milestones],[data-toggle-lc-design-ms]')||e.target.classList.contains('phase-hrs-input'))return;
 
     const pdEl=e.target.closest('.pd-dot');
     if(pdEl&&(!canEdit()||pdEl.closest('.lc-proj-tl'))) return;
@@ -7506,6 +7604,8 @@ function initDrag(){
     const cb=e.target.closest('[data-toggle-collapse]'); if(cb){toggleCollapse(cb.dataset.toggleCollapse);return;}
     const atb=e.target.closest('[data-add-timeoff]'); if(atb){openTimeoffCal(atb.dataset.addTimeoff,atb.dataset.addSection,atb);return;}
     const tocEl=e.target.closest('[data-open-timeoff-cal]'); if(tocEl){openTimeoffCal(tocEl.dataset.openTimeoffCal,tocEl.dataset.section,tocEl);return;}
+    const mpb=e.target.closest('[data-mp-btn]'); if(mpb){openMatterportCal(mpb.dataset.mpBtn,mpb);return;}
+    const mpm=e.target.closest('[data-mp-marker]'); if(mpm){openMatterportCal(mpm.dataset.mpMarker,mpm);return;}
     const sb=e.target.closest('[data-sort-field]'); if(sb){sortProjects(sb.dataset.sortField);return;}
     if(e.target.closest('[data-nav-today]')){const sec=e.target.closest('.section'); scrollToTodayInSection(sec);return;}
     const msNav=e.target.closest('[data-nav-ms]'); if(msNav){const sec=msNav.closest('.section'); scrollToNextMilestoneInSection(msNav.dataset.navMs,sec);return;}
@@ -14366,6 +14466,12 @@ document.addEventListener('click',e=>{
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v933', date: '2026-08-08',
+    entries: [
+      'New: Matterport scan scheduling. A Matterport button now sits on each project row in Design (just left of the milestone-set circle) and in LC Production. Clicking it opens the same style of calendar as Time Off \u2014 click days to schedule or unschedule scans, with as many dates per project as needed. Scheduled scans appear as small Matterport markers on the project\u2019s row across Design, Production, and LC, and clicking a marker reopens the calendar. The button shows in full color when a project has scans scheduled.',
+    ],
+  },
   {
     version: 'v932', date: '2026-08-08',
     entries: [
