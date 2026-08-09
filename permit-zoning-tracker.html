@@ -131,8 +131,16 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .intake-note{font-size:10.5px;color:var(--ts);}
 
 /* ── DETAIL DRAWER ── */
-#detailOverlay{position:fixed;inset:0;background:rgba(40,40,40,.45);z-index:500;display:none;}
-#detailOverlay.open{display:block;}
+/* v48: the card popup — an annotation of the timeline, never a curtain over it */
+#cardPop{display:none;position:fixed;z-index:520;width:min(460px,94vw);background:var(--sfc);border:1px solid var(--sep);border-radius:10px;box-shadow:0 14px 44px rgba(0,0,0,.22);}
+#cardPop.open{display:flex;flex-direction:column;}
+.cardpop-hdr{background:var(--navy);border-radius:9px 9px 0 0;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.cardpop-title{font-family:'Swear Text',serif;font-size:14px;font-weight:700;color:var(--gl);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cardpop-body{overflow-y:auto;max-height:min(62vh,560px);padding:14px 16px 18px;scrollbar-width:thin;}
+.cardpop-arrow{position:absolute;width:12px;height:12px;transform:rotate(45deg);}
+#cardPop.side .cardpop-arrow{left:-7px;top:var(--cp-ay,60px);background:var(--sfc);border-left:1px solid var(--sep);border-bottom:1px solid var(--sep);}
+#cardPop.below .cardpop-arrow{top:-7px;left:var(--cp-ax,44px);background:var(--navy);border:none;}
+#cardPop.above .cardpop-arrow{bottom:-7px;top:auto;left:var(--cp-ax,44px);background:var(--sfc);border-right:1px solid var(--sep);border-bottom:1px solid var(--sep);}
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,94vw);background:var(--sfc);z-index:501;box-shadow:-8px 0 32px rgba(0,0,0,.25);transform:translateX(102%);transition:transform .22s ease;overflow-y:auto;}
 .drawer.open{transform:translateX(0);}
 .drawer-hdr{background:var(--navy);padding:16px 20px;position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;}
@@ -216,7 +224,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
       <div class="auth-title">Permit &amp; Zoning Tracker</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v47</div>
+    <div class="auth-version" id="authVersionBadge">v48</div>
     <div class="auth-spinner" id="authSpinner"></div>
     <button class="auth-sign-in" id="authSignInBtn" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
@@ -227,7 +235,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Permit &amp; Zoning Tracker</div>
-  <div class="proto-badge" id="versionBadge">v47</div>
+  <div class="proto-badge" id="versionBadge">v48</div>
   <div id="saveStatus" class="save-indicator"></div>
   <div class="sync-stamp" id="syncStamp"></div>
   <div class="hsp"></div>
@@ -270,13 +278,13 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
   </div>
 </div>
 
-<div id="detailOverlay" onclick="closeDrawer()"></div>
-<div class="drawer" id="drawer">
-  <div class="drawer-hdr">
-    <div class="drawer-title" id="drawerTitle"></div>
-    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+<div id="cardPop">
+  <div class="cardpop-arrow"></div>
+  <div class="cardpop-hdr">
+    <div class="cardpop-title" id="cardPopTitle"></div>
+    <button class="drawer-close" onclick="closeCardPop()">&times;</button>
   </div>
-  <div class="drawer-body" id="drawerBody"></div>
+  <div class="cardpop-body" id="cardPopBody"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
@@ -290,7 +298,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v47';
+const CORE_VERSION = 'v48';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -946,7 +954,7 @@ function appRowHtml(a){
   const cmt='<span class="cmt-badge'+(_n?'':' none')+'"'+(_n?' title="'+_n+' comment'+(_n>1?'s':'')+' — open for details"':'')+'>'
     +'<svg width="10" height="10" viewBox="0 0 16 16"><path d="M2 3h12v8H6l-4 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>'
     +(_n||'')+'</span>';
-  return '<div class="app-row" onclick="openDrawer(\''+esc(a.project).replace(/'/g,"\\'")+'\')">'+
+  return '<div class="app-row" data-card-id="'+esc(a.cardId)+'" onclick="openCardPopById(\''+esc(a.cardId)+'\', this)">'+
     '<span class="track-chip '+trackChipCls(a.track)+'">'+esc(a.track)+'</span>'+badges+cmt+
     mid+'<span class="app-jur">'+esc(a.jur||'')+'</span></div>';
 }
@@ -964,11 +972,12 @@ function renderBoard(){
     wrap.innerHTML=names.map(n=>{
       const apps=projects[n];
       const roll=projectRollup(apps);
-      return '<div class="proj-group"><div class="proj-hdr" onclick="openDrawer(\''+esc(n).replace(/'/g,"\\'")+'\')">'+
+      const sorted=apps.slice().sort((x,y)=>String(x.track).localeCompare(String(y.track))); // v48
+      return '<div class="proj-group"><div class="proj-hdr" onclick="openCardPopById(\''+esc(sorted[0].cardId)+'\')">'+
         '<div class="proj-name">'+esc(n)+'</div>'+
         '<div class="proj-meta">'+apps.length+' application'+(apps.length>1?'s':'')+'</div>'+
         '<span class="roll-chip '+ROLL_CLS[roll]+'">'+ROLL_LBL[roll]+'</span></div>'+
-        apps.slice().sort((x,y)=>String(x.track).localeCompare(String(y.track))).map(appRowHtml).join('')+
+        sorted.map(appRowHtml).join('')+
       '</div>';
     }).join('');
   }
@@ -981,11 +990,10 @@ function renderBoard(){
   }else iw.style.display='none';
 }
 
-function openDrawer(projectName){
-  const apps=APPS.filter(a=>a.project===projectName);
-  document.getElementById('drawerTitle').textContent=projectName;
-  const body=document.getElementById('drawerBody');
-  body.innerHTML=apps.map(a=>{
+// v48: one application's detail — the same content the drawer showed, now the body
+// of an anchored popup instead of an edge overlay.
+function appDetailHtml(a){
+
     const facts='<div class="d-facts">'+
       '<div class="d-fact"><span>Stage</span><b>'+esc(a.stage||'—')+'</b></div>'+
       '<div class="d-fact"><span>Clock</span><b'+(a.state==='over'?' class="over"':'')+'>'+esc(a.clockText||'—')+'</b></div>'+
@@ -1015,14 +1023,50 @@ function openDrawer(projectName){
       '<div class="d-sec"><div class="d-sec-title">Checklist (read-only — edit on the card)</div>'+chks+'</div>'+
       ((a.cardOwner||a.owners.length)?'<div class="d-sec"><div class="d-sec-title">'+(a.cardOwner?'Managed By':'Owners')+'</div><div class="d-owners">'+esc(a.cardOwner||a.owners.join(', '))+'</div></div>':'')+
       '</div>';
-  }).join('')||'<div class="empty-note">No applications for this project.</div>';
-  document.getElementById('detailOverlay').classList.add('open');
-  document.getElementById('drawer').classList.add('open');
+  }
+// v48: the popup. Anchored to the clicked row, connector tracking it through scroll.
+// Wide viewports: beside the row in the right gutter. Narrow: below (or above) it.
+let _popCardId=null,_popAnchor=null;
+function openCardPopById(cardId,el){
+  const a=APPS.find(x=>x.cardId===cardId); if(!a) return;
+  const pop=document.getElementById('cardPop');
+  if(_popCardId===cardId&&pop.classList.contains('open')){ closeCardPop(); return; }
+  _popCardId=cardId;
+  _popAnchor=el||document.querySelector('[data-card-id="'+cardId+'"]');
+  document.getElementById('cardPopTitle').textContent=a.project+' \u2014 '+(a.track||a.name);
+  document.getElementById('cardPopBody').innerHTML=appDetailHtml(a);
+  document.getElementById('cardPopBody').scrollTop=0;
+  pop.classList.add('open');
+  _popReposition();
 }
-function closeDrawer(){
-  document.getElementById('detailOverlay').classList.remove('open');
-  document.getElementById('drawer').classList.remove('open');
+function closeCardPop(){
+  document.getElementById('cardPop').classList.remove('open');
+  _popCardId=null; _popAnchor=null;
 }
+function _popReposition(){
+  const pop=document.getElementById('cardPop');
+  if(!pop.classList.contains('open')) return;
+  if(_popAnchor&&!document.body.contains(_popAnchor)) _popAnchor=document.querySelector('[data-card-id="'+_popCardId+'"]');
+  if(!_popAnchor){ closeCardPop(); return; }
+  const r=_popAnchor.getBoundingClientRect();
+  const pw=pop.offsetWidth, ph=pop.offsetHeight, vw=window.innerWidth, vh=window.innerHeight;
+  if(vw-r.right>=pw+26){ // side mode — right gutter
+    pop.classList.add('side'); pop.classList.remove('below','above');
+    let y=r.top+r.height/2-ph/2; y=Math.max(8,Math.min(y,vh-ph-8));
+    pop.style.left=(r.right+14)+'px'; pop.style.top=y+'px';
+    pop.style.setProperty('--cp-ay',Math.max(52,Math.min(ph-26,r.top+r.height/2-y-6))+'px');
+  } else {
+    let x=Math.max(8,Math.min(r.left+34,vw-pw-8));
+    let y=r.bottom+12, above=false;
+    if(y+ph>vh-8&&r.top-ph-12>8){ y=r.top-ph-12; above=true; }
+    pop.classList.toggle('above',above); pop.classList.toggle('below',!above); pop.classList.remove('side');
+    pop.style.left=x+'px'; pop.style.top=Math.max(8,Math.min(y,vh-ph-8))+'px';
+    pop.style.setProperty('--cp-ax',Math.max(18,Math.min(pw-26,r.left+Math.min(60,r.width/2)-x-6))+'px');
+  }
+}
+window.addEventListener('scroll',_popReposition,true);
+window.addEventListener('resize',_popReposition);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeCardPop(); });
 
 function renderAbsolutes(){
   const wrap=document.getElementById('absContent');
@@ -1141,7 +1185,7 @@ async function refreshAll(){
     const want=new URLSearchParams(location.search).get('project');
     if(want){
       const hit=APPS.find(a=>normName(a.project)===normName(want));
-      if(hit) openDrawer(hit.project);
+      if(hit) openCardPopById(hit.cardId); // v48: deep link lands on the anchored popup
       else showBanner('bannerInfo','No permit applications on record yet for \u201C'+want+'\u201D.');
     }
   }
