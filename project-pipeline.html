@@ -350,6 +350,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .gdb-title{font-size:11px;font-weight:700;color:#fff;margin-bottom:2px;}
 .gdb-line{font-size:9.5px;color:rgba(255,255,255,.60);line-height:1.5;}
 .gdb-hover-cell{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.16);box-shadow:inset 0 0 0 1px rgba(0,0,0,.10);pointer-events:none;z-index:3;}
+.gdb-cursor-line{position:absolute;top:0;bottom:0;background:rgba(0,0,0,.05);box-shadow:inset 1px 0 0 rgba(0,0,0,.08),inset -1px 0 0 rgba(0,0,0,.08);pointer-events:none;z-index:55;} /* v956: week-wide column band that follows the cursor — the vertical twin of the lane-row hover */
 .phase-bar{cursor:pointer;}
 .timeoff-block{cursor:pointer;}
 .tl-tally[data-person]{cursor:pointer;} /* v890: the week popup lives here — advertise it */
@@ -3116,7 +3117,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v954';
+const CORE_VERSION = 'v956';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -6380,6 +6381,7 @@ function buildDesignSection(){
     // Month line overlay — same as production
     const desMonthOverlay=buildMonthLineOverlay();
     tc.style.position='relative';
+    tc.classList.add('gdb-line-host'); // v956: hosts the cursor-following column band
     tc.appendChild(desMonthOverlay);
     const _dtco=buildTodayColOverlay(); if(_dtco) tc.appendChild(_dtco); // v953
     // Date header lives in sticky-cal-hdr above the scroll area
@@ -6899,6 +6901,7 @@ function buildProdSection(){
 
   function populateProdTl(tc){
     tcInner.style.position='relative';
+    tcInner.classList.add('gdb-line-host'); // v956: hosts the cursor-following column band
     tcInner.appendChild(buildMonthLineOverlay());
     const _tco=buildTodayColOverlay(); if(_tco) tcInner.appendChild(_tco); // v953
     tc.appendChild(tcInner);
@@ -8881,6 +8884,35 @@ document.addEventListener('mousemove',e=>{
   var _absWk=isBar?(parseInt(t.dataset.phStart||'0')+idx):idx;
   _gdbRingHeaderWeek(t,_absWk);
 });
+// ── v956: vertical cursor column ───────────────────────────────────────────
+// A full-height, week-wide band that follows the mouse across the Design and
+// Production timelines — the vertical twin of the lane-row hover lightening.
+// Together they form a crosshair: hovered row brightens, hovered week column
+// tints, and the header date ring caps the column. Snapped to week boundaries
+// using the section's own weekW (never the global — the _effWW rule). It lives
+// inside the scrolling content (same host as the month lines and the gold
+// now-frame), so it stays glued to the calendar grid while panning, and it
+// disappears during drags and outside the timeline.
+let _gdbVLine=null, _gdbVHost=null;
+function _gdbClearVLine(){ if(_gdbVLine) _gdbVLine.remove(); _gdbVLine=null; _gdbVHost=null; }
+document.addEventListener('mousemove',e=>{
+  if(DRAG||!e.target||!e.target.closest){ _gdbClearVLine(); return; }
+  const sec=e.target.closest('.section[data-s-type="design"],.section[data-s-type="production"]');
+  const host=sec?sec.querySelector('.gdb-line-host'):null;
+  if(!host){ _gdbClearVLine(); return; }
+  const r=host.getBoundingClientRect();
+  const rx=e.clientX-r.left;
+  if(rx<0||rx>=r.width){ _gdbClearVLine(); return; }
+  const ww=parseInt(sec.dataset.weekW)||C.weekW;
+  const idx=Math.max(0,Math.min(C.numWeeks-1,Math.floor(rx/ww)));
+  if(_gdbVHost!==host||!_gdbVLine||!_gdbVLine.isConnected){
+    _gdbClearVLine();
+    _gdbVLine=document.createElement('div'); _gdbVLine.className='gdb-cursor-line';
+    host.appendChild(_gdbVLine); _gdbVHost=host;
+  }
+  _gdbVLine.style.left=(idx*ww)+'px'; _gdbVLine.style.width=ww+'px';
+});
+document.addEventListener('mouseleave',()=>_gdbClearVLine());
 // Ring the header week-cell that corresponds to the hovered column, in the same
 // section (Design/Production) as the bar under the cursor.
 let _gdbRingedCell=null;
@@ -14589,6 +14621,12 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v956', date: '2026-08-10',
+    entries: [
+      'A light gray column band now follows the cursor across the Design and Production timelines — one week wide, running the full height of the section, snapped to the calendar grid. It is the vertical twin of the row highlight: together they form a crosshair, with the gold ring on the header date capping the column. It steps aside during drags.',
+    ],
+  },
   {
     version: 'v954', date: '2026-08-10',
     entries: [
