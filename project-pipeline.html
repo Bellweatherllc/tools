@@ -186,7 +186,6 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 }
 .fc-mp-btn:hover{background:rgba(0,0,0,.07);opacity:.7;}
 .fc-mp-btn.has-scans{filter:none;opacity:1;}
-.fc-mp-btn.lc-col{right:10px;} /* v938: LC rows — under the header eye */
 /* v944: Key Dates Matterport cell */
 .pp-mp-btn{display:inline-flex;align-items:center;gap:3px;border:none;background:none;padding:2px 4px;cursor:pointer;font-size:9.5px;font-weight:600;color:inherit;border-radius:3px;}
 .pp-mp-btn:hover{background:rgba(0,0,0,.06);}
@@ -549,6 +548,8 @@ body.is-transitioning .section:not(.is-focus-outgoing){animation:hdrFadeIn 200ms
 body.is-panning{cursor:grabbing!important;}
 body.is-panning *{cursor:grabbing!important;}
 .today-stripe{position:absolute;top:0;bottom:0;background:rgba(130,130,130,.01);pointer-events:none;}
+.today-col-outline{position:absolute;top:0;bottom:0;border:2px solid var(--gold);border-radius:2px;box-sizing:border-box;pointer-events:none;z-index:60;} /* v953: gold frame on the "now" column */
+.wk-cell.today-wk{box-shadow:inset 0 0 0 2px var(--gold);} /* v953: header cap matches the column frame below it */
 
 /* ── PHASE BARS ── */
 .phase-bar{
@@ -3115,7 +3116,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v952';
+const CORE_VERSION = 'v953';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -3865,7 +3866,7 @@ function updateSortBtns(){
 }
 
 // ════════════════════════════════════════════════  SECTION SORTS
-const CAP_SORT={design:{field:null,dir:1},production:{field:null,dir:1}};
+const CAP_SORT={design:{field:null,dir:1},production:{field:'con-start',dir:1}}; // v953: Production defaults to Con Start; drag-reorder still clears it for the session
 let PROD_SHOW_PMS=true;
 let DESIGN_SHOW_DESIGNERS=true;
 let DES_CURVES_ENABLED=new Set(); // designer IDs where curve distribution is active
@@ -5449,14 +5450,6 @@ function buildFcLcProjectRow(proj,lcId){
     pillsWrap.appendChild(caTip2);
     footer.appendChild(pillsWrap); tip.appendChild(footer); }
   info.appendChild(tip);
-  // ── v937: Matterport scan button — lines up under the LC header's eye ──
-  { const mp=el('button','fc-mp-btn lc-col'+((proj.matterport&&proj.matterport.length)?' has-scans':''));
-    mp.dataset.mpBtn=proj.id;
-    mp.dataset.tip=(proj.matterport&&proj.matterport.length)
-      ? proj.matterport.length+(proj.matterport.length===1?' Matterport scan scheduled':' Matterport scans scheduled')+' \u00b7 click to edit'
-      : 'Schedule Matterport scans';
-    mp.innerHTML=MATTERPORT_SVG;
-    info.appendChild(mp); }
   // Pencil / note button — absolutely positioned within fc-proj-info, same as all other rows
   const noteBtn=el('button','fc-note-btn fc-note-left'+(proj.notes?' has-note pp-pencil-noted':''));
   noteBtn.dataset.noteBtn=proj.id; noteBtn.dataset.tip='Add note';
@@ -5527,7 +5520,6 @@ function buildTlLcProject(proj,lcId){
     ensureTiers(proj); proj.tiers.forEach(t=>ov.appendChild(buildTierDot(proj,t))); ensureCrits(proj); proj.crits.forEach(c=>ov.appendChild(buildCritDot(proj,c)));
     ensurePencilsDown(proj); ov.appendChild(buildPencilsDot(proj));
   }
-  (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso); if(mk) ov.appendChild(mk); }); // v933: not gated by the designer-milestone toggle
   wrap.appendChild(ov);
   return wrap;
 }
@@ -6074,6 +6066,17 @@ function buildMonthLineOverlay(){
   }
   return overlay;
 }
+function buildTodayColOverlay(){
+  // v953: gold frame around the entire "now" column. Anchored on todayDisplayWeek —
+  // the same anchor as the today-stripe and header highlight — and built inside the
+  // section builders, where C.weekW is section-correct (zoom rebuilds the section,
+  // so the frame is never repositioned live and the w2px rule is respected).
+  const tw=todayDisplayWeek();
+  if(tw<0||tw>=C.numWeeks) return null;
+  const o=el('div','today-col-outline');
+  o.style.left=w2px(tw)+'px'; o.style.width=C.weekW+'px';
+  return o;
+}
 function buildPersonSep(){
   const fcSep=el('div',''); fcSep.style.cssText=`height:${C.personSepH}px;background:rgba(0,0,0,.30);border-top:1px solid rgba(0,0,0,.35);`;
   const tcSep=el('div',''); tcSep.style.cssText=`height:${C.personSepH}px;width:${w2px(C.numWeeks)}px;background:rgba(0,0,0,.30);border-top:1px solid rgba(0,0,0,.35);`;
@@ -6292,6 +6295,7 @@ function renderMatterportMarkers(projId){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
   document.querySelectorAll(`.mp-marker[data-mp-marker="${projId}"]`).forEach(m=>m.remove());
   document.querySelectorAll(`.ms-overlay[data-proj-id="${projId}"]`).forEach(ov=>{
+    if(ov.closest('.lc-proj-tl')) return; // v953: Matterport removed from the LC area
     const secEl=ov.closest('.section');
     const ww=parseInt(secEl?.dataset?.weekW)||C.weekW;
     (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso,ww); if(mk) ov.appendChild(mk); });
@@ -6370,6 +6374,7 @@ function buildDesignSection(){
     const desMonthOverlay=buildMonthLineOverlay();
     tc.style.position='relative';
     tc.appendChild(desMonthOverlay);
+    const _dtco=buildTodayColOverlay(); if(_dtco) tc.appendChild(_dtco); // v953
     // Date header lives in sticky-cal-hdr above the scroll area
     // Unassigned separator bar
     const tlUnSep=el('div',''); tlUnSep.style.cssText=`width:${w2px(C.numWeeks)}px;height:22px;background:var(--sep);`;
@@ -6888,6 +6893,7 @@ function buildProdSection(){
   function populateProdTl(tc){
     tcInner.style.position='relative';
     tcInner.appendChild(buildMonthLineOverlay());
+    const _tco=buildTodayColOverlay(); if(_tco) tcInner.appendChild(_tco); // v953
     tc.appendChild(tcInner);
   }
   const prodGanttScroll=buildGanttRow('production',fc,populateProdTl,prodCmdBar);
@@ -14134,6 +14140,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
       nm.textContent=proj.name.replace(/\s+Residence$/,'');
       info.appendChild(nm);
       const peopleParts=[(sales?sales.split(' ')[0]:null), designer?designer.label:null, pm?pm.label:null].map(v=>v||'—');
+      if(section==='production'){ // v953: LCs join the team line — raw SP names, so untracked LCs still show
+        const _lcN=[proj.logisticsCoord1,proj.logisticsCoord2].map(n=>(n||'').trim()).filter(Boolean).map(n=>n.split(' ')[0]);
+        peopleParts.push(_lcN.length?_lcN.join(' + '):'—');
+      }
       const ppl=document.createElement('div'); ppl.className='pp-date-people';
       ppl.textContent=peopleParts.join(' · ');
       info.appendChild(ppl);
@@ -14572,6 +14582,16 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v953', date: '2026-08-10',
+    entries: [
+      'Matterport scheduling is gone from the Logistics Coordinator rows — no button, no scan chips. Design and Production rows are unchanged, and the Key Data panel still schedules scans.',
+      'The Production lens now sorts projects by construction start by default. Dragging a project into a custom order still works and holds until the next reload.',
+      'Production projects with no Logistics Coordinator are now called out in the Weekly Review — in the summary line and as a No LC flag on the project itself.',
+      'Logistics Coordinators appear in the team line on Key Data — Production, after the sales, designer, and PM names.',
+      'The now column is framed in gold down the full height of the Design and Production timelines, with a matching ring on the calendar header cell.',
+    ],
+  },
   {
     version: 'v952', date: '2026-08-09',
     entries: [
@@ -15690,6 +15710,13 @@ function briefDaNoCA(){
     return !ca||ca.week==null; // flag only when no CA date is set
   });
 }
+function briefNoLC(){
+  // v953: CA-signed projects with no Logistics Coordinator. Scoped to production —
+  // flagging at DA would fire months before anyone could act (same reasoning as the
+  // Housekeeping LC row, which this flag elevates into the summary).
+  return PROJECTS.filter(p=>p.status==='ca-signed'
+    &&!(p.logisticsCoord1||'').trim()&&!(p.logisticsCoord2||'').trim());
+}
 
 // ── Render helpers ────────────────────────────────────────────────────────────
 function briefRow(lblCls,label,text){
@@ -15774,6 +15801,8 @@ function briefHealthSummary(diff,flags){
     parts.push('Nothing flagged — a quiet week.');
   }
   if(missing.length) parts.push(`${missing.length} project${missing.length!==1?'s':''} ${missing.length===1?'is':'are'} missing a designer or PM.`);
+  const _noLc=briefNoLC(); // v953
+  if(_noLc.length) parts.push(`${_noLc.length} production project${_noLc.length!==1?'s':''} ${_noLc.length===1?'has':'have'} no Logistics Coordinator assigned.`);
   return parts.join(' ');
 }
 
@@ -15784,6 +15813,7 @@ function generateBriefHTML(){
   const overdue=briefOverdueFlags();
   const stalls=briefStallFlags();
   const daNoCa=briefDaNoCA();
+  const noLc=briefNoLC(); // v953
   const {statusChanges,msChanges,newProjs,removedProjs,assignmentChanges,scheduleChanges,noteChanges,valueChanges}=diff;
   // v874: todayWeek() counts raw 7-day periods from C.startDate, a Wednesday, so from
   // Wednesday through Sunday it sits one week ahead of the column the Gantt draws as
@@ -15882,10 +15912,11 @@ function generateBriefHTML(){
     (noteChanges||[]).forEach(x=>{(diffByProj[x.proj.id]=diffByProj[x.proj.id]||{}).noteChange=x;});
     newProjs.forEach(p=>{(diffByProj[p.id]=diffByProj[p.id]||{}).isNew=true;});
   }
-  const overdueByProj={}, stallsByProj={}, daNoCaSet=new Set();
+  const overdueByProj={}, stallsByProj={}, daNoCaSet=new Set(), noLcSet=new Set();
   overdue.forEach(x=>{(overdueByProj[x.proj.id]=overdueByProj[x.proj.id]||[]).push(x);});
   stalls.forEach(x=>{stallsByProj[x.proj.id]=x;});
   daNoCa.forEach(p=>daNoCaSet.add(p.id));
+  noLc.forEach(p=>noLcSet.add(p.id));
 
   // Lightweight project group — name + status tag + people; data-brief-grp enables orphan cleanup
   function renderProjGroup(proj, rows){
@@ -15935,6 +15966,8 @@ function generateBriefHTML(){
         `No changes in ${stallsByProj[id].daysSince} days.`));
       if(daNoCaSet.has(id)) rows.push(briefAckRow(id+'-da-no-ca','l-warn','CA not set',
         'DA signed but no CA date scheduled.'));
+      if(noLcSet.has(id)) rows.push(briefAckRow(id+'-no-lc','l-warn','No LC',
+        'In production with no Logistics Coordinator assigned.'));
       if(pd?.statusChange){ const {from,to}=pd.statusChange;
         rows.push(briefAckRow(id+'-status-'+from+'-'+to,'l-change','Status',`${briefStatusLabel(from)} \u2192 ${briefStatusLabel(to)}.`,{k:'status',p:id})); }
       if(pd?.valueChanges) pd.valueChanges.forEach(({field,from,to})=>{
