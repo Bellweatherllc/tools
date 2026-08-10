@@ -3116,7 +3116,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v953';
+const CORE_VERSION = 'v954';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -6048,21 +6048,28 @@ function updateSlbYear(ss){
   yrLbl.style.color=visYear%2===0?'rgba(80,200,120,.90)':'rgba(220,80,80,.85)';
 }
 function buildMonthLineOverlay(){
+  // v954: this was one 9999px-tall element painted with a single many-stop linear
+  // gradient — the prime suspect for the blurry full-height gray bands that appeared
+  // intermittently on some machines: oversized gradient layers smear when the GPU
+  // downscales or tiles the backing texture, which also explains why the bands could
+  // visually cross the sticky header (the artifact lives in the composited output,
+  // not the DOM) and why they came and went. Now: a bounded overlay (top:0;bottom:0
+  // of the positioned parent — the DOM knows its height, same anchoring as the
+  // today-col frame) holding one integer-positioned 1px div per month boundary.
+  // Visually identical; nothing left for a rasterizer to smear.
   const overlay=el('div',''); const totalW=w2px(C.numWeeks);
-  overlay.style.cssText=`position:absolute;top:0;left:0;width:${totalW}px;height:9999px;pointer-events:none;z-index:10;`;
-  // Snap to exact week-cell boundaries — same grid as calendar cells
-  const positions=[]; const sd=C.startDate;
+  overlay.style.cssText=`position:absolute;top:0;bottom:0;left:0;width:${totalW}px;pointer-events:none;z-index:10;`;
+  const sd=C.startDate;
   let prevMonth=new Date(sd).getMonth();
   for(let w=1;w<C.numWeeks;w++){
     const d=new Date(sd.getTime()+w*7*24*3600*1000);
     const m=d.getMonth();
-    if(m!==prevMonth){ positions.push(w*C.weekW); }
+    if(m!==prevMonth){
+      const ln=el('div','');
+      ln.style.cssText=`position:absolute;top:0;bottom:0;left:${Math.round(w*C.weekW)-1}px;width:1px;background:rgba(0,0,0,.12);`;
+      overlay.appendChild(ln);
+    }
     prevMonth=m;
-  }
-  if(positions.length){
-    const col='rgba(0,0,0,.12)';
-    const stops=positions.flatMap(px=>[`transparent ${px-.5}px`,`${col} ${px-.5}px`,`${col} ${px+.5}px`,`transparent ${px+.5}px`]);
-    overlay.style.backgroundImage=`linear-gradient(90deg,${stops.join(',')})`;
   }
   return overlay;
 }
@@ -14582,6 +14589,12 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v954', date: '2026-08-10',
+    entries: [
+      'Fix aimed at the blurry gray vertical bands that intermittently appeared on some machines. The month-boundary lines were drawn as one enormous gradient-painted element, which some graphics hardware smears into wide soft bands; they are now drawn as individual one-pixel lines sized to the actual timeline height. The calendar looks the same.',
+    ],
+  },
   {
     version: 'v953', date: '2026-08-10',
     entries: [
