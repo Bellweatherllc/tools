@@ -662,6 +662,7 @@ body.prod-design-hidden .section[data-s-type="production"] .ms-da{display:none!i
 /* v847: one size fits all — pencil is 23px tall, tip on the floor, in both modes */
 .lanes-wrap.proj-collapsed .pd-dot{display:block;}
 body:not(.admin-mode) .brief-ack-btn{display:none;}
+body:not(.admin-mode) [data-hk-restore-all]{display:none;} /* v962: mass restore is an admin action */
 .group-toggle.sel-glow-toggle{outline:2px solid rgba(255,59,48,.90);outline-offset:2px;animation:sel-pulse-soft 1.4s ease-in-out infinite;}
 @keyframes sel-pulse-soft{
   0%,100%{outline-color:rgba(255,59,48,.90);}
@@ -3127,7 +3128,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v961';
+const CORE_VERSION = 'v962';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -14593,6 +14594,12 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v962', date: '2026-08-10',
+    entries: [
+      'The Pipeline Housekeeping tray gains a Restore all checks button (admin only, with a confirm step). It returns every dismissed condition-based row \u2014 missing links, design hours, milestones-set, No LC \u2014 to the active list in one click. These rows only sit in the tray while their condition is still unresolved, so mass-restoring them is always safe. Trello-board dismissals are untouched: for boards, dismissing is the done-marker.',
+    ],
+  },
+  {
     version: 'v961', date: '2026-08-10',
     entries: [
       'Weekly Review reorganized. Pipeline Planning and Pipeline Housekeeping are now one section \u2014 Pipeline Housekeeping \u2014 sitting second from the top and always open (no collapse, no badge). It carries the slot actions (Assign designer, Discuss and Confirm), project notes, the Create Trello Boards callout, missing document links, the design-hours and milestones-set checks, and the No Logistics Coordinator row.',
@@ -15884,9 +15891,11 @@ function generateBriefHTML(){
     // v873: every housekeeping row is dismissible. Dismissed rows drop out of the count
     // and into the tray at the foot of the section.
     const dismissedRows=[];
+    let _disCheckCount=0; // v962: condition-based dismissals only — Trello completions excluded
     const _hkRow=(ackId,name,text,proj)=>{
       const dismissBtn=`<button class="brief-ack-btn brief-ack-mark" data-ack-id="${ackId}" data-ack-action="archived">Dismiss</button>`;
       if(BRIEF_ACKS[ackId]==='archived'){
+        _disCheckCount++;
         const restoreBtn=`<button class="brief-ack-btn brief-ack-mark" data-hk-restore="${ackId}">Restore</button>`;
         dismissedRows.push(`<div class="brief-card-row"><span class="bcr-lbl l-quiet">${name}</span><span class="bcr-text">${text}</span><span class="brief-ack-btns">${restoreBtn}${_mgrIcon(proj)}</span></div>`);
         return;
@@ -15929,9 +15938,17 @@ function generateBriefHTML(){
       ?`<div class="hk-trello"><div class="hk-trello-hdr"><span class="hk-t-title">Create Trello Boards</span>`
         +`<span class="hk-t-count">${trelloRows.length}</span></div>${trelloRows.join('')}</div>`
       :'';
+    // v962: "Restore all checks" — the selective fresh slate. Condition-based rows in
+    // the tray are by definition still unresolved (resolved conditions leave the tray on
+    // their own), so restoring them en masse is always safe. Trello dismissals are NOT
+    // included: for boards, dismissing IS the done-marker, and restoring those would
+    // resurrect every completed board as an active task.
+    const _restoreAllBtn=_disCheckCount
+      ?`<button class="hk-dis-btn" data-hk-restore-all="1" style="margin-left:6px;">Restore all checks (${_disCheckCount})</button>`
+      :'';
     const _disGroup=dismissedRows.length
       ?`<div class="hk-dis-bar"><button class="hk-dis-btn" data-hk-toggle-dismissed="1">`
-        +`${HK_SHOW_DISMISSED?'Hide':'Show'} dismissed (${dismissedRows.length})</button></div>`
+        +`${HK_SHOW_DISMISSED?'Hide':'Show'} dismissed (${dismissedRows.length})</button>${_restoreAllBtn}</div>`
         +(HK_SHOW_DISMISSED?`<div class="hk-dis-wrap">${dismissedRows.join('')}</div>`:'')
       :'';
     _hkTrelloHtml=_trelloGroup; _hkRowsHtml=linkRows.join(''); _hkDisHtml=_disGroup;
@@ -16856,6 +16873,18 @@ document.addEventListener('click',e=>{
   if(e.target.closest('[data-hk-toggle-dismissed]')){
     HK_SHOW_DISMISSED=!HK_SHOW_DISMISSED;
     const body=document.getElementById('briefBody'); if(body) body.innerHTML=generateBriefHTML();
+    return;
+  }
+  // v962: selective fresh slate — clears all condition-based housekeeping dismissals
+  // (keys containing '-hk-'), including stale keys whose conditions have since resolved,
+  // which quietly prunes dead entries from CORE_Config. Trello '-trello-board' keys stay.
+  const hkRestoreAll=e.target.closest('[data-hk-restore-all]');
+  if(hkRestoreAll){
+    if(confirm('Restore all dismissed housekeeping checks to the active list? These are all still unresolved. Trello-board dismissals are not affected.')){
+      Object.keys(BRIEF_ACKS).filter(k=>k.includes('-hk-')).forEach(k=>delete BRIEF_ACKS[k]);
+      saveBriefAcks();
+      const body=document.getElementById('briefBody'); if(body) body.innerHTML=generateBriefHTML();
+    }
     return;
   }
   const hkRestore=e.target.closest('[data-hk-restore]');
