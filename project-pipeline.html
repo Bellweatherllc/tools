@@ -3147,7 +3147,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v965';
+const CORE_VERSION = 'v966';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -4803,7 +4803,7 @@ const LANE_ORDER=['design','permitting','production'];
 
 // populateCollapsedRow: renders collapsed band content directly into a lane-row element.
 // Used by buildProjTimeline (inline at build time) and renderCollapsedBand (surgical updates).
-function populateCollapsedRow(proj, rowEl, ww){
+function populateCollapsedRow(proj, rowEl, ww, secType){
   const w2px=n=>Math.round(n*ww);
   rowEl.innerHTML='';
   const isProjected=isUnsignedStatus(proj.status);
@@ -4889,7 +4889,11 @@ function populateCollapsedRow(proj, rowEl, ww){
   const offLin=new Set();
   const des=personById(proj.designer),pm=personById(proj.productionPM);
   const _collectOff=(person,lanes)=>{ if(!person)return; (person.timeOff||[]).forEach(iso=>{ const q=_toParse(iso); if(q&&weekOverlapsLanes(proj,q.week,lanes)) offLin.add(q.lin); }); };
-  _collectOff(des,['design','permitting']); _collectOff(pm,['production']);
+  // v966: scope OFF strips to the screen's own people — the Production screen
+  // shows only the PM's days off; designer OFF strips belong to Design.
+  const _rowSec=secType||rowEl.closest?.('.section')?.dataset.sType||'';
+  if(_rowSec!=='production') _collectOff(des,['design','permitting']);
+  _collectOff(pm,['production']);
   const _lins=[...offLin].sort((a,b)=>a-b), _offRuns=[];
   _lins.forEach(l=>{ const last=_offRuns[_offRuns.length-1]; if(last&&l===last.e+1) last.e=l; else _offRuns.push({s:l,e:l}); });
   const _dw=ww/5;
@@ -4911,7 +4915,7 @@ function renderCollapsedBand(projId){
   document.querySelectorAll(`.lanes-wrap[data-proj-id="${projId}"].proj-collapsed .lane-row`).forEach(row=>{
     const secEl=row.closest('.section');
     const ww=parseInt(secEl?.dataset.weekW)||C.weekW;
-    populateCollapsedRow(proj,row,ww);
+    populateCollapsedRow(proj,row,ww,secEl?.dataset.sType);
   });
 }
 
@@ -6041,7 +6045,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
     });
   } else {
     // Collapsed: band content rendered inline — no separate collapsed-band element needed
-    populateCollapsedRow(proj,laneRow,C.weekW);
+    populateCollapsedRow(proj,laneRow,C.weekW,laneIds.includes('production')?'production':'design');
   }
   // v919 — production cue on the Design row, expanded OR collapsed (it sizes
   // itself from rowH). Collapsed is where it's most often viewed.
@@ -15025,6 +15029,12 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v966', date: '2026-08-13',
+    entries: [
+      'Fixed: designer days off no longer appear on the Production screen. Collapsed project bands there now show only the PM\u2019s time off; designer OFF strips remain on the Design screen where they belong.',
+    ],
+  },
   {
     version: 'v965', date: '2026-08-13',
     entries: [
