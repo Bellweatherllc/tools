@@ -3151,7 +3151,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v956';
+const CORE_VERSION = 'v957';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -10592,7 +10592,29 @@ const msalApp = new msal.PublicClientApplication({
   cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:false }
 });
 
-function doSignIn(){
+// v957: MSAL can leave a stale "interaction in progress" flag in browser storage when
+// a redirect round-trip doesn't return cleanly (e.g. sign-out landing on Microsoft's
+// generic signed-out page). Because the cache lives in localStorage, the flag survives
+// closed tabs and blocks every future sign-in with interaction_in_progress. Whenever
+// the app is sitting at the sign-in overlay, no interaction can genuinely be running —
+// so any such flag is stale by definition and safe to remove.
+function _clearStaleMsalInteraction(){
+  let n=0;
+  [localStorage,sessionStorage].forEach(store=>{
+    try{
+      const kill=[];
+      for(let i=0;i<store.length;i++){
+        const k=store.key(i);
+        if(k&&k.toLowerCase().includes('interaction.status')) kill.push(k);
+      }
+      kill.forEach(k=>{ store.removeItem(k); n++; });
+    }catch(e){}
+  });
+  if(n) console.warn('[auth] cleared',n,'stale MSAL interaction flag(s)');
+  return n;
+}
+
+function doSignIn(_isRetry){
   const btn=document.getElementById('authSignInBtn');
   const spinner=document.getElementById('authSpinner');
   if(btn) btn.disabled=true;
@@ -10600,6 +10622,12 @@ function doSignIn(){
   setAuthStatus('Signing in…');
   msalApp.loginRedirect({scopes:SP_SCOPES})
     .catch(e=>{
+      // Stale flag from a broken earlier round-trip: clear it and retry once.
+      if(!_isRetry&&(e.errorCode==='interaction_in_progress'||String(e.message||'').includes('interaction_in_progress'))){
+        _clearStaleMsalInteraction();
+        doSignIn(true);
+        return;
+      }
       setAuthStatus('Sign-in failed: '+e.message,true);
       if(btn) btn.disabled=false;
       if(spinner) spinner.style.display='none';
@@ -11790,6 +11818,7 @@ msalApp.handleRedirectPromise().then(resp=>{
     msalApp.setActiveAccount(acct);
     initFromSharePoint();
   } else {
+    _clearStaleMsalInteraction(); // at the overlay, any interaction flag is stale
     const ov=document.getElementById('authOverlay'); if(ov) ov.style.display='flex';
   }
 }).catch(e=>{
@@ -11802,6 +11831,7 @@ msalApp.handleRedirectPromise().then(resp=>{
     console.warn('[auth] handleRedirectPromise caught error but valid account found — proceeding:',e.message);
     initFromSharePoint();
   } else {
+    _clearStaleMsalInteraction(); // at the overlay, any interaction flag is stale
     setAuthStatus('Auth error: '+e.message,true);
     const ov=document.getElementById('authOverlay'); if(ov) ov.style.display='flex';
   }
@@ -14941,6 +14971,12 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v957', date: '2026-08-13',
+    entries: [
+      'Fixed: after signing out, sign-in could fail with an \u201cinteraction is currently in progress\u201d error that survived closing the tab. The sign-in screen now clears the stale flag automatically, and the Sign In button recovers and retries on its own if it hits one.',
+    ],
+  },
   {
     version: 'v956', date: '2026-08-13',
     entries: [
