@@ -690,13 +690,12 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .save-indicator .si-spinner{width:11px;height:11px;border-radius:50%;border:2px solid rgba(255,255,255,.18);border-top-color:rgba(255,255,255,.75);animation:bw-spin .8s linear infinite;flex-shrink:0;}
 .save-indicator .si-txt{color:rgba(255,255,255,.4);}
 /* v955: Help & Manual — lives in the header on every screen */
-.manual-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.55);font-size:11px;font-weight:700;text-decoration:none;margin-right:8px;flex-shrink:0;transition:all .12s;}
+.manual-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.55);font-size:11px;font-weight:700;text-decoration:none;margin-left:12px;flex-shrink:0;transition:all .12s;align-self:center;}
 .manual-btn:hover{border-color:#d8b64f;color:#d8b64f;background:rgba(216,182,79,.08);}
-/* v956: signed-in identity + sign out */
-.user-chip{display:flex;align-items:center;gap:7px;margin-right:10px;flex-shrink:0;}
-.uc-name{font-size:10.5px;color:rgba(255,255,255,.55);white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
-.uc-signout{background:none;border:1px solid rgba(255,255,255,.22);border-radius:4px;color:rgba(255,255,255,.5);font-family:inherit;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;cursor:pointer;transition:all .12s;}
-.uc-signout:hover{border-color:rgba(255,255,255,.5);color:rgba(255,255,255,.85);}
+/* v956/v962: signed-in identity — rendered as a presence-style chip, first name in caps.
+   Clicking it opens Access Diagnostics. */
+.user-chip{display:flex;align-items:center;margin-right:2px;flex-shrink:0;}
+.user-chip .presence-chip{cursor:pointer;}
 /* v960: access diagnostics panel */
 #authDiagPanel{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:10001;background:#111b26;border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:14px 17px;width:min(700px,94vw);max-height:72vh;overflow:auto;color:rgba(255,255,255,.85);font-size:11.5px;line-height:1.55;box-shadow:0 12px 40px rgba(0,0,0,.5);}
 #authDiagPanel .ad-hd{font-weight:700;font-size:12.5px;margin-bottom:8px;color:#fff;}
@@ -2986,10 +2985,8 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
   </div>
   <div class="proto-badge" id="versionBadge"></div>
   <div id="saveStatus" class="save-indicator"></div>
-  <a class="manual-btn" href="pipeline-manual.html" target="_blank" rel="noopener" data-tip="Help &amp; repair manual">?</a>
   <div class="user-chip" id="userChip" style="display:none;">
-    <span class="uc-name" id="ucName"></span>
-    <button type="button" class="uc-signout" onclick="bwSignOut()">Sign out</button>
+    <span class="presence-chip" id="ucName"></span>
   </div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
@@ -2998,6 +2995,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
     <button type="button" class="focus-btn" data-focus-btn="design" role="tab" data-tip="Design Planning — press 2">Design</button>
     <button type="button" class="focus-btn" data-focus-btn="production" role="tab" data-tip="Production Planning — press 3">Production</button>
     <button type="button" class="focus-btn" data-focus-btn="operations" role="tab" data-tip="Operations — press 4">Operations</button>
+    <a class="manual-btn" href="pipeline-manual.html" target="_blank" rel="noopener" data-tip="Help &amp; repair manual">?</a>
   </nav>
 
 </div>
@@ -3164,7 +3162,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v961';
+const CORE_VERSION = 'v963';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -10123,14 +10121,13 @@ function buildPlanningSection(){
       const des=personById(propDesId);
       const desTally=des?designerTally(des.id):[];
       const target=des?getTarget(des.id):0;
-      const hrs=desTally&&_capAnchorWk>=0&&_capAnchorWk<C.numWeeks?desTally[_capAnchorWk]:0;
-      const ratio=target>0?hrs/target:1;
-      const sc=sigClass(ratio);
-      const capLabel=_desCapLabel(ratio);
       const slotIdStr=slot.id;
-      // Pre-compute 8 weeks from design start for detail panel
+      // 8 weeks from design start — drives both the detail panel and (v963) the verdict
       const selWeeks=Array.from({length:8},(_,i)=>{ const wk=_capAnchorWk+i; const h=wk>=0&&wk<C.numWeeks?(desTally[wk]||0):0; const r=target>0?h/target:0; return {h,target,ratio:r,dateLbl:wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014'}; });
+      const verdict=_desCapVerdict(selWeeks,target);
+      const sc=verdict.sc, capLabel=verdict.label;
       const chip=el('div','ps-des-chip ps-'+sc);
+      _applyCapFill(chip,sc,verdict.fill);
       // Left zone: × + name together — clicking clears the selection
       const clrZone=el('button','ps-des-chip-nm');
       clrZone.type='button'; clrZone.dataset.tip='Remove designer';
@@ -10152,14 +10149,13 @@ function buildPlanningSection(){
       DESIGNERS.forEach(d=>{
         const dTally=designerTally(d.id);
         const target=getTarget(d.id);
-        const hrs=_capAnchorWk>=0&&_capAnchorWk<C.numWeeks?dTally[_capAnchorWk]:0;
-        const ratio=target>0?hrs/target:1;
-        const sc=sigClass(ratio);
-        const capLabel=_desCapLabel(ratio);
         const slotIdStr=slot.id;
-        // Pre-compute 8 weeks from design start for detail panel
+        // 8 weeks from design start — drives both the detail panel and (v963) the verdict
         const dWeeks=Array.from({length:8},(_,i)=>{ const wk=_capAnchorWk+i; const h=wk>=0&&wk<C.numWeeks?(dTally[wk]||0):0; const r=target>0?h/target:0; return {h,target,ratio:r,dateLbl:wk>=0&&wk<C.numWeeks?wkDate(wk):'\u2014'}; });
+        const verdict=_desCapVerdict(dWeeks,target);
+        const sc=verdict.sc, capLabel=verdict.label;
         const chip=el('div','ps-des-chip ps-'+sc);
+        _applyCapFill(chip,sc,verdict.fill);
         const nmBtn=el('button','ps-des-chip-nm'); nmBtn.type='button'; nmBtn.textContent=d.label; nmBtn.dataset.tip='Assign '+d.label;
         nmBtn.addEventListener('click',e=>{
           e.stopPropagation();
@@ -11568,6 +11564,35 @@ function _desCapLabel(ratio){
   if(ratio>=0.7)  return 'Near capacity';
   return 'Available';
 }
+// v963: blended capacity verdict over the 8-week window from design start.
+// Over capacity only when 2+ weeks exceed target; otherwise the average
+// utilization across the window drives the label. A missing target gets its
+// own honest state instead of masquerading as fully loaded. fill = average
+// utilization (capped at 100%) for the proportional chip background.
+function _desCapVerdict(weeks,target){
+  if(!target||target<=0) return {label:'No target',sc:'sig-grey',fill:0};
+  const ratios=weeks.map(w=>w.ratio);
+  const avg=ratios.length?ratios.reduce((a,b)=>a+b,0)/ratios.length:0;
+  const overWeeks=ratios.filter(r=>r>=1).length;
+  let label,sc;
+  if(overWeeks>=2){ label='Over capacity'; sc='sig-red'; }
+  else if(avg>=0.9){ label='Capacity'; sc='sig-red'; }
+  else if(avg>=0.7){ label='Near capacity'; sc='sig-yellow'; }
+  else { label='Available'; sc='sig-green'; }
+  return {label,sc,fill:Math.min(avg,1)};
+}
+// Chip fill/base tints per signal — fill left-to-right by average utilization.
+const _CAP_CHIP_TINT={
+  'sig-green':['rgba(79,195,138,.30)','rgba(79,195,138,.12)'],
+  'sig-yellow':['rgba(216,166,79,.32)','rgba(216,166,79,.12)'],
+  'sig-red':['rgba(192,67,74,.30)','rgba(192,67,74,.12)'],
+  'sig-grey':['rgba(40,40,40,.16)','rgba(40,40,40,.08)']
+};
+function _applyCapFill(chip,sc,fill){
+  const t=_CAP_CHIP_TINT[sc]; if(!t) return;
+  const p=Math.round(fill*100);
+  chip.style.background='linear-gradient(90deg,'+t[0]+' '+p+'%,'+t[1]+' '+p+'%)';
+}
 const _CAP_DOT={'sig-green':'#4fc38a','sig-yellow':'#d8a64f','sig-red':'#c0434a','sig-grey':'rgba(40,40,40,.20)'};
 const _CAP_TX ={'sig-green':'#1a7a4a','sig-yellow':'#8a6820','sig-red':'#923035','sig-grey':'var(--ts)'};
 function _toggleCapDetail(triggerEl,slotId,desId,ph1Wk,weeks){
@@ -11960,12 +11985,13 @@ function applyAdminEligibility(){
     const acct=(typeof msalApp!=='undefined')?(msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]):null;
     const chip=document.getElementById('userChip'), nm=document.getElementById('ucName');
     if(acct&&chip&&nm){
-      nm.textContent=acct.name||acct.username||'';
+      const firstName=((acct.name||acct.username||'').trim().split(/[\s@]+/)[0]||'').toUpperCase();
+      nm.textContent=firstName;
+      nm.className='presence-chip'+(CURRENT_USER_ROLE==='admin'?' presence-admin':'');
       chip.setAttribute('data-tip','Signed in as '+(acct.username||'')+' \u00b7 Pipeline role: '+CURRENT_USER_ROLE+' \u00b7 click for access diagnostics');
       chip.style.display='flex';
       if(!chip.dataset.diagWired){
         chip.dataset.diagWired='1';
-        nm.style.cursor='pointer';
         nm.addEventListener('click',toggleAuthDiag);
       }
     }
@@ -15069,6 +15095,21 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v963', date: '2026-08-13',
+    entries: [
+      'Designer capacity chips on the Sales screen now judge the whole 8-week window from design start, not just the first week. A designer reads Over Capacity only when two or more weeks exceed their target; otherwise the average across the window sets the label. This fixes chips claiming a designer was maxed out when the detail panel showed weeks of availability.',
+      'The chips now also fill with color from left to right in proportion to average utilization \u2014 a fuller chip means a fuller schedule, so you can compare designers at a glance without opening the detail panel.',
+      'A designer with no capacity target set now shows \u201cNo target\u201d in grey instead of incorrectly reading as fully loaded.',
+    ],
+  },
+  {
+    version: 'v962', date: '2026-08-13',
+    entries: [
+      'The Sign Out button is retired now that access troubleshooting is done. Your own name now appears as a first-name badge in the top bar, styled like everyone else\u2019s \u2014 clicking it still opens Access Diagnostics.',
+      'The help (?) button moved to the far upper right, past the Operations tab.',
+    ],
+  },
   {
     version: 'v961', date: '2026-08-13',
     entries: [
