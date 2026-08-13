@@ -3151,7 +3151,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v957';
+const CORE_VERSION = 'v959';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -9725,20 +9725,15 @@ function buildPlanningSection(){
       return{proj, constrStart:cPh?cPh.startWeek:null, caWk:caMs?caMs.week:null};
     })
     .filter(s=>s.constrStart!==null&&s.constrStart>tw)
-    .sort((a,b)=>a.constrStart-b.constrStart);
-
-  // Apply custom column order if saved
-  if(SLOT_COL_ORDER.length>0){
-    openSlots.sort((a,b)=>{
-      const ai=SLOT_COL_ORDER.indexOf(a.proj.id), bi=SLOT_COL_ORDER.indexOf(b.proj.id);
-      if(ai>=0&&bi>=0) return ai-bi;
-      if(ai>=0) return -1; if(bi>=0) return 1;
+    // v958: sort by CA signing date — the rule is CA month, then CA date within it —
+    // with construction start as tiebreaker and undated CAs last. The old SLOT_COL_ORDER
+    // override (a fossil from when slots were drag-reorderable columns) was silently
+    // outranking the date sort with an order frozen long ago; it no longer applies.
+    .sort((a,b)=>{
+      const aCa=a.caWk!=null?a.caWk:99999, bCa=b.caWk!=null?b.caWk:99999;
+      if(aCa!==bCa) return aCa-bCa;
       return a.constrStart-b.constrStart;
     });
-  }
-  // Sync SLOT_COL_ORDER with current slots
-  const slotIds=openSlots.map(s=>s.proj.id);
-  SLOT_COL_ORDER=slotIds;
 
 
   // ── Helper: week → month label ──
@@ -10338,7 +10333,7 @@ function buildPlanningSection(){
       if(!psGroupMap.has(mn)) psGroupMap.set(mn,[]);
       psGroupMap.get(mn).push(s);
     });
-    // Sort groups chronologically by their earliest caWk — SLOT_COL_ORDER may reflect drag state but must not break month sequence
+    // Sort groups chronologically by their earliest caWk; rows within each group already carry the CA-date order from v958
     const sortedGroups=[...psGroupMap.entries()].sort((a,b)=>{
       const aWk=Math.min(...a[1].map(s=>s.caWk!=null?s.caWk:99999));
       const bWk=Math.min(...b[1].map(s=>s.caWk!=null?s.caWk:99999));
@@ -10830,20 +10825,27 @@ async function loadTeamMembers(saved){
   try{
     const acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
     if(acct){
-      const signedInEmail=(acct.username||'').trim().toLowerCase();
+      // v959: a person's sign-in address (UPN) is often not their mail address —
+      // jwilhite@ signs in while joey@ receives mail. Collect every identity the
+      // token carries and match any of them; WorkEmail may also hold several
+      // addresses separated by semicolons or commas.
+      const claims=acct.idTokenClaims||{};
+      const idCandidates=[acct.username,claims.preferred_username,claims.email,claims.upn]
+        .map(v=>(v||'').trim().toLowerCase()).filter((v,i,arr)=>v&&arr.indexOf(v)===i);
       const signedInName=(acct.name||'').trim().toLowerCase();
       const match=items.find(item=>{
         const f=item.fields||{};
-        const email=(f.WorkEmail||f.Email||f.UserEmail||f.EMail||'').trim().toLowerCase();
+        const emailField=(f.WorkEmail||f.Email||f.UserEmail||f.EMail||'').toLowerCase();
+        const listEmails=emailField.split(/[;,]/).map(x=>x.trim()).filter(Boolean);
         const name=(f.EmployeeName||f.Title||'').trim().toLowerCase();
-        return (email&&signedInEmail&&email===signedInEmail)||(name&&signedInName&&name===signedInName);
+        return listEmails.some(le=>idCandidates.includes(le))||(name&&signedInName&&name===signedInName);
       });
       if(match){
         const raw=((match.fields||{}).PipelineRole||'').trim().toLowerCase();
         CURRENT_USER_ROLE=raw==='admin'?'admin':'readonly';
         console.log('[auth] PipelineRole resolved:',CURRENT_USER_ROLE,'for',acct.name);
       } else {
-        console.warn('[auth] No CORE_TeamMembers match for signed-in user — defaulting to readonly. username:',acct.username,'name:',acct.name);
+        console.warn('[auth] No CORE_TeamMembers match for signed-in user — defaulting to readonly. Tried addresses:',idCandidates.join(', '),'\u00b7 display name:',acct.name);
       }
     }
   }catch(e){ console.warn('[auth] PipelineRole resolution failed:',e); }
@@ -14971,6 +14973,18 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v959', date: '2026-08-13',
+    entries: [
+      'Fixed: a person could show as read-only even though their CORE_TeamMembers row says admin, when their Microsoft sign-in address differs from their listed work email (a sign-in name like jwilhite@ vs a mail alias like joey@). The Pipeline now checks every address on the Microsoft account, and the WorkEmail column can hold several addresses separated by semicolons.',
+    ],
+  },
+  {
+    version: 'v958', date: '2026-08-13',
+    entries: [
+      'Fixed: open slots on the Sales screen could appear out of order within a CA month. A saved slot ordering left over from an old version of the screen was silently overriding the date sort. Slots now always sort by CA signing date (construction start breaks ties, undated CAs go last).',
+    ],
+  },
   {
     version: 'v957', date: '2026-08-13',
     entries: [
