@@ -692,6 +692,11 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 /* v955: Help & Manual — lives in the header on every screen */
 .manual-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.55);font-size:11px;font-weight:700;text-decoration:none;margin-right:8px;flex-shrink:0;transition:all .12s;}
 .manual-btn:hover{border-color:#d8b64f;color:#d8b64f;background:rgba(216,182,79,.08);}
+/* v956: signed-in identity + sign out */
+.user-chip{display:flex;align-items:center;gap:7px;margin-right:10px;flex-shrink:0;}
+.uc-name{font-size:10.5px;color:rgba(255,255,255,.55);white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
+.uc-signout{background:none;border:1px solid rgba(255,255,255,.22);border-radius:4px;color:rgba(255,255,255,.5);font-family:inherit;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;cursor:pointer;transition:all .12s;}
+.uc-signout:hover{border-color:rgba(255,255,255,.5);color:rgba(255,255,255,.85);}
 #sp-error-banner{display:none;position:fixed;top:calc(var(--app-h,44px) - 1px);left:0;right:0;z-index:500;background:#7f1d1d;border-top:2px solid #ef4444;border-bottom:2px solid rgba(0,0,0,.4);padding:10px 16px;align-items:center;gap:12px;}
 #sp-error-banner.visible{display:flex;}
 /* Background sync indicator */
@@ -2969,6 +2974,10 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
   <div class="proto-badge" id="versionBadge"></div>
   <div id="saveStatus" class="save-indicator"></div>
   <a class="manual-btn" href="pipeline-manual.html" target="_blank" rel="noopener" data-tip="Help &amp; repair manual">?</a>
+  <div class="user-chip" id="userChip" style="display:none;">
+    <span class="uc-name" id="ucName"></span>
+    <button type="button" class="uc-signout" onclick="bwSignOut()">Sign out</button>
+  </div>
   <div id="presenceBadges" class="presence-badges"></div>
   <div class="hsp"></div>
   <nav class="focus-nav" role="tablist" aria-label="Pipeline lens">
@@ -3142,7 +3151,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v955';
+const CORE_VERSION = 'v956';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11853,7 +11862,32 @@ function applyAdminEligibility(){
   const eligible=CURRENT_USER_ROLE==='admin';
   const ctrl=document.getElementById('adminControl');
   if(ctrl) ctrl.style.display=eligible?'':'none';
+  // v956 fix: the Weekly Review has its own admin toggle, which was never gated —
+  // it showed for everyone regardless of role. It now follows the same eligibility.
+  const bctrl=document.getElementById('briefAdminControl');
+  if(bctrl) bctrl.style.display=eligible?'':'none';
   if(!eligible&&IS_ADMIN_MODE){ IS_ADMIN_MODE=false; document.body.classList.remove('admin-mode'); }
+  // v956: signed-in identity chip. The tooltip carries the sign-in address and the
+  // resolved Pipeline role — the first thing to check when permissions look wrong.
+  try{
+    const acct=(typeof msalApp!=='undefined')?(msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]):null;
+    const chip=document.getElementById('userChip'), nm=document.getElementById('ucName');
+    if(acct&&chip&&nm){
+      nm.textContent=acct.name||acct.username||'';
+      chip.setAttribute('data-tip','Signed in as '+(acct.username||'')+' \u00b7 Pipeline role: '+CURRENT_USER_ROLE);
+      chip.style.display='flex';
+    }
+  }catch(e){ console.warn('[v956] user chip:',e); }
+}
+function bwSignOut(){
+  try{
+    const acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
+    msalApp.logoutRedirect({account:acct||undefined,postLogoutRedirectUri:location.origin+location.pathname});
+  }catch(e){
+    console.warn('[auth] sign-out failed, clearing session locally:',e);
+    try{ sessionStorage.clear(); }catch(_e){}
+    location.reload();
+  }
 }
 function toggleAdminMode(){
   if(CURRENT_USER_ROLE!=='admin'){ showToast&&showToast('Admin access required.',document.getElementById('adminControl')); return; }
@@ -14907,6 +14941,13 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v956', date: '2026-08-13',
+    entries: [
+      'The top bar now shows who is signed in, with a Sign out button beside the name. Hovering the name shows the sign-in address and your Pipeline role \u2014 useful when permissions look wrong.',
+      'Fixed: the Weekly Review showed its Admin toggle to everyone, regardless of role. It now appears only for admins, matching every other screen.',
+    ],
+  },
   {
     version: 'v955', date: '2026-08-13',
     entries: [
