@@ -692,23 +692,8 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 /* v955: Help & Manual — lives in the header on every screen */
 .manual-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.55);font-size:11px;font-weight:700;text-decoration:none;margin-left:12px;flex-shrink:0;transition:all .12s;align-self:center;}
 .manual-btn:hover{border-color:#d8b64f;color:#d8b64f;background:rgba(216,182,79,.08);}
-/* v956/v962: signed-in identity — rendered as a presence-style chip, first name in caps.
-   Clicking it opens Access Diagnostics. */
+/* v956/v962: signed-in identity — rendered as a presence-style chip, first name in caps. */
 .user-chip{display:flex;align-items:center;margin-right:2px;flex-shrink:0;}
-.user-chip .presence-chip{cursor:pointer;}
-/* v960: access diagnostics panel */
-#authDiagPanel{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:10001;background:#111b26;border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:14px 17px;width:min(700px,94vw);max-height:72vh;overflow:auto;color:rgba(255,255,255,.85);font-size:11.5px;line-height:1.55;box-shadow:0 12px 40px rgba(0,0,0,.5);}
-#authDiagPanel .ad-hd{font-weight:700;font-size:12.5px;margin-bottom:8px;color:#fff;}
-#authDiagPanel .ad-row{margin-bottom:3px;}
-#authDiagPanel .ad-dim{color:rgba(255,255,255,.45);}
-#authDiagPanel .ad-ok{color:#8fe0a4;font-weight:700;}
-#authDiagPanel .ad-bad{color:#f87171;font-weight:700;}
-#authDiagPanel .ad-warn{background:rgba(216,182,79,.12);border:1px solid rgba(216,182,79,.4);border-radius:6px;padding:7px 10px;margin:8px 0;color:#f9e6ae;}
-#authDiagPanel .ad-sub{font-weight:700;margin:10px 0 4px;color:rgba(255,255,255,.7);letter-spacing:.05em;font-size:10px;text-transform:uppercase;}
-#authDiagPanel .ad-tbl{width:100%;border-collapse:collapse;}
-#authDiagPanel .ad-tbl th,#authDiagPanel .ad-tbl td{text-align:left;padding:3px 8px 3px 0;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;}
-#authDiagPanel .ad-tbl th{color:rgba(255,255,255,.5);font-size:10px;text-transform:uppercase;letter-spacing:.05em;}
-#authDiagPanel .ad-keys{color:rgba(255,255,255,.5);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;word-break:break-word;}
 #sp-error-banner{display:none;position:fixed;top:calc(var(--app-h,44px) - 1px);left:0;right:0;z-index:500;background:#7f1d1d;border-top:2px solid #ef4444;border-bottom:2px solid rgba(0,0,0,.4);padding:10px 16px;align-items:center;gap:12px;}
 #sp-error-banner.visible{display:flex;}
 /* Background sync indicator */
@@ -3162,7 +3147,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v963';
+const CORE_VERSION = 'v965';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -10880,23 +10865,6 @@ async function loadTeamMembers(saved){
       } else {
         console.warn('[auth] No CORE_TeamMembers match for signed-in user — defaulting to readonly. Tried addresses:',idCandidates.join(', '),'\u00b7 display name:',acct.name);
       }
-      // Record what was read and decided, for the header-chip diagnostics panel.
-      try{
-        AUTH_DIAG={
-          displayName:acct.name||'',
-          candidates:idCandidates.slice(),
-          method:match?matchMethod:null,
-          matchedName:match?((((match.fields||{}).EmployeeName||(match.fields||{}).Title))||'(unnamed row)'):null,
-          role:CURRENT_USER_ROLE,
-          fieldKeys:items.length?Object.keys(items[0].fields||{}).filter(k=>!k.startsWith('@')&&!/^(id$|ContentType|Edit$|LinkTitle|Attachments|_)/i.test(k)):[],
-          rows:items.map(item=>{const f=item.fields||{};return{
-            name:(f.EmployeeName||f.Title||'(unnamed)'),
-            emails:_emailsExplicit(f).join('; '),
-            scanned:_emailsScanned(f).join('; '),
-            role:((f.PipelineRole||'')+'').trim()||'\u2014'
-          };})
-        };
-      }catch(e){ console.warn('[v960] diag capture:',e); }
     }
   }catch(e){ console.warn('[auth] PipelineRole resolution failed:',e); }
 }
@@ -11968,7 +11936,6 @@ function toggleGrouped(projId){
 }
 let IS_ADMIN_MODE=false;
 let CURRENT_USER_ROLE='readonly'; // safe default — overwritten after SP auth
-let AUTH_DIAG=null; // v960: access diagnostics shown from the header chip panel
 function canEdit(){ return IS_ADMIN_MODE; }
 function applyAdminEligibility(){
   const eligible=CURRENT_USER_ROLE==='admin';
@@ -11987,51 +11954,12 @@ function applyAdminEligibility(){
     if(acct&&chip&&nm){
       const firstName=((acct.name||acct.username||'').trim().split(/[\s@]+/)[0]||'').toUpperCase();
       nm.textContent=firstName;
-      nm.className='presence-chip'+(CURRENT_USER_ROLE==='admin'?' presence-admin':'');
-      chip.setAttribute('data-tip','Signed in as '+(acct.username||'')+' \u00b7 Pipeline role: '+CURRENT_USER_ROLE+' \u00b7 click for access diagnostics');
+      // v964: red = actively editing (admin mode ON), matching what others' chips mean.
+      nm.className='presence-chip'+(IS_ADMIN_MODE?' presence-admin':'');
+      chip.setAttribute('data-tip','Signed in as '+(acct.username||'')+' \u00b7 Pipeline role: '+CURRENT_USER_ROLE);
       chip.style.display='flex';
-      if(!chip.dataset.diagWired){
-        chip.dataset.diagWired='1';
-        nm.addEventListener('click',toggleAuthDiag);
-      }
     }
   }catch(e){ console.warn('[v956] user chip:',e); }
-}
-// v960: access diagnostics — everything the Pipeline read and decided about who's
-// signed in, viewable by clicking the name in the header. Admins also see the whole
-// team as the Pipeline parsed it, which diagnoses another person's access problem
-// from any admin's screen: the fetched list data is identical for every viewer.
-function toggleAuthDiag(){
-  const ex=document.getElementById('authDiagPanel');
-  if(ex){ ex.remove(); return; }
-  if(!AUTH_DIAG) return;
-  const d=AUTH_DIAG;
-  const esc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const p=document.createElement('div'); p.id='authDiagPanel';
-  let h='<div class="ad-hd">Access diagnostics</div>';
-  h+='<div class="ad-row"><b>Signed in:</b> '+esc(d.displayName)+'</div>';
-  h+='<div class="ad-row"><b>Addresses on this account:</b> '+esc(d.candidates.join(', ')||'(none)')+'</div>';
-  h+='<div class="ad-row"><b>Matched team row:</b> '+(d.matchedName?esc(d.matchedName)+' <span class="ad-dim">(via '+esc(d.method)+')</span>':'<span class="ad-bad">none</span>')+'</div>';
-  h+='<div class="ad-row"><b>Resolved role:</b> '+(d.role==='admin'?'<span class="ad-ok">admin</span>':'<span class="ad-bad">'+esc(d.role)+'</span>')+'</div>';
-  if(CURRENT_USER_ROLE==='admin'&&d.rows&&d.rows.length){
-    const allBlank=d.rows.every(r=>!r.emails);
-    if(allBlank) h+='<div class="ad-warn">No row has a readable address in the expected email columns \u2014 the column\u2019s internal name likely differs from its label. Matching is running on the auto-detected values below instead.</div>';
-    h+='<div class="ad-sub">Team rows as the Pipeline reads them</div>';
-    h+='<table class="ad-tbl"><tr><th>Name</th><th>Email column</th><th>Auto-detected</th><th>PipelineRole</th></tr>';
-    d.rows.forEach(r=>{
-      h+='<tr><td>'+esc(r.name)+'</td><td>'+(r.emails?esc(r.emails):'<span class="ad-bad">\u2014</span>')+'</td><td>'+esc(r.scanned||'\u2014')+'</td><td>'+esc(r.role)+'</td></tr>';
-    });
-    h+='</table>';
-    h+='<div class="ad-sub">Columns available on the list</div><div class="ad-keys">'+esc(d.fieldKeys.join(' \u00b7 '))+'</div>';
-  }
-  p.innerHTML=h;
-  document.body.appendChild(p);
-  setTimeout(()=>{
-    const closer=e=>{ if(!p.contains(e.target)){ p.remove(); document.removeEventListener('mousedown',closer); document.removeEventListener('keydown',escCloser); } };
-    const escCloser=e=>{ if(e.key==='Escape'){ p.remove(); document.removeEventListener('mousedown',closer); document.removeEventListener('keydown',escCloser); } };
-    document.addEventListener('mousedown',closer);
-    document.addEventListener('keydown',escCloser);
-  },0);
 }
 function bwSignOut(){
   try{
@@ -12048,6 +11976,8 @@ function toggleAdminMode(){
   IS_ADMIN_MODE=!IS_ADMIN_MODE;
   document.body.classList.toggle('admin-mode',IS_ADMIN_MODE);
   _presenceTick().catch(()=>{}); // broadcast the mode change immediately
+  const _ucn=document.getElementById('ucName'); // v964: own chip mirrors edit state live
+  if(_ucn) _ucn.className='presence-chip'+(IS_ADMIN_MODE?' presence-admin':'');
   const cb=document.getElementById('adminCheckbox'); if(cb) cb.checked=IS_ADMIN_MODE;
   const bcb=document.getElementById('briefAdminCheckbox'); if(bcb) bcb.checked=IS_ADMIN_MODE;
   _updateExpandCollapseBtn();
@@ -15095,6 +15025,18 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v965', date: '2026-08-13',
+    entries: [
+      'The Access Diagnostics panel is retired now that the access issues it was built to chase are resolved. Your name badge remains, with sign-in details still shown on hover.',
+    ],
+  },
+  {
+    version: 'v964', date: '2026-08-13',
+    entries: [
+      'Fixed: your own name badge showed red just for having admin access. Red now means what it means on everyone else\u2019s badge \u2014 actively in admin (edit) mode \u2014 and your badge switches live when you flip the Admin toggle.',
+    ],
+  },
   {
     version: 'v963', date: '2026-08-13',
     entries: [
