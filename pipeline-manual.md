@@ -36,7 +36,7 @@ Color is meaningful everywhere on the board — nothing is decorated. If two thi
 
 ### The four screens
 
-Across the top are three tabs: **Sales**, **Design**, **Production**, and **Operations**. These are four views of the same board, each arranged for a different kind of work. (Keyboard shortcut: press 1, 2, 3, or 4.)
+Across the top are four tabs: **Sales**, **Design**, **Production**, and **Operations**. These are four views of the same board, each arranged for a different kind of work. (Keyboard shortcut: press 1, 2, 3, or 4.)
 
 - **Sales** is where future work gets planned. It shows leads, open production slots (reserved capacity for projects that haven't been matched yet), and the matching process that pairs a promising lead with a slot. This is where the CONFIRM button lives.
 - **Design** shows the design team's workload — every project in design, by designer, with their capacity over time. Important milestones are noted (selections, crit meetings, etc)
