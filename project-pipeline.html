@@ -697,6 +697,19 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .uc-name{font-size:10.5px;color:rgba(255,255,255,.55);white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
 .uc-signout{background:none;border:1px solid rgba(255,255,255,.22);border-radius:4px;color:rgba(255,255,255,.5);font-family:inherit;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;cursor:pointer;transition:all .12s;}
 .uc-signout:hover{border-color:rgba(255,255,255,.5);color:rgba(255,255,255,.85);}
+/* v960: access diagnostics panel */
+#authDiagPanel{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:10001;background:#111b26;border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:14px 17px;width:min(700px,94vw);max-height:72vh;overflow:auto;color:rgba(255,255,255,.85);font-size:11.5px;line-height:1.55;box-shadow:0 12px 40px rgba(0,0,0,.5);}
+#authDiagPanel .ad-hd{font-weight:700;font-size:12.5px;margin-bottom:8px;color:#fff;}
+#authDiagPanel .ad-row{margin-bottom:3px;}
+#authDiagPanel .ad-dim{color:rgba(255,255,255,.45);}
+#authDiagPanel .ad-ok{color:#8fe0a4;font-weight:700;}
+#authDiagPanel .ad-bad{color:#f87171;font-weight:700;}
+#authDiagPanel .ad-warn{background:rgba(216,182,79,.12);border:1px solid rgba(216,182,79,.4);border-radius:6px;padding:7px 10px;margin:8px 0;color:#f9e6ae;}
+#authDiagPanel .ad-sub{font-weight:700;margin:10px 0 4px;color:rgba(255,255,255,.7);letter-spacing:.05em;font-size:10px;text-transform:uppercase;}
+#authDiagPanel .ad-tbl{width:100%;border-collapse:collapse;}
+#authDiagPanel .ad-tbl th,#authDiagPanel .ad-tbl td{text-align:left;padding:3px 8px 3px 0;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;}
+#authDiagPanel .ad-tbl th{color:rgba(255,255,255,.5);font-size:10px;text-transform:uppercase;letter-spacing:.05em;}
+#authDiagPanel .ad-keys{color:rgba(255,255,255,.5);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;word-break:break-word;}
 #sp-error-banner{display:none;position:fixed;top:calc(var(--app-h,44px) - 1px);left:0;right:0;z-index:500;background:#7f1d1d;border-top:2px solid #ef4444;border-bottom:2px solid rgba(0,0,0,.4);padding:10px 16px;align-items:center;gap:12px;}
 #sp-error-banner.visible{display:flex;}
 /* Background sync indicator */
@@ -3151,7 +3164,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v959';
+const CORE_VERSION = 'v960';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -10833,20 +10846,58 @@ async function loadTeamMembers(saved){
       const idCandidates=[acct.username,claims.preferred_username,claims.email,claims.upn]
         .map(v=>(v||'').trim().toLowerCase()).filter((v,i,arr)=>v&&arr.indexOf(v)===i);
       const signedInName=(acct.name||'').trim().toLowerCase();
-      const match=items.find(item=>{
-        const f=item.fields||{};
-        const emailField=(f.WorkEmail||f.Email||f.UserEmail||f.EMail||'').toLowerCase();
-        const listEmails=emailField.split(/[;,]/).map(x=>x.trim()).filter(Boolean);
-        const name=(f.EmployeeName||f.Title||'').trim().toLowerCase();
-        return listEmails.some(le=>idCandidates.includes(le))||(name&&signedInName&&name===signedInName);
-      });
+      // v960: three matching tiers. (1) the expected email columns; (2) if those read
+      // blank — e.g. the column's internal name differs from its label — any field
+      // value that looks like an email address; (3) exact display-name match.
+      const _emailsExplicit=f=>((f.WorkEmail||f.Email||f.UserEmail||f.EMail||'')+'').toLowerCase().split(/[;,]/).map(x=>x.trim()).filter(Boolean);
+      const _emailsScanned=f=>{
+        const out=[];
+        Object.values(f).forEach(v=>{
+          if(typeof v==='string'&&v.includes('@')) v.split(/[;,\s]+/).forEach(t=>{
+            t=t.trim().toLowerCase();
+            if(t.includes('@')&&t.length>4&&!out.includes(t)) out.push(t);
+          });
+        });
+        return out;
+      };
+      let matchMethod=null;
+      let match=items.find(item=>_emailsExplicit(item.fields||{}).some(le=>idCandidates.includes(le)));
+      if(match) matchMethod='email column';
+      if(!match){
+        match=items.find(item=>_emailsScanned(item.fields||{}).some(le=>idCandidates.includes(le)));
+        if(match) matchMethod='auto-detected email';
+      }
+      if(!match){
+        match=items.find(item=>{
+          const n=(((item.fields||{}).EmployeeName||(item.fields||{}).Title)||'').trim().toLowerCase();
+          return n&&signedInName&&n===signedInName;
+        });
+        if(match) matchMethod='display name';
+      }
       if(match){
         const raw=((match.fields||{}).PipelineRole||'').trim().toLowerCase();
         CURRENT_USER_ROLE=raw==='admin'?'admin':'readonly';
-        console.log('[auth] PipelineRole resolved:',CURRENT_USER_ROLE,'for',acct.name);
+        console.log('[auth] PipelineRole resolved:',CURRENT_USER_ROLE,'for',acct.name,'via',matchMethod);
       } else {
         console.warn('[auth] No CORE_TeamMembers match for signed-in user — defaulting to readonly. Tried addresses:',idCandidates.join(', '),'\u00b7 display name:',acct.name);
       }
+      // Record what was read and decided, for the header-chip diagnostics panel.
+      try{
+        AUTH_DIAG={
+          displayName:acct.name||'',
+          candidates:idCandidates.slice(),
+          method:match?matchMethod:null,
+          matchedName:match?((((match.fields||{}).EmployeeName||(match.fields||{}).Title))||'(unnamed row)'):null,
+          role:CURRENT_USER_ROLE,
+          fieldKeys:items.length?Object.keys(items[0].fields||{}).filter(k=>!k.startsWith('@')&&!/^(id$|ContentType|Edit$|LinkTitle|Attachments|_)/i.test(k)):[],
+          rows:items.map(item=>{const f=item.fields||{};return{
+            name:(f.EmployeeName||f.Title||'(unnamed)'),
+            emails:_emailsExplicit(f).join('; '),
+            scanned:_emailsScanned(f).join('; '),
+            role:((f.PipelineRole||'')+'').trim()||'\u2014'
+          };})
+        };
+      }catch(e){ console.warn('[v960] diag capture:',e); }
     }
   }catch(e){ console.warn('[auth] PipelineRole resolution failed:',e); }
 }
@@ -11889,6 +11940,7 @@ function toggleGrouped(projId){
 }
 let IS_ADMIN_MODE=false;
 let CURRENT_USER_ROLE='readonly'; // safe default — overwritten after SP auth
+let AUTH_DIAG=null; // v960: access diagnostics shown from the header chip panel
 function canEdit(){ return IS_ADMIN_MODE; }
 function applyAdminEligibility(){
   const eligible=CURRENT_USER_ROLE==='admin';
@@ -11906,10 +11958,51 @@ function applyAdminEligibility(){
     const chip=document.getElementById('userChip'), nm=document.getElementById('ucName');
     if(acct&&chip&&nm){
       nm.textContent=acct.name||acct.username||'';
-      chip.setAttribute('data-tip','Signed in as '+(acct.username||'')+' \u00b7 Pipeline role: '+CURRENT_USER_ROLE);
+      chip.setAttribute('data-tip','Signed in as '+(acct.username||'')+' \u00b7 Pipeline role: '+CURRENT_USER_ROLE+' \u00b7 click for access diagnostics');
       chip.style.display='flex';
+      if(!chip.dataset.diagWired){
+        chip.dataset.diagWired='1';
+        nm.style.cursor='pointer';
+        nm.addEventListener('click',toggleAuthDiag);
+      }
     }
   }catch(e){ console.warn('[v956] user chip:',e); }
+}
+// v960: access diagnostics — everything the Pipeline read and decided about who's
+// signed in, viewable by clicking the name in the header. Admins also see the whole
+// team as the Pipeline parsed it, which diagnoses another person's access problem
+// from any admin's screen: the fetched list data is identical for every viewer.
+function toggleAuthDiag(){
+  const ex=document.getElementById('authDiagPanel');
+  if(ex){ ex.remove(); return; }
+  if(!AUTH_DIAG) return;
+  const d=AUTH_DIAG;
+  const esc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const p=document.createElement('div'); p.id='authDiagPanel';
+  let h='<div class="ad-hd">Access diagnostics</div>';
+  h+='<div class="ad-row"><b>Signed in:</b> '+esc(d.displayName)+'</div>';
+  h+='<div class="ad-row"><b>Addresses on this account:</b> '+esc(d.candidates.join(', ')||'(none)')+'</div>';
+  h+='<div class="ad-row"><b>Matched team row:</b> '+(d.matchedName?esc(d.matchedName)+' <span class="ad-dim">(via '+esc(d.method)+')</span>':'<span class="ad-bad">none</span>')+'</div>';
+  h+='<div class="ad-row"><b>Resolved role:</b> '+(d.role==='admin'?'<span class="ad-ok">admin</span>':'<span class="ad-bad">'+esc(d.role)+'</span>')+'</div>';
+  if(CURRENT_USER_ROLE==='admin'&&d.rows&&d.rows.length){
+    const allBlank=d.rows.every(r=>!r.emails);
+    if(allBlank) h+='<div class="ad-warn">No row has a readable address in the expected email columns \u2014 the column\u2019s internal name likely differs from its label. Matching is running on the auto-detected values below instead.</div>';
+    h+='<div class="ad-sub">Team rows as the Pipeline reads them</div>';
+    h+='<table class="ad-tbl"><tr><th>Name</th><th>Email column</th><th>Auto-detected</th><th>PipelineRole</th></tr>';
+    d.rows.forEach(r=>{
+      h+='<tr><td>'+esc(r.name)+'</td><td>'+(r.emails?esc(r.emails):'<span class="ad-bad">\u2014</span>')+'</td><td>'+esc(r.scanned||'\u2014')+'</td><td>'+esc(r.role)+'</td></tr>';
+    });
+    h+='</table>';
+    h+='<div class="ad-sub">Columns available on the list</div><div class="ad-keys">'+esc(d.fieldKeys.join(' \u00b7 '))+'</div>';
+  }
+  p.innerHTML=h;
+  document.body.appendChild(p);
+  setTimeout(()=>{
+    const closer=e=>{ if(!p.contains(e.target)){ p.remove(); document.removeEventListener('mousedown',closer); document.removeEventListener('keydown',escCloser); } };
+    const escCloser=e=>{ if(e.key==='Escape'){ p.remove(); document.removeEventListener('mousedown',closer); document.removeEventListener('keydown',escCloser); } };
+    document.addEventListener('mousedown',closer);
+    document.addEventListener('keydown',escCloser);
+  },0);
 }
 function bwSignOut(){
   try{
@@ -14973,6 +15066,13 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v960', date: '2026-08-13',
+    entries: [
+      'Clicking your name in the top bar now opens an Access Diagnostics panel: who you\u2019re signed in as, every address on your account, which team row matched and how, and your resolved role. Admins also see the whole team exactly as the Pipeline reads it \u2014 so one admin can diagnose another person\u2019s access from their own screen, no technical tools needed.',
+      'Access matching got a self-healing tier: if the expected email columns can\u2019t be read (for example, a column whose internal name differs from its label), the Pipeline finds email addresses anywhere in each row and matches on those.',
+    ],
+  },
   {
     version: 'v959', date: '2026-08-13',
     entries: [
