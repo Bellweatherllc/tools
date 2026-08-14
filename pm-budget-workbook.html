@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PM Budget Workbook — CORE v1</title>
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-MediumItalic.woff2') format('woff2');font-weight:500;font-style:italic;font-display:swap;}
+:root{
+  --navy:#1f2e3e; --gold:#d8b64f; --gold-light:#f9e6ae; --bg:#f5f3ee; --surface:#fff;
+  --text:#282828; --text-sec:#7a7a7a; --muted:#a3a3a3; --border:#e4dac4; --gl:#f9e6ae;
+  --est:#5c4a12; --est-bg:#faf3df; --bud:#1d3d5c; --bud-bg:#e9f0f6;
+  --ok:#019425; --warn:#d07820; --err:#a30a0a;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:12px;}
+
+/* ---------- Auth overlay ---------- */
+#authOverlay{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:9999;}
+.auth-box{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;}
+.auth-title{font-family:'Swear Text',serif;font-size:18px;font-weight:700;color:var(--gl);letter-spacing:.02em;}
+.auth-subtitle{font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.35);}
+.auth-version{font-size:10px;font-weight:600;letter-spacing:.08em;color:rgba(255,255,255,.30);}
+.auth-sign-in{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:rgba(216,182,79,.18);color:var(--gold);border:1px solid rgba(216,182,79,.40);border-radius:6px;padding:10px 28px;cursor:pointer;transition:background .14s,border-color .14s;margin-top:4px;}
+.auth-sign-in:hover{background:rgba(216,182,79,.30);border-color:rgba(216,182,79,.65);}
+.auth-status{font-size:11px;color:rgba(255,255,255,.50);min-height:16px;}
+
+/* ---------- Header ---------- */
+.app-header{background:var(--navy);padding:8px 18px;display:flex;align-items:center;gap:12px;position:fixed;top:0;left:0;right:0;z-index:400;box-shadow:0 2px 14px rgba(0,0,0,.22);}
+.hdr-title{font-family:'Swear Text',serif;color:rgba(255,255,255,.85);font-size:14px;}
+.hdr-badge{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--navy);background:var(--gold);border-radius:3px;padding:2px 7px;}
+.hdr-spacer{flex:1;}
+.hdr-user{font-size:10px;color:rgba(255,255,255,.55);letter-spacing:.03em;}
+.hdr-btn{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;background:none;color:rgba(255,255,255,.70);border:1px solid rgba(255,255,255,.28);border-radius:4px;padding:4px 12px;cursor:pointer;transition:all .12s;}
+.hdr-btn:hover{border-color:rgba(255,255,255,.60);color:#fff;}
+.hdr-btn.gold{color:var(--gold);border-color:rgba(216,182,79,.45);}
+
+/* ---------- Layout ---------- */
+.main{max-width:1100px;margin:0 auto;padding:66px 18px 60px;}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:18px 20px;margin-bottom:16px;}
+.panel h2{font-family:'Swear Text',serif;font-size:15px;color:var(--navy);margin-bottom:4px;}
+.panel .sub{font-size:11px;color:var(--text-sec);margin-bottom:14px;line-height:1.5;}
+.field-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
+.field-row label{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-sec);min-width:92px;}
+input[type=text],select{font-family:'TT Norms Pro',sans-serif;font-size:12px;padding:6px 9px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--text);min-width:260px;}
+input[type=text]:focus,select:focus{outline:none;border-color:var(--gold);}
+input.wide{flex:1;min-width:320px;}
+.btn{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--navy);color:#fff;border:1px solid var(--navy);border-radius:4px;padding:7px 18px;cursor:pointer;transition:opacity .12s;}
+.btn:hover{opacity:.88;}
+.btn:disabled{opacity:.4;cursor:default;}
+.btn.ghost{background:none;color:var(--navy);}
+.btn.ghost:hover{background:rgba(31,46,62,.06);}
+.status-line{font-size:11px;color:var(--text-sec);margin-top:8px;min-height:15px;line-height:1.5;}
+.status-line.ok{color:var(--ok);}
+.status-line.err{color:var(--err);}
+.status-line.warn{color:var(--warn);}
+
+/* ---------- Verify view ---------- */
+.metrics{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;}
+.metric{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:9px 14px;min-width:130px;}
+.metric .m-label{font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-sec);margin-bottom:3px;}
+.metric .m-value{font-size:15px;font-weight:700;color:var(--navy);}
+table.est{width:100%;border-collapse:collapse;font-size:11.5px;}
+table.est th{text-align:left;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-sec);padding:5px 8px;border-bottom:2px solid var(--border);}
+table.est th.num, table.est td.num{text-align:right;}
+table.est td{padding:5px 8px;border-bottom:1px solid #eee9df;vertical-align:top;}
+table.est tr.total td{font-weight:700;border-top:2px solid var(--border);border-bottom:none;background:var(--bg);}
+.code-tag{font-weight:700;color:var(--navy);}
+.cmt-dot{display:inline-block;background:var(--est-bg);color:var(--est);border:1px solid #e8d9a8;border-radius:9px;font-size:9px;font-weight:700;padding:1px 7px;margin-left:6px;cursor:pointer;vertical-align:1px;}
+.cmt-block{background:var(--est-bg);border:1px solid #e8d9a8;border-radius:5px;padding:8px 11px;margin:6px 0 2px;}
+.cmt-head{font-size:10px;color:var(--est);font-weight:700;margin-bottom:2px;}
+.cmt-head .cmt-when{font-weight:400;color:#8a7530;margin-left:6px;}
+.cmt-text{font-size:11px;color:#4a3d10;white-space:pre-wrap;line-height:1.45;}
+.tag-est{display:inline-block;font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--est);color:#fff;border-radius:3px;padding:1px 5px;margin-right:6px;vertical-align:1px;}
+.hidden{display:none;}
+.small-note{font-size:10px;color:var(--muted);line-height:1.5;margin-top:10px;}
+pre.spec{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:12px;font-size:10.5px;line-height:1.5;overflow-x:auto;white-space:pre;}
+.prov-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #eee9df;font-size:12px;}
+.prov-row:last-child{border-bottom:none;}
+.prov-name{font-weight:700;color:var(--navy);min-width:220px;}
+.prov-state{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
+.prov-state.exists{color:var(--ok);}
+.prov-state.missing{color:var(--warn);}
+.prov-state.unknown{color:var(--muted);}
+</style>
+</head>
+<body>
+
+<div id="authOverlay">
+  <div class="auth-box">
+    <div class="auth-title">PM Budget Workbook</div>
+    <div class="auth-subtitle">Bellweather CORE</div>
+    <div class="auth-version" id="authVersionBadge">v1</div>
+    <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
+    <div class="auth-status" id="authStatus"></div>
+  </div>
+</div>
+
+<header class="app-header">
+  <span class="hdr-title">PM Budget Workbook</span>
+  <span class="hdr-badge" id="versionBadge">v1</span>
+  <span class="hdr-spacer"></span>
+  <span class="hdr-user" id="hdrUser"></span>
+  <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
+  <button class="hdr-btn" onclick="signOut()">Sign out</button>
+</header>
+
+<div class="main">
+
+  <!-- SETUP / PROVISIONING -->
+  <div class="panel hidden" id="setupPanel">
+    <h2>SharePoint Setup</h2>
+    <div class="sub">Checks whether the three Budget Workbook lists exist on BWCore and creates any that are missing. List creation requires the <b>Sites.Manage.All</b> delegated permission on the app registration; if it is not granted, creation will fail with a 403 and the lists can be created manually from the specs below.</div>
+    <div id="provStatusRows">
+      <div class="prov-row"><span class="prov-name">CORE_Budget_Config</span><span class="prov-state unknown" id="prov-CORE_Budget_Config">not checked</span></div>
+      <div class="prov-row"><span class="prov-name">CORE_Budget_Lines</span><span class="prov-state unknown" id="prov-CORE_Budget_Lines">not checked</span></div>
+      <div class="prov-row"><span class="prov-name">CORE_Budget_Comments</span><span class="prov-state unknown" id="prov-CORE_Budget_Comments">not checked</span></div>
+    </div>
+    <div class="field-row" style="margin-top:14px;">
+      <button class="btn" id="btnCheckLists" onclick="checkLists()">Check lists</button>
+      <button class="btn" id="btnCreateLists" onclick="createMissingLists()" disabled>Create missing lists</button>
+      <button class="btn ghost" onclick="toggleSpecs()">Show manual specs</button>
+    </div>
+    <div class="status-line" id="provStatus"></div>
+    <pre class="spec hidden" id="specBlock"></pre>
+  </div>
+
+  <!-- IMPORT -->
+  <div class="panel" id="importPanel">
+    <h2>Import an Estimate</h2>
+    <div class="sub">Pick the project, paste the SharePoint link to the COMP Estimating workbook, and load it. Nothing is written anywhere in this phase &mdash; this is the parser verification harness. Confirm the numbers and comments below match the workbook before we wire up snapshots.</div>
+    <div class="field-row">
+      <label>Project</label>
+      <select id="projectSelect"><option value="">Loading projects&hellip;</option></select>
+    </div>
+    <div class="field-row">
+      <label>Estimate file</label>
+      <input type="text" class="wide" id="fileUrl" placeholder="Paste the SharePoint link to the .xlsx (copy link from SharePoint or Teams)">
+    </div>
+    <div class="field-row">
+      <button class="btn" id="btnLoadFile" onclick="loadEstimateFile()">Load file</button>
+      <select id="tabSelect" class="hidden"></select>
+      <button class="btn ghost hidden" id="btnParseTab" onclick="parseSelectedTab()">Parse tab</button>
+    </div>
+    <div class="status-line" id="importStatus"></div>
+  </div>
+
+  <!-- VERIFY -->
+  <div class="panel hidden" id="verifyPanel">
+    <h2 id="verifyTitle">Parsed Estimate</h2>
+    <div class="sub" id="verifyMeta"></div>
+    <div class="metrics" id="metricsRow"></div>
+    <table class="est">
+      <thead><tr>
+        <th style="width:44%">Cost Code</th>
+        <th class="num">Comp Total</th>
+        <th class="num">% Income</th>
+        <th class="num">Budget Target %</th>
+      </tr></thead>
+      <tbody id="estBody"></tbody>
+    </table>
+    <div class="small-note">Yellow chips mark cost codes carrying estimating comments from the workbook; click a chip to expand. Comments anchored to header cells (sale price, escalation, etc.) are listed at the bottom.</div>
+    <div id="headerComments" style="margin-top:14px;"></div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+/* =========================================================
+   PM Budget Workbook — CORE — v1
+   Phase 1: auth, project picker, estimate fetch + client-side
+   parse (values + threaded comments), verification view,
+   SharePoint list provisioning.
+   ========================================================= */
+const CORE_VERSION = 'v1';
+
+const BUDGET_CHANGELOG = [
+  { v:'v1', date:'2026-08-14', notes:'First build. Sign in, pick a project, paste a link to a COMP Estimating workbook, and the tool reads the numbers and every estimating comment directly from the file so you can confirm it all matches. Setup screen can create the three SharePoint lists the tool will use.' }
+];
+
+/* ---------- Auth ---------- */
+const MSAL_CONFIG = { auth:{ clientId:'84b37f0e-b149-4089-9bdc-fc654715db23',
+  authority:'https://login.microsoftonline.com/ff0e3f46-615a-4a22-8a80-4bb83d627785',
+  redirectUri: window.location.origin + window.location.pathname },
+  cache:{ cacheLocation:'localStorage', storeAuthStateInCookie:false } };
+const SCOPES = ['https://graph.microsoft.com/Sites.ReadWrite.All'];
+const MANAGE_SCOPES = ['https://graph.microsoft.com/Sites.Manage.All'];
+const SP_LISTS = 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
+const SP_SITE  = 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:';
+
+let msalApp = null, accessToken = '', currentUser = '', currentUserEmail = '';
+
+window.addEventListener('DOMContentLoaded', initAuth);
+
+async function initAuth(){
+  msalApp = new msal.PublicClientApplication(MSAL_CONFIG);
+  try{
+    const r = await msalApp.handleRedirectPromise();
+    if(r && r.accessToken){ accessToken = r.accessToken; onAuthenticated(r.account); return; }
+  }catch(e){ console.warn('[auth]', e.message); setAuthStatus(e.message); }
+  const accs = msalApp.getAllAccounts();
+  if(accs.length){
+    try{
+      const r = await msalApp.acquireTokenSilent({ scopes:SCOPES, account:accs[0] });
+      accessToken = r.accessToken; onAuthenticated(accs[0]);
+    }catch(e){ setAuthStatus('Session expired — sign in again.'); }
+  }
+}
+function doSignIn(){ msalApp.loginRedirect({ scopes:SCOPES }); }
+function signOut(){ msalApp.logoutRedirect({ postLogoutRedirectUri: MSAL_CONFIG.auth.redirectUri }); }
+function setAuthStatus(msg){ document.getElementById('authStatus').textContent = msg || ''; }
+function onAuthenticated(account){
+  currentUser = account.name || account.username;
+  currentUserEmail = (account.username || '').toLowerCase();
+  document.getElementById('hdrUser').textContent = currentUser;
+  document.getElementById('authOverlay').style.display = 'none';
+  loadProjects();
+}
+async function getManageToken(){
+  const accs = msalApp.getAllAccounts();
+  try{
+    const r = await msalApp.acquireTokenSilent({ scopes:MANAGE_SCOPES, account:accs[0] });
+    return r.accessToken;
+  }catch(e){
+    // Interactive consent for the elevated scope
+    msalApp.acquireTokenRedirect({ scopes:MANAGE_SCOPES });
+    return null;
+  }
+}
+
+/* ---------- Graph helpers ---------- */
+async function graphGet(url, token){
+  const res = await fetch(url, { headers:{ Authorization:'Bearer ' + (token || accessToken) } });
+  if(!res.ok){ const t = await res.text(); throw new Error('Graph GET ' + res.status + ': ' + t.slice(0,300)); }
+  return res.json();
+}
+async function graphPost(url, body, token){
+  const res = await fetch(url, { method:'POST',
+    headers:{ Authorization:'Bearer ' + (token || accessToken), 'Content-Type':'application/json' },
+    body: JSON.stringify(body) });
+  if(!res.ok){ const t = await res.text(); const err = new Error('Graph POST ' + res.status + ': ' + t.slice(0,300)); err.status = res.status; throw err; }
+  return res.json();
+}
+
+/* ---------- Projects ---------- */
+async function loadProjects(){
+  const sel = document.getElementById('projectSelect');
+  try{
+    const pd = await graphGet(SP_LISTS + '/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
+    const items = (pd.value || []).map(it => ({
+      spItemId: it.id,
+      title: (it.fields && it.fields.Title) || '(untitled)',
+      stage: (it.fields && it.fields.PipelineStage) || ''
+    }));
+    const stageRank = { 'CA Signed':0, 'DA Signed':1, 'Lead':2, 'Paused':3, 'Cancelled':4, 'Archive':5 };
+    items.sort((a,b) => (stageRank[a.stage] ?? 9) - (stageRank[b.stage] ?? 9) || a.title.localeCompare(b.title));
+    sel.innerHTML = '<option value="">— pick a project —</option>' + items.map(p =>
+      '<option value="' + escAttr(p.title) + '" data-id="' + p.spItemId + '">' +
+      escHtml(p.title) + (p.stage ? ' — ' + escHtml(p.stage) : '') + '</option>').join('');
+  }catch(e){
+    sel.innerHTML = '<option value="">Could not load CORE_Projects</option>';
+    setStatus('importStatus', 'Project list failed to load: ' + e.message, 'err');
+  }
+}
+
+/* ---------- File fetch ---------- */
+let currentFile = null;   // { name, driveId, itemId, lastModified, buffer }
+let currentWB   = null;   // parsed workbook structure
+
+function b64urlShare(url){
+  const b64 = btoa(unescape(encodeURIComponent(url)));
+  return 'u!' + b64.replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-');
+}
+
+async function loadEstimateFile(){
+  const url = document.getElementById('fileUrl').value.trim();
+  if(!url){ setStatus('importStatus','Paste a SharePoint link to the estimate workbook first.','warn'); return; }
+  const btn = document.getElementById('btnLoadFile');
+  btn.disabled = true;
+  setStatus('importStatus','Resolving file\u2026');
+  try{
+    const share = b64urlShare(url);
+    const meta = await graphGet('https://graph.microsoft.com/v1.0/shares/' + share + '/driveItem?$select=id,name,lastModifiedDateTime,parentReference,@microsoft.graph.downloadUrl');
+    const dlUrl = meta['@microsoft.graph.downloadUrl'];
+    setStatus('importStatus','Downloading ' + meta.name + '\u2026');
+    let buf;
+    if(dlUrl){
+      const res = await fetch(dlUrl);
+      if(!res.ok) throw new Error('Download failed: ' + res.status);
+      buf = await res.arrayBuffer();
+    }else{
+      const res = await fetch('https://graph.microsoft.com/v1.0/drives/' + meta.parentReference.driveId + '/items/' + meta.id + '/content',
+        { headers:{ Authorization:'Bearer ' + accessToken } });
+      if(!res.ok) throw new Error('Download failed: ' + res.status);
+      buf = await res.arrayBuffer();
+    }
+    currentFile = { name: meta.name, driveId: meta.parentReference.driveId, itemId: meta.id,
+                    lastModified: meta.lastModifiedDateTime, buffer: buf };
+    setStatus('importStatus','Reading workbook structure\u2026');
+    currentWB = await parseWorkbook(buf);
+    populateTabPicker(currentWB);
+    setStatus('importStatus', meta.name + ' loaded (' + Math.round(buf.byteLength/1024) + ' KB, modified ' +
+      fmtDate(meta.lastModifiedDateTime) + '). ' + currentWB.sheets.length + ' tabs, ' +
+      currentWB.totalComments + ' estimating comments found.', 'ok');
+  }catch(e){
+    console.error(e);
+    setStatus('importStatus','Could not load the file: ' + e.message, 'err');
+  }finally{ btn.disabled = false; }
+}
+
+function populateTabPicker(wb){
+  const sel = document.getElementById('tabSelect');
+  sel.innerHTML = wb.sheets.map(s => '<option value="' + escAttr(s.name) + '">' + escHtml(s.name) + '</option>').join('');
+  const finalTab = wb.sheets.find(s => s.name.trim().toUpperCase() === 'FINAL');
+  if(finalTab) sel.value = finalTab.name;
+  sel.classList.remove('hidden');
+  document.getElementById('btnParseTab').classList.remove('hidden');
+  if(finalTab){ parseSelectedTab(); }
+}
+
+/* ---------- XLSX parsing (JSZip + DOMParser) ---------- */
+async function parseWorkbook(buffer){
+  const zip = await JSZip.loadAsync(buffer);
+  const parser = new DOMParser();
+  const readXml = async p => {
+    const f = zip.file(p);
+    if(!f) return null;
+    return parser.parseFromString(await f.async('string'), 'application/xml');
+  };
+
+  // Shared strings
+  const sharedStrings = [];
+  const ssDoc = await readXml('xl/sharedStrings.xml');
+  if(ssDoc){
+    ssDoc.querySelectorAll('si').forEach(si => {
+      let text = '';
+      si.querySelectorAll('t').forEach(t => { text += t.textContent; });
+      sharedStrings.push(text);
+    });
+  }
+
+  // Persons (threaded comment authors) — resolve via userId email, not personId GUID
+  const persons = {};
+  const pDoc = await readXml('xl/persons/person.xml');
+  if(pDoc){
+    pDoc.querySelectorAll('person').forEach(p => {
+      const uid = p.getAttribute('userId') || '';
+      const m = uid.match(/S::([^:]+)::/);
+      persons[p.getAttribute('id')] = {
+        name: p.getAttribute('displayName') || 'Unknown',
+        email: m ? m[1].toLowerCase() : ''
+      };
+    });
+  }
+
+  // Workbook sheet list + rels
+  const wbDoc = await readXml('xl/workbook.xml');
+  if(!wbDoc) throw new Error('Not a valid .xlsx (no workbook.xml)');
+  const relDoc = await readXml('xl/_rels/workbook.xml.rels');
+  const relMap = {};
+  if(relDoc){
+    relDoc.querySelectorAll('Relationship').forEach(r => {
+      relMap[r.getAttribute('Id')] = r.getAttribute('Target').replace(/^\//,'');
+    });
+  }
+  const sheets = [];
+  let totalComments = 0;
+  const sheetEls = wbDoc.getElementsByTagName('sheet');
+  for(let i=0;i<sheetEls.length;i++){
+    const el = sheetEls[i];
+    const rid = el.getAttribute('r:id') || el.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');
+    let target = relMap[rid] || ('worksheets/sheet' + (i+1) + '.xml');
+    if(!target.startsWith('xl/')) target = 'xl/' + target;
+    const sheet = { name: el.getAttribute('name'), path: target, cells:null, comments:null };
+
+    // Sheet rels → threaded comment part(s)
+    const relPath = target.replace(/worksheets\//,'worksheets/_rels/') + '.rels';
+    const srDoc = await readXml(relPath);
+    const cmtParts = [];
+    if(srDoc){
+      srDoc.querySelectorAll('Relationship').forEach(r => {
+        if((r.getAttribute('Type')||'').indexOf('threadedComment') !== -1){
+          let t = r.getAttribute('Target').replace(/^\.\.\//,'xl/');
+          if(!t.startsWith('xl/')) t = 'xl/' + t.replace(/^\//,'');
+          cmtParts.push(t);
+        }
+      });
+    }
+    sheet.commentParts = cmtParts;
+    sheets.push(sheet);
+  }
+
+  // Lazily parse cells + comments per sheet on demand; but pre-count comments
+  for(const s of sheets){
+    s.comments = [];
+    for(const cp of s.commentParts){
+      const cDoc = await readXml(cp);
+      if(!cDoc) continue;
+      cDoc.querySelectorAll('threadedComment').forEach(tc => {
+        const t = tc.querySelector('text');
+        s.comments.push({
+          ref: tc.getAttribute('ref'),
+          when: tc.getAttribute('dT'),
+          personId: tc.getAttribute('personId'),
+          parentId: tc.getAttribute('parentId') || null,
+          guid: tc.getAttribute('id'),
+          text: t ? t.textContent : ''
+        });
+      });
+    }
+    totalComments += s.comments.length;
+  }
+
+  return {
+    sheets, persons, sharedStrings, totalComments,
+    async cellsFor(sheetName){
+      const s = sheets.find(x => x.name === sheetName);
+      if(!s) return {};
+      if(s.cells) return s.cells;
+      const doc = await readXml(s.path);
+      const cells = {};
+      if(doc){
+        const cEls = doc.getElementsByTagName('c');
+        for(let i=0;i<cEls.length;i++){
+          const c = cEls[i];
+          const r = c.getAttribute('r');
+          const t = c.getAttribute('t');
+          let val = null;
+          if(t === 'inlineStr'){
+            const is = c.getElementsByTagName('t')[0];
+            val = is ? is.textContent : '';
+          }else{
+            const v = c.getElementsByTagName('v')[0];
+            if(v){
+              if(t === 's'){ val = sharedStrings[parseInt(v.textContent,10)] ?? ''; }
+              else if(t === 'b'){ val = v.textContent === '1'; }
+              else if(t === 'e'){ val = null; }
+              else if(t === 'str'){ val = v.textContent; }
+              else { const n = parseFloat(v.textContent); val = isNaN(n) ? v.textContent : n; }
+            }
+          }
+          if(val !== null && val !== '') cells[r] = val;
+        }
+      }
+      s.cells = cells;
+      return cells;
+    }
+  };
+}
+
+/* ---------- Tab parse + verify render ---------- */
+const CODE_RE = /^(\d{4,5})\s*[·\.\-]\s*(.+)$/;
+
+async function parseSelectedTab(){
+  if(!currentWB) return;
+  const tabName = document.getElementById('tabSelect').value;
+  const proj = document.getElementById('projectSelect').value;
+  setStatus('importStatus','Parsing "' + tabName + '"\u2026');
+  try{
+    const cells = await currentWB.cellsFor(tabName);
+    const sheet = currentWB.sheets.find(s => s.name === tabName);
+    const model = buildEstimateModel(cells, sheet.comments, currentWB.persons);
+    renderVerify(model, tabName, proj);
+    setStatus('importStatus','Parsed "' + tabName + '": ' + model.codes.length + ' cost codes, ' +
+      sheet.comments.length + ' comments on this tab. Verify against the workbook.', 'ok');
+  }catch(e){
+    console.error(e);
+    setStatus('importStatus','Parse failed: ' + e.message, 'err');
+  }
+}
+
+function buildEstimateModel(cells, comments, persons){
+  // Header block (V4 format, graceful if absent)
+  const header = {
+    updated: cells['B1'] ?? null,
+    jobName: cells['B2'] ?? '',
+    directCost: numOrNull(cells['B5']),
+    indirectPct: numOrNull(cells['D6']),
+    payrollPct: numOrNull(cells['D7']),
+    markupPct: numOrNull(cells['B8']),
+    compEscalation: numOrNull(cells['B9']),
+    gpPct: numOrNull(cells['D11']) ?? numOrNull(cells['C11']),
+    salePrice: numOrNull(cells['B12'])
+  };
+
+  // Cost code rows: scan column A for code pattern
+  const codes = [];
+  const rowOfCode = {};
+  for(const ref in cells){
+    const m = ref.match(/^A(\d+)$/);
+    if(!m) continue;
+    const row = parseInt(m[1],10);
+    const v = cells[ref];
+    if(typeof v !== 'string') continue;
+    const cm = v.match(CODE_RE);
+    if(cm){
+      codes.push({ row, code: cm[1], name: cm[2].trim(), full: v.trim(),
+        compTotal: numOrNull(cells['K'+row]),
+        pctIncome: numOrNull(cells['L'+row]),
+        budgetTarget: numOrNull(cells['M'+row]) });
+      rowOfCode[row] = cm[1];
+    }
+    if(typeof v === 'string' && v.trim() === 'Total COGS'){
+      codes.push({ row, code:'TOTAL', name:'Total COGS', full:'Total COGS',
+        compTotal: numOrNull(cells['K'+row]), pctIncome:null, budgetTarget:null });
+    }
+  }
+  codes.sort((a,b) => a.row - b.row);
+
+  // Attach comments: map each comment's cell row → nearest cost code row (same row only);
+  // otherwise it's a header/misc comment.
+  const byRow = {}; codes.forEach(c => { byRow[c.row] = c; });
+  const threads = buildThreads(comments, persons);
+  const headerComments = [];
+  threads.forEach(th => {
+    const rm = th.ref.match(/[A-Z]+(\d+)/);
+    const row = rm ? parseInt(rm[1],10) : 0;
+    if(byRow[row]){
+      (byRow[row].comments = byRow[row].comments || []).push(th);
+    }else{
+      headerComments.push(th);
+    }
+  });
+  return { header, codes, headerComments };
+}
+
+function buildThreads(comments, persons){
+  // Group replies under their parent; sort roots by date.
+  const roots = [], byGuid = {};
+  comments.forEach(c => { byGuid[c.guid] = { ...c, replies:[] }; });
+  comments.forEach(c => {
+    const node = byGuid[c.guid];
+    if(c.parentId && byGuid[c.parentId]) byGuid[c.parentId].replies.push(node);
+    else roots.push(node);
+  });
+  const withAuthor = n => ({ ...n,
+    author: (persons[n.personId] && persons[n.personId].name) || 'Unknown',
+    email: (persons[n.personId] && persons[n.personId].email) || '' });
+  return roots.map(r => ({ ...withAuthor(r), replies: r.replies.map(withAuthor) }))
+              .sort((a,b) => (a.when||'').localeCompare(b.when||''));
+}
+
+function renderVerify(model, tabName, projName){
+  document.getElementById('verifyPanel').classList.remove('hidden');
+  document.getElementById('verifyTitle').textContent =
+    'Parsed Estimate — ' + (model.header.jobName || currentFile.name);
+  document.getElementById('verifyMeta').textContent =
+    'Tab "' + tabName + '" · file ' + currentFile.name + ' · modified ' + fmtDate(currentFile.lastModified) +
+    (projName ? ' · project: ' + projName : ' · no project selected yet');
+
+  const h = model.header;
+  const metrics = [
+    ['Estimate Sale Price', money(h.salePrice)],
+    ['Direct Cost', money(h.directCost)],
+    ['Mark-Up', pct(h.markupPct)],
+    ['Indirect', pct(h.indirectPct)],
+    ['Payroll', pct(h.payrollPct)],
+    ['Comp Escalation', money(h.compEscalation)],
+    ['Est. GP', pct(h.gpPct)]
+  ].filter(m => m[1] !== '—');
+  document.getElementById('metricsRow').innerHTML = metrics.map(m =>
+    '<div class="metric"><div class="m-label">' + m[0] + '</div><div class="m-value">' + m[1] + '</div></div>').join('');
+
+  const body = document.getElementById('estBody');
+  body.innerHTML = model.codes.map((c,i) => {
+    const isTotal = c.code === 'TOTAL';
+    const chip = (c.comments && c.comments.length)
+      ? '<span class="cmt-dot" onclick="toggleCmts(' + i + ')">' + c.comments.length + ' \u25BE</span>' : '';
+    const cmtBlock = (c.comments && c.comments.length)
+      ? '<tr class="hidden" id="cmtrow-' + i + '"><td colspan="4">' + c.comments.map(renderThread).join('') + '</td></tr>' : '';
+    return '<tr class="' + (isTotal ? 'total' : '') + '">' +
+      '<td><span class="code-tag">' + escHtml(isTotal ? '' : c.code) + '</span> ' + escHtml(c.name) + chip + '</td>' +
+      '<td class="num">' + money(c.compTotal) + '</td>' +
+      '<td class="num">' + pct(c.pctIncome) + '</td>' +
+      '<td class="num">' + pct(c.budgetTarget) + '</td></tr>' + cmtBlock;
+  }).join('');
+
+  const hc = document.getElementById('headerComments');
+  hc.innerHTML = model.headerComments.length
+    ? '<div class="sub" style="margin-bottom:6px;"><b>Comments on header cells</b></div>' +
+      model.headerComments.map(renderThread).join('')
+    : '';
+}
+
+function renderThread(th){
+  const one = n => '<div class="cmt-block"><div class="cmt-head"><span class="tag-est">Estimating</span>' +
+    escHtml(n.author) + ' · cell ' + escHtml(n.ref || th.ref) +
+    '<span class="cmt-when">' + fmtDate(n.when) + '</span></div>' +
+    '<div class="cmt-text">' + escHtml(n.text) + '</div></div>';
+  return one(th) + (th.replies || []).map(one).join('');
+}
+function toggleCmts(i){ document.getElementById('cmtrow-' + i).classList.toggle('hidden'); }
+
+/* ---------- Provisioning ---------- */
+const LIST_DEFS = [
+  { name:'CORE_Budget_Config',
+    description:'Per-project configuration for the PM Budget Workbook: estimate source pointer, snapshot state, and contract financial parameters.',
+    columns:[
+      col('ProjectKey','text'), col('EstimateFileUrl','text'), col('EstimateFileName','text'),
+      col('EstimateTab','text'), col('EstimateLastModified','text'), col('SnapshotDate','text'),
+      col('SalePrice','number'), col('MarkupPct','number'), col('IndirectPct','number'),
+      col('PayrollPct','number'), col('CompEscalation','number'),
+      choiceCol('Status',['Draft','Active','Closed'])
+    ]},
+  { name:'CORE_Budget_Lines',
+    description:'Budget line items for the PM Budget Workbook. Title = line label. Divisions carry the snapshotted estimate amount; scope lines carry PM budget amounts.',
+    columns:[
+      col('ProjectKey','text'), col('CostCode','text'),
+      choiceCol('LineType',['Division','ScopeLine']),
+      col('EstimateAmount','number'), col('BudgetAmount','number'), col('SortOrder','number'),
+      choiceCol('Source',['Estimate','Template','PM']),
+      boolCol('Active')
+    ]},
+  { name:'CORE_Budget_Comments',
+    description:'Unified comment stream for the PM Budget Workbook. Estimating comments are synced from the estimate workbook (with original author, timestamp, and source GUID for dedupe); Budgeting comments are authored by PMs in the tool.',
+    columns:[
+      col('ProjectKey','text'), col('CostCode','text'), col('LineId','text'),
+      choiceCol('CommentType',['Estimating','Budgeting']),
+      col('AuthorName','text'), col('AuthorEmail','text'),
+      { name:'CommentDate', dateTime:{ format:'dateTime' } },
+      { name:'Body', text:{ allowMultipleLines:true } },
+      col('SourceGuid','text'), col('SourceCell','text'), col('SourceTab','text'), col('ParentGuid','text')
+    ]}
+];
+function col(name, type){ const c = { name }; c[type] = {}; return c; }
+function choiceCol(name, choices){ return { name, choice:{ allowTextEntry:false, choices, displayAs:'dropDownMenu' } }; }
+function boolCol(name){ return { name, boolean:{} }; }
+
+let listState = {}; // name -> 'exists' | 'missing'
+
+function showSetup(){
+  document.getElementById('setupPanel').classList.toggle('hidden');
+}
+function setProvRow(name, state){
+  const el = document.getElementById('prov-' + name);
+  el.textContent = state; el.className = 'prov-state ' + (state === 'exists' ? 'exists' : state === 'missing' ? 'missing' : 'unknown');
+}
+async function checkLists(){
+  setStatus('provStatus','Checking BWCore\u2026');
+  let missing = 0;
+  for(const def of LIST_DEFS){
+    try{
+      await graphGet(SP_LISTS + '/' + def.name + '?$select=id');
+      listState[def.name] = 'exists'; setProvRow(def.name,'exists');
+    }catch(e){
+      listState[def.name] = 'missing'; setProvRow(def.name,'missing'); missing++;
+    }
+  }
+  document.getElementById('btnCreateLists').disabled = missing === 0;
+  setStatus('provStatus', missing === 0 ? 'All three lists exist. Nothing to create.' :
+    missing + ' list(s) missing. "Create missing lists" will build them (needs Sites.Manage.All).', missing === 0 ? 'ok' : 'warn');
+}
+async function createMissingLists(){
+  setStatus('provStatus','Acquiring elevated token\u2026');
+  const token = await getManageToken();
+  if(!token) return; // redirect in flight
+  let made = 0, failed = 0;
+  for(const def of LIST_DEFS){
+    if(listState[def.name] !== 'missing') continue;
+    try{
+      setStatus('provStatus','Creating ' + def.name + '\u2026');
+      await graphPost(SP_SITE + '/lists', {
+        displayName: def.name, description: def.description,
+        columns: def.columns, list: { template:'genericList' }
+      }, token);
+      listState[def.name] = 'exists'; setProvRow(def.name,'exists'); made++;
+    }catch(e){
+      failed++;
+      console.error(def.name, e);
+      if(e.status === 403){
+        setStatus('provStatus','403 on ' + def.name + ' — the app registration does not have Sites.Manage.All (or it lacks consent). Add the permission in Azure, or create the lists manually from the specs below.','err');
+        toggleSpecs(true);
+        return;
+      }
+      setStatus('provStatus','Failed creating ' + def.name + ': ' + e.message,'err');
+      return;
+    }
+  }
+  document.getElementById('btnCreateLists').disabled = true;
+  setStatus('provStatus','Done — ' + made + ' list(s) created.' + (failed ? ' ' + failed + ' failed.' : ''), failed ? 'warn' : 'ok');
+}
+function toggleSpecs(forceShow){
+  const el = document.getElementById('specBlock');
+  if(forceShow === true) el.classList.remove('hidden');
+  else el.classList.toggle('hidden');
+  if(!el.textContent){
+    el.textContent = LIST_DEFS.map(d =>
+      d.name + '  (' + d.description + ')\n' +
+      d.columns.map(c => {
+        const type = Object.keys(c).find(k => k !== 'name');
+        let extra = '';
+        if(type === 'choice') extra = ' [' + c.choice.choices.join(', ') + ']';
+        if(type === 'text' && c.text && c.text.allowMultipleLines) extra = ' [multiline]';
+        return '   ' + c.name + ' : ' + type + extra;
+      }).join('\n')
+    ).join('\n\n');
+  }
+}
+
+/* ---------- Utilities ---------- */
+function setStatus(id, msg, cls){
+  const el = document.getElementById(id);
+  el.textContent = msg || '';
+  el.className = 'status-line' + (cls ? ' ' + cls : '');
+}
+function numOrNull(v){ return (typeof v === 'number' && isFinite(v)) ? v : null; }
+function money(v){ if(v === null || v === undefined) return '—';
+  return '$' + Math.round(v).toLocaleString('en-US'); }
+function pct(v){ if(v === null || v === undefined) return '—';
+  return (v*100).toFixed(v*100 % 1 === 0 ? 0 : 1) + '%'; }
+function fmtDate(iso){ if(!iso) return '';
+  try{ const d = new Date(iso); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+  catch(e){ return String(iso); } }
+function escHtml(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
