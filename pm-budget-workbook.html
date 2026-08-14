@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PM Budget Workbook — CORE v3</title>
+<title>PM Budget Workbook — CORE v4</title>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -121,6 +121,9 @@ tr.grp-hdr .cmt-btn.has{background:rgba(249,230,174,.25);border-color:var(--gold
 .cmt-block.bud .cmt-text{color:#16324a;}
 .tag-bud{display:inline-block;font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--bud);color:#fff;border-radius:3px;padding:1px 5px;margin-right:6px;vertical-align:1px;}
 .cmt-new{display:flex;gap:8px;margin-top:8px;}
+.cmt-act{background:none;border:none;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-sec);cursor:pointer;margin-left:8px;padding:0;}
+.cmt-act:hover{color:var(--navy);}
+.cmt-edit textarea{width:100%;font-family:'TT Norms Pro',sans-serif;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;min-height:40px;margin-bottom:6px;}
 .cmt-new textarea{flex:1;font-family:'TT Norms Pro',sans-serif;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;resize:vertical;min-height:34px;}
 .addline td{padding-left:22px;}
 .addline input{font-size:11px;padding:3px 8px;min-width:200px;}
@@ -138,7 +141,7 @@ tr.grp-hdr .cmt-btn.has{background:rgba(249,230,174,.25);border-color:var(--gold
   <div class="auth-box">
     <div class="auth-title">PM Budget Workbook</div>
     <div class="auth-subtitle">Bellweather CORE</div>
-    <div class="auth-version" id="authVersionBadge">v3</div>
+    <div class="auth-version" id="authVersionBadge">v4</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -146,7 +149,7 @@ tr.grp-hdr .cmt-btn.has{background:rgba(249,230,174,.25);border-color:var(--gold
 
 <header class="app-header">
   <span class="hdr-title">PM Budget Workbook</span>
-  <span class="hdr-badge" id="versionBadge">v3</span>
+  <span class="hdr-badge" id="versionBadge">v4</span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
   <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
@@ -238,9 +241,10 @@ tr.grp-hdr .cmt-btn.has{background:rgba(249,230,174,.25);border-color:var(--gold
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v3';
+const CORE_VERSION = 'v4';
 
 const BUDGET_CHANGELOG = [
+  { v:'v4', date:'2026-08-14', notes:'Fixed unstable number entry: typing now updates all totals live, fields never lose or revert what you typed, and saves happen quietly in the background in order. You can now edit or delete your own budgeting comments (admins can delete any). Estimating comments from the workbook remain read-only — they refresh from the estimate file when a snapshot is re-saved.' },
   { v:'v3', date:'2026-08-14', notes:'The workbook itself. Open a project with a saved snapshot and build the budget: divisions seeded from the estimate, scope lines with editable amounts that save as you go, add your own lines under any division, and comment threads on every division and line showing estimating comments alongside budgeting comments. The bottom financial block (sale price, markup, selections, allowances) is set by admins; PMs edit only their budget lines and comments. Setup now also adds the new config columns and the BudgetRole column.' },
   { v:'v2', date:'2026-08-14', notes:'Snapshots now save. After parsing an estimate with a project selected, a Save Snapshot button writes the estimate figures and every estimating comment to SharePoint. Re-saving updates figures and adds only new comments, never duplicates. Picking a project now shows whether it already has a saved snapshot.' },
   { v:'v1', date:'2026-08-14', notes:'First build. Sign in, pick a project, paste a link to a COMP Estimating workbook, and the tool reads the numbers and every estimating comment directly from the file so you can confirm it all matches. Setup screen can create the three SharePoint lists the tool will use.' }
@@ -333,6 +337,10 @@ async function graphPatch(url, body){
     body: JSON.stringify(body) });
   if(!res.ok){ const t = await res.text(); throw new Error('Graph PATCH ' + res.status + ': ' + t.slice(0,300)); }
   return res.json();
+}
+async function graphDelete(url){
+  const res = await fetch(url, { method:'DELETE', headers:{ Authorization:'Bearer ' + accessToken } });
+  if(!res.ok && res.status !== 204){ const t = await res.text(); throw new Error('Graph DELETE ' + res.status + ': ' + t.slice(0,300)); }
 }
 async function fetchAllItems(listName){
   let url = SP_LISTS + '/' + listName + '/items?$expand=fields&$select=id,fields&$top=500', out = [];
@@ -1042,7 +1050,7 @@ async function openWorkbook(proj){
                     sortOrder: it.fields.SortOrder || 999 }));
     const comments = cmts.filter(it => it.fields && it.fields.ProjectKey === proj).map(it => ({
       spItemId: it.id, type: it.fields.CommentType || 'Budgeting', code: it.fields.CostCode || '',
-      lineId: it.fields.LineId || '', author: it.fields.AuthorName || '', when: it.fields.CommentDate || '',
+      lineId: it.fields.LineId || '', author: it.fields.AuthorName || '', authorEmail: (it.fields.AuthorEmail || '').toLowerCase(), when: it.fields.CommentDate || '',
       body: it.fields.Body || '', cell: it.fields.SourceCell || ''
     })).sort((a,b) => (a.when||'').localeCompare(b.when||''));
     const mappedEstCodes = new Set();
@@ -1050,7 +1058,7 @@ async function openWorkbook(proj){
       g.divisions.forEach(d => (d.estCodes||[]).forEach(c => mappedEstCodes.add(c))); });
     mappedEstCodes.add(SELECTIONS_EST_CODE);
     const unmappedEst = Object.keys(estByCode).filter(c => !mappedEstCodes.has(c));
-    wb = { proj, cfg: existingConfig, estByCode, scopeRows, comments, unmappedEst, openThreads: new Set() };
+    wb = { proj, cfg: existingConfig, estByCode, scopeRows, comments, unmappedEst, openThreads: new Set(), editingCmt: null };
     renderWorkbook();
     setStatus('wbStatus','');
   }catch(e){
@@ -1061,6 +1069,16 @@ async function openWorkbook(proj){
 function closeWorkbook(){
   document.getElementById('wbPanel').classList.add('hidden');
   document.getElementById('importPanel').classList.remove('hidden');
+}
+
+/* --- serialized persistence: all writes queue in order, no races --- */
+let saveQueue = Promise.resolve();
+function enqueueSave(fn){
+  saveQueue = saveQueue.then(fn).catch(e => {
+    console.error(e);
+    setStatus('wbStatus','Save failed: ' + e.message + ' — re-enter the value to retry.','err');
+  });
+  return saveQueue;
 }
 
 /* --- calc --- */
@@ -1083,6 +1101,10 @@ function calcChain(){
 }
 
 /* --- render --- */
+function divBudC(d){
+  let t = 0; wb.scopeRows.forEach(r => { if(r.divKey === d.key) t += r.budgetC; }); return t;
+}
+function groupBudC(g){ return g.divisions.reduce((t,d) => t + divBudC(d), 0); }
 function estForDiv(d){ return (d.estCodes||[]).reduce((t,c) => t + (wb.estByCode[c] ? wb.estByCode[c].amountC : 0), 0); }
 function estForGroup(g){
   let t = (g.estCodes||[]).reduce((x,c) => x + (wb.estByCode[c] ? wb.estByCode[c].amountC : 0), 0);
@@ -1093,7 +1115,10 @@ function deltaChip(estC, budC){
   if(!estC && !budC) return '';
   const d = estC - budC;
   const cls = budC === 0 ? 'ok' : d >= 0 ? 'ok' : (-d <= estC * 0.05 ? 'warn' : 'over');
-  return '<span class="delta ' + cls + '">' + (d >= 0 ? '+' : '\u2212') + moneyC(Math.abs(d)).slice(1 - 1) + '</span>';
+  return '<span class="delta ' + cls + '">' + (d >= 0 ? '+' : '\u2212') + moneyC(Math.abs(d)) + '</span>';
+}
+function budCellHtml(estC, budC){
+  return (budC ? moneyC(budC) : '') + (estC ? deltaChip(estC, budC) : '');
 }
 function estCodesOfDiv(d){ return d.estCodes || []; }
 function commentsFor(divKey, estCodes){
@@ -1146,10 +1171,10 @@ function renderWorkbook(){
   document.getElementById('wbFin').innerHTML = finFields.map(ff =>
     '<div class="fin-cell"><label>' + ff[1] + '</label>' +
     '<input type="text" data-cfg="' + ff[0] + '" value="' + (ff[2] ?? '') + '"' +
-    (isBudgetAdmin ? '' : ' disabled') + ' onblur="saveCfgField(this)">' +
+    (isBudgetAdmin ? '' : ' disabled') + ' oninput="cfgInput(this)" onblur="saveCfgField(this)">' +
     (ff[3] ? '<div class="fin-ref">' + escHtml(ff[3]) + '</div>' : '') + '</div>').join('') +
     '<div class="fin-cell"><label>Overhead ' + (OVERHEAD_PCT*100).toFixed(2) + '% / Staff ' + (STAFF_PCT*100).toFixed(2) + '%</label>' +
-    '<div style="font-size:13px;font-weight:700;color:var(--navy);padding-top:3px;">' + moneyC(k.overheadC) + ' / ' + moneyC(k.staffC) + '</div></div>';
+    '<div style="font-size:13px;font-weight:700;color:var(--navy);padding-top:3px;" id="finComputed">' + moneyC(k.overheadC) + ' / ' + moneyC(k.staffC) + '</div></div>';
 
   const gen = wb.comments.filter(cm => cm.type === 'Estimating' && !cm.code);
   document.getElementById('wbGeneralNotes').innerHTML = gen.length
@@ -1166,7 +1191,7 @@ function renderWorkbook(){
     html += '<tr class="grp-hdr"><td>' + escHtml(g.code === 'MISC' ? '' : g.code) + ' ' + escHtml(g.label) +
       cmtBtn('GRP-' + g.code, g.estCodes||[], true) + '</td>' +
       '<td class="amt grp-est">' + (gEstC ? 'est ' + moneyC(gEstC) : '') + '</td>' +
-      '<td class="amt">' + (gBudC ? moneyC(gBudC) : '') + (gEstC ? deltaChip(gEstC, gBudC) : '') + '</td></tr>';
+      '<td class="amt" id="gbud-' + escAttr(g.code) + '">' + budCellHtml(gEstC, gBudC) + '</td></tr>';
     html += threadRowIfOpen('GRP-' + g.code, g.estCodes||[]);
     g.divisions.forEach(d => {
       const dEstC = estForDiv(d);
@@ -1175,7 +1200,7 @@ function renderWorkbook(){
       if(d.label || g.divisions.length > 1){
         html += '<tr class="div-hdr"><td>' + escHtml(d.key) + ' ' + escHtml(d.label) + cmtBtn(d.key, estCodesOfDiv(d)) + '</td>' +
           '<td class="amt">' + (dEstC ? 'est ' + moneyC(dEstC) : '') + '</td>' +
-          '<td class="amt">' + (dBudC ? moneyC(dBudC) : '') + (dEstC ? deltaChip(dEstC, dBudC) : '') + '</td></tr>';
+          '<td class="amt" id="dbud-' + escAttr(d.key) + '">' + budCellHtml(dEstC, dBudC) + '</td></tr>';
       }else{
         html += '<tr class="div-hdr"><td>' + cmtBtn(d.key, estCodesOfDiv(d)) + '</td><td class="amt"></td><td class="amt"></td></tr>';
       }
@@ -1186,7 +1211,7 @@ function renderWorkbook(){
           '<td class="lbl">' + escHtml(r.label) + '</td><td class="amt"></td>' +
           '<td class="amt"><input type="text" inputmode="decimal" value="' + (r.budgetC ? fromCents(r.budgetC) : '') + '"' +
           ' data-line="' + escAttr(rid) + '" data-div="' + escAttr(d.key) + '" data-label="' + escAttr(r.label) + '"' +
-          ' data-src="' + (r.template ? 'Template' : 'PM') + '" onblur="saveLineAmount(this)">' +
+          ' data-src="' + (r.template ? 'Template' : 'PM') + '" oninput="lineInput(this)" onblur="saveLineAmount(this)">' +
           '<span class="save-flash">saved</span></td></tr>';
       });
       html += '<tr class="addline"><td colspan="3">' +
@@ -1201,16 +1226,43 @@ function renderWorkbook(){
         '<td class="amt">est ' + moneyC(wb.estByCode[c].amountC) + '</td><td class="amt"></td></tr>';
     });
   }
-  const k2 = calcChain();
-  html += '<tr class="subtotal"><td>SUBTOTAL</td><td class="amt">' + moneyC(k2.estTotalC) + '</td><td class="amt">' + moneyC(k2.budTotalC) + '</td></tr>';
+  html += '<tr class="subtotal"><td>SUBTOTAL</td><td class="amt" id="stEst"></td><td class="amt" id="stBud"></td></tr>';
   html += '<tr class="subtotal"><td>Over/Under (available \u2212 total)</td>' +
-    '<td class="amt" style="color:' + (k2.ouEstC < 0 ? 'var(--err)' : 'var(--ok)') + '">' + moneyC(k2.ouEstC) + '</td>' +
-    '<td class="amt" style="color:' + (k2.ouBudC < 0 ? 'var(--err)' : 'var(--ok)') + '">' + moneyC(k2.ouBudC) + '</td></tr>';
+    '<td class="amt" id="ouEstCell"></td><td class="amt" id="ouBudCell"></td></tr>';
   document.getElementById('wbBody').innerHTML = html;
   if(focusKey){
     const el = document.querySelector('[data-line="' + CSS.escape(focusKey) + '"],[data-adddiv="' + CSS.escape(focusKey) + '"],[data-cfg="' + CSS.escape(focusKey) + '"]');
     if(el) el.focus();
   }
+  renderTotals();
+}
+
+/* Live recalculation: updates computed cells only — never rebuilds inputs. */
+function renderTotals(){
+  const k = calcChain();
+  const sum = document.getElementById('wbSummary');
+  if(sum) sum.innerHTML = [
+    ['Available (cost basis)', moneyC(k.availableC), ''],
+    ['Estimate total', moneyC(k.estTotalC), ''],
+    ['Budget total', moneyC(k.budTotalC), ''],
+    ['Over/Under vs Estimate', moneyC(k.ouEstC), k.ouEstC < 0 ? 'var(--err)' : 'var(--ok)'],
+    ['Over/Under vs Budget', moneyC(k.ouBudC), k.ouBudC < 0 ? 'var(--err)' : 'var(--ok)']
+  ].map(m => '<div class="metric"><div class="m-label">' + m[0] + '</div><div class="m-value"' +
+      (m[2] ? ' style="color:' + m[2] + '"' : '') + '>' + m[1] + '</div></div>').join('');
+  const fc = document.getElementById('finComputed');
+  if(fc) fc.textContent = moneyC(k.overheadC) + ' / ' + moneyC(k.staffC);
+  TEMPLATE.forEach(g => {
+    const gEl = document.getElementById('gbud-' + g.code);
+    if(gEl) gEl.innerHTML = budCellHtml(estForGroup(g), groupBudC(g));
+    g.divisions.forEach(d => {
+      const dEl = document.getElementById('dbud-' + d.key);
+      if(dEl) dEl.innerHTML = budCellHtml(estForDiv(d), divBudC(d));
+    });
+  });
+  const put = (id, val, colored) => { const el = document.getElementById(id);
+    if(el){ el.textContent = moneyC(val); if(colored) el.style.color = val < 0 ? 'var(--err)' : 'var(--ok)'; } };
+  put('stEst', k.estTotalC); put('stBud', k.budTotalC);
+  put('ouEstCell', k.ouEstC, true); put('ouBudCell', k.ouBudC, true);
 }
 
 function cmtBtn(divKey, estCodes, onGroup){
@@ -1231,65 +1283,147 @@ function threadRowIfOpen(divKey, estCodes){
 }
 function cmtHtml(cm){
   const est = cm.type === 'Estimating';
+  if(!est && wb && wb.editingCmt === cm.spItemId){
+    return '<div class="cmt-block bud cmt-edit"><div class="cmt-head"><span class="tag-bud">Budgeting</span>' +
+      escHtml(cm.author) + '</div>' +
+      '<textarea id="ce-' + escAttr(cm.spItemId) + '">' + escHtml(cm.body) + '</textarea>' +
+      '<button class="btn" onclick="saveCmtEdit(\'' + escAttr(cm.spItemId) + '\')">Save</button> ' +
+      '<button class="btn ghost" onclick="wb.editingCmt=null;renderWorkbook()">Cancel</button></div>';
+  }
+  const own = !est && cm.authorEmail && cm.authorEmail === currentUserEmail;
+  const actions = est ? '' :
+    ((own ? '<button class="cmt-act" onclick="editCmt(\'' + escAttr(cm.spItemId) + '\')">Edit</button>' : '') +
+     ((own || isBudgetAdmin) ? '<button class="cmt-act" onclick="deleteCmt(\'' + escAttr(cm.spItemId) + '\')">Delete</button>' : ''));
   return '<div class="cmt-block' + (est ? '' : ' bud') + '"><div class="cmt-head">' +
     '<span class="' + (est ? 'tag-est' : 'tag-bud') + '">' + (est ? 'Estimating' : 'Budgeting') + '</span>' +
     escHtml(cm.author) + (cm.cell ? ' \u00B7 cell ' + escHtml(cm.cell) : '') +
-    '<span class="cmt-when">' + fmtDate(cm.when) + '</span></div>' +
+    '<span class="cmt-when">' + fmtDate(cm.when) + (cm.edited ? ' (edited)' : '') + '</span>' + actions + '</div>' +
     '<div class="cmt-text">' + escHtml(cm.body) + '</div></div>';
+}
+function editCmt(id){ wb.editingCmt = id; renderWorkbook(); }
+function saveCmtEdit(id){
+  const ta = document.getElementById('ce-' + id);
+  const body = (ta && ta.value.trim()) || '';
+  if(!body) return;
+  const cm = wb.comments.find(c => c.spItemId === id);
+  if(!cm) return;
+  cm.body = body; cm.edited = true; wb.editingCmt = null;
+  renderWorkbook();
+  enqueueSave(async () => {
+    await graphPatch(SP_LISTS + '/CORE_Budget_Comments/items/' + id + '/fields',
+      { Body: body, Title: body.slice(0,60) });
+  });
+}
+function deleteCmt(id){
+  const cm = wb.comments.find(c => c.spItemId === id);
+  if(!cm) return;
+  if(!confirm('Delete this budgeting comment permanently?')) return;
+  wb.comments = wb.comments.filter(c => c.spItemId !== id);
+  renderWorkbook();
+  enqueueSave(async () => {
+    await graphDelete(SP_LISTS + '/CORE_Budget_Comments/items/' + id);
+  });
 }
 function toggleThread(divKey){
   if(wb.openThreads.has(divKey)) wb.openThreads.delete(divKey); else wb.openThreads.add(divKey);
   renderWorkbook();
 }
 
-/* --- saves --- */
-async function saveCfgField(inp){
+/* --- saves: state updates live on input; persistence is queued on blur; no re-renders --- */
+function parseAmt(raw){
+  const t = String(raw).trim().replace(/[$,]/g,'');
+  if(t === '') return 0;
+  const n = parseFloat(t);
+  return isFinite(n) ? n : null;
+}
+function stateRowFor(inp){
+  const id = inp.dataset.line, divKey = inp.dataset.div, label = inp.dataset.label;
+  if(!id.startsWith('new:')){
+    return wb.scopeRows.find(r => r.spItemId === id) || null;
+  }
+  let row = wb.scopeRows.find(r => !r.spItemId && r.divKey === divKey && normName(r.label) === normName(label));
+  if(!row){
+    row = { spItemId: null, divKey, label, budgetC: 0, source: inp.dataset.src || 'Template', sortOrder: 500, _persisting: false };
+    wb.scopeRows.push(row);
+  }
+  return row;
+}
+function lineInput(inp){
+  if(!wb) return;
+  const num = parseAmt(inp.value);
+  if(num === null) return; // don't recalc on partial junk; blur will flag it
+  const row = stateRowFor(inp);
+  if(row){ row.budgetC = cents(num); renderTotals(); }
+}
+function saveLineAmount(inp){
+  if(!wb) return;
+  const num = parseAmt(inp.value);
+  if(num === null){ setStatus('wbStatus','Not a number: ' + inp.value,'err'); return; }
+  const row = stateRowFor(inp);
+  if(!row) return;
+  row.budgetC = cents(num);
+  renderTotals();
+  const proj = wb.proj;
+  enqueueSave(async () => {
+    if(row.spItemId){
+      await graphPatch(SP_LISTS + '/CORE_Budget_Lines/items/' + row.spItemId + '/fields',
+        { BudgetAmount: fromCents(row.budgetC) });
+    }else{
+      if(!row.budgetC) return; // never materialize an all-zero template line
+      if(row._persisting) return;
+      row._persisting = true;
+      try{
+        const made = await graphPost(SP_LISTS + '/CORE_Budget_Lines/items', { fields: {
+          Title: row.label, ProjectKey: proj, CostCode: row.divKey, LineType:'ScopeLine',
+          BudgetAmount: fromCents(row.budgetC), EstimateAmount: 0, SortOrder: row.sortOrder,
+          Source: row.source, Active: true }});
+        row.spItemId = made.id;
+        inp.dataset.line = made.id;
+      }finally{ row._persisting = false; }
+    }
+    setStatus('wbStatus','');
+  });
+}
+function cfgInput(inp){
+  if(!isBudgetAdmin || !wb) return;
+  const num = parseAmt(inp.value);
+  if(num === null) return;
+  wb.cfg.fields[inp.dataset.cfg] = inp.value.trim() === '' ? null : num;
+  renderTotals();
+}
+function saveCfgField(inp){
   if(!isBudgetAdmin || !wb) return;
   const field = inp.dataset.cfg;
   const raw = inp.value.trim();
-  const num = raw === '' ? null : parseFloat(raw.replace(/[$,]/g,''));
-  if(raw !== '' && !isFinite(num)){ setStatus('wbStatus', field + ': not a number.', 'err'); return; }
-  try{
-    await graphPatch(SP_LISTS + '/CORE_Budget_Config/items/' + wb.cfg.spItemId + '/fields', { [field]: num });
-    wb.cfg.fields[field] = num;
-    renderWorkbook();
-  }catch(e){ setStatus('wbStatus','Save failed: ' + e.message,'err'); }
-}
-async function saveLineAmount(inp){
-  if(!wb) return;
-  const raw = inp.value.trim().replace(/[$,]/g,'');
-  const num = raw === '' ? 0 : parseFloat(raw);
-  if(raw !== '' && !isFinite(num)){ setStatus('wbStatus','Not a number: ' + inp.value,'err'); return; }
-  const amtC = cents(num);
-  const id = inp.dataset.line, divKey = inp.dataset.div, label = inp.dataset.label, src = inp.dataset.src;
-  try{
-    if(id.startsWith('new:')){
-      if(!amtC) return; // nothing to materialize
-      const made = await graphPost(SP_LISTS + '/CORE_Budget_Lines/items', { fields: {
-        Title: label, ProjectKey: wb.proj, CostCode: divKey, LineType:'ScopeLine',
-        BudgetAmount: fromCents(amtC), EstimateAmount: 0, SortOrder: 500, Source: src, Active: true }});
-      wb.scopeRows.push({ spItemId: made.id, divKey, label, budgetC: amtC, source: src, sortOrder: 500 });
-    }else{
-      await graphPatch(SP_LISTS + '/CORE_Budget_Lines/items/' + id + '/fields', { BudgetAmount: fromCents(amtC) });
-      const row = wb.scopeRows.find(r => r.spItemId === id);
-      if(row) row.budgetC = amtC;
-    }
-    renderWorkbook();
+  const num = parseAmt(raw);
+  if(num === null){ setStatus('wbStatus', field + ': not a number.', 'err'); return; }
+  const val = raw === '' ? null : num;
+  wb.cfg.fields[field] = val;
+  renderTotals();
+  const itemId = wb.cfg.spItemId;
+  enqueueSave(async () => {
+    await graphPatch(SP_LISTS + '/CORE_Budget_Config/items/' + itemId + '/fields', { [field]: val });
     setStatus('wbStatus','');
-  }catch(e){ setStatus('wbStatus','Save failed: ' + e.message,'err'); }
+  });
 }
-async function addLine(btn){
+function addLine(btn){
   const inp = btn.parentElement.querySelector('input');
   const label = inp.value.trim();
   if(!label || !wb) return;
   const divKey = inp.dataset.adddiv;
-  try{
+  const proj = wb.proj;
+  const row = { spItemId: null, divKey, label, budgetC: 0, source:'PM', sortOrder: 500 };
+  wb.scopeRows.push(row);
+  inp.value = '';
+  renderWorkbook(); // structural change: rebuild grid (queue keeps persistence safe)
+  enqueueSave(async () => {
     const made = await graphPost(SP_LISTS + '/CORE_Budget_Lines/items', { fields: {
-      Title: label, ProjectKey: wb.proj, CostCode: divKey, LineType:'ScopeLine',
-      BudgetAmount: 0, EstimateAmount: 0, SortOrder: 500, Source:'PM', Active: true }});
-    wb.scopeRows.push({ spItemId: made.id, divKey, label, budgetC: 0, source:'PM', sortOrder: 500 });
-    renderWorkbook();
-  }catch(e){ setStatus('wbStatus','Add failed: ' + e.message,'err'); }
+      Title: row.label, ProjectKey: proj, CostCode: row.divKey, LineType:'ScopeLine',
+      BudgetAmount: fromCents(row.budgetC), EstimateAmount: 0, SortOrder: 500, Source:'PM', Active: true }});
+    row.spItemId = made.id;
+    const el = document.querySelector('[data-line="new:' + CSS.escape(divKey + ':' + normName(row.label)) + '"]');
+    if(el) el.dataset.line = made.id;
+  });
 }
 async function postComment(divKey){
   const ta = document.getElementById('nc-' + divKey);
@@ -1302,7 +1436,7 @@ async function postComment(divKey){
       CommentType:'Budgeting', AuthorName: currentUser, AuthorEmail: currentUserEmail,
       CommentDate: nowIso, Body: body, SourceGuid:'', SourceCell:'', SourceTab:'', ParentGuid:'' }});
     wb.comments.push({ spItemId: made.id, type:'Budgeting', code: divKey, lineId:'',
-      author: currentUser, when: nowIso, body, cell:'' });
+      author: currentUser, authorEmail: currentUserEmail, when: nowIso, body, cell:'' });
     renderWorkbook();
   }catch(e){ setStatus('wbStatus','Comment failed: ' + e.message,'err'); }
 }
