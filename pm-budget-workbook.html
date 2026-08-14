@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PM Budget Workbook — CORE v1</title>
+<title>PM Budget Workbook — CORE v2</title>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -96,7 +96,7 @@ pre.spec{background:var(--bg);border:1px solid var(--border);border-radius:5px;p
   <div class="auth-box">
     <div class="auth-title">PM Budget Workbook</div>
     <div class="auth-subtitle">Bellweather CORE</div>
-    <div class="auth-version" id="authVersionBadge">v1</div>
+    <div class="auth-version" id="authVersionBadge">v2</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -104,7 +104,7 @@ pre.spec{background:var(--bg);border:1px solid var(--border);border-radius:5px;p
 
 <header class="app-header">
   <span class="hdr-title">PM Budget Workbook</span>
-  <span class="hdr-badge" id="versionBadge">v1</span>
+  <span class="hdr-badge" id="versionBadge">v2</span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
   <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
@@ -167,6 +167,10 @@ pre.spec{background:var(--bg);border:1px solid var(--border);border-radius:5px;p
     </table>
     <div class="small-note">Yellow chips mark cost codes carrying estimating comments from the workbook; click a chip to expand. Comments anchored to header cells (sale price, escalation, etc.) are listed at the bottom.</div>
     <div id="headerComments" style="margin-top:14px;"></div>
+    <div class="field-row" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">
+      <button class="btn" id="btnSnapshot" onclick="saveSnapshot()" disabled>Save snapshot to SharePoint</button>
+      <span class="status-line" id="snapStatus" style="margin-top:0;"></span>
+    </div>
   </div>
 
 </div>
@@ -179,9 +183,10 @@ pre.spec{background:var(--bg);border:1px solid var(--border);border-radius:5px;p
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v1';
+const CORE_VERSION = 'v2';
 
 const BUDGET_CHANGELOG = [
+  { v:'v2', date:'2026-08-14', notes:'Snapshots now save. After parsing an estimate with a project selected, a Save Snapshot button writes the estimate figures and every estimating comment to SharePoint. Re-saving updates figures and adds only new comments, never duplicates. Picking a project now shows whether it already has a saved snapshot.' },
   { v:'v1', date:'2026-08-14', notes:'First build. Sign in, pick a project, paste a link to a COMP Estimating workbook, and the tool reads the numbers and every estimating comment directly from the file so you can confirm it all matches. Setup screen can create the three SharePoint lists the tool will use.' }
 ];
 
@@ -248,10 +253,27 @@ async function graphPost(url, body, token){
   if(!res.ok){ const t = await res.text(); const err = new Error('Graph POST ' + res.status + ': ' + t.slice(0,300)); err.status = res.status; throw err; }
   return res.json();
 }
+async function graphPatch(url, body){
+  const res = await fetch(url, { method:'PATCH',
+    headers:{ Authorization:'Bearer ' + accessToken, 'Content-Type':'application/json' },
+    body: JSON.stringify(body) });
+  if(!res.ok){ const t = await res.text(); throw new Error('Graph PATCH ' + res.status + ': ' + t.slice(0,300)); }
+  return res.json();
+}
+async function fetchAllItems(listName){
+  let url = SP_LISTS + '/' + listName + '/items?$expand=fields&$select=id,fields&$top=500', out = [];
+  while(url){
+    const d = await graphGet(url);
+    out = out.concat(d.value || []);
+    url = d['@odata.nextLink'] || null;
+  }
+  return out;
+}
 
 /* ---------- Projects ---------- */
 async function loadProjects(){
   const sel = document.getElementById('projectSelect');
+  sel.addEventListener('change', onProjectChanged);
   try{
     const pd = await graphGet(SP_LISTS + '/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
     const items = (pd.value || []).map(it => ({
@@ -467,7 +489,9 @@ async function parseSelectedTab(){
     const cells = await currentWB.cellsFor(tabName);
     const sheet = currentWB.sheets.find(s => s.name === tabName);
     const model = buildEstimateModel(cells, sheet.comments, currentWB.persons);
+    lastModel = model; lastTabName = tabName;
     renderVerify(model, tabName, proj);
+    updateSnapshotButton();
     setStatus('importStatus','Parsed "' + tabName + '": ' + model.codes.length + ' cost codes, ' +
       sheet.comments.length + ' comments on this tab. Verify against the workbook.', 'ok');
   }catch(e){
@@ -701,6 +725,139 @@ function toggleSpecs(forceShow){
         return '   ' + c.name + ' : ' + type + extra;
       }).join('\n')
     ).join('\n\n');
+  }
+}
+
+/* ---------- Snapshot (phase 2) ---------- */
+let lastModel = null, lastTabName = '';
+let existingConfig = null; // { spItemId, fields } for selected project, if any
+
+function updateSnapshotButton(){
+  const proj = document.getElementById('projectSelect').value;
+  const btn = document.getElementById('btnSnapshot');
+  btn.disabled = !(lastModel && proj);
+  document.getElementById('snapStatus').textContent =
+    (lastModel && !proj) ? 'Pick a project above to enable saving.' : '';
+}
+
+async function onProjectChanged(){
+  updateSnapshotButton();
+  const proj = document.getElementById('projectSelect').value;
+  existingConfig = null;
+  if(!proj) return;
+  try{
+    const items = await fetchAllItems('CORE_Budget_Config');
+    const hit = items.find(it => (it.fields && it.fields.ProjectKey) === proj);
+    if(hit){
+      existingConfig = { spItemId: hit.id, fields: hit.fields };
+      setStatus('importStatus', proj + ' already has a snapshot from ' + fmtDate(hit.fields.SnapshotDate) +
+        ' (estimate file modified ' + fmtDate(hit.fields.EstimateLastModified) + ', tab "' +
+        (hit.fields.EstimateTab || '?') + '"). Saving again will refresh figures and add any new comments.', 'warn');
+    }else{
+      setStatus('importStatus', proj + ' has no snapshot yet.', '');
+    }
+  }catch(e){ console.warn('config check', e); }
+}
+
+async function saveSnapshot(){
+  const proj = document.getElementById('projectSelect').value;
+  if(!proj || !lastModel || !currentFile) return;
+  const btn = document.getElementById('btnSnapshot');
+  btn.disabled = true;
+  const say = (m, c) => setStatus('snapStatus', m, c);
+  try{
+    const h = lastModel.header;
+    const nowIso = new Date().toISOString();
+    const r2 = v => (v === null || v === undefined) ? null : Math.round(v * 100) / 100;
+
+    /* 1 — Config upsert */
+    say('Saving config\u2026');
+    const cfgFields = {
+      Title: proj, ProjectKey: proj,
+      EstimateFileUrl: document.getElementById('fileUrl').value.trim(),
+      EstimateFileName: currentFile.name,
+      EstimateTab: lastTabName,
+      EstimateLastModified: currentFile.lastModified || '',
+      SnapshotDate: nowIso,
+      SalePrice: r2(h.salePrice), MarkupPct: h.markupPct,
+      IndirectPct: h.indirectPct, PayrollPct: h.payrollPct,
+      CompEscalation: r2(h.compEscalation)
+    };
+    if(existingConfig){
+      await graphPatch(SP_LISTS + '/CORE_Budget_Config/items/' + existingConfig.spItemId + '/fields', cfgFields);
+    }else{
+      cfgFields.Status = 'Draft';
+      const made = await graphPost(SP_LISTS + '/CORE_Budget_Config/items', { fields: cfgFields });
+      existingConfig = { spItemId: made.id, fields: cfgFields };
+    }
+
+    /* 2 — Division lines upsert (never touches ScopeLine rows) */
+    say('Syncing estimate lines\u2026');
+    const allLines = await fetchAllItems('CORE_Budget_Lines');
+    const mine = allLines.filter(it => it.fields && it.fields.ProjectKey === proj && it.fields.LineType === 'Division');
+    const byCode = {}; mine.forEach(it => { byCode[it.fields.CostCode] = it; });
+    let linesMade = 0, linesUpdated = 0;
+    const codes = lastModel.codes.filter(c => c.code !== 'TOTAL');
+    for(let i = 0; i < codes.length; i++){
+      const c = codes[i];
+      say('Syncing estimate lines\u2026 ' + (i+1) + '/' + codes.length);
+      const fields = {
+        Title: c.full, ProjectKey: proj, CostCode: c.code, LineType: 'Division',
+        EstimateAmount: r2(c.compTotal) ?? 0, SortOrder: (i+1) * 10,
+        Source: 'Estimate', Active: true
+      };
+      const ex = byCode[c.code];
+      if(ex){
+        await graphPatch(SP_LISTS + '/CORE_Budget_Lines/items/' + ex.id + '/fields',
+          { Title: fields.Title, EstimateAmount: fields.EstimateAmount, SortOrder: fields.SortOrder });
+        linesUpdated++;
+      }else{
+        await graphPost(SP_LISTS + '/CORE_Budget_Lines/items', { fields });
+        linesMade++;
+      }
+    }
+
+    /* 3 — Estimating comments, dedupe on SourceGuid */
+    say('Syncing comments\u2026');
+    const allCmts = await fetchAllItems('CORE_Budget_Comments');
+    const haveGuids = new Set(allCmts
+      .filter(it => it.fields && it.fields.ProjectKey === proj && it.fields.SourceGuid)
+      .map(it => it.fields.SourceGuid));
+    const rowCode = {};
+    lastModel.codes.forEach(c => { if(c.code !== 'TOTAL') rowCode[c.row] = c.code; });
+    const flat = [];
+    const push = (n, ref) => flat.push(n.guid ? { ...n, ref: n.ref || ref } : null);
+    lastModel.codes.forEach(c => (c.comments || []).forEach(th => { push(th, th.ref); (th.replies||[]).forEach(rp => push(rp, th.ref)); }));
+    lastModel.headerComments.forEach(th => { push(th, th.ref); (th.replies||[]).forEach(rp => push(rp, th.ref)); });
+    let cmtsMade = 0, cmtsSkipped = 0;
+    const list = flat.filter(Boolean);
+    for(let i = 0; i < list.length; i++){
+      const cm = list[i];
+      if(haveGuids.has(cm.guid)){ cmtsSkipped++; continue; }
+      say('Syncing comments\u2026 ' + (i+1) + '/' + list.length);
+      const rm = (cm.ref || '').match(/[A-Z]+(\d+)/);
+      const code = rm ? (rowCode[parseInt(rm[1],10)] || '') : '';
+      await graphPost(SP_LISTS + '/CORE_Budget_Comments/items', { fields: {
+        Title: (cm.text || '').slice(0, 60),
+        ProjectKey: proj, CostCode: code, LineId: '',
+        CommentType: 'Estimating',
+        AuthorName: cm.author || 'Unknown', AuthorEmail: cm.email || '',
+        CommentDate: cm.when ? new Date(cm.when).toISOString() : nowIso,
+        Body: cm.text || '',
+        SourceGuid: cm.guid, SourceCell: cm.ref || '', SourceTab: lastTabName,
+        ParentGuid: cm.parentId || ''
+      }});
+      cmtsMade++;
+      haveGuids.add(cm.guid);
+    }
+
+    say('Snapshot saved — ' + linesMade + ' lines created, ' + linesUpdated + ' updated, ' +
+        cmtsMade + ' comments added' + (cmtsSkipped ? ', ' + cmtsSkipped + ' already synced' : '') + '.', 'ok');
+  }catch(e){
+    console.error(e);
+    say('Snapshot failed: ' + e.message, 'err');
+  }finally{
+    btn.disabled = false;
   }
 }
 
