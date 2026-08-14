@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PM Budget Workbook — CORE v8</title>
+<title>PM Budget Workbook — CORE v9</title>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -152,7 +152,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
   <div class="auth-box">
     <div class="auth-title">PM Budget Workbook</div>
     <div class="auth-subtitle">Bellweather CORE</div>
-    <div class="auth-version" id="authVersionBadge">v8</div>
+    <div class="auth-version" id="authVersionBadge">v9</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -160,7 +160,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
 
 <header class="app-header">
   <span class="hdr-title">PM Budget Workbook</span>
-  <span class="hdr-badge" id="versionBadge">v8</span>
+  <span class="hdr-badge" id="versionBadge">v9</span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
   <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
@@ -253,9 +253,10 @@ table.diff td.num{text-align:right;white-space:nowrap;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v8';
+const CORE_VERSION = 'v9';
 
 const BUDGET_CHANGELOG = [
+  { v:'v9', date:'2026-08-14', notes:'Comments restructured to two clean levels: one thread per division and one per line item — the extra group-level thread is gone. Every scope line now has its own comment button. Colors and origin labels unchanged: amber for Estimating, blue for Budgeting. D&D COGS is now labeled DESIGN COGS.' },
   { v:'v8', date:'2026-08-14', notes:'Fixed the project list failing to load ("Assignment to constant variable") — a bug introduced with the v6 project filter.' },
   { v:'v7', date:'2026-08-14', notes:'The workbook now watches the estimate file. Opening a project quietly checks whether the estimate workbook on SharePoint has changed since the last snapshot; if it has, a banner appears with a Review button showing exactly what moved — figure changes code by code, new codes, removed codes, and new estimating comments — before anything is applied. Accepting refreshes the snapshot in one click. Lead-stage projects no longer appear in the project picker.' },
   { v:'v6', date:'2026-08-14', notes:'Comment threads now start open wherever comments exist (still collapsible). The project picker shows only active pipeline projects — no more untitled rows, slots, or archived jobs. Tighter layout: smaller financial fields, narrower page so amounts sit closer to their labels. Edit and delete controls on comments are now red with a trash icon, and the back-to-import button is easier to spot.' },
@@ -1016,8 +1017,8 @@ async function saveSnapshot(){
 /* ---------- Workbook (phase 3) ---------- */
 /* Template inlined by design (same rule as BELLWEATHER_PHASE_PROFILES): no runtime deps. */
 const TEMPLATE = [
-  { code:'5121', label:'SITE WORK', estCodes:['5121'], divisions:[
-    { key:'5121-1', label:'Site Work', lines:['Dust Protection','Floor & Stair Protection','Jobsite Clean-Up & Hauling','Client bathroom use/cleaning','Scaffolding & Safety','Professional cleaning services','Saved items','Other'] },
+  { code:'5121', label:'SITE WORK', divisions:[
+    { key:'5121-1', label:'Site Work (all 5121)', estCodes:['5121'], lines:['Dust Protection','Floor & Stair Protection','Jobsite Clean-Up & Hauling','Client bathroom use/cleaning','Scaffolding & Safety','Professional cleaning services','Saved items','Other'] },
     { key:'5121-2', label:'Jobsite Dumpster and Porta John', lines:['Dumpster','Porta John'] },
     { key:'5121-3', label:'Jobsite Parking', lines:['Parking'] } ] },
   { code:'5122', label:'DEMOLITION', divisions:[
@@ -1093,14 +1094,17 @@ async function openWorkbook(proj){
       g.divisions.forEach(d => (d.estCodes||[]).forEach(c => mappedEstCodes.add(c))); });
     mappedEstCodes.add(SELECTIONS_EST_CODE);
     const unmappedEst = Object.keys(estByCode).filter(c => !mappedEstCodes.has(c));
-    const openThreads = new Set();
-    TEMPLATE.forEach(g => {
-      if(commentsForData(comments, 'GRP-' + g.code, g.estCodes||[]).length) openThreads.add('GRP-' + g.code);
-      g.divisions.forEach(d => {
-        if(commentsForData(comments, d.key, d.estCodes||[]).length) openThreads.add(d.key);
-      });
-    });
-    wb = { proj, cfg: existingConfig, estByCode, scopeRows, comments, unmappedEst, openThreads, editingCmt: null };
+    // Legacy: budgeting comments posted at group level re-home to the group's first division
+    const firstDivOf = {};
+    TEMPLATE.forEach(g => { firstDivOf['GRP-' + g.code] = g.divisions[0].key; });
+    comments.forEach(cm => { if(firstDivOf[cm.code]) cm.code = firstDivOf[cm.code]; });
+    const openThreads = new Set(), openLineThreads = new Set();
+    TEMPLATE.forEach(g => g.divisions.forEach(d => {
+      if(commentsForData(comments, d.key, d.estCodes||[]).length) openThreads.add(d.key);
+    }));
+    const lineIdsWithCmts = new Set(comments.filter(cm => cm.lineId).map(cm => cm.lineId));
+    scopeRows.forEach(r => { if(r.spItemId && lineIdsWithCmts.has(r.spItemId)) openLineThreads.add(r.divKey + '||' + normName(r.label)); });
+    wb = { proj, cfg: existingConfig, estByCode, scopeRows, comments, unmappedEst, openThreads, openLineThreads, editingCmt: null };
     renderWorkbook();
     setStatus('wbStatus','');
     checkDrift();
@@ -1166,8 +1170,11 @@ function budCellHtml(estC, budC){
 function estCodesOfDiv(d){ return d.estCodes || []; }
 function commentsForData(list, divKey, estCodes){
   return list.filter(cm =>
-    (cm.type === 'Budgeting' && cm.code === divKey) ||
+    (cm.type === 'Budgeting' && cm.code === divKey && !cm.lineId) ||
     (cm.type === 'Estimating' && estCodes.indexOf(cm.code) !== -1));
+}
+function lineComments(spItemId){
+  return spItemId ? wb.comments.filter(cm => cm.lineId === spItemId) : [];
 }
 function commentsFor(divKey, estCodes){ return commentsForData(wb.comments, divKey, estCodes); }
 function rowsFor(div){
@@ -1210,7 +1217,7 @@ function renderWorkbook(){
     ['ContractMarkupPct','Markup', f.ContractMarkupPct, 'estimate: ' + (f.MarkupPct ?? '\u2014')],
     ['SelectionsAmount','Selections', f.SelectionsAmount, estSel ? 'estimate 5100: ' + moneyC(estSel.amountC) : ''],
     ['UnresolvedAllowance','Unresolved Allowance', f.UnresolvedAllowance, ''],
-    ['DDCogs','D&D COGS', f.DDCogs, ''],
+    ['DDCogs','DESIGN COGS', f.DDCogs, ''],
   ];
   document.getElementById('wbFin').innerHTML = finFields.map(ff =>
     '<div class="fin-cell"><label>' + ff[1] + '</label>' +
@@ -1226,17 +1233,14 @@ function renderWorkbook(){
       gen.map(cm => cmtHtml(cm)).join('') : '';
 
   let html = '';
+  wb._lineRefs = [];
   TEMPLATE.forEach(g => {
     const gEstC = estForGroup(g);
     let gBudC = 0;
     g.divisions.forEach(d => rowsFor(d).forEach(r => gBudC += r.budgetC));
-    const gEstCodes = (g.estCodes||[]).concat(...g.divisions.map(d => d.estCodes||[]));
-    const gCmts = commentsFor('GRP-' + g.code, g.estCodes||[]);
-    html += '<tr class="grp-hdr"><td>' + escHtml(g.code === 'MISC' ? '' : g.code) + ' ' + escHtml(g.label) +
-      cmtBtn('GRP-' + g.code, g.estCodes||[], true) + '</td>' +
+    html += '<tr class="grp-hdr"><td>' + escHtml(g.code === 'MISC' ? '' : g.code) + ' ' + escHtml(g.label) + '</td>' +
       '<td class="amt grp-est">' + (gEstC ? 'est ' + moneyC(gEstC) : '') + '</td>' +
       '<td class="amt" id="gbud-' + escAttr(g.code) + '">' + budCellHtml(gEstC, gBudC) + '</td></tr>';
-    html += threadRowIfOpen('GRP-' + g.code, g.estCodes||[]);
     g.divisions.forEach(d => {
       const dEstC = estForDiv(d);
       const rows = rowsFor(d);
@@ -1251,12 +1255,23 @@ function renderWorkbook(){
       html += threadRowIfOpen(d.key, estCodesOfDiv(d));
       rows.forEach(r => {
         const rid = r.spItemId || ('new:' + d.key + ':' + normName(r.label));
+        const tk = d.key + '||' + normName(r.label);
+        const refIdx = wb._lineRefs.length;
+        wb._lineRefs.push({ divKey: d.key, label: r.label, spItemId: r.spItemId || null, threadKey: tk, src: r.template ? 'Template' : 'PM' });
+        const lc = lineComments(r.spItemId);
         html += '<tr class="line-row' + (r.template ? '' : ' pm-line') + '">' +
-          '<td class="lbl">' + escHtml(r.label) + '</td><td class="amt"></td>' +
+          '<td class="lbl">' + escHtml(r.label) +
+          '<button class="cmt-btn' + (lc.length ? ' has-bud' : '') + '" onclick="toggleLineThread(' + refIdx + ')">' +
+          (lc.length ? lc.length + ' ' : '') + '\uD83D\uDCAC</button></td><td class="amt"></td>' +
           '<td class="amt"><input type="text" inputmode="decimal" value="' + (r.budgetC ? fromCents(r.budgetC) : '') + '"' +
           ' data-line="' + escAttr(rid) + '" data-div="' + escAttr(d.key) + '" data-label="' + escAttr(r.label) + '"' +
           ' data-src="' + (r.template ? 'Template' : 'PM') + '" oninput="lineInput(this)" onblur="saveLineAmount(this)">' +
           '<span class="save-flash">saved</span></td></tr>';
+        if(wb.openLineThreads.has(tk)){
+          html += '<tr class="cmt-panel"><td colspan="3">' + (lc.map(cmtHtml).join('') || '') +
+            '<div class="cmt-new"><textarea id="lnc-' + refIdx + '" placeholder="Comment on ' + escAttr(r.label) + '\u2026"></textarea>' +
+            '<button class="btn" onclick="postLineComment(' + refIdx + ')">Post</button></div></td></tr>';
+        }
       });
       html += '<tr class="addline"><td colspan="3">' +
         '<input type="text" placeholder="Add a line to ' + escAttr(d.key) + '\u2026" data-adddiv="' + escAttr(d.key) + '">' +
@@ -1369,6 +1384,39 @@ function deleteCmt(id){
   enqueueSave(async () => {
     await graphDelete(SP_LISTS + '/CORE_Budget_Comments/items/' + id);
   });
+}
+function toggleLineThread(refIdx){
+  const ref = wb._lineRefs[refIdx];
+  if(!ref) return;
+  if(wb.openLineThreads.has(ref.threadKey)) wb.openLineThreads.delete(ref.threadKey);
+  else wb.openLineThreads.add(ref.threadKey);
+  renderWorkbook();
+}
+async function postLineComment(refIdx){
+  const ref = wb._lineRefs[refIdx];
+  const ta = document.getElementById('lnc-' + refIdx);
+  const body = (ta && ta.value.trim()) || '';
+  if(!body || !ref || !wb) return;
+  const nowIso = new Date().toISOString();
+  try{
+    if(!ref.spItemId){
+      // Materialize the line so the comment has something to attach to
+      const made = await graphPost(SP_LISTS + '/CORE_Budget_Lines/items', { fields: {
+        Title: ref.label, ProjectKey: wb.proj, CostCode: ref.divKey, LineType:'ScopeLine',
+        BudgetAmount: 0, EstimateAmount: 0, SortOrder: 500, Source: ref.src, Active: true }});
+      ref.spItemId = made.id;
+      const row = wb.scopeRows.find(r => !r.spItemId && r.divKey === ref.divKey && normName(r.label) === normName(ref.label));
+      if(row) row.spItemId = made.id;
+      else wb.scopeRows.push({ spItemId: made.id, divKey: ref.divKey, label: ref.label, budgetC: 0, source: ref.src, sortOrder: 500 });
+    }
+    const made = await graphPost(SP_LISTS + '/CORE_Budget_Comments/items', { fields: {
+      Title: body.slice(0,60), ProjectKey: wb.proj, CostCode: ref.divKey, LineId: String(ref.spItemId),
+      CommentType:'Budgeting', AuthorName: currentUser, AuthorEmail: currentUserEmail,
+      CommentDate: nowIso, Body: body, SourceGuid:'', SourceCell:'', SourceTab:'', ParentGuid:'' }});
+    wb.comments.push({ spItemId: made.id, type:'Budgeting', code: ref.divKey, lineId: String(ref.spItemId),
+      author: currentUser, authorEmail: currentUserEmail, when: nowIso, body, cell:'', sourceGuid:'' });
+    renderWorkbook();
+  }catch(e){ setStatus('wbStatus','Comment failed: ' + e.message,'err'); }
 }
 function toggleThread(divKey){
   if(wb.openThreads.has(divKey)) wb.openThreads.delete(divKey); else wb.openThreads.add(divKey);
