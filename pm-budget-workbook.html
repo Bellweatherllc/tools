@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" sizes="any" href="https://bellweatherllc.github.io/tools/logos/favicon.svg">
-<title>PM Budget Workbook — CORE v14</title>
+<title>PM Budget Workbook — CORE v15</title>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -141,6 +141,8 @@ tr.subtotal td{font-weight:700;background:var(--bg);border-top:1px solid var(--b
 .save-flash{font-size:9px;color:var(--ok);margin-left:6px;opacity:0;transition:opacity .2s;}
 .save-flash.show{opacity:1;}
 .wb-sticky{position:sticky;top:38px;z-index:60;background:var(--surface);margin:0 -20px;padding:2px 20px 6px;border-bottom:1px solid var(--border);box-shadow:0 4px 10px rgba(0,0,0,.05);}
+.wb-reimport{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-sec);padding:3px 10px;cursor:pointer;margin-bottom:8px;}
+.wb-reimport:hover{border-color:var(--navy);color:var(--navy);}
 .wb-back{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--navy);cursor:pointer;background:var(--gold);border:none;border-radius:4px;padding:5px 14px;margin-bottom:12px;}
 .wb-back:hover{background:var(--gold-light);}
 .est-note-block{margin-bottom:14px;}
@@ -163,7 +165,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
     <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">PM Budget Workbook</div>
     <div class="auth-subtitle">Bellweather CORE</div>
-    <div class="auth-version" id="authVersionBadge">v14</div>
+    <div class="auth-version" id="authVersionBadge">v15</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -172,7 +174,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
 <header class="app-header">
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <span class="hdr-title">PM Budget Workbook</span>
-  <span class="hdr-badge" id="versionBadge">v14</span>
+  <span class="hdr-badge" id="versionBadge">v15</span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
   <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
@@ -230,6 +232,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
     <div class="wb-sticky">
       <h2 id="wbTitle">Budget Workbook</h2>
       <div class="sub" id="wbMeta"></div>
+      <button class="wb-reimport hidden" id="btnReimport" onclick="startReimport()">Change estimate / tab</button>
       <div id="wbDrift"></div>
       <div class="wb-summary" id="wbSummary"></div>
       <div class="wb-fin" id="wbFin"></div>
@@ -249,9 +252,10 @@ table.diff td.num{text-align:right;white-space:nowrap;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v14';
+const CORE_VERSION = 'v15';
 
 const BUDGET_CHANGELOG = [
+  { v:'v15', date:'2026-08-14', notes:'Picked the wrong tab? Admins now have a Change estimate / tab action in the workbook header. It reopens setup against the same file, and re-creating cleans up after the mistake: estimate figures move to the correct tab, and comments synced from the wrong worksheet are removed. PM budget lines and budgeting comments are never touched.' },
   { v:'v14', date:'2026-08-14', notes:'One screen instead of three. Pick a project: its budget opens, or — if it has none — a setup card appears with the estimate link already filled in from the Pipeline. Sale price prefills from the Pipeline too, and EST, DA, and CA document links now sit in the financial strip for quick reference.' },
   { v:'v13', date:'2026-08-14', notes:'The top of the Budget Workbook — title, totals, and financial settings — now stays pinned while you scroll the budget. Comments are no longer boxes: they read as quiet italic text, amber for Estimating and blue for Budgeting, so the two kinds stay distinct without breaking the flow of the numbers.' },
   { v:'v12', date:'2026-08-14', notes:'Summary tiles at the top are smaller and always fit on one row. Comment pills are indented on the left and now stop before the number column so amounts stay in a clean line.' },
@@ -768,6 +772,7 @@ function toggleSpecs(forceShow){
 /* ---------- Snapshot & setup ---------- */
 let existingConfig = null; // { spItemId, fields } for selected project, if any
 let setupState = null;     // { meta, url, parsed } during setup-card flow
+let reimportMode = false;  // true when redoing tab/file choice for an existing budget
 
 async function onProjectChanged(){
   const proj = document.getElementById('projectSelect').value;
@@ -789,17 +794,28 @@ async function onProjectChanged(){
   }catch(e){ setStatus('importStatus','Could not check budgets: ' + e.message,'err'); }
 }
 
-function showSetupCard(proj){
+function showSetupCard(proj, redo){
   setupState = null;
+  reimportMode = !!redo;
   document.getElementById('setupCardPanel').classList.remove('hidden');
-  document.getElementById('scTitle').textContent = 'Set up budget \u2014 ' + proj;
+  document.getElementById('scTitle').textContent = (redo ? 'Re-import estimate \u2014 ' : 'Set up budget \u2014 ') + proj;
   const pmeta = PROJ_META[proj] || {};
-  document.getElementById('scUrl').value = pmeta.estUrl || '';
+  const cfgUrl = redo && existingConfig ? (existingConfig.fields.EstimateFileUrl || '') : '';
+  document.getElementById('scUrl').value = cfgUrl || pmeta.estUrl || '';
   document.getElementById('scTab').classList.add('hidden');
   document.getElementById('scCreate').classList.add('hidden');
-  setStatus('scStatus', pmeta.estUrl ?
-    'Estimate link found on the Pipeline.' :
-    'No estimate link on the Pipeline for this project \u2014 paste one above.', pmeta.estUrl ? 'ok' : 'warn');
+  if(redo){
+    setStatus('scStatus','Load the file, pick the correct tab, and re-create. Estimate figures and comments will follow the new tab; PM budget lines and budgeting comments are untouched.', 'warn');
+  }else{
+    setStatus('scStatus', document.getElementById('scUrl').value ?
+      'Estimate link found on the Pipeline.' :
+      'No estimate link on the Pipeline for this project \u2014 paste one above.', document.getElementById('scUrl').value ? 'ok' : 'warn');
+  }
+}
+function startReimport(){
+  if(!wb || !isBudgetAdmin) return;
+  document.getElementById('wbPanel').classList.add('hidden');
+  showSetupCard(wb.proj, true);
 }
 
 async function setupLoad(){
@@ -843,9 +859,14 @@ async function setupCreate(){
     const model = buildEstimateModel(cells, sheet.comments, setupState.parsed.persons);
     const r = await syncSnapshotCore(proj, model, tabName,
       { name: setupState.meta.name, lastModified: setupState.meta.lastModifiedDateTime },
-      setupState.url, null, say);
+      setupState.url, existingConfig, say);
     existingConfig = r.cfg;
-    say('Budget created \u2014 opening\u2026','ok');
+    const wasRedo = reimportMode;
+    if(wasRedo){
+      await cleanupAfterReimport(proj, model, tabName, say);
+      reimportMode = false;
+    }
+    say('Budget ' + (wasRedo ? 'updated' : 'created') + ' \u2014 opening\u2026','ok');
     document.getElementById('setupCardPanel').classList.add('hidden');
     openWorkbook(proj);
   }catch(e){
@@ -854,6 +875,25 @@ async function setupCreate(){
   }finally{ btn.disabled = false; }
 }
 
+async function cleanupAfterReimport(proj, model, tabName, say){
+  const validCodes = new Set(model.codes.filter(c => c.code !== 'TOTAL').map(c => c.code));
+  say('Cleaning up lines from the previous tab\u2026');
+  const lines = await fetchAllItems('CORE_Budget_Lines');
+  for(const it of lines){
+    const f = it.fields || {};
+    if(f.ProjectKey === proj && f.LineType === 'Division' && !validCodes.has(f.CostCode)){
+      await graphDelete(SP_LISTS + '/CORE_Budget_Lines/items/' + it.id);
+    }
+  }
+  say('Cleaning up comments from the previous tab\u2026');
+  const cmts = await fetchAllItems('CORE_Budget_Comments');
+  for(const it of cmts){
+    const f = it.fields || {};
+    if(f.ProjectKey === proj && f.CommentType === 'Estimating' && f.SourceTab && f.SourceTab !== tabName){
+      await graphDelete(SP_LISTS + '/CORE_Budget_Comments/items/' + it.id);
+    }
+  }
+}
 async function syncSnapshotCore(proj, model, tabName, fileMeta, fileUrl, cfgRef, say){
   const h = model.header;
   const nowIso = new Date().toISOString();
@@ -1125,6 +1165,7 @@ function renderWorkbook(){
     ? (document.activeElement.dataset.line || document.activeElement.dataset.adddiv || document.activeElement.dataset.cfg || null) : null;
   const k = calcChain();
   const f = (wb.cfg && wb.cfg.fields) || {};
+  document.getElementById('btnReimport').classList.toggle('hidden', !isBudgetAdmin);
   document.getElementById('wbMeta').textContent =
     'Estimate snapshot: tab "' + (f.EstimateTab || '?') + '" of ' + (f.EstimateFileName || '?') +
     ', taken ' + fmtDate(f.SnapshotDate) + '. ' + (isBudgetAdmin ? 'Admin mode — financials editable.' :
