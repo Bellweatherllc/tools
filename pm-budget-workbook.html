@@ -165,7 +165,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
     <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">PM Budget Workbook</div>
     <div class="auth-subtitle">Bellweather CORE</div>
-    <div class="auth-version" id="authVersionBadge">v16</div>
+    <div class="auth-version" id="authVersionBadge">v18</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -174,7 +174,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
 <header class="app-header">
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <span class="hdr-title">PM Budget Workbook</span>
-  <span class="hdr-badge" id="versionBadge">v16</span>
+  <span class="hdr-badge" id="versionBadge">v18</span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
   <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
@@ -252,9 +252,11 @@ table.diff td.num{text-align:right;white-space:nowrap;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v16';
+const CORE_VERSION = 'v18';
 
 const BUDGET_CHANGELOG = [
+  { v:'v18', date:'2026-08-14', notes:'The Pipeline is now the single authority on sale price. The workbook reads it fresh every time a project opens, displays it read-only for everyone, and every calculation uses it. To change a sale price, change it in the Pipeline. If a project has no value there, the workbook says so and links you to the Pipeline to set it.' },
+  { v:'v17', date:'2026-08-14', notes:'Fixed sale price not pulling from the Pipeline. The Pipeline sometimes stores project value as formatted text (like \"$750,000\") rather than a number; the workbook now reads both forms.' },
   { v:'v16', date:'2026-08-14', notes:'Browser tab now reads simply PM Budget Workbook — no version number or CORE in the title.' },
   { v:'v15', date:'2026-08-14', notes:'Picked the wrong tab? Admins now have a Change estimate / tab action in the workbook header. It reopens setup against the same file, and re-creating cleans up after the mistake: estimate figures move to the correct tab, and comments synced from the wrong worksheet are removed. PM budget lines and budgeting comments are never touched.' },
   { v:'v14', date:'2026-08-14', notes:'One screen instead of three. Pick a project: its budget opens, or — if it has none — a setup card appears with the estimate link already filled in from the Pipeline. Sale price prefills from the Pipeline too, and EST, DA, and CA document links now sit in the financial strip for quick reference.' },
@@ -286,6 +288,11 @@ const SP_SITE  = 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.
 let msalApp = null, accessToken = '', currentUser = '', currentUserEmail = '';
 const PROJ_META = {};
 function urlOf(v){ return typeof v === 'string' ? v : (v && v.Url) || ''; }
+function parsePipelineValue(v){
+  if(v === null || v === undefined || v === '') return null;
+  const n = Number(String(v).replace(/[^0-9.]/g, ''));
+  return (isFinite(n) && n > 0) ? n : null;
+}
 
 window.addEventListener('DOMContentLoaded', initAuth);
 
@@ -386,9 +393,9 @@ async function loadProjects(){
     let items = (pd.value || []).map(it => {
       const f = it.fields || {};
       const rec = { spItemId: it.id, title: f.Title || '(untitled)', stage: f.PipelineStage || '' };
-      PROJ_META[rec.title] = { stage: rec.stage,
+      PROJ_META[rec.title] = { spItemId: it.id, stage: rec.stage,
         estUrl: urlOf(f.EstimateUrl), daUrl: urlOf(f.DAUrl), caUrl: urlOf(f.CAUrl),
-        saleVal: (typeof f.EstimatedProjectValue === 'number' ? f.EstimatedProjectValue : null) };
+        saleVal: parsePipelineValue(f.EstimatedProjectValue) };
       return rec;
     });
     const ACTIVE_STAGES = ['CA Signed','DA Signed','Paused'];
@@ -1048,6 +1055,17 @@ async function openWorkbook(proj){
   document.getElementById('wbTitle').textContent = 'Budget Workbook — ' + proj;
   setStatus('wbStatus','Loading budget data\u2026');
   try{
+    const pmeta0 = PROJ_META[proj];
+    if(pmeta0 && pmeta0.spItemId){
+      try{
+        const it = await graphGet(SP_LISTS + '/CORE_Projects/items/' + pmeta0.spItemId + '?$expand=fields&$select=id,fields');
+        const f0 = it.fields || {};
+        pmeta0.saleVal = parsePipelineValue(f0.EstimatedProjectValue);
+        pmeta0.estUrl = urlOf(f0.EstimateUrl);
+        pmeta0.daUrl = urlOf(f0.DAUrl);
+        pmeta0.caUrl = urlOf(f0.CAUrl);
+      }catch(e){ console.warn('[pipeline refresh]', e.message); }
+    }
     const [lines, cmts] = await Promise.all([fetchAllItems('CORE_Budget_Lines'), fetchAllItems('CORE_Budget_Comments')]);
     const myLines = lines.filter(it => it.fields && it.fields.ProjectKey === proj);
     const estByCode = {};
@@ -1073,11 +1091,6 @@ async function openWorkbook(proj){
     TEMPLATE.forEach(g => { firstDivOf['GRP-' + g.code] = g.divisions[0].key; });
     comments.forEach(cm => { if(firstDivOf[cm.code]) cm.code = firstDivOf[cm.code]; });
     wb = { proj, cfg: existingConfig, estByCode, scopeRows, comments, unmappedEst, addingCmt: null, editingCmt: null };
-    const pmeta = PROJ_META[proj] || {};
-    if((wb.cfg.fields.ContractSalePrice == null || wb.cfg.fields.ContractSalePrice === '') && pmeta.saleVal){
-      wb.cfg.fields.ContractSalePrice = pmeta.saleVal;
-      wb._saleFromPipeline = true;
-    }
     renderWorkbook();
     setStatus('wbStatus','');
     checkDrift();
@@ -1100,7 +1113,7 @@ function enqueueSave(fn){
 /* --- calc --- */
 function calcChain(){
   const f = (wb.cfg && wb.cfg.fields) || {};
-  const saleC = cents(f.ContractSalePrice);
+  const saleC = cents((PROJ_META[wb.proj] || {}).saleVal);
   const markup = parseFloat(f.ContractMarkupPct);
   const mk = isFinite(markup) ? markup : (parseFloat(f.MarkupPct) || 0);
   const selC = cents(f.SelectionsAmount), allowC = cents(f.UnresolvedAllowance), ddC = cents(f.DDCogs);
@@ -1183,13 +1196,20 @@ function renderWorkbook(){
 
   const estSel = wb.estByCode[SELECTIONS_EST_CODE];
   const finFields = [
-    ['ContractSalePrice','Sale Price', f.ContractSalePrice, (wb._saleFromPipeline ? 'from Pipeline \u00B7 ' : '') + 'estimate: ' + money(f.SalePrice)],
     ['ContractMarkupPct','Markup', f.ContractMarkupPct, 'estimate: ' + (f.MarkupPct ?? '\u2014')],
     ['SelectionsAmount','Selections', f.SelectionsAmount, estSel ? 'estimate 5100: ' + moneyC(estSel.amountC) : ''],
     ['UnresolvedAllowance','Unresolved Allowance', f.UnresolvedAllowance, ''],
     ['DDCogs','DESIGN COGS', f.DDCogs, ''],
   ];
-  document.getElementById('wbFin').innerHTML = finFields.map(ff =>
+  const pmetaR = PROJ_META[wb.proj] || {};
+  const saleCell = '<div class="fin-cell"><label>Sale Price</label>' +
+    '<div style="font-size:11.5px;font-weight:700;color:var(--navy);padding-top:5px;">' +
+    (pmetaR.saleVal ? moneyC(cents(pmetaR.saleVal)) : '\u2014') + '</div>' +
+    '<div class="fin-ref">' + (pmetaR.saleVal
+      ? 'from Pipeline \u00B7 authoritative'
+      : '<a href="https://bellweatherllc.github.io/tools/project-pipeline.html" target="_blank" rel="noopener">set in Pipeline</a>') +
+    (f.SalePrice != null ? ' \u00B7 estimate: ' + money(f.SalePrice) : '') + '</div></div>';
+  document.getElementById('wbFin').innerHTML = saleCell + finFields.map(ff =>
     '<div class="fin-cell"><label>' + ff[1] + '</label>' +
     '<input type="text" data-cfg="' + ff[0] + '" value="' + (ff[2] ?? '') + '"' +
     (isBudgetAdmin ? '' : ' disabled') + ' oninput="cfgInput(this)" onblur="saveCfgField(this)">' +
