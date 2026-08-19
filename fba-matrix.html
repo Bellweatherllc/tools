@@ -236,6 +236,12 @@
   .handbook-sop-admin-controls{display:flex;gap:16px;margin-top:7px;padding-left:2px;font-size:12px;color:var(--ink-secondary);flex-wrap:wrap;}
   .handbook-sop-admin-controls label{display:flex;align-items:center;gap:6px;}
   .handbook-sop-admin-controls input, .handbook-sop-admin-controls select{font-family:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;}
+  .handbook-sop-extra{display:flex;flex-direction:column;gap:6px;margin-top:6px;padding-left:2px;}
+  .sop-link-row{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink-secondary);}
+  .sop-link-row label{display:flex;align-items:center;gap:6px;}
+  .sop-link-row input{font-family:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;min-width:220px;}
+  .sop-detail-edit{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-secondary);}
+  .sop-detail-edit textarea{font-family:inherit;font-size:12px;padding:5px 6px;border:1px solid var(--border);border-radius:4px;resize:vertical;min-height:46px;width:100%;box-sizing:border-box;}
   .sop-delete-btn{margin-left:auto;flex:0 0 auto;border:none;background:none;color:var(--ink-muted);cursor:pointer;font-size:13px;padding:2px 6px;}
   .step-delete-btn{font-family:inherit;font-size:11.5px;font-weight:600;color:#a12626;background:none;border:1px solid #f0b7b7;border-radius:100px;padding:5px 11px;cursor:pointer;margin-top:4px;align-self:flex-start;}
   .step-delete-btn:hover{background:var(--critical-bg);}
@@ -394,7 +400,7 @@
 // can tell which build they're looking at (e.g. after a GitHub Pages re-upload).
 // This script tag runs after #version-tag already exists in the DOM, so no need
 // to wait for DOMContentLoaded (which may have already fired by this point anyway).
-const CORE_VERSION = 1;
+const CORE_VERSION = 2;
 document.getElementById("version-tag").textContent = "v" + CORE_VERSION;
 
 const STATUS_LABEL = {good:"FBA Achieved", warning:"In Progress", critical:"Not Started"};
@@ -422,6 +428,9 @@ const SITE_PATH = "bellweather.sharepoint.com:/sites/BWCore";
 const LIST_NAME_STEPS = "FBA-Significant Steps";
 const LIST_NAME_SOPS = "FBA-SOPs";
 const CP_ORDER = ["Leadership","Marketing","Sales","Design","Logistics & Pre-Construction","Project Management","Production","Operations"];
+// Accounts allowed to use Admin mode (create/edit/delete). Only Joey is on this list by
+// default — ask him to confirm or expand it before wider rollout.
+const ADMIN_EMAILS = ["joey@bellweatherllc.com"];
 
 // ---------------- state ----------------
 let adminMode = false;
@@ -435,7 +444,11 @@ function today(){ return new Date(); }
 function daysBetween(a, b){ return Math.round((b - a) / 86400000); }
 
 function reviewStatusOf(sop){
-  if (!sop.doc || !sop.lastReviewed) return "none";
+  if (!sop.doc) return "none";
+  // Some SOPs are static enough that they don't need a recurring review cadence —
+  // Documented alone counts as FBA for these, skipping the Last Reviewed/Cadence check.
+  if (sop.noReview) return "current";
+  if (!sop.lastReviewed) return "none";
   const last = new Date(sop.lastReviewed + "T00:00:00");
   const due = new Date(last.getTime() + sop.cadenceDays * 86400000);
   const daysUntilDue = daysBetween(today(), due);
@@ -739,7 +752,7 @@ function renderHandbookSopRow(step, sop){
     ? `<a class="handbook-link" href="${link.Url}" target="_blank" rel="noopener">${hl(sop.name)}</a><span class="link-icon" title="${escapeAttr(link.Description || 'Linked document')}">🔗</span>`
     : hl(sop.name);
   const detailHtml = sop.detail && sop.detail.length
-    ? `<ul class="handbook-sublist">${sop.detail.map(d => `<li>${d}</li>`).join("")}</ul>`
+    ? `<ul class="handbook-sublist">${sop.detail.map(d => `<li>${escapeHtml(d)}</li>`).join("")}</ul>`
     : "";
   const status = reviewStatusOf(sop);
   // IMPORTANT: escaped, because real SOP names contain literal quote characters
@@ -760,6 +773,7 @@ function renderHandbookSopRow(step, sop){
   }
 
   const dis = WRITE_ENABLED ? "" : "disabled";
+  const noReview = !!sop.noReview;
   const cadenceSelect = `<select data-cadence="${key}" ${dis}>${CADENCE_OPTIONS.map(c => `<option value="${c.days}" ${c.days===sop.cadenceDays?"selected":""}>${c.label}</option>`).join("")}</select>`;
 
   return `
@@ -771,11 +785,22 @@ function renderHandbookSopRow(step, sop){
         ${WRITE_ENABLED ? `<button type="button" class="sop-delete-btn" data-delete="${key}" title="Remove SOP">✕ Remove</button>` : ""}
       </div>
       <div class="handbook-sop-admin-controls">
+        <label><input type="checkbox" data-noreview="${key}" ${noReview ? "checked" : ""} ${dis}> No recurring review needed — Documented alone counts as FBA</label>
+        ${!noReview ? `
         <label>Last reviewed <input type="date" value="${sop.lastReviewed || ""}" data-date="${key}" ${dis}></label>
-        <label>Cadence ${cadenceSelect}</label>
+        <label>Cadence ${cadenceSelect}</label>` : ""}
         ${!WRITE_ENABLED ? `<span class="disabled-note">Read-only preview — editing lands in the next phase</span>` : ""}
       </div>
-      ${detailHtml}
+      ${WRITE_ENABLED ? `
+      <div class="handbook-sop-extra">
+        <div class="sop-link-row" data-linkkey="${key}">
+          <label>Doc link <input type="url" placeholder="https://…" value="${escapeAttr(link && link.Url ? link.Url : "")}" data-linkurl></label>
+          <label>Link label <input type="text" placeholder="Link label" value="${escapeAttr(link && link.Description ? link.Description : "")}" data-linklabel></label>
+        </div>
+        <label class="sop-detail-edit">Detail bullets (one per line)
+          <textarea data-detail="${key}" rows="3" placeholder="One bullet per line…">${escapeHtml((sop.detail || []).join("\n"))}</textarea>
+        </label>
+      </div>` : detailHtml}
     </div>`;
 }
 
@@ -977,6 +1002,65 @@ function wireHandbookAdminControls(){
       }
     });
   });
+  document.querySelectorAll("#handbook-groups [data-noreview]").forEach(el => {
+    el.addEventListener("change", async (e) => {
+      const {sop} = findStepAndSop(e.target.dataset.noreview);
+      if (!sop) return;
+      el.disabled = true;
+      try {
+        await updateSopField(sop, "noReview", e.target.checked);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't save review setting: ${err.message}`);
+        renderHandbook();
+      }
+    });
+  });
+  document.querySelectorAll("#handbook-groups [data-detail]").forEach(el => {
+    el.addEventListener("change", async (e) => {
+      const {sop} = findStepAndSop(e.target.dataset.detail);
+      if (!sop) return;
+      el.disabled = true;
+      try {
+        await updateSopField(sop, "detail", e.target.value);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't save Detail bullets: ${err.message}`);
+        renderHandbook();
+      }
+    });
+  });
+  document.querySelectorAll("#handbook-groups .sop-link-row").forEach(container => {
+    // Read the key straight off the container's dataset (already-decoded string) rather than
+    // building a new querySelector from it — avoids reintroducing the quote-escaping bug class
+    // that broke Cadence/LastReviewed/Remove earlier (SOP names can contain literal quotes).
+    const key = container.dataset.linkkey;
+    const urlInput = container.querySelector("[data-linkurl]");
+    const labelInput = container.querySelector("[data-linklabel]");
+    const save = async () => {
+      const {sop} = findStepAndSop(key);
+      if (!sop) return;
+      const url = urlInput.value.trim();
+      const label = labelInput.value.trim();
+      urlInput.disabled = true; labelInput.disabled = true;
+      try {
+        await updateSopField(sop, "linkUrl", url ? { Url: url, Description: label || url } : null);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't save document link: ${err.message}`);
+        renderHandbook();
+      }
+    };
+    // Save once when focus leaves BOTH fields, not on each field's individual "change" —
+    // tabbing from the URL field into the Label field blurs the URL field and would otherwise
+    // fire a premature save (with the Label edit not yet made), then re-render mid-edit and
+    // wipe out whatever was being typed into Label. focusout + relatedTarget lets Tab/click
+    // between the two sibling fields pass through without saving early.
+    container.addEventListener("focusout", (e) => {
+      if (container.contains(e.relatedTarget)) return;
+      save();
+    });
+  });
   document.querySelectorAll("#handbook-groups [data-delete]").forEach(el => {
     el.addEventListener("click", async (e) => {
       const {step, sop} = findStepAndSop(e.target.dataset.delete);
@@ -1024,6 +1108,23 @@ function wireHandbookAdminControls(){
       }
     });
   });
+  // Enter key in the "add" text inputs triggers the adjacent button, same as clicking it.
+  document.querySelectorAll("#handbook-groups [data-addinput]").forEach(el => {
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const btn = document.querySelector(`[data-addbtn="${el.dataset.addinput}"]`);
+      if (btn) btn.click();
+    });
+  });
+  document.querySelectorAll("#handbook-groups [data-addstepinput]").forEach(el => {
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const btn = document.querySelector(`[data-addstepbtn="${el.dataset.addstepinput}"]`);
+      if (btn) btn.click();
+    });
+  });
   document.querySelectorAll("#handbook-groups [data-deletestep]").forEach(el => {
     el.addEventListener("click", async (e) => {
       const step = STEPS[+e.target.dataset.deletestep];
@@ -1063,7 +1164,26 @@ document.querySelectorAll(".tab").forEach(tab => {
 });
 
 // ---------------- viewer / admin toggle ----------------
+function isAdminUser(){
+  if (!graphAccount || !graphAccount.username) return false;
+  const email = graphAccount.username.toLowerCase();
+  return ADMIN_EMAILS.some(e => e.toLowerCase() === email);
+}
+
+// Call this after every successful sign-in — hides the Admin toggle entirely for accounts
+// not on ADMIN_EMAILS, and drops back to Viewer mode if a now-disallowed account was in it.
+function applyAdminGate(){
+  const btn = document.getElementById("admin-btn");
+  const allowed = isAdminUser();
+  btn.style.display = allowed ? "" : "none";
+  if (!allowed && adminMode) setAdmin(false);
+}
+
 function setAdmin(on){
+  if (on && !isAdminUser()) {
+    toast("error", "Admin access is limited to specific accounts.");
+    return;
+  }
   adminMode = on;
   document.getElementById("viewer-btn").classList.toggle("active", !on);
   document.getElementById("admin-btn").classList.toggle("active", on);
@@ -1226,6 +1346,25 @@ function sopFieldsUrl(sop){
 }
 
 async function updateSopField(sop, field, value){
+  if (field === "detail") {
+    // value is the raw multiline textarea string — split into trimmed, non-empty bullet lines.
+    const lines = String(value || "").split("\n").map(s => s.trim()).filter(Boolean);
+    await graphWrite("PATCH", sopFieldsUrl(sop), { Detail: lines.length ? lines.join("\n") : null });
+    sop.detail = lines.length ? lines : undefined;
+    return;
+  }
+  if (field === "linkUrl") {
+    // value is either null or a {Url, Description} object, matching the Graph Hyperlink column shape.
+    await graphWrite("PATCH", sopFieldsUrl(sop), { LinkURL: value });
+    sop.linkUrl = value;
+    return;
+  }
+  if (field === "noReview") {
+    // Requires a "NoRecurringReview" Yes/No column on the FBA-SOPs list — see PROJECT_HANDOFF.
+    await graphWrite("PATCH", sopFieldsUrl(sop), { NoRecurringReview: value });
+    sop.noReview = value;
+    return;
+  }
   let graphBody;
   if (field === "doc") graphBody = { Documented: value };
   else if (field === "lastReviewed") graphBody = { LastReviewed: value ? value + "T00:00:00Z" : null };
@@ -1239,7 +1378,7 @@ async function createSop(step, name){
   const item = await graphWrite("POST", `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SOPS_LIST_ID}/items`, {
     fields: { Title: name, SignificantStepLookupId: step.realId, Documented: false, Cadence: "Quarterly" },
   });
-  const sop = { realId: item.id, name, doc: false, lastReviewed: null, cadenceDays: 90, detail: undefined, linkUrl: null };
+  const sop = { realId: item.id, name, doc: false, lastReviewed: null, cadenceDays: 90, detail: undefined, linkUrl: null, noReview: false };
   step.sops.push(sop);
   return sop;
 }
@@ -1298,6 +1437,7 @@ async function loadDataFromGraph(token){
       cadenceDays: cadenceDaysFromLabel(f.Cadence),
       detail: f.Detail ? f.Detail.split("\n").map(s => s.trim()).filter(Boolean) : undefined,
       linkUrl: f.LinkURL || null,
+      noReview: !!f.NoRecurringReview,
     });
   });
   if (unmatchedSops) console.warn(`${unmatchedSops} SOP item(s) in "${LIST_NAME_SOPS}" didn't match a Significant Step — check the SignificantStep lookup column on those rows.`);
@@ -1342,6 +1482,7 @@ async function signIn(){
     document.getElementById("signin-btn").style.display = "none";
     document.getElementById("signout-btn").style.display = "inline";
     showSignedInTooltip(graphAccount);
+    applyAdminGate();
     const token = await acquireGraphToken();
     await loadDataFromGraph(token);
   } catch (e) {
@@ -1355,6 +1496,8 @@ async function signIn(){
 function signOut(){
   const account = graphAccount;
   graphAccount = null;
+  adminMode = false;
+  document.getElementById("admin-btn").style.display = "none";
   document.getElementById("signin-btn").style.display = "inline-block";
   document.getElementById("signout-btn").style.display = "none";
   document.getElementById("app-content").style.display = "none";
@@ -1380,6 +1523,7 @@ document.getElementById("signout-btn").addEventListener("click", signOut);
       document.getElementById("signin-btn").style.display = "none";
       document.getElementById("signout-btn").style.display = "inline";
       showSignedInTooltip(graphAccount);
+      applyAdminGate();
       const token = await acquireGraphToken();
       await loadDataFromGraph(token);
     }
