@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Core Process FBA Matrix — Live Preview</title>
+<title>Core Process FBA Matrix</title>
 <style>
   :root{
     /* Bellweather brand palette */
@@ -64,6 +64,12 @@
   .gate h2{color:var(--ink);font-size:18px;margin-bottom:8px;}
   .gate-error{background:var(--critical-bg);color:#a12626;border:1px solid #f0b7b7;border-radius:6px;padding:12px 16px;margin:16px auto 0;max-width:640px;text-align:left;font-size:13px;font-family:monospace;white-space:pre-wrap;}
   .disabled-note{font-size:10.5px;color:var(--ink-muted);font-style:italic;}
+  #toast{position:fixed;bottom:20px;right:20px;max-width:420px;background:var(--limestone);color:#fff;
+    padding:12px 16px;border-radius:8px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.25);
+    opacity:0;transform:translateY(8px);transition:opacity .2s ease,transform .2s ease;pointer-events:none;z-index:9999;}
+  #toast.show{opacity:1;transform:translateY(0);}
+  #toast.error{background:#a12626;}
+  #toast.success{background:#0a6b0a;}
   .search-box input{font-family:inherit;font-size:13px;padding:7px 12px;border:1px solid var(--border);border-radius:100px;width:220px;background:var(--surface);color:var(--ink);}
   .search-box input:focus{outline:2px solid var(--accent);outline-offset:1px;}
   .view-toggle{display:flex;border:1px solid var(--border);border-radius:100px;overflow:hidden;}
@@ -261,11 +267,11 @@
   <header class="page">
     <div>
       <div class="brand-word">Bellweather Design-Build</div>
-      <h1>Core Process FBA Matrix — Live Preview</h1>
+      <h1>Core Process FBA Matrix</h1>
       <p class="sub">Documenting and tracking “Followed By All” for our Significant Steps</p>
     </div>
     <div class="header-controls no-print">
-      <div class="version-tag">Live data · read-only preview</div>
+      <div class="version-tag">Live · connected to SharePoint</div>
       <div class="conn-status"><span class="conn-dot" id="conn-dot"></span><span id="conn-text">Not connected</span></div>
       <button type="button" id="signin-btn" class="signin-btn">Sign in with Microsoft</button>
       <button type="button" id="signout-btn" class="signout-link" style="display:none;">Sign out</button>
@@ -279,11 +285,11 @@
   </header>
 
   <div class="admin-banner no-print" id="admin-banner" style="display:none;">
-    Admin view — this build is read-only. The controls below show what will be editable once write-back to SharePoint is wired up in the next phase; nothing you change here saves.
+    Admin view — changes here save immediately, straight to the live BWCore SharePoint lists. Add a Significant Step under any Core Process below, then add its SOPs and fill in Accountable/Responsible/Purpose/Documented/Last Reviewed/Cadence.
   </div>
 
   <div class="demo-banner no-print">
-    This build pulls live data straight from the <strong>BWCore</strong> SharePoint site (<code>FBA-Significant Steps</code> and <code>FBA-SOPs</code> lists) via Microsoft Graph — no placeholder data. It's read-only for now: sign in to load your real data and check that everything maps correctly. Editing/write-back is the next phase.
+    This tool reads and writes the live <strong>BWCore</strong> SharePoint site (<code>FBA-Significant Steps</code> and <code>FBA-SOPs</code> lists) via Microsoft Graph — no placeholder data, no local-only state. Sign in, switch to Admin, and do all your data entry right here; it saves straight back to SharePoint.
   </div>
 
   <div class="gate no-print" id="gate">
@@ -376,7 +382,7 @@
   </div>
   </div><!-- /app-content -->
 
-  <footer class="note no-print">Live preview · read-only · connected to BWCore SharePoint via Microsoft Graph</footer>
+  <footer class="note no-print">Connected to BWCore SharePoint via Microsoft Graph — changes in Admin mode save immediately</footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js" crossorigin="anonymous"></script>
@@ -390,7 +396,7 @@ const CADENCE_OPTIONS = [
 ];
 
 let STEPS = [];
-const WRITE_ENABLED = false; // phase 1: read-only. Flip on once write-back to Graph is built.
+const WRITE_ENABLED = true; // phase 2: live editing + Significant Step/SOP creation, writing straight to SharePoint via Graph.
 
 // ---------------- Azure AD / Graph config ----------------
 const MSAL_CONFIG = {
@@ -505,9 +511,16 @@ function buildRow(item, opts){
   });
   const promoteBtn = row.querySelector("[data-promote]");
   if (promoteBtn) {
-    promoteBtn.addEventListener("click", (e) => {
+    promoteBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      item.isFocus = true;
+      promoteBtn.disabled = true;
+      try {
+        await updateStepField(item, "isFocus", true);
+      } catch (err) {
+        toast("error", `Couldn't move to Focus: ${err.message}`);
+        promoteBtn.disabled = false;
+        return;
+      }
       renderAll();
       document.querySelector('.tab[data-tab="focus"]').click();
       requestAnimationFrame(() => {
@@ -518,9 +531,16 @@ function buildRow(item, opts){
   }
   const demoteBtn = row.querySelector("[data-demote]");
   if (demoteBtn) {
-    demoteBtn.addEventListener("click", (e) => {
+    demoteBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      item.isFocus = false;
+      demoteBtn.disabled = true;
+      try {
+        await updateStepField(item, "isFocus", false);
+      } catch (err) {
+        toast("error", `Couldn't move to Remaining: ${err.message}`);
+        demoteBtn.disabled = false;
+        return;
+      }
       renderAll();
       document.querySelector('.tab[data-tab="remaining"]').click();
       requestAnimationFrame(() => {
@@ -796,17 +816,30 @@ function renderStepEditPanel(step){
 let openCPs = new Set();
 let openSSteps = new Set();
 
+function buildAddStepRow(cp){
+  const wrap = document.createElement("div");
+  wrap.className = "handbook-add-row";
+  wrap.style.margin = "10px 4px 4px";
+  wrap.innerHTML = `
+    <input type="text" class="handbook-add-input" placeholder="New Significant Step name…" data-addstepinput="${escapeAttr(cp)}">
+    <button type="button" class="handbook-add-btn" data-addstepbtn="${escapeAttr(cp)}">+ Add Significant Step</button>
+  `;
+  return wrap;
+}
+
 function renderHandbook(){
   const container = document.getElementById("handbook-groups");
   container.innerHTML = "";
-  const cps = [...new Set(STEPS.map(s => s.cp))];
+  // Always render all 8 canonical Core Processes, even ones with zero Significant Steps yet —
+  // otherwise there'd be nowhere to click "+ Add Significant Step" for an empty Core Process.
+  const cps = CP_ORDER;
   cps.forEach(cp => {
     const steps = STEPS.filter(s => s.cp === cp);
     const group = document.createElement("div");
     group.className = "handbook-cp";
     const header = document.createElement("div");
     header.className = "handbook-cp-header";
-    header.innerHTML = `<span class="caret">▶</span>${hl(cp)} <span style="color:var(--ink-muted);font-weight:400;font-size:12.5px;">(${steps.length} Significant Steps)</span>`;
+    header.innerHTML = `<span class="caret">▶</span>${hl(cp)} <span style="color:var(--ink-muted);font-weight:400;font-size:12.5px;">(${steps.length} Significant Step${steps.length===1?"":"s"})</span>`;
     header.addEventListener("click", () => {
       if (openCPs.has(cp)) openCPs.delete(cp); else openCPs.add(cp);
       renderHandbook();
@@ -834,6 +867,16 @@ function renderHandbook(){
       ssWrap.appendChild(ssBody);
       body.appendChild(ssWrap);
     });
+    if (!steps.length) {
+      const empty = document.createElement("div");
+      empty.className = "handbook-empty";
+      empty.style.padding = "8px 4px";
+      empty.textContent = "No Significant Steps under this Core Process yet.";
+      body.appendChild(empty);
+    }
+    if (adminMode && WRITE_ENABLED) {
+      body.appendChild(buildAddStepRow(cp));
+    }
     group.appendChild(header);
     group.appendChild(body);
     container.appendChild(group);
@@ -850,53 +893,110 @@ function findStepAndSop(key){
 
 function wireHandbookAdminControls(){
   document.querySelectorAll("#handbook-groups [data-stepfield]").forEach(el => {
-    el.addEventListener("change", (e) => {
+    el.addEventListener("change", async (e) => {
       const step = STEPS[+e.target.dataset.step];
       if (!step) return;
       const field = e.target.dataset.stepfield;
-      if (field === "isFocus") step.isFocus = e.target.checked;
-      else step[field] = e.target.value;
-      renderAll(); renderHandbook();
+      const value = field === "isFocus" ? e.target.checked : e.target.value;
+      el.disabled = true;
+      try {
+        await updateStepField(step, field, value);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't save change: ${err.message}`);
+        renderHandbook();
+      }
     });
   });
   document.querySelectorAll("#handbook-groups [data-doc]").forEach(el => {
-    el.addEventListener("change", (e) => {
+    el.addEventListener("change", async (e) => {
       const {sop} = findStepAndSop(e.target.dataset.doc);
-      if (sop) sop.doc = e.target.checked;
-      renderAll(); renderHandbook();
+      if (!sop) return;
+      el.disabled = true;
+      try {
+        await updateSopField(sop, "doc", e.target.checked);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't save Documented: ${err.message}`);
+        renderHandbook();
+      }
     });
   });
   document.querySelectorAll("#handbook-groups [data-date]").forEach(el => {
-    el.addEventListener("change", (e) => {
+    el.addEventListener("change", async (e) => {
       const {sop} = findStepAndSop(e.target.dataset.date);
-      if (sop) sop.lastReviewed = e.target.value || null;
-      renderAll(); renderHandbook();
+      if (!sop) return;
+      el.disabled = true;
+      try {
+        await updateSopField(sop, "lastReviewed", e.target.value || null);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't save Last Reviewed date: ${err.message}`);
+        renderHandbook();
+      }
     });
   });
   document.querySelectorAll("#handbook-groups [data-cadence]").forEach(el => {
-    el.addEventListener("change", (e) => {
+    el.addEventListener("change", async (e) => {
       const {sop} = findStepAndSop(e.target.dataset.cadence);
-      if (sop) sop.cadenceDays = +e.target.value;
-      renderAll(); renderHandbook();
+      if (!sop) return;
+      el.disabled = true;
+      try {
+        await updateSopField(sop, "cadenceDays", +e.target.value);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't save Cadence: ${err.message}`);
+        renderHandbook();
+      }
     });
   });
   document.querySelectorAll("#handbook-groups [data-delete]").forEach(el => {
-    el.addEventListener("click", (e) => {
+    el.addEventListener("click", async (e) => {
       const [stepId, sopName] = e.target.dataset.delete.split("|");
       const step = STEPS[+stepId];
-      if (step) step.sops = step.sops.filter(s => s.name !== sopName);
-      renderAll(); renderHandbook();
+      const sop = step ? step.sops.find(s => s.name === sopName) : null;
+      if (!step || !sop) return;
+      el.disabled = true;
+      try {
+        await deleteSop(step, sop);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't remove SOP: ${err.message}`);
+        el.disabled = false;
+      }
     });
   });
   document.querySelectorAll("#handbook-groups [data-addbtn]").forEach(el => {
-    el.addEventListener("click", (e) => {
+    el.addEventListener("click", async (e) => {
       const stepId = e.target.dataset.addbtn;
       const input = document.querySelector(`[data-addinput="${stepId}"]`);
       const name = input.value.trim();
       if (!name) return;
       const step = STEPS[+stepId];
-      step.sops.push({name, doc:false, lastReviewed:null, cadenceDays:90});
-      renderAll(); renderHandbook();
+      el.disabled = true;
+      try {
+        await createSop(step, name);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't add SOP: ${err.message}`);
+        el.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll("#handbook-groups [data-addstepbtn]").forEach(el => {
+    el.addEventListener("click", async (e) => {
+      const cp = e.target.dataset.addstepbtn;
+      const input = document.querySelector(`[data-addstepinput="${cp}"]`);
+      const name = input.value.trim();
+      if (!name) return;
+      el.disabled = true;
+      try {
+        await createSignificantStep(cp, name);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't add Significant Step: ${err.message}`);
+        el.disabled = false;
+      }
     });
   });
 }
@@ -992,6 +1092,91 @@ function cadenceDaysFromLabel(label){
   const match = CADENCE_OPTIONS.find(c => c.label === label);
   return match ? match.days : 90;
 }
+function cadenceLabelFromDays(days){
+  const match = CADENCE_OPTIONS.find(c => c.days === days);
+  return match ? match.label : "Quarterly";
+}
+
+// ---------------- toast (per style guide: no native alert/confirm) ----------------
+let toastTimer = null;
+function toast(kind, message){
+  let el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.className = "toast show " + (kind || "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.classList.remove("show"); }, 6000);
+}
+
+let SITE_ID = null, STEPS_LIST_ID = null, SOPS_LIST_ID = null;
+
+// ---------------- Graph write helpers (create/update/delete) ----------------
+async function graphWrite(method, url, body){
+  const token = await acquireGraphToken();
+  const res = await fetch(url, {
+    method,
+    headers: Object.assign({ Authorization: `Bearer ${token}` }, body !== undefined ? { "Content-Type": "application/json" } : {}),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Graph ${method} failed (${res.status} ${res.statusText})\n${text}`);
+  }
+  if (res.status === 204) return null;
+  return res.json().catch(() => null);
+}
+
+function reassignStepIds(){ STEPS.forEach((s, i) => { s.id = i; }); }
+
+const STEP_FIELD_TO_GRAPH = { acct: "Accountable", resp: "Responsible", purpose: "Purpose", isFocus: "IsFocus" };
+
+async function updateStepField(step, field, value){
+  const graphField = STEP_FIELD_TO_GRAPH[field];
+  await graphWrite("PATCH", `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${STEPS_LIST_ID}/items/${step.realId}/fields`, { [graphField]: value });
+  step[field] = value;
+}
+
+async function createSignificantStep(cp, name){
+  const item = await graphWrite("POST", `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${STEPS_LIST_ID}/items`, {
+    fields: { Title: name, CoreProcess: cp, IsFocus: false, Accountable: "", Responsible: "", Purpose: "" },
+  });
+  const step = { realId: item.id, cp, name, isFocus: false, acct: "", resp: "", purpose: "", sops: [] };
+  STEPS.push(step);
+  reassignStepIds();
+  return step;
+}
+
+function sopFieldsUrl(sop){
+  return `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SOPS_LIST_ID}/items/${sop.realId}/fields`;
+}
+
+async function updateSopField(sop, field, value){
+  let graphBody;
+  if (field === "doc") graphBody = { Documented: value };
+  else if (field === "lastReviewed") graphBody = { LastReviewed: value ? value + "T00:00:00Z" : null };
+  else if (field === "cadenceDays") graphBody = { Cadence: cadenceLabelFromDays(value) };
+  else throw new Error(`Unknown SOP field "${field}"`);
+  await graphWrite("PATCH", sopFieldsUrl(sop), graphBody);
+  sop[field] = value;
+}
+
+async function createSop(step, name){
+  const item = await graphWrite("POST", `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SOPS_LIST_ID}/items`, {
+    fields: { Title: name, SignificantStepLookupId: step.realId, Documented: false, Cadence: "Quarterly" },
+  });
+  const sop = { realId: item.id, name, doc: false, lastReviewed: null, cadenceDays: 90, detail: undefined, linkUrl: null };
+  step.sops.push(sop);
+  return sop;
+}
+
+async function deleteSop(step, sop){
+  await graphWrite("DELETE", `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SOPS_LIST_ID}/items/${sop.realId}`);
+  step.sops = step.sops.filter(s => s !== sop);
+}
 
 async function loadDataFromGraph(token){
   setConn("connecting", "Loading data…");
@@ -1004,6 +1189,9 @@ async function loadDataFromGraph(token){
   const sopsList = lists.find(l => l.displayName === LIST_NAME_SOPS);
   if (!stepsList) throw new Error(`Could not find a list named "${LIST_NAME_STEPS}" on the BWCore site. Lists found: ${lists.map(l=>l.displayName).join(", ")}`);
   if (!sopsList) throw new Error(`Could not find a list named "${LIST_NAME_SOPS}" on the BWCore site. Lists found: ${lists.map(l=>l.displayName).join(", ")}`);
+  SITE_ID = siteId;
+  STEPS_LIST_ID = stepsList.id;
+  SOPS_LIST_ID = sopsList.id;
 
   const stepItems = await graphGetAll(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${stepsList.id}/items?expand=fields&$top=200`, token);
   const sopItems = await graphGetAll(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${sopsList.id}/items?expand=fields&$top=500`, token);
@@ -1032,6 +1220,7 @@ async function loadDataFromGraph(token){
     const parent = lookupId != null ? byRealId[lookupId] : null;
     if (!parent) { unmatchedSops++; return; }
     parent.sops.push({
+      realId: item.id,
       name: f.Title || "(untitled SOP)",
       doc: !!f.Documented,
       lastReviewed: f.LastReviewed ? f.LastReviewed.slice(0, 10) : null,
