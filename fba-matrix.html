@@ -237,6 +237,9 @@
   .handbook-sop-admin-controls label{display:flex;align-items:center;gap:6px;}
   .handbook-sop-admin-controls input, .handbook-sop-admin-controls select{font-family:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;}
   .sop-delete-btn{margin-left:auto;flex:0 0 auto;border:none;background:none;color:var(--ink-muted);cursor:pointer;font-size:13px;padding:2px 6px;}
+  .step-delete-btn{font-family:inherit;font-size:11.5px;font-weight:600;color:#a12626;background:none;border:1px solid #f0b7b7;border-radius:100px;padding:5px 11px;cursor:pointer;margin-top:4px;align-self:flex-start;}
+  .step-delete-btn:hover{background:var(--critical-bg);}
+  .step-delete-btn.confirming{background:#a12626;color:#fff;}
   .sop-delete-btn:hover{color:#a12626;}
   .doc-check{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-secondary);white-space:nowrap;}
   .handbook-add-row{display:flex;gap:8px;margin-top:10px;}
@@ -271,8 +274,8 @@
       <p class="sub">Documenting and tracking “Followed By All” for our Significant Steps</p>
     </div>
     <div class="header-controls no-print">
-      <div class="version-tag">Live · connected to SharePoint</div>
-      <div class="conn-status"><span class="conn-dot" id="conn-dot"></span><span id="conn-text">Not connected</span></div>
+      <div class="version-tag" id="version-tag">v1</div>
+      <div class="conn-status" id="conn-status"><span class="conn-dot" id="conn-dot"></span><span id="conn-text">Not connected</span></div>
       <button type="button" id="signin-btn" class="signin-btn">Sign in with Microsoft</button>
       <button type="button" id="signout-btn" class="signout-link" style="display:none;">Sign out</button>
       <div class="search-box"><input type="text" id="search-input" placeholder="Search everything…"></div>
@@ -387,6 +390,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js" crossorigin="anonymous"></script>
 <script>
+// Bump this on every meaningful revision — shown in the topbar badge so Joey/anyone
+// can tell which build they're looking at (e.g. after a GitHub Pages re-upload).
+// This script tag runs after #version-tag already exists in the DOM, so no need
+// to wait for DOMContentLoaded (which may have already fired by this point anyway).
+const CORE_VERSION = 1;
+document.getElementById("version-tag").textContent = "v" + CORE_VERSION;
+
 const STATUS_LABEL = {good:"FBA Achieved", warning:"In Progress", critical:"Not Started"};
 const REVIEW_LABEL = {current:"Current", duesoon:"Due Soon", overdue:"Overdue", none:"—"};
 const CADENCE_OPTIONS = [
@@ -732,7 +742,10 @@ function renderHandbookSopRow(step, sop){
     ? `<ul class="handbook-sublist">${sop.detail.map(d => `<li>${d}</li>`).join("")}</ul>`
     : "";
   const status = reviewStatusOf(sop);
-  const key = `${step.id}|${sop.name}`;
+  // IMPORTANT: escaped, because real SOP names contain literal quote characters
+  // (e.g. "Zero" Punch List) that would otherwise break this attribute's HTML
+  // and corrupt data binding for this row (and potentially rows after it).
+  const key = `${step.id}|${escapeAttr(sop.name)}`;
 
   if (!adminMode) {
     return `
@@ -789,8 +802,17 @@ function escapeHtml(text){
 function renderStepEditPanel(step){
   if (!adminMode) return "";
   const dis = WRITE_ENABLED ? "" : "disabled";
+  const cpOptions = CP_ORDER.map(cp => `<option value="${escapeAttr(cp)}" ${cp === step.cp ? "selected" : ""}>${escapeHtml(cp)}</option>`).join("");
   return `
     <div class="step-edit-panel">
+      <div class="step-edit-row">
+        <label class="step-edit-field">Significant Step name
+          <input type="text" data-stepfield="name" data-step="${step.id}" value="${escapeAttr(step.name)}" ${dis}>
+        </label>
+        <label class="step-edit-field">Core Process
+          <select data-stepfield="cp" data-step="${step.id}" ${dis}>${cpOptions}</select>
+        </label>
+      </div>
       <div class="step-edit-row">
         <label class="step-edit-field">Accountable
           <input type="text" data-stepfield="acct" data-step="${step.id}" value="${escapeAttr(step.acct)}" ${dis}>
@@ -806,7 +828,9 @@ function renderStepEditPanel(step){
         <input type="checkbox" data-stepfield="isFocus" data-step="${step.id}" ${step.isFocus ? "checked" : ""} ${dis}>
         Actively in Focus (shows on the Focus tab until FBA is reached)
       </label>
-      ${!WRITE_ENABLED ? `<span class="disabled-note">Read-only preview — editing lands in the next phase</span>` : ""}
+      ${!WRITE_ENABLED
+        ? `<span class="disabled-note">Read-only preview — editing lands in the next phase</span>`
+        : `<button type="button" class="step-delete-btn" data-deletestep="${step.id}">✕ Remove this Significant Step (and its SOPs)</button>`}
     </div>`;
 }
 
@@ -885,7 +909,10 @@ function renderHandbook(){
 }
 
 function findStepAndSop(key){
-  const [stepId, sopName] = key.split("|");
+  // Split on the FIRST "|" only — a SOP name could itself contain a literal "|".
+  const sep = key.indexOf("|");
+  const stepId = key.slice(0, sep);
+  const sopName = key.slice(sep + 1);
   const step = STEPS[+stepId];
   const sop = step ? step.sops.find(s => s.name === sopName) : null;
   return {step, sop};
@@ -952,9 +979,7 @@ function wireHandbookAdminControls(){
   });
   document.querySelectorAll("#handbook-groups [data-delete]").forEach(el => {
     el.addEventListener("click", async (e) => {
-      const [stepId, sopName] = e.target.dataset.delete.split("|");
-      const step = STEPS[+stepId];
-      const sop = step ? step.sops.find(s => s.name === sopName) : null;
+      const {step, sop} = findStepAndSop(e.target.dataset.delete);
       if (!step || !sop) return;
       el.disabled = true;
       try {
@@ -995,6 +1020,32 @@ function wireHandbookAdminControls(){
         renderAll(); renderHandbook();
       } catch (err) {
         toast("error", `Couldn't add Significant Step: ${err.message}`);
+        el.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll("#handbook-groups [data-deletestep]").forEach(el => {
+    el.addEventListener("click", async (e) => {
+      const step = STEPS[+e.target.dataset.deletestep];
+      if (!step) return;
+      // No native confirm() allowed — require a second click within a few seconds instead.
+      if (el.dataset.confirming !== "1") {
+        el.dataset.confirming = "1";
+        const original = el.textContent;
+        el.textContent = "Click again to confirm delete";
+        el.classList.add("confirming");
+        setTimeout(() => {
+          if (el.isConnected) { el.dataset.confirming = "0"; el.textContent = original; el.classList.remove("confirming"); }
+        }, 4000);
+        return;
+      }
+      el.disabled = true;
+      try {
+        await deleteSignificantStep(step);
+        toast("success", `Removed "${step.name}" and its SOPs.`);
+        renderAll(); renderHandbook();
+      } catch (err) {
+        toast("error", `Couldn't remove Significant Step: ${err.message}`);
         el.disabled = false;
       }
     });
@@ -1056,6 +1107,14 @@ function setConn(state, text){
   const label = document.getElementById("conn-text");
   dot.className = "conn-dot" + (state ? " " + state : "");
   label.textContent = text;
+}
+
+// Hover over the connection dot/text to see who's actually signed in.
+function showSignedInTooltip(account){
+  const tip = `Signed in as ${account && account.name ? account.name : "?"} (${account && account.username ? account.username : "?"})`;
+  const status = document.getElementById("conn-status");
+  status.title = tip;
+  status.setAttribute("aria-label", tip);
 }
 
 function showGateError(err){
@@ -1132,7 +1191,7 @@ async function graphWrite(method, url, body){
 
 function reassignStepIds(){ STEPS.forEach((s, i) => { s.id = i; }); }
 
-const STEP_FIELD_TO_GRAPH = { acct: "Accountable", resp: "Responsible", purpose: "Purpose", isFocus: "IsFocus" };
+const STEP_FIELD_TO_GRAPH = { acct: "Accountable", resp: "Responsible", purpose: "Purpose", isFocus: "IsFocus", name: "Title", cp: "CoreProcess" };
 
 async function updateStepField(step, field, value){
   const graphField = STEP_FIELD_TO_GRAPH[field];
@@ -1148,6 +1207,18 @@ async function createSignificantStep(cp, name){
   STEPS.push(step);
   reassignStepIds();
   return step;
+}
+
+async function deleteSignificantStep(step){
+  // Cascade-delete its SOPs first — SharePoint doesn't auto-cascade a Lookup relationship,
+  // and leaving orphaned SOP rows pointing at a deleted Significant Step would be worse than
+  // this taking a moment longer.
+  for (const sop of step.sops.slice()) {
+    await graphWrite("DELETE", `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SOPS_LIST_ID}/items/${sop.realId}`);
+  }
+  await graphWrite("DELETE", `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${STEPS_LIST_ID}/items/${step.realId}`);
+  STEPS = STEPS.filter(s => s !== step);
+  reassignStepIds();
 }
 
 function sopFieldsUrl(sop){
@@ -1231,13 +1302,13 @@ async function loadDataFromGraph(token){
   });
   if (unmatchedSops) console.warn(`${unmatchedSops} SOP item(s) in "${LIST_NAME_SOPS}" didn't match a Significant Step — check the SignificantStep lookup column on those rows.`);
 
-  // Order by the canonical Core Process sequence, then by name within each, for a stable/expected layout.
+  // Group by the canonical Core Process sequence, but do NOT alphabetize within a group —
+  // preserve whichever order the Significant Steps were created in (the order Joey built
+  // them in through the tool), since that order carries real meaning (workflow sequence),
+  // not just alphabetical. Array.sort is a stable sort in all modern JS engines, so returning
+  // 0 for same-CP items keeps their existing relative order (ascending by creation/item ID).
   const allSteps = Object.values(byRealId);
-  allSteps.sort((a, b) => {
-    const cpDiff = CP_ORDER.indexOf(a.cp) - CP_ORDER.indexOf(b.cp);
-    if (cpDiff !== 0) return cpDiff;
-    return a.name.localeCompare(b.name);
-  });
+  allSteps.sort((a, b) => CP_ORDER.indexOf(a.cp) - CP_ORDER.indexOf(b.cp));
   allSteps.forEach((s, i) => { s.id = i; });
 
   STEPS = allSteps;
@@ -1270,6 +1341,7 @@ async function signIn(){
     msalInstance.setActiveAccount(graphAccount);
     document.getElementById("signin-btn").style.display = "none";
     document.getElementById("signout-btn").style.display = "inline";
+    showSignedInTooltip(graphAccount);
     const token = await acquireGraphToken();
     await loadDataFromGraph(token);
   } catch (e) {
@@ -1288,6 +1360,9 @@ function signOut(){
   document.getElementById("app-content").style.display = "none";
   document.getElementById("gate").style.display = "block";
   setConn("", "Not connected");
+  const status = document.getElementById("conn-status");
+  status.removeAttribute("title");
+  status.removeAttribute("aria-label");
   if (account) msalInstance.logoutPopup({ account }).catch(() => {});
 }
 
@@ -1304,6 +1379,7 @@ document.getElementById("signout-btn").addEventListener("click", signOut);
       msalInstance.setActiveAccount(graphAccount);
       document.getElementById("signin-btn").style.display = "none";
       document.getElementById("signout-btn").style.display = "inline";
+      showSignedInTooltip(graphAccount);
       const token = await acquireGraphToken();
       await loadDataFromGraph(token);
     }
