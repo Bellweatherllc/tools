@@ -319,7 +319,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .fc-proj-tooltip{
   display:none;position:fixed;z-index:9000;
   background:var(--navy);color:#fff;border-radius:6px;padding:8px 12px;
-  width:300px;white-space:normal;word-wrap:break-word; /* v876 — room for eight pills */
+  width:330px;white-space:normal;word-wrap:break-word; /* v876 — room for eight pills */
   box-shadow:0 4px 14px rgba(0,0,0,.4);
   font-family:'TT Norms Pro',sans-serif;
 }
@@ -3174,7 +3174,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v979';
+const CORE_VERSION = 'v980';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -3884,6 +3884,7 @@ let PROJ_SORT_ORDER=[]; // custom unassigned project order, persisted to CORE_Co
 // ════════════════════════════════════════════════  PEOPLE
 const DESIGNERS=[];
 const PROD_PMS=[];
+const FIELD_MECHANICS=[]; // CORE_TeamMembers Role matching /mechanic/i
 const DESIGNER_NAMES=[];
 const PM_NAMES=[];
 const SALES_PEOPLE=[];
@@ -6418,11 +6419,7 @@ function openExploratoryCal(projId, anchorEl){
     historyLabel:function(verb){ return (proj.clientName||proj.name)+' \u2014 exploratory '+verb; },
     countLabel:function(n){ return n+(n===1?' day scheduled':' days scheduled'); },
     extra:function(slot){
-      var roster=_prodRoster();
-      var l1=document.createElement('div'); l1.className='toc-x-lbl'; l1.textContent='Assigned (Production)'; slot.appendChild(l1);
-      var wrap=document.createElement('div'); wrap.className='toc-x-ppl';
-      if(!roster.length){ var em=document.createElement('div'); em.style.cssText='font-size:11px;color:#a3a3a3;'; em.textContent='No production people on the roster yet.'; wrap.appendChild(em); }
-      roster.forEach(function(pp){
+      var _mkChip=function(pp){
         var chip=document.createElement('button'); chip.type='button';
         chip.className='toc-x-chip'+(x.people.indexOf(pp.id)>=0?' on':'');
         chip.textContent=pp.label||pp.fullLabel||pp.id;
@@ -6432,9 +6429,19 @@ function openExploratoryCal(projId, anchorEl){
           chip.classList.toggle('on');
           renderExploratoryMarkers(projId); triggerSave(proj);
         });
-        wrap.appendChild(chip);
-      });
-      slot.appendChild(wrap);
+        return chip;
+      };
+      var _grp=function(title,list){
+        if(!list||!list.length) return;
+        var l=document.createElement('div'); l.className='toc-x-lbl'; if(slot.children.length) l.style.marginTop='7px'; l.textContent=title; slot.appendChild(l);
+        var w=document.createElement('div'); w.className='toc-x-ppl';
+        list.forEach(function(pp){ w.appendChild(_mkChip(pp)); });
+        slot.appendChild(w);
+      };
+      _grp('Project Managers',PROD_PMS);
+      _grp('Logistics Coordinators',LC_COORDS);
+      _grp('Field Mechanics',FIELD_MECHANICS);
+      if(!(PROD_PMS.length||LC_COORDS.length||FIELD_MECHANICS.length)){ var em=document.createElement('div'); em.style.cssText='font-size:11px;color:#a3a3a3;'; em.textContent='No production people on the roster yet.'; slot.appendChild(em); }
       var l2=document.createElement('div'); l2.className='toc-x-lbl'; l2.style.marginTop='8px'; l2.textContent='Notes'; slot.appendChild(l2);
       var ta=document.createElement('textarea'); ta.className='toc-x-notes'; ta.value=x.notes||''; ta.placeholder='What to open up, access needed, what to look for\u2026';
       var _dt=null;
@@ -7252,7 +7259,6 @@ function buildPencilsDot(proj){
   const penW=msPencilW(MS_PENCIL_H);
   const dot=el('div','pd-dot');
   dot.dataset.pdId=proj.pencilsDown.id; dot.dataset.projId=proj.id;
-  dot.dataset.tip='Pencils Down = Drawings and detailed plan notes should be complete for CA writing. Any unresolved decisions should become TBD for the CA. After Pencils Down, loop in Sales for potential revisions as they could impact the CA.';
   dot.style.width=penW+'px';
   dot.style.left=(w2px(proj.pencilsDown.week)+Math.round(C.weekW/2)-Math.round(penW/2))+'px';
   dot.innerHTML=msPencilSvg(MS_PENCIL_H);
@@ -7267,7 +7273,7 @@ function refreshPD(pdId){
 function pdTT(pd,e){
   const fri=wkFri(pd.week);
   const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  showTTraw(`<div class="tt-n">Pencils Down — ${fmt(fri)}</div><div class="tt-d">All design work complete by this date</div>`,e);
+  showTTraw(`<div class="tt-n">Pencils Down — ${fmt(fri)}</div><div class="tt-d">Drawings and plan notes should be complete for CA writing; mark any unresolved items TBD. After Pencils Down, loop in Sales on revisions — they can affect the CA.</div>`,e);
 }
 function refreshWkNums(projId){
   const proj=PROJECTS.find(p=>p.id===projId); if(!proj)return;
@@ -9021,7 +9027,7 @@ function critBubbleHTML(crit){
 }
 function pdBubbleHTML(pd){
   const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  return '<div class="gdb-title">Pencils Down \u2014 '+fmt(wkFri(pd.week))+'</div><div class="gdb-line">All design work complete by this date</div>';
+  return '<div class="gdb-title">Pencils Down \u2014 '+fmt(wkFri(pd.week))+'</div><div class="gdb-line">Drawings and plan notes should be complete for CA writing; mark any unresolved items TBD. After Pencils Down, loop in Sales on revisions \u2014 they can affect the CA.</div>';
 }
 // Hover: tint the week column the click would capture
 document.addEventListener('mousemove',e=>{
@@ -10924,7 +10930,7 @@ function makeDefaultSchedule(spId,name,address,status,fields){
 async function loadTeamMembers(saved){
   setAuthStatus('Loading team — team members…');
   const items=await graphGetAll(BWC_SITE+'/CORE_TeamMembers/items?$expand=fields&$select=id,fields');
-  DESIGNERS.length=0; PROD_PMS.length=0; SALES_PEOPLE.length=0; LC_COORDS.length=0;
+  DESIGNERS.length=0; PROD_PMS.length=0; SALES_PEOPLE.length=0; LC_COORDS.length=0; FIELD_MECHANICS.length=0;
   // Restore saved targets first so existing overrides survive
   if(saved&&saved.PERSON_TARGETS) Object.assign(PERSON_TARGETS,saved.PERSON_TARGETS);
   items.forEach(item=>{
@@ -10946,6 +10952,9 @@ async function loadTeamMembers(saved){
         LC_COORDS.push(entry);
         if(!(personId in PERSON_TARGETS)) PERSON_TARGETS[personId]=20;
       }
+    } else if(/mechanic/i.test(role)){
+      FIELD_MECHANICS.push(entry);
+      if(!(personId in PERSON_TARGETS)) PERSON_TARGETS[personId]=20;
     }
     // Sales: keyed by Department field starting with 'sale'
     const dept=(f.Department||'').trim().toLowerCase();
@@ -15178,6 +15187,14 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v980', date: '2026-08-25',
+    entries: [
+      'The exploratory assignment list is now grouped into Project Managers, Logistics Coordinators, and Field Mechanics, with Field Mechanics pulled from the team roster.',
+      'The project hover card is wider so the full pill row, including PLN, fits.',
+      'The Pencils Down note is folded into its existing pop-up rather than shown as a separate hover.',
+    ],
+  },
   {
     version: 'v979', date: '2026-08-25',
     entries: [
