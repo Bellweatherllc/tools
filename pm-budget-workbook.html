@@ -156,6 +156,21 @@ table.diff td.num{text-align:right;white-space:nowrap;}
 .chg-up{color:var(--err);font-weight:700;}
 .chg-down{color:var(--ok);font-weight:700;}
 .chg-new{color:var(--warn);font-weight:700;}
+/* ---------- v19 spreadsheet skin ---------- */
+table.wb{font-size:12px;color:#1a1a1a;border-collapse:collapse;}
+table.wb td{border:1px solid #e2e2e2;padding:3px 8px;}
+tr.div-hdr td{background:#fff;}
+tr.div-hdr td.lbl-h{background:#d9d9d9;color:#111;font-weight:700;font-size:11.5px;letter-spacing:.01em;}
+td.est-col, td.bud-col{background:#edf3e2;}
+td.amt input{background:transparent;border:none;width:100%;min-width:0;text-align:right;font-size:12px;padding:2px 4px;}
+td.amt input:focus{outline:2px solid var(--gold);border-radius:2px;}
+tr.line-row td.lbl{padding-left:26px;background:#fff;font-style:normal;}
+tr.spacer td{border:none;background:transparent;height:9px;padding:0;}
+tr.cmt-panel td{border:none;background:none;}
+tr.subtotal td{background:#f2f2f2;border-top:2px solid #9a9a9a;font-weight:700;}
+.addline td{background:#fff;border:none;}
+.addline input{border:1px dashed var(--border);background:#fff;}
+.fin-ro{font-size:11.5px;font-weight:700;color:var(--navy);padding-top:5px;}
 </style>
 </head>
 <body>
@@ -165,7 +180,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
     <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">PM Budget Workbook</div>
     <div class="auth-subtitle">Bellweather CORE</div>
-    <div class="auth-version" id="authVersionBadge">v18</div>
+    <div class="auth-version" id="authVersionBadge">v19</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -174,7 +189,7 @@ table.diff td.num{text-align:right;white-space:nowrap;}
 <header class="app-header">
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <span class="hdr-title">PM Budget Workbook</span>
-  <span class="hdr-badge" id="versionBadge">v18</span>
+  <span class="hdr-badge" id="versionBadge">v19</span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
   <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
@@ -252,9 +267,10 @@ table.diff td.num{text-align:right;white-space:nowrap;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v18';
+const CORE_VERSION = 'v19';
 
 const BUDGET_CHANGELOG = [
+  { v:'v19', date:'2026-08-26', notes:'Spreadsheet look, matched to the original Excel budget: grey division headers, light-green entry cells, thin gridlines, plain numbers, and a blank row between divisions — no more dark bars. The financial strip now uses the estimate\u2019s own language (Mark-Up %, Indirect Allocation, Payroll) with each figure cross-referenced to the estimate, and Indirect/Payroll percentages come from the estimate header itself instead of fixed constants.' },
   { v:'v18', date:'2026-08-14', notes:'The Pipeline is now the single authority on sale price. The workbook reads it fresh every time a project opens, displays it read-only for everyone, and every calculation uses it. To change a sale price, change it in the Pipeline. If a project has no value there, the workbook says so and links you to the Pipeline to set it.' },
   { v:'v17', date:'2026-08-14', notes:'Fixed sale price not pulling from the Pipeline. The Pipeline sometimes stores project value as formatted text (like \"$750,000\") rather than a number; the workbook now reads both forms.' },
   { v:'v16', date:'2026-08-14', notes:'Browser tab now reads simply PM Budget Workbook — no version number or CORE in the title.' },
@@ -1045,6 +1061,8 @@ let wb = null; // runtime state: { proj, cfg, estByCode, rows, comments, unmappe
 const cents = v => Math.round((parseFloat(v) || 0) * 100);
 const fromCents = c => c / 100;
 const moneyC = c => (c < 0 ? '-$' : '$') + Math.abs(Math.round(c/100)).toLocaleString('en-US');
+const fmtC = c => (c < 0 ? '\u2212' : '') + Math.abs(Math.round(c/100)).toLocaleString('en-US');
+const fmtPct = p => (p*100).toFixed(2) + '%';
 function normName(x){ return String(x || '').toLowerCase().replace(/[^a-z0-9]/g,''); }
 
 async function openWorkbook(proj){
@@ -1118,14 +1136,16 @@ function calcChain(){
   const mk = isFinite(markup) ? markup : (parseFloat(f.MarkupPct) || 0);
   const selC = cents(f.SelectionsAmount), allowC = cents(f.UnresolvedAllowance), ddC = cents(f.DDCogs);
   const costBasisC = saleC ? Math.round(saleC / (1 + mk)) : 0;
-  const overheadC = Math.round(saleC * OVERHEAD_PCT);
-  const staffC = Math.round(saleC * STAFF_PCT);
+  const indirectPct = (typeof f.IndirectPct === 'number' && isFinite(f.IndirectPct)) ? f.IndirectPct : OVERHEAD_PCT;
+  const payrollPct = (typeof f.PayrollPct === 'number' && isFinite(f.PayrollPct)) ? f.PayrollPct : STAFF_PCT;
+  const overheadC = Math.round(saleC * indirectPct);
+  const staffC = Math.round(saleC * payrollPct);
   const availableC = costBasisC - selC - allowC - ddC - overheadC - staffC;
   let estTotalC = 0;
   Object.keys(wb.estByCode).forEach(c => { if(c !== SELECTIONS_EST_CODE) estTotalC += wb.estByCode[c].amountC; });
   let budTotalC = 0;
   wb.scopeRows.forEach(r => budTotalC += r.budgetC);
-  return { saleC, mk, selC, allowC, ddC, costBasisC, overheadC, staffC, availableC,
+  return { saleC, mk, selC, allowC, ddC, costBasisC, overheadC, staffC, availableC, indirectPct, payrollPct,
            estTotalC, budTotalC, ouEstC: availableC - estTotalC, ouBudC: availableC - budTotalC };
 }
 
@@ -1133,21 +1153,15 @@ function calcChain(){
 function divBudC(d){
   let t = 0; wb.scopeRows.forEach(r => { if(r.divKey === d.key) t += r.budgetC; }); return t;
 }
-function groupBudC(g){ return g.divisions.reduce((t,d) => t + divBudC(d), 0); }
 function estForDiv(d){ return (d.estCodes||[]).reduce((t,c) => t + (wb.estByCode[c] ? wb.estByCode[c].amountC : 0), 0); }
-function estForGroup(g){
-  let t = (g.estCodes||[]).reduce((x,c) => x + (wb.estByCode[c] ? wb.estByCode[c].amountC : 0), 0);
-  g.divisions.forEach(d => t += estForDiv(d));
-  return t;
-}
 function deltaChip(estC, budC){
   if(!estC && !budC) return '';
   const d = estC - budC;
   const cls = budC === 0 ? 'ok' : d >= 0 ? 'ok' : (-d <= estC * 0.05 ? 'warn' : 'over');
-  return '<span class="delta ' + cls + '">' + (d >= 0 ? '+' : '\u2212') + moneyC(Math.abs(d)) + '</span>';
+  return '<span class="delta ' + cls + '">' + (d >= 0 ? '+' : '\u2212') + fmtC(Math.abs(d)) + '</span>';
 }
 function budCellHtml(estC, budC){
-  return (budC ? moneyC(budC) : '') + (estC ? deltaChip(estC, budC) : '');
+  return (budC ? fmtC(budC) : '') + (estC ? deltaChip(estC, budC) : '');
 }
 function estCodesOfDiv(d){ return d.estCodes || []; }
 function commentsForData(list, divKey, estCodes){
@@ -1182,67 +1196,55 @@ function renderWorkbook(){
   document.getElementById('btnReimport').classList.toggle('hidden', !isBudgetAdmin);
   document.getElementById('wbMeta').textContent =
     'Estimate snapshot: tab "' + (f.EstimateTab || '?') + '" of ' + (f.EstimateFileName || '?') +
-    ', taken ' + fmtDate(f.SnapshotDate) + '. ' + (isBudgetAdmin ? 'Admin mode — financials editable.' :
+    ', taken ' + fmtDate(f.SnapshotDate) + '. ' + (isBudgetAdmin ? 'Admin mode \u2014 financials editable.' :
     'Estimate figures and financial settings are read-only.');
 
-  document.getElementById('wbSummary').innerHTML = [
-    ['Available (cost basis)', moneyC(k.availableC)],
-    ['Estimate total', moneyC(k.estTotalC)],
-    ['Budget total', moneyC(k.budTotalC)],
-    ['Over/Under vs Estimate', moneyC(k.ouEstC)],
-    ['Over/Under vs Budget', moneyC(k.ouBudC)]
-  ].map((m,i) => '<div class="metric"><div class="m-label">' + m[0] + '</div><div class="m-value" style="' +
-      ((i >= 3) ? ('color:' + ((i===3?k.ouEstC:k.ouBudC) < 0 ? 'var(--err)' : 'var(--ok)')) : '') + '">' + m[1] + '</div></div>').join('');
-
+  /* Financial strip \u2014 estimate-header language, each figure cross-referenced */
+  const pmetaR = PROJ_META[wb.proj] || {};
   const estSel = wb.estByCode[SELECTIONS_EST_CODE];
+  const roCell = (label, valueHtml, ref, id) =>
+    '<div class="fin-cell"><label>' + label + '</label>' +
+    '<div class="fin-ro"' + (id ? ' id="' + id + '"' : '') + '>' + valueHtml + '</div>' +
+    (ref ? '<div class="fin-ref">' + ref + '</div>' : '') + '</div>';
+  const saleCell = roCell('Sale Price',
+    (pmetaR.saleVal ? moneyC(cents(pmetaR.saleVal)) : '\u2014'),
+    (pmetaR.saleVal
+      ? 'from Pipeline \u00B7 authoritative'
+      : '<a href="https://bellweatherllc.github.io/tools/project-pipeline.html" target="_blank" rel="noopener">set in Pipeline</a>') +
+    (f.SalePrice != null ? ' \u00B7 estimate sale price: ' + money(f.SalePrice) : ''), null);
   const finFields = [
-    ['ContractMarkupPct','Markup', f.ContractMarkupPct, 'estimate: ' + (f.MarkupPct ?? '\u2014')],
-    ['SelectionsAmount','Selections', f.SelectionsAmount, estSel ? 'estimate 5100: ' + moneyC(estSel.amountC) : ''],
+    ['ContractMarkupPct','Mark-Up %', f.ContractMarkupPct, 'estimate: ' + (f.MarkupPct ?? '\u2014')],
+    ['SelectionsAmount','Selections (5100)', f.SelectionsAmount, estSel ? 'estimate: ' + moneyC(estSel.amountC) : ''],
     ['UnresolvedAllowance','Unresolved Allowance', f.UnresolvedAllowance, ''],
     ['DDCogs','DESIGN COGS', f.DDCogs, ''],
   ];
-  const pmetaR = PROJ_META[wb.proj] || {};
-  const saleCell = '<div class="fin-cell"><label>Sale Price</label>' +
-    '<div style="font-size:11.5px;font-weight:700;color:var(--navy);padding-top:5px;">' +
-    (pmetaR.saleVal ? moneyC(cents(pmetaR.saleVal)) : '\u2014') + '</div>' +
-    '<div class="fin-ref">' + (pmetaR.saleVal
-      ? 'from Pipeline \u00B7 authoritative'
-      : '<a href="https://bellweatherllc.github.io/tools/project-pipeline.html" target="_blank" rel="noopener">set in Pipeline</a>') +
-    (f.SalePrice != null ? ' \u00B7 estimate: ' + money(f.SalePrice) : '') + '</div></div>';
   document.getElementById('wbFin').innerHTML = saleCell + finFields.map(ff =>
     '<div class="fin-cell"><label>' + ff[1] + '</label>' +
     '<input type="text" data-cfg="' + ff[0] + '" value="' + (ff[2] ?? '') + '"' +
     (isBudgetAdmin ? '' : ' disabled') + ' oninput="cfgInput(this)" onblur="saveCfgField(this)">' +
-    (ff[3] ? '<div class="fin-ref">' + escHtml(ff[3]) + '</div>' : '') + '</div>').join('') +
-    '<div class="fin-cell"><label>OH ' + (OVERHEAD_PCT*100).toFixed(2) + '% / Staff ' + (STAFF_PCT*100).toFixed(2) + '%</label>' +
-    '<div style="font-size:11.5px;font-weight:700;color:var(--navy);padding-top:5px;" id="finComputed">' + moneyC(k.overheadC) + ' / ' + moneyC(k.staffC) + '</div></div>' + docsCellHtml();
+    (ff[3] ? '<div class="fin-ref">' + ff[3] + '</div>' : '') + '</div>').join('') +
+    roCell('Indirect Allocation (' + fmtPct(k.indirectPct) + ')', moneyC(k.overheadC), 'from estimate header', 'finIndirect') +
+    roCell('Payroll (' + fmtPct(k.payrollPct) + ')', moneyC(k.staffC), 'from estimate header', 'finPayroll') +
+    docsCellHtml();
 
   const gen = wb.comments.filter(cm => cm.type === 'Estimating' && !cm.code);
   document.getElementById('wbGeneralNotes').innerHTML = gen.length
     ? '<div class="sub" style="margin-bottom:4px;"><b>General estimate notes</b></div>' +
       gen.map(cm => cmtHtml(cm)).join('') : '';
 
+  /* Grid \u2014 flat divisions, spreadsheet style */
   let html = '';
   wb._lineRefs = [];
   TEMPLATE.forEach(g => {
-    const gEstC = estForGroup(g);
-    let gBudC = 0;
-    g.divisions.forEach(d => rowsFor(d).forEach(r => gBudC += r.budgetC));
-    html += '<tr class="grp-hdr"><td>' + escHtml(g.code === 'MISC' ? '' : g.code) + ' ' + escHtml(g.label) + '</td>' +
-      '<td class="amt grp-est">' + (gEstC ? 'est ' + moneyC(gEstC) : '') + '</td>' +
-      '<td class="amt" id="gbud-' + escAttr(g.code) + '">' + budCellHtml(gEstC, gBudC) + '</td></tr>';
     g.divisions.forEach(d => {
+      const divName = (d.key + ' - ' + (d.label || g.label)).toUpperCase();
       const dEstC = estForDiv(d);
       const rows = rowsFor(d);
-      const dBudC = rows.reduce((t,r) => t + r.budgetC, 0);
+      const dBudC = rows.reduce((t, r) => t + r.budgetC, 0);
       const addBtnD = '<button class="add-cmt" title="Comment on this division" onclick="startCmt(\'D\',\'' + d.key + '\')">+</button>';
-      if(d.label || g.divisions.length > 1){
-        html += '<tr class="div-hdr"><td>' + addBtnD + escHtml(d.key) + ' ' + escHtml(d.label) + '</td>' +
-          '<td class="amt">' + (dEstC ? 'est ' + moneyC(dEstC) : '') + '</td>' +
-          '<td class="amt" id="dbud-' + escAttr(d.key) + '">' + budCellHtml(dEstC, dBudC) + '</td></tr>';
-      }else{
-        html += '<tr class="div-hdr"><td>' + addBtnD + '</td><td class="amt"></td><td class="amt"></td></tr>';
-      }
+      html += '<tr class="div-hdr"><td class="lbl-h">' + addBtnD + escHtml(divName) + '</td>' +
+        '<td class="amt est-col">' + (dEstC ? fmtC(dEstC) : '') + '</td>' +
+        '<td class="amt bud-col" id="dbud-' + escAttr(d.key) + '">' + budCellHtml(dEstC, dBudC) + '</td></tr>';
       html += divCmtRows(d);
       rows.forEach(r => {
         const rid = r.spItemId || ('new:' + d.key + ':' + normName(r.label));
@@ -1252,11 +1254,11 @@ function renderWorkbook(){
         const lc = lineComments(r.spItemId);
         html += '<tr class="line-row' + (r.template ? '' : ' pm-line') + '">' +
           '<td class="lbl"><button class="add-cmt" title="Comment on this line" onclick="startCmt(\'L\',\'' + escAttr(tk) + '\')">+</button>' +
-          escHtml(r.label) + '</td><td class="amt"></td>' +
-          '<td class="amt"><input type="text" inputmode="decimal" value="' + (r.budgetC ? fromCents(r.budgetC) : '') + '"' +
+          escHtml(r.label) + '</td><td class="amt est-col"></td>' +
+          '<td class="amt bud-col"><input type="text" inputmode="decimal" value="' + (r.budgetC ? fromCents(r.budgetC) : '') + '"' +
           ' data-line="' + escAttr(rid) + '" data-div="' + escAttr(d.key) + '" data-label="' + escAttr(r.label) + '"' +
           ' data-src="' + (r.template ? 'Template' : 'PM') + '" oninput="lineInput(this)" onblur="saveLineAmount(this)">' +
-          '<span class="save-flash">saved</span></td></tr>';
+          '</td></tr>';
         const addingL = wb.addingCmt === 'L:' + tk;
         if(lc.length || addingL){
           html += '<tr class="cmt-panel"><td colspan="2">' + lc.map(cmtHtml).join('') +
@@ -1266,16 +1268,18 @@ function renderWorkbook(){
       html += '<tr class="addline"><td colspan="3">' +
         '<input type="text" placeholder="Add a line to ' + escAttr(d.key) + '\u2026" data-adddiv="' + escAttr(d.key) + '">' +
         ' <button class="btn ghost" onclick="addLine(this)">Add</button></td></tr>';
+      html += '<tr class="spacer"><td colspan="3"></td></tr>';
     });
   });
   if(wb.unmappedEst.length){
-    html += '<tr class="grp-hdr"><td>UNMAPPED ESTIMATE CODES</td><td class="amt"></td><td class="amt"></td></tr>';
+    html += '<tr class="div-hdr"><td class="lbl-h">UNMAPPED ESTIMATE CODES</td><td class="amt est-col"></td><td class="amt bud-col"></td></tr>';
     wb.unmappedEst.forEach(c => {
       html += '<tr class="line-row"><td class="lbl">' + escHtml(wb.estByCode[c].title || c) + '</td>' +
-        '<td class="amt">est ' + moneyC(wb.estByCode[c].amountC) + '</td><td class="amt"></td></tr>';
+        '<td class="amt est-col">' + fmtC(wb.estByCode[c].amountC) + '</td><td class="amt bud-col"></td></tr>';
     });
+    html += '<tr class="spacer"><td colspan="3"></td></tr>';
   }
-  html += '<tr class="subtotal"><td>SUBTOTAL</td><td class="amt" id="stEst"></td><td class="amt" id="stBud"></td></tr>';
+  html += '<tr class="subtotal"><td>TOTAL</td><td class="amt" id="stEst"></td><td class="amt" id="stBud"></td></tr>';
   html += '<tr class="subtotal"><td>Over/Under (available \u2212 total)</td>' +
     '<td class="amt" id="ouEstCell"></td><td class="amt" id="ouBudCell"></td></tr>';
   document.getElementById('wbBody').innerHTML = html;
@@ -1300,25 +1304,25 @@ function renderTotals(){
   const k = calcChain();
   const sum = document.getElementById('wbSummary');
   if(sum) sum.innerHTML = [
-    ['Available (cost basis)', moneyC(k.availableC), ''],
-    ['Estimate total', moneyC(k.estTotalC), ''],
-    ['Budget total', moneyC(k.budTotalC), ''],
+    ['Available for Construction', moneyC(k.availableC), ''],
+    ['Estimated Direct Cost', moneyC(k.estTotalC), ''],
+    ['PM Budget Total', moneyC(k.budTotalC), ''],
     ['Over/Under vs Estimate', moneyC(k.ouEstC), k.ouEstC < 0 ? 'var(--err)' : 'var(--ok)'],
     ['Over/Under vs Budget', moneyC(k.ouBudC), k.ouBudC < 0 ? 'var(--err)' : 'var(--ok)']
   ].map(m => '<div class="metric"><div class="m-label">' + m[0] + '</div><div class="m-value"' +
       (m[2] ? ' style="color:' + m[2] + '"' : '') + '>' + m[1] + '</div></div>').join('');
-  const fc = document.getElementById('finComputed');
-  if(fc) fc.textContent = moneyC(k.overheadC) + ' / ' + moneyC(k.staffC);
+  const fi = document.getElementById('finIndirect');
+  if(fi) fi.textContent = moneyC(k.overheadC);
+  const fp = document.getElementById('finPayroll');
+  if(fp) fp.textContent = moneyC(k.staffC);
   TEMPLATE.forEach(g => {
-    const gEl = document.getElementById('gbud-' + g.code);
-    if(gEl) gEl.innerHTML = budCellHtml(estForGroup(g), groupBudC(g));
     g.divisions.forEach(d => {
       const dEl = document.getElementById('dbud-' + d.key);
       if(dEl) dEl.innerHTML = budCellHtml(estForDiv(d), divBudC(d));
     });
   });
   const put = (id, val, colored) => { const el = document.getElementById(id);
-    if(el){ el.textContent = moneyC(val); if(colored) el.style.color = val < 0 ? 'var(--err)' : 'var(--ok)'; } };
+    if(el){ el.textContent = fmtC(val); if(colored) el.style.color = val < 0 ? 'var(--err)' : 'var(--ok)'; } };
   put('stEst', k.estTotalC); put('stBud', k.budTotalC);
   put('ouEstCell', k.ouEstC, true); put('ouBudCell', k.ouBudC, true);
 }
