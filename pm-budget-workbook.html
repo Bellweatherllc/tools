@@ -180,8 +180,14 @@ tr.subtotal td{background:#f2f2f2;border-top:2px solid #9a9a9a;font-weight:700;}
 #tipBox{position:fixed;z-index:9999;display:none;background:var(--navy);color:#fff;font-size:10.5px;line-height:1.45;padding:7px 10px;border-radius:5px;max-width:270px;box-shadow:0 4px 14px rgba(0,0,0,.25);pointer-events:none;}
 tr.col-hdr td{position:sticky;top:calc(38px + var(--wbstickyh, 140px));z-index:45;background:#faf9f6;font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-sec);text-align:right;border:1px solid #e2e2e2;padding:3px 8px;}
 tr.col-hdr td:first-child{border-left:none;border-top:none;background:transparent;}
-.doc-pill{display:inline-flex;width:27px;height:27px;border-radius:50%;align-items:center;justify-content:center;font-size:8px;font-weight:700;letter-spacing:.02em;background:#f3e7c3;color:#1f2e3e;border:1px solid #d8b64f;text-decoration:none;margin-right:5px;}
-.doc-pill:hover{background:var(--gold-light);}
+tr.tot-row td{position:sticky;z-index:44;background:#f2f2f2;font-weight:700;border:1px solid #e2e2e2;padding:3px 8px;font-size:13px;}
+tr.tot-row.t1 td{top:calc(38px + var(--wbstickyh, 140px) + 22px);}
+tr.tot-row.t2 td{top:calc(38px + var(--wbstickyh, 140px) + 50px);border-bottom:2px solid #9a9a9a;}
+.doc-pill{display:inline-flex;width:27px;height:27px;border-radius:50%;align-items:center;justify-content:center;font-size:8px;font-weight:700;letter-spacing:.02em;text-decoration:none;margin-right:5px;border:1px solid;}
+.doc-pill.dp-est{background:#f6eed3;border-color:#c9a84c;color:#6b5412;}
+.doc-pill.dp-da{background:#e4eaf3;border-color:#8fa6c4;color:#2b4a6f;}
+.doc-pill.dp-ca{background:#e3efe8;border-color:#84ad95;color:#1d5c39;}
+.doc-pill:hover{filter:brightness(.95);}
 </style>
 </head>
 <body>
@@ -191,7 +197,7 @@ tr.col-hdr td:first-child{border-left:none;border-top:none;background:transparen
     <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">PM Budget Workbook</div>
     <div class="auth-subtitle">Bellweather CORE</div>
-    <div class="auth-version" id="authVersionBadge">v22</div>
+    <div class="auth-version" id="authVersionBadge">v23</div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -200,7 +206,7 @@ tr.col-hdr td:first-child{border-left:none;border-top:none;background:transparen
 <header class="app-header">
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <span class="hdr-title">PM Budget Workbook</span>
-  <span class="hdr-badge" id="versionBadge">v22</span>
+  <span class="hdr-badge" id="versionBadge">v23</span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
   <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
@@ -282,9 +288,10 @@ tr.col-hdr td:first-child{border-left:none;border-top:none;background:transparen
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v22';
+const CORE_VERSION = 'v23';
 
 const BUDGET_CHANGELOG = [
+  { v:'v23', date:'2026-08-26', notes:'TOTAL and Over/Under moved to the top of the grid, pinned beneath the column labels while you scroll, and removed from the bottom and from the financials area \u2014 the only tile left there is Available for Construction. Document pills recolored per type to match the Pipeline\u2019s hover palette, muted for a white background: gold EST, blue DA, green CA.' },
   { v:'v22', date:'2026-08-26', notes:'Sticky Estimate / Budget column labels that stay visible while scrolling. Hover explanations rebuilt as instant tooltips that appear reliably. Hide financials now sits on its own line beneath the Back button and collapses the summary tiles too. Setup for a new project now appears beneath the project picker instead of above it. Narrower page, matched number sizes, and warmer document pills.' },
   { v:'v21', date:'2026-08-26', notes:'Project picker now lives inside the workbook \u2014 one screen, top to bottom. Comments are larger and red with plain unbolded details after, labeled Estimating Comment or Budgeting Comment. Back button has its arrow, the financial-settings collapse sits right beneath it, document links are muted circular pills like the Pipeline, the estimate column is light gray (it isn\u2019t editable), every budget starts at 0, and the number columns are much narrower.' },
   { v:'v20', date:'2026-08-26', notes:'Cleanup pass for readability: bigger grid text with numbers tucked closer to their line items, comments lead with the words (then date, name, and controls \u2014 the Budgeting label is gone), hover any total or setting to see how it\u2019s calculated, and the financial settings can collapse behind a toggle while the totals stay pinned. Button renames: Back to Estimate & Tab, Link to Documents.' },
@@ -1282,7 +1289,10 @@ function renderWorkbook(){
       gen.map(cm => cmtHtml(cm)).join('') : '';
 
   /* Grid \u2014 flat divisions, spreadsheet style */
-  let html = '<tr class="col-hdr"><td></td><td class="amt">Estimate</td><td class="amt">Budget</td></tr>';
+  let html = '<tr class="col-hdr"><td></td><td class="amt">Estimate</td><td class="amt">Budget</td></tr>' +
+    '<tr class="tot-row t1"><td>TOTAL</td><td class="amt" id="stEst"></td><td class="amt" id="stBud"></td></tr>' +
+    '<tr class="tot-row t2"><td data-tip="Available for Construction \u2212 the column\u2019s total">Over/Under (available \u2212 total)</td>' +
+    '<td class="amt" id="ouEstCell"></td><td class="amt" id="ouBudCell"></td></tr>';
   wb._lineRefs = [];
   TEMPLATE.forEach(g => {
     g.divisions.forEach(d => {
@@ -1328,9 +1338,6 @@ function renderWorkbook(){
     });
     html += '<tr class="spacer"><td colspan="3"></td></tr>';
   }
-  html += '<tr class="subtotal"><td>TOTAL</td><td class="amt" id="stEst"></td><td class="amt" id="stBud"></td></tr>';
-  html += '<tr class="subtotal"><td>Over/Under (available \u2212 total)</td>' +
-    '<td class="amt" id="ouEstCell"></td><td class="amt" id="ouBudCell"></td></tr>';
   document.getElementById('wbBody').innerHTML = html;
   if(focusKey){
     const el = document.querySelector('[data-line="' + CSS.escape(focusKey) + '"],[data-adddiv="' + CSS.escape(focusKey) + '"],[data-cfg="' + CSS.escape(focusKey) + '"]');
@@ -1345,7 +1352,7 @@ function docsCellHtml(){
   const links = [['EST', pmeta.estUrl], ['DA', pmeta.daUrl], ['CA', pmeta.caUrl]].filter(x => x[1]);
   if(!links.length) return '';
   return '<div class="fin-cell"><label>Link to Documents</label><div class="fin-docs">' +
-    links.map(l => '<a class="doc-pill" href="' + escAttr(l[1]) + '" target="_blank" rel="noopener" data-tip="Open the ' + l[0] + ' document">' + l[0] + '</a>').join('') +
+    links.map(l => '<a class="doc-pill dp-' + l[0].toLowerCase() + '" href="' + escAttr(l[1]) + '" target="_blank" rel="noopener" data-tip="Open the ' + l[0] + ' document">' + l[0] + '</a>').join('') +
     '</div></div>';
 }
 
@@ -1354,11 +1361,7 @@ function renderTotals(){
   const k = calcChain();
   const sum = document.getElementById('wbSummary');
   if(sum) sum.innerHTML = [
-    ['Available for Construction', moneyC(k.availableC), '', 'Sale Price \u00F7 (1 + Mark-Up) \u2212 Selections \u2212 Unresolved Allowance \u2212 DESIGN COGS \u2212 Indirect \u2212 Payroll'],
-    ['Estimated Direct Cost', moneyC(k.estTotalC), '', 'Sum of the estimate figures on the division headers'],
-    ['PM Budget Total', moneyC(k.budTotalC), '', 'Sum of every budget line entered below'],
-    ['Over/Under vs Estimate', moneyC(k.ouEstC), k.ouEstC < 0 ? 'var(--err)' : 'var(--ok)', 'Available for Construction \u2212 Estimated Direct Cost'],
-    ['Over/Under vs Budget', moneyC(k.ouBudC), k.ouBudC < 0 ? 'var(--err)' : 'var(--ok)', 'Available for Construction \u2212 PM Budget Total']
+    ['Available for Construction', moneyC(k.availableC), '', 'Sale Price \u00F7 (1 + Mark-Up) \u2212 Selections \u2212 Unresolved Allowance \u2212 DESIGN COGS \u2212 Indirect \u2212 Payroll']
   ].map(m => '<div class="metric"' + (m[3] ? ' data-tip="' + m[3] + '"' : '') + '><div class="m-label">' + m[0] + '</div><div class="m-value"' +
       (m[2] ? ' style="color:' + m[2] + '"' : '') + '>' + m[1] + '</div></div>').join('');
   const fi = document.getElementById('finIndirect');
