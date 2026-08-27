@@ -2,7 +2,7 @@
 
 *How to use it, how it works, and what to do when it misbehaves — written for people, not programmers.*
 
-*late-August 2026 edition*
+*early-September 2026 edition*
 
 ## Part I — Using the Pipeline
 
@@ -14,7 +14,7 @@ The Pipeline is Bellweather's shared project tracking board. It shows every proj
 
 The most important thing to understand is that **everyone is looking at the same board**. There is one set of information, and the Pipeline shows it to you through four different views (more on those below). When someone changes something — moves a date, adds a note, confirms a project — that change appears on everyone else's screen within a few seconds. You never need to ask "is this the latest version?" It always is.
 
-The Pipeline lives at a web address, like any website. There's nothing to install. Open the link, sign in, and you're looking at the board.
+The Pipeline lives at [a web address](https://bellweatherllc.github.io/tools/project-pipeline.html), like any website. There's nothing to install. Open the link, sign in, and you're looking at the board.
 
 ### Signing in
 
@@ -69,7 +69,7 @@ Confirming is not casually reversible, so it's done deliberately, usually after 
 
 ### Document pills
 
-Projects carry small labeled chips — **EST**, **PB**, **DA**, **TRL**, **MP**, **SO**, **SS**, **CA** — each one a shortcut to a key document (the estimate, Project Basis, Design Agreement, Trello card, master plan, Scope Outline, selections sheet, Construction Agreement). Click a pill to open that document directly.
+Projects carry small labeled chips — **EST**, **PB**, **DA**, **TRL**, **MP**, **SO**, **SS**, **PLN**, **CA** — each one a shortcut to a key document (the estimate, Project Basis, Design Agreement, Trello card, master plan, Scope Outline, selections sheet, plans, Construction Agreement). Click a pill to open that document directly.
 
 The Pipeline finds most of these documents by itself — automatically — by looking in the project's folder. A pill's appearance tells you how it got its link — found automatically, pinned by a person, or added by hand. If a pill is missing or points at the wrong file, it can be corrected right on the project; you don't need to go hunting through folders.
 
@@ -105,7 +105,7 @@ The Pipeline keeps a changelog written in plain language — every release, desc
 
 ## Part II — Care & Repair
 
-For whoever maintains the Pipeline — today that's Byron. Written so that someone who is *not* a programmer could keep it healthy, diagnose trouble, and get it fixed.
+For whoever maintains the Pipeline — today that's Byron and Joey. Written so that someone who is *not* a programmer could keep it healthy, diagnose trouble, and get it fixed.
 
 ### How it's built, in plain terms
 
@@ -113,16 +113,16 @@ The entire Pipeline is **one file** — a single web page that contains everythi
 
 The project data itself lives in **SharePoint**, part of the company's Microsoft 365. SharePoint holds several **lists** — think of a list as a shared spreadsheet that lives in the cloud, one row per project or per person. SharePoint is the single source of truth: the Pipeline page reads from it when it loads, writes back to it when anything changes, and never stores anything important anywhere else. Your computer only keeps a temporary reading copy, which is why reloading is always safe.
 
-Sign-in works through the company's Microsoft system. There's a registration (in a Microsoft service called Azure) that tells Microsoft "this page is allowed to ask users to sign in and read these lists on their behalf." **Byron manages that registration, and only Byron** — it's the one piece nobody else should touch, because a wrong change there locks everyone out.
+Sign-in works through the company's Microsoft system. There's a registration (in a Microsoft service called Azure) that tells Microsoft "this page is allowed to ask users to sign in and read these lists on their behalf." **Byron and Joey manage that registration, and only they do** — it's the one piece nobody else should touch, because a wrong change there locks everyone out.
 
 Three ideas summarize the whole architecture: **one page file** (on GitHub), **one source of truth** (SharePoint), **one sign-in gate** (the Microsoft registration).
 
 ### The moving parts
 
-- **CORE_Projects** — the main list. One row per project (and per open slot). Its rows carry the name, stage, schedule, assignments, document links — everything a project is.
-- **CORE_TeamMembers** — who appears on the board, and what each person is allowed to see and do. Access is managed by editing this list directly in SharePoint — roles are just columns on a person's row.
-- **CORE_Config** — settings: capacity targets, thresholds, and the keys that let the Pipeline read the Trello permit board.
-- **CORE_Pipeline_Snapshots** — a library of daily board backups. See *Backups and restore*.
+- **CORE_Projects** — the main list. One row per project (and per open slot). Its rows carry the name, stage, schedule, assignments, document links — everything a project is. Managed through the [Projects Manager](https://bellweatherllc.github.io/tools/core-projects-manager.html).
+- **CORE_TeamMembers** — who appears on the board, and what each person is allowed to see and do. Managed through the [Team Members page](https://bellweatherllc.github.io/tools/team-members.html); roles are columns on a person's row.
+- **CORE_Config** — settings: capacity targets, thresholds, and the keys that let the Pipeline read the Trello permit board. There’s no page for it — it’s edited directly in SharePoint.
+- **CORE_Pipeline_Snapshots** — a library of daily board backups. There’s no separate page for it — you work with snapshots through the Pipeline’s own snapshot browser (see *Backups and restore*).
 - **Trello** — the [PRE-CON] DESIGN ABSOLUTES board. The Pipeline reads it live when you hover a permitting project; it never writes to it. It feeds information into the PERMIT AND ZONING TRACKER BOARD and the ABSOLUTES (both in development).
 
 
@@ -130,7 +130,7 @@ Three ideas summarize the whole architecture: **one page file** (on GitHub), **o
 
 ### Where projects come from — the Projects Manager
 
-Projects don't originate on the Pipeline. They're created in a companion tool, the **Projects Manager** — a separate page with its own address and the same Microsoft sign-in, writing to the very same project list the Pipeline reads. Most people never open it; it's the working home of whoever handles intake and keeps project records straight. It does two jobs.
+Projects don't originate on the Pipeline. They're created in a companion tool, the **[Projects Manager](https://bellweatherllc.github.io/tools/core-projects-manager.html)** — a separate page with its own address and the same Microsoft sign-in, writing to the very same project list the Pipeline reads. Most people never open it; it's the working home of whoever handles intake and keeps project records straight. It does two jobs.
 
 The first is **intake** — getting a new project into CORE. There are three routes in, and the everyday one runs by itself. When an estimator gives a Trello card the **EST REVIEW** label, an automation reads that card, lifts the details out of its description, and writes a new project record to SharePoint on its own. Within a few minutes the project exists in CORE, with nothing typed twice. Because the card's description is doing the work, it pays to write it cleanly: the labeled lines the automation looks for — **NAME:**, **ADDRESS:**, **HOME VALUE:**, **PROJECT DESCRIPTION:** — become the matching fields, and spacing or capitalization on those labels doesn't matter. The other two routes handle the exceptions: a **manual Trello pull** inside the Projects Manager, for catching up on older cards or ones that never got the label, and plain **manual entry** (with admin turned on) for a project that has no Trello card at all.
 
@@ -140,13 +140,13 @@ The second job is being the **record book**. Once a project exists, the Projects
 
 ### Adding and editing people
 
-Everyone who appears on the board — every designer, Project Manager, and Logistics Coordinator — is a row in the **CORE_TeamMembers** list on SharePoint. There's no separate screen for managing them, by design: people are added and changed by editing that list directly, the way you'd edit any shared spreadsheet.
+Everyone who appears on the board — every designer, Project Manager, and Logistics Coordinator — is a row in the **CORE_TeamMembers** list, managed through the **[Team Members page](https://bellweatherllc.github.io/tools/team-members.html)**.
 
-To **add** someone, open CORE_TeamMembers and create a new item. Give them their name as it should read on the board and their Bellweather work email, then set their **Role** — that field is what decides where they show up. The Role has to match one of the names the tools watch for, spelled out in full: **Designer**, **Project Manager**, or **Logistics Coordinator**. Capitalization doesn't matter, but the whole phrase does — "PM" or "Logistics" on its own won't be recognized, and the person just won't appear where you expect. Save, and they turn up the next time the board is reloaded.
+To **add** someone, open the Team Members page and add a person. Give them their name as it should read on the board and their Bellweather work email, then set their **Role** — that field is what decides where they show up. The Role has to match one of the names the tools watch for, spelled out in full: **Designer**, **Project Manager**, or **Logistics Coordinator**. Capitalization doesn't matter, but the whole phrase does — "PM" or "Logistics" on its own won't be recognized, and the person just won't appear where you expect. Save, and they turn up the next time the board is reloaded.
 
-To **change** someone — move a coordinator into a different role, or fix a spelling — edit their row. Changing the Role moves them to the matching section; changing the name changes how they read everywhere at once.
+To **change** someone — move a coordinator into a different role, or fix a spelling — edit their entry. Changing the Role moves them to the matching section; changing the name changes how they read everywhere at once.
 
-To **remove** someone who’s left, delete their row in CORE_TeamMembers. One caution (the same one below): a project stores a person’s name as plain text, so deleting them here doesn’t scrub the name from projects that already reference it — they drop off the board, but their name lingers on those projects until you update them.
+To **remove** someone who’s left, delete them there. One caution (the same one below): a project stores a person’s name as plain text, so deleting them here doesn’t scrub the name from projects that already reference it — they drop off the board, but their name lingers on those projects until you update them.
 
 > **Names are the connection** — Projects point at their people by *name*: the designer, PM, and logistics fields on a project row hold the person's name as text, not a hidden ID. So renaming someone in CORE_TeamMembers doesn't automatically follow through to projects already carrying the old spelling. If you rename a person, plan to update the projects that still reference the old name — or, easier, get the spelling right the first time.
 
@@ -160,7 +160,7 @@ The Pipeline is developed in conversation with Claude (an AI assistant), in a pr
 2. **Describe the change or the symptom in plain words.** Screenshots help.
 3. **Every delivery is a complete new file with a higher version number.** The version appears in the top corner and on the sign-in screen. If a delivered file doesn't show a new version, something went wrong — don't deploy it.
 4. **The filename never changes.** It is always `project-pipeline.html`. The version lives in the badge, not the name. (Renaming the file would break sign-in and everyone's bookmarks.)
-5. **Deploy by drag-and-drop.** On the GitHub website, in the tools repository, drag the new file in to replace the old one. Within a minute or two the live address serves the new version. Ask everyone to reload.
+5. **Deploy by drag-and-drop.** On the GitHub website, in the [tools repository](https://github.com/Bellweatherllc/tools), drag the new file in to replace the old one. Within a minute or two the live address serves the new version. Ask everyone to reload.
 6. **The changelog is written for humans.** Every release adds plain-language entries inside the page itself. If you ever wonder why something behaves the way it does, the changelog is the first place to look — years of decisions are recorded there in normal sentences.
 
 ### If something breaks
@@ -171,7 +171,7 @@ The Pipeline protects itself in several ways, and most trouble announces itself 
 
 **What's happening:** The page couldn't get a valid sign-in token. It will retry at most three times, then stop and display the real underlying error on the sign-in screen instead of looping forever.
 
-**What to do:** Read the error message on the sign-in screen and write it down word for word — that message is the diagnosis. Check whether Microsoft 365 itself is having an outage (if email is also down, that's your answer — wait it out). Otherwise, send the exact message to whoever is fixing. If the message mentions permissions or the application, the Microsoft registration may have been changed — that's Byron's territory.
+**What to do:** Read the error message on the sign-in screen and write it down word for word — that message is the diagnosis. Check whether Microsoft 365 itself is having an outage (if email is also down, that's your answer — wait it out). Otherwise, send the exact message to whoever is fixing. If the message mentions permissions or the application, the Microsoft registration may have been changed — that's Byron and Joey's territory.
 
 #### Changes aren't saving
 
@@ -209,6 +209,6 @@ What's *not* covered: the documents behind the pills (those live in project fold
 
 ### Keeping this manual current
 
-This manual describes the Pipeline and its companion Projects Manager as deployed in late-August 2026. It should be re-edited whenever a feature changes how a person works — not for every release, but for every change a first-time reader would notice. The edition line at the top is the manual's own date; update it on every edit.
+This manual describes the Pipeline and its companion Projects Manager as deployed in early-September 2026. It should be re-edited whenever a feature changes how a person works — not for every release, but for every change a first-time reader would notice. The edition line at the top is the manual's own date; update it on every edit.
 
 The words of this manual live in a plain-text file (`pipeline-manual.md` stored on GitHub) that anyone can read and the maintainer can edit — no web-page code involved. The page that displays it (`pipeline-manual.html`) handles all the styling automatically and never needs touching. Edit the words, save, and the manual updates.
