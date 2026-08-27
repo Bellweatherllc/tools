@@ -2,7 +2,7 @@
 
 *How to use it, how it works, and what to do when it misbehaves — written for people, not programmers.*
 
-*mid-August 2026 edition*
+*late-August 2026 edition*
 
 ## Part I — Using the Pipeline
 
@@ -30,7 +30,7 @@ The board is a timeline. Weeks run left to right, and the column outlined in **g
 - **Small markers on a row** are milestones — single moments like an agreement signing. Hover over anything to see what it is.
 - **Badges on a project** tell you its status at a glance: whether it's still prospective, has a signed Design Agreement (DA), a signed Construction Agreement (CA), is paused, cancelled, or archived.
 - **Collapsed projects** appear as a single slim bar to save space. Click to expand them and edit contents.
-- **Clicking on a project name** opens a card with its details — who's on it, the address, the budget, links to almost every document that's stored on Sharepoint. When multiple versions of documents exist, they're provided in a list for you to determine which is most relevant.
+- **Clicking on a project name** opens a card with its details — who's on it, the address, the budget, links to almost every document that's stored on SharePoint. When multiple versions of documents exist, they're provided in a list for you to determine which is most relevant.
 
 Color is meaningful everywhere on the board — nothing is decorated. If two things are different colors, they're telling you something different.
 
@@ -39,9 +39,9 @@ Color is meaningful everywhere on the board — nothing is decorated. If two thi
 Across the top are four tabs: **Sales**, **Design**, **Production**, and **Operations**. These are four views of the same board, each arranged for a different kind of work. (Keyboard shortcut: press 1, 2, 3, or 4.)
 
 - **Sales** is where future work gets planned. It shows leads, open production slots (reserved capacity for projects that haven't been matched yet), and the matching process that pairs a promising lead with a slot. This is where the CONFIRM button lives.
-- **Design** shows the design team's workload — every project in design, by designer, with their capacity over time. Important milestones are noted (selections, crit meetings, etc)
-**Production** shows construction — every project by Project Manager or Logistics Coordinator.
- **Operations** shows cash flow.
+- **Design** shows the design team's workload — every project in design, by designer, with their capacity over time. Important milestones are noted (selections, crit meetings, etc.)
+- **Production** shows construction — every project by Project Manager or Logistics Coordinator.
+- **Operations** shows cash flow.
 
 You'll naturally live in the screen that matches your job, but you can always look at the others — it's all one board.
 
@@ -65,13 +65,13 @@ On the Sales screen, when a lead has been matched to an open slot and has a prop
 - The open slot is consumed. Its reserved schedule transfers to the project, and the empty slot disappears from the board.
 - The project goes live on the Design and Production screens, with its schedule in place.
 
-Confirming is not casually reversible, so it's done deliberately, usually after conversation among   Sales, Design, and Production.
+Confirming is not casually reversible, so it's done deliberately, usually after conversation among Sales, Design, and Production.
 
 ### Document pills
 
 Projects carry small labeled chips — **EST**, **PB**, **DA**, **TRL**, **MP**, **SO**, **SS**, **CA** — each one a shortcut to a key document (the estimate, Project Basis, Design Agreement, Trello card, master plan, Scope Outline, selections sheet, Construction Agreement). Click a pill to open that document directly.
 
-The Pipeline finds most of these documents by itself - automatically -  by looking in the project's folder. A pill's appearance tells you how it got its link — found automatically, pinned by a person, or added by hand. If a pill is missing or points at the wrong file, it can be corrected right on the project; you don't need to go hunting through folders.
+The Pipeline finds most of these documents by itself — automatically — by looking in the project's folder. A pill's appearance tells you how it got its link — found automatically, pinned by a person, or added by hand. If a pill is missing or points at the wrong file, it can be corrected right on the project; you don't need to go hunting through folders.
 
 ### Permit & zoning information (currently in development)
 
@@ -127,6 +127,30 @@ Three ideas summarize the whole architecture: **one page file** (on GitHub), **o
 
 
 > **A naming rule with a reason** — Project stages in the list are called **PipelineStage**, with exactly these values: Lead, DA Signed, CA Signed, Paused, Cancelled, Archive. Don't invent new stage names in SharePoint, and don't rename the column — the page matches these words exactly.
+
+### Where projects come from — the Projects Manager
+
+Projects don't originate on the Pipeline. They're created in a companion tool, the **Projects Manager** — a separate page with its own address and the same Microsoft sign-in, writing to the very same project list the Pipeline reads. Most people never open it; it's the working home of whoever handles intake and keeps project records straight. It does two jobs.
+
+The first is **intake** — getting a new project into CORE. There are three routes in, and the everyday one runs by itself. When an estimator gives a Trello card the **EST REVIEW** label, an automation reads that card, lifts the details out of its description, and writes a new project record to SharePoint on its own. Within a few minutes the project exists in CORE, with nothing typed twice. Because the card's description is doing the work, it pays to write it cleanly: the labeled lines the automation looks for — **NAME:**, **ADDRESS:**, **HOME VALUE:**, **PROJECT DESCRIPTION:** — become the matching fields, and spacing or capitalization on those labels doesn't matter. The other two routes handle the exceptions: a **manual Trello pull** inside the Projects Manager, for catching up on older cards or ones that never got the label, and plain **manual entry** (with admin turned on) for a project that has no Trello card at all.
+
+The second job is being the **record book**. Once a project exists, the Projects Manager is where its facts are kept true over time — who's assigned as designer, PM, and logistics coordinator; the address, neighborhood, and scope; the values, fees, and key dates; and free-form notes. When a project needs a field filled in or a wrong value corrected, this is the place to do it, and the change lands in the shared list immediately.
+
+> **Two tools, one list** — The Projects Manager and the Pipeline are two windows onto the same CORE_Projects list. The Projects Manager is the front door and the filing cabinet; the Pipeline is the schedule and the shared timeline. A change in one is a change to the underlying list, so it appears in the other — neither holds its own copy.
+
+### Adding and editing people
+
+Everyone who appears on the board — every designer, Project Manager, and Logistics Coordinator — is a row in the **CORE_TeamMembers** list on SharePoint. There's no separate screen for managing them, by design: people are added and changed by editing that list directly, the way you'd edit any shared spreadsheet.
+
+To **add** someone, open CORE_TeamMembers and create a new item. Give them their name as it should read on the board and their Bellweather work email, then set their **Role** — that field is what decides where they show up. The Role has to match one of the names the tools watch for, spelled out in full: **Designer**, **Project Manager**, or **Logistics Coordinator**. Capitalization doesn't matter, but the whole phrase does — "PM" or "Logistics" on its own won't be recognized, and the person just won't appear where you expect. Save, and they turn up the next time the board is reloaded.
+
+To **change** someone — move a coordinator into a different role, or fix a spelling — edit their row. Changing the Role moves them to the matching section; changing the name changes how they read everywhere at once.
+
+To **remove** someone who’s left, delete their row in CORE_TeamMembers. One caution (the same one below): a project stores a person’s name as plain text, so deleting them here doesn’t scrub the name from projects that already reference it — they drop off the board, but their name lingers on those projects until you update them.
+
+> **Names are the connection** — Projects point at their people by *name*: the designer, PM, and logistics fields on a project row hold the person's name as text, not a hidden ID. So renaming someone in CORE_TeamMembers doesn't automatically follow through to projects already carrying the old spelling. If you rename a person, plan to update the projects that still reference the old name — or, easier, get the spelling right the first time.
+
+What each person is *allowed to see and do* — admin rights, which screens they can touch — is governed by other columns on the same row, set once when they're added and rarely revisited afterward.
 
 ### How changes get made
 
@@ -185,6 +209,6 @@ What's *not* covered: the documents behind the pills (those live in project fold
 
 ### Keeping this manual current
 
-This manual describes the Pipeline as deployed in mid-August 2026. It should be re-edited whenever a feature changes how a person works — not for every release, but for every change a first-time reader would notice. The edition line at the top is the manual's own date; update it on every edit.
+This manual describes the Pipeline and its companion Projects Manager as deployed in late-August 2026. It should be re-edited whenever a feature changes how a person works — not for every release, but for every change a first-time reader would notice. The edition line at the top is the manual's own date; update it on every edit.
 
 The words of this manual live in a plain-text file (`pipeline-manual.md` stored on GitHub) that anyone can read and the maintainer can edit — no web-page code involved. The page that displays it (`pipeline-manual.html`) handles all the styling automatically and never needs touching. Edit the words, save, and the manual updates.
