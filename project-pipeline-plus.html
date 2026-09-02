@@ -3254,7 +3254,7 @@ table.ops-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v988';
+const CORE_VERSION = 'v990';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -10669,9 +10669,10 @@ function buildOperationsSection(){
   sec.appendChild(bar);
   // v988: the live screen replaces the v954 landing page.
   const root=el('div','ops-root');
-  opsRenderInto(root);
+  try{ opsRenderInto(root); }
+  catch(e){ console.error(APP_VER+' Operations render failed:',e); root.innerHTML='<div class="ops-noaccess"><h2>Operations could not render</h2><p style="color:#ac2828;">'+String(e&&e.message||e).replace(/</g,'&lt;')+'</p></div>'; }
   sec.appendChild(root);
-  opsApplyGate();
+  setTimeout(opsApplyGate,0); // after the build settles — setFocus mid-build is unsafe
   return sec;
 }
 
@@ -11104,7 +11105,7 @@ async function loadTeamMembers(saved){
       if(match){
         const raw=((match.fields||{}).PipelineRole||'').trim().toLowerCase();
         CURRENT_USER_ROLE=raw==='admin'?'admin':'readonly';
-        CURRENT_USER_OPS_ROLE=((match.fields||{}).OpsRole||'').trim(); // v988: empty → Operations tab does not render
+        CURRENT_USER_OPS_ROLE=((match.fields||{}).OpsRole||'').trim(); // v988: empty → Operations screen shows the access notice
         console.log('[auth] PipelineRole resolved:',CURRENT_USER_ROLE,'for',acct.name,'via',matchMethod);
       } else {
         console.warn('[auth] No CORE_TeamMembers match for signed-in user — defaulting to readonly. Tried addresses:',idCandidates.join(', '),'\u00b7 display name:',acct.name);
@@ -15285,6 +15286,19 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v990', date: '2026-09-02',
+    entries: [
+      'The Operations tab is always present. Without an OPS role the screen explains that cashflow requires access and who to contact.',
+    ],
+  },
+  {
+    version: 'v989', date: '2026-09-02',
+    entries: [
+      'If the Operations screen fails to render, the section stays in place and shows the error instead of disappearing.',
+      'The OPS role gate no longer switches screens in the middle of a rebuild.',
+    ],
+  },
+  {
     version: 'v988', date: '2026-09-02',
     entries: [
       'The Operations screen is live: a four-week cash view, alerts, the list of expected invoices, and the scenario list, in place of the landing page.',
@@ -17845,13 +17859,11 @@ function opsDesignInvoices(){
   return out;
 }
 function opsGateOk(){ return !!CURRENT_USER_OPS_ROLE; }
-function opsApplyGate(){
-  const btn=document.querySelector('[data-focus-btn="operations"]'); if(btn) btn.style.display=opsGateOk()?'':'none';
-  if(!opsGateOk()&&document.body.getAttribute('data-focus')==='operations') setFocus('planning');
-}
+// v990: the tab is always present — access changes what the screen shows, not the architecture.
+function opsApplyGate(){ const btn=document.querySelector('[data-focus-btn="operations"]'); if(btn) btn.style.display=''; }
 function opsRenderInto(root){
   if(!opsGateOk()){
-    root.innerHTML='<div class="ops-noaccess"><h2>This screen isn\u2019t available to you</h2><p>Operations is visible to leadership and Patti. If you think you should have access, check your OPS role on the Team Members list.</p></div>';
+    root.innerHTML='<div class="ops-noaccess"><h2>Cashflow requires access</h2><p>The Operations screen shows cash and invoicing figures and is limited to the people who work with them. Contact Byron for permission.</p></div>';
     return;
   }
   const W=opsWeeks(), inv=opsDesignInvoices();
@@ -17900,7 +17912,7 @@ function opsRenderInto(root){
     +'<div class="ops-af-act"><button type="button" id="opsAfCancel">Cancel</button><button type="button" class="ops-af-save" id="opsAfSave">Add it</button></div></div>'
     +'<div id="opsScList"></div><div class="ops-sc-foot"><span>From PMs, from Melissa, from Mario</span><span id="opsScCount"></span></div></div>'
     +'</div>';
-  opsDrawScenarios(W);
+  opsDrawScenarios(W,root);
   const form=root.querySelector('#opsAddForm'), addBtn=root.querySelector('#opsAddBtn'); let dir='out';
   const toggleForm=o=>{ form.classList.toggle('on',o); addBtn.classList.toggle('on',o); addBtn.textContent=o?'Close':'+ Add'; if(o) root.querySelector('#opsAfWhat').focus(); };
   addBtn.addEventListener('click',()=>toggleForm(!form.classList.contains('on')));
@@ -17914,17 +17926,17 @@ function opsRenderInto(root){
   root.querySelector('#opsScList').addEventListener('click',e=>{
     const del=e.target.getAttribute&&e.target.getAttribute('data-del');
     if(del){ OPS_SCENARIOS=OPS_SCENARIOS.filter(s=>s.id!==del); opsRenderInto(root); return; }
-    const it=e.target.closest('.ops-sc'); if(!it) return; const s=OPS_SCENARIOS.find(z=>z.id===it.dataset.id); if(s){ s.on=!s.on; opsDrawScenarios(W); }
+    const it=e.target.closest('.ops-sc'); if(!it) return; const s=OPS_SCENARIOS.find(z=>z.id===it.dataset.id); if(s){ s.on=!s.on; opsDrawScenarios(W,root); }
   });
 }
-function opsDrawScenarios(W){
-  const el=document.getElementById('opsScList'); if(!el) return;
+function opsDrawScenarios(W,root){
+  const el=(root||document).querySelector('#opsScList'); if(!el) return;
   let on=0;
   el.innerHTML=OPS_SCENARIOS.length?OPS_SCENARIOS.map(s=>{ if(s.on) on++; return '<div class="ops-sc'+(s.on?' on':'')+'" data-id="'+s.id+'"><button type="button" class="ops-sw" role="switch" aria-checked="'+s.on+'"></button>'
     +'<div class="ops-sc-bd"><div class="ops-sc-t">'+diEsc(s.t)+'</div><div class="ops-sc-m">'+diEsc(s.m?s.m+'. ':'')+'Lands in '+W[s.wk].lab+'.</div></div>'
     +'<div class="ops-sc-amt '+s.dir+'">'+(s.dir==='in'?'+':'\u2212')+opsMoney(s.amt)+'</div><button type="button" class="ops-sc-del" data-del="'+s.id+'" aria-label="Remove">\u00d7</button></div>'; }).join('')
     :'<div class="ops-empty">Nothing on the maybe list.</div>';
-  const c=document.getElementById('opsScCount'); if(c) c.textContent=on+' of '+OPS_SCENARIOS.length+' on';
+  const c=(root||document).querySelector('#opsScCount'); if(c) c.textContent=on+' of '+OPS_SCENARIOS.length+' on';
 }
 
 // ════════════════════════════════  DESIGN INVOICES — DA seed (v981–v982)
