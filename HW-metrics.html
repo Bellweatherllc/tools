@@ -316,7 +316,7 @@ select.rubric-select.status-bad{color:var(--red);}
     <p class="auth-sub">Sign in with your Microsoft account to continue.</p>
     <button class="btn-signin" id="btn-signin">Sign in with Microsoft</button>
     <div class="auth-error" id="auth-error"></div>
-    <div style="margin-top:20px;font-size:11px;color:var(--text-sec);opacity:.6;">v3.12</div>
+    <div style="margin-top:20px;font-size:11px;color:var(--text-sec);opacity:.6;">v3.13</div>
   </div>
 </div>
 
@@ -333,7 +333,7 @@ select.rubric-select.status-bad{color:var(--red);}
   <div id="topbar">
     <div class="tb-left">
       <span class="tb-tool">Hayley Wynne: Quarterly Metrics</span>
-      <span class="tb-badge" id="tb-version">v3.12</span>
+      <span class="tb-badge" id="tb-version">v3.13</span>
     </div>
     <div class="tb-right">
       <span class="tb-role" id="tb-role">Manager</span>
@@ -1509,6 +1509,12 @@ function renderSettingsView() {
     +'<button class="btn-primary" id="add-proj-btn">Add</button></div>'
     +'</div></div>'
 
+    +'<div class="settings-section"><div class="settings-hdr">Export Data</div><div class="settings-body">'
+    +'<div class="provision-note">Download the complete PIP record — configuration, projects, every milestone check-in, all weekly entries, and all tagged correspondence — as a single JSON file. Pulls fresh from SharePoint at download time, so the file is always complete and current.</div>'
+    +'<button class="btn-primary" id="export-all-btn">Export all data</button>'
+    +'<div id="export-status" style="margin-top:10px;font-size:12px;"></div>'
+    +'</div></div>'
+
     +(rp.length?'<div class="settings-section"><div class="settings-hdr">Retired Projects</div><div class="settings-body">'
       +rp.map(function(p){ return '<div class="pmrow"><div class="pmrow-name">'+esc(p.name)+'<span class="pmrow-retired-note">Retired '+esc(p.retiredDate||'')+'</span></div></div>'; }).join('')
       +'</div></div>':'');
@@ -1573,6 +1579,39 @@ function renderSettingsView() {
     this.disabled=true;
     try { await saveProjects(); inp.value=''; renderSettingsView(); showToast('Added: '+n); }
     catch(e){ showToast('Error: '+e.message); } finally{ this.disabled=false; }
+  });
+  document.getElementById('export-all-btn').addEventListener('click',async function(){
+    var statusEl=document.getElementById('export-status');
+    this.disabled=true; statusEl.style.color='var(--text-sec)'; statusEl.textContent='Pulling from SharePoint…';
+    try {
+      var weeks = await loadAllWeeklyEntries();
+      var correspondence = await loadCorrespondenceEntries();
+      var payload = {
+        tool: 'HW-metrics',
+        version: 'v3.13',
+        exportedAt: new Date().toISOString(),
+        exportedBy: (_me && (_me.username || _me.name)) || '',
+        employee: _config.employeeEmail || '',
+        periodStart: _config.periodStart || '',
+        config: _config,
+        projects: _projects,
+        milestones: _milestones,
+        weeks: weeks,
+        correspondence: correspondence
+      };
+      var blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'HW-PIP-export-'+(new Date().toISOString().slice(0,10))+'.json';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+      statusEl.style.color='var(--green)';
+      statusEl.textContent='✓ Exported '+weeks.length+' weekly entries and '+correspondence.length+' correspondence entries.';
+      console.log('[HW-metrics] Export complete —', weeks.length, 'weeks,', correspondence.length, 'correspondence');
+    } catch(e) {
+      statusEl.style.color='var(--red)'; statusEl.textContent='Error: '+e.message;
+      console.error('[HW-metrics] Export error:', e);
+    } finally { this.disabled=false; }
   });
   document.querySelectorAll('.retire-btn').forEach(function(btn){
     btn.addEventListener('click',async function(){
