@@ -3174,7 +3174,7 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v985';
+const CORE_VERSION = 'v986';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15206,6 +15206,12 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v986', date: '2026-09-02',
+    entries: [
+      'A DA payment schedule that runs across a page break is now read in full; the reader no longer stops at the page footer.',
+    ],
+  },
+  {
     version: 'v985', date: '2026-09-02',
     entries: [
       'Doc Links now resolves the real file name for links that were pasted by hand, so the panel shows the file (and its type) instead of \u201c(link)\u201d. A link whose file can\u2019t be read is flagged as possibly broken.',
@@ -17749,10 +17755,19 @@ function diParseDa(lines){
   if(sigs.length) out.signedDate=sigs[sigs.length-1];
   let i=lines.findIndex(l=>/^PAYMENT SCHEDULE/i.test(l));
   if(i<0) return out;
+  // v986: the table can straddle a page break (footer "Doc ID", header, blank rows), and a
+  // cell can land on its own line. Scan to the next heading, skip page furniture, and glue a
+  // lone amount line onto the row above it.
+  const rowRe=/^#\s*(\d+)\s*:\s*(.+?)\s+(\$\s*[\d\s,]+(?:\.\d{2})?|TBD)\s*$/i; // kerned digits arrive with spaces ("$ 1 0 ,000")
+  const amtRe=/^(\$\s*[\d\s,]+(?:\.\d{2})?|TBD)\s*$/i;
+  const endRe=/^(PROJECT SCHEDULE|DESIGN DELIVERABLES|ADDITIONAL TERMS|Invoices for the installment)/i;
   for(i=i+1;i<lines.length;i++){
-    const l=lines[i];
-    const m=l.match(/^#\s*(\d+)\s*:\s*(.+?)\s+(\$\s*[\d\s,]+(?:\.\d{2})?|TBD)\s*$/i); // kerned digits arrive with spaces ("$ 1 0 ,000")
-    if(!m){ if(out.installments.length) break; continue; }
+    let l=lines[i];
+    if(endRe.test(l)) break;
+    if(/^Doc ID:/i.test(l)||/^Page \d+/i.test(l)) continue;
+    if(/^#\s*\d+\s*:/.test(l)&&!rowRe.test(l)&&i+1<lines.length&&amtRe.test(lines[i+1])){ l=l+' '+lines[i+1]; i++; }
+    const m=l.match(rowRe);
+    if(!m) continue;
     const label=m[2].trim(); const row={n:Number(m[1]),label:label,date:null,event:null,amount:/tbd/i.test(m[3])?null:diNum(m[3]),note:null};
     const dm=label.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
     if(dm) row.date=diIsoFromMDY(dm[1],dm[2],dm[3]);
