@@ -3330,7 +3330,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1005';
+const CORE_VERSION = 'v1007';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -4084,7 +4084,7 @@ function updateSortBtns(){
 const CAP_SORT={design:{field:null,dir:1},production:{field:null,dir:1}};
 let PROD_SHOW_PMS=true;
 let DESIGN_SHOW_DESIGNERS=true;
-let DES_CURVES_ENABLED=new Set(); // designer IDs where curve distribution is active
+let DES_CURVES_ENABLED=new Set(); // v1007: retired — kept only so old saved state loads without error; never consulted
 let DES_MS_HIDDEN=new Set();      // designer IDs where T1/T2/T3/PD dots are hidden
 let PROD_HIDE_DESIGN=true; // Design rows hidden by default in Production
 let PROD_ZOOM=0.63; // default: full view (~6 months visible) // 0.85=wide, 0.55=mid, 0.25=narrow — production timeline zoom
@@ -7464,13 +7464,11 @@ function designPhaseWeeklyHrs(ph, desId) {
   const out = new Array(C.numWeeks).fill(0);
   const total = ph.totalHours || 0;
   if (!ph.durWeeks || ph.durWeeks < 1 || total <= 0) return out;
-  let weekly;
-  if (desId && DES_CURVES_ENABLED.has(desId)) {
-    weekly = BELLWEATHER_PHASE_PROFILES.distributeHours(total, ph.durWeeks, getDesignProfileFn(ph));
-  } else {
-    const flat = total / ph.durWeeks;
-    weekly = new Array(ph.durWeeks).fill(flat);
-  }
+  // v1007: the per-designer hour-curve feature is retired. Its toggle had no UI left, so a
+  // designer could be stuck on a front-loaded curve with no way to see or clear it. Hours
+  // are always spread flat across the phase now.
+  const flat = total / ph.durWeeks;
+  const weekly = new Array(ph.durWeeks).fill(flat);
   for (let i = 0; i < ph.durWeeks; i++) {
     const w = ph.startWeek + i;
     if (w >= 0 && w < C.numWeeks) out[w] += weekly[i] || 0;
@@ -9310,7 +9308,6 @@ function userPrefsPayload(){
     LC_DESIGN_MS_HIDDEN:[...LC_DESIGN_MS_HIDDEN],
     PROD_UNASSIGNED_COLLAPSED, DESIGN_UNASSIGNED_COLLAPSED,
     DESIGN_COLLAPSED:[...DESIGN_COLLAPSED],
-    DES_CURVES_ENABLED:[...DES_CURVES_ENABLED],
     DES_MS_HIDDEN:[...DES_MS_HIDDEN],
     CAL_VIEW:{
       production:{from:CAL_VIEW.production.from.toISOString(),to:CAL_VIEW.production.to.toISOString()},
@@ -9987,7 +9984,9 @@ function buildPlanningSection(){
 
   function designerTally(personId){
     const tally=new Array(C.numWeeks).fill(0);
+    const _seen=new Set();
     PROJECTS.forEach(proj=>{
+      if(proj._spItemId){ if(_seen.has(String(proj._spItemId))){ console.warn(APP_VER+' [tally] duplicate project row skipped:',proj.name,proj._spItemId); return; } _seen.add(String(proj._spItemId)); }
       if(!isVisible(proj)) return;
       if(personId!==null && proj.designer!==personId) return;
       const active=proj.status!=='paused'&&proj.status!=='cancelled'&&proj.status!=='archived';
@@ -11327,8 +11326,6 @@ function restoreSavedState(saved){
   if(typeof saved.PROD_UNASSIGNED_COLLAPSED==='boolean') PROD_UNASSIGNED_COLLAPSED=saved.PROD_UNASSIGNED_COLLAPSED;
   if(typeof saved.DESIGN_UNASSIGNED_COLLAPSED==='boolean') DESIGN_UNASSIGNED_COLLAPSED=saved.DESIGN_UNASSIGNED_COLLAPSED;
   if(saved.DESIGN_COLLAPSED&&Array.isArray(saved.DESIGN_COLLAPSED)) DESIGN_COLLAPSED=new Set(saved.DESIGN_COLLAPSED);
-  if(saved.DES_CURVES_ENABLED&&Array.isArray(saved.DES_CURVES_ENABLED)) DES_CURVES_ENABLED=new Set(saved.DES_CURVES_ENABLED);
-  else if(saved.DESIGN_CURVES_ENABLED===true) DESIGNERS.forEach(d=>DES_CURVES_ENABLED.add(d.id)); // upgrade from old global bool
   if(saved.DES_MS_HIDDEN&&Array.isArray(saved.DES_MS_HIDDEN)) DES_MS_HIDDEN=new Set(saved.DES_MS_HIDDEN);
   if(typeof saved.SLOT_DEFAULT_BUDGET==='number') SLOT_DEFAULT_BUDGET=saved.SLOT_DEFAULT_BUDGET;
   if(Array.isArray(saved.SLOT_COL_ORDER)) SLOT_COL_ORDER=saved.SLOT_COL_ORDER;
@@ -15343,6 +15340,19 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1007', date: '2026-09-03',
+    entries: [
+      'The designer hour-curve feature is retired. Phase hours are always spread evenly across the phase, so a designer\u2019s capacity on the Sales screen reads the same for everyone and can\u2019t be inflated by a curve nobody can see.',
+      'Capacity tallies skip a project row if it somehow appears twice, and say so in the console.',
+    ],
+  },
+  {
+    version: 'v1006', date: '2026-09-03',
+    entries: [
+      'Fix: the per-designer hour-curve setting was stored as a personal view preference, so two people could see different capacity figures for the same designer on the Sales screen. It is now shared state \u2014 one answer for everyone.',
+    ],
+  },
   {
     version: 'v1005', date: '2026-09-03',
     entries: [
