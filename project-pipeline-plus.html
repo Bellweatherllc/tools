@@ -3330,7 +3330,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1013';
+const CORE_VERSION = 'v1016';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5561,7 +5561,8 @@ function buildFcTallyPerson(person, section){
 }
 function buildTlTallyPerson(person, section){
   const r=el('div','tl-tally'); r.dataset.section=section; r.dataset.person=person.id;
-  r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;background-image:repeating-linear-gradient(90deg,transparent,transparent ${C.weekW-1}px,rgba(0,0,0,.05) ${C.weekW-1}px,rgba(0,0,0,.05) ${C.weekW}px);`;
+  r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background-image:repeating-linear-gradient(90deg,transparent,transparent ${C.weekW-1}px,rgba(0,0,0,.05) ${C.weekW-1}px,rgba(0,0,0,.05) ${C.weekW}px);`;
+  const _tts=el('div','today-stripe'); _tts.style.cssText=`left:${w2px(todayDisplayWeek())}px;width:${C.weekW}px;`; r.appendChild(_tts); // v1014: column frame unbroken through tally
   return r;
 }
 function buildFcProdPersonHeader(person){
@@ -5906,6 +5907,7 @@ function buildTlLcTally(lcId){
   const peakH=Math.max(target,...tally,1), avail=C.tallyH-8;
   const lineY=avail-Math.round((target/peakH)*avail);
   const tLine=el('div','tally-target-line'); tLine.style.top=(lineY+4)+'px'; r.appendChild(tLine);
+  const _ttlc=el('div','today-stripe'); _ttlc.style.cssText=`left:${w2px(todayDisplayWeek())}px;width:${C.weekW}px;`; r.appendChild(_ttlc); // v1014
   const _tw=C.weekW; // C.weekW is already production-zoomed at all valid call sites
   tally.forEach((h,w)=>{
     if(h<0.05) return;
@@ -5931,7 +5933,8 @@ function buildFcTallyTotal(){
 }
 function buildTlTallyTotal(){
   const r=el('div','tl-tally'); r.dataset.section='production'; r.dataset.person='prod-total';
-  r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;background:#b8c4cc;border-bottom:2px solid rgba(40,40,40,.25);background-image:repeating-linear-gradient(90deg,transparent,transparent ${C.weekW-1}px,rgba(0,0,0,.07) ${C.weekW-1}px,rgba(0,0,0,.07) ${C.weekW}px);`;
+  r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background:#b8c4cc;border-bottom:2px solid rgba(40,40,40,.25);background-image:repeating-linear-gradient(90deg,transparent,transparent ${C.weekW-1}px,rgba(0,0,0,.07) ${C.weekW-1}px,rgba(0,0,0,.07) ${C.weekW}px);`;
+  const _ttpt=el('div','today-stripe'); _ttpt.style.cssText=`left:${w2px(todayDisplayWeek())}px;width:${C.weekW}px;`; r.appendChild(_ttpt); // v1014
   return r;
 }
 function buildTlMsRow(proj){
@@ -6080,16 +6083,24 @@ function buildTierDot(proj,tier){
 }
 function buildCritDot(proj,crit){
   // v847: half-cell rectangle, RIGHT-justified — so a T and a C coexist in one week.
+  // v1016: ghost when C2 hidden; left-half when C2 overlaps C1
   const pw=msPillW();
   const pwS=Math.max(4,pw-4); // v921: 4px narrower box, text unchanged
-  const dot=el('div','tier-dot crit-dot');
+  const dot=el('div','tier-dot crit-dot'+(crit.hidden?' crit-hidden':''));
   dot.dataset.critId=crit.id; dot.dataset.projId=proj.id; dot.dataset.tier=crit.name;
-  dot.style.left=(w2px(crit.week)+C.weekW-pw+(pw-pwS)/2)+'px'; // keep centered in the half-cell
-  dot.style.width=pwS+'px';
+  // Positioning — C2 flips to left-half when overlapping C1
+  let _leftPos=w2px(crit.week)+C.weekW-pw+(pw-pwS)/2; // right-half default
+  if(crit.name==='C2'&&!crit.hidden){
+    const _c1=(proj.crits||[]).find(c=>c.name==='C1');
+    if(_c1&&_c1.week===crit.week&&crit.week!=null)
+      _leftPos=w2px(crit.week)+Math.floor((C.weekW/2-pwS)/2); // v1016: centre in left half
+  }
+  dot.style.left=_leftPos+'px'; dot.style.width=pwS+'px';
+  if(crit.hidden){ dot.style.opacity='.2'; dot.style.filter='grayscale(1)'; }
   if(msPillLabelFits(pw)) dot.appendChild(msStackedLabel(crit.name));
   else dot.classList.add('ms-dotonly');
   dot.addEventListener('click',ev=>{ if(DRAG||Date.now()-_gdbDragGuard<250) return; ev.stopPropagation();
-    const r=dot.getBoundingClientRect(); gdbToggle('crit-'+crit.id, r.left+r.width/2, r.top, critBubbleHTML(crit)); }); // v888
+    const r=dot.getBoundingClientRect(); gdbToggle('crit-'+crit.id, r.left+r.width/2, r.top, critBubbleHTML(crit,proj)); }); // v888
   return dot;
 }
 function buildBar(proj,ph,laneId,includeControls,showJunctions){
@@ -6123,12 +6134,12 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     // Right wk count: always present
 
     // Stack: "~ 24h" row on top, "4h/w" centered below
-    const hrsStack=el('div','');
-    hrsStack.style.cssText='position:absolute;left:32px;top:33px;transform:translateY(-50%);display:flex;flex-direction:row;align-items:center;gap:5px;pointer-events:none;'; // v1013: horizontal — tilde+hours + avg on one line, clear of clock
+    // v1014: determine Phase I first — layout branches on it
+    const _isPhI=!ph.isDesignProd&&(proj.designLane.phases.filter(p=>!p.isDesignProd)[0]||{}).id===ph.id;
 
-    // Row 1: ~ [input] h — ~ at 14px for legibility, input tracks digit width
+    // ~ [input] h  row
     const hrsRow=el('div','');
-    hrsRow.style.cssText='display:flex;align-items:center;gap:0;';
+    hrsRow.style.cssText='display:flex;align-items:baseline;gap:0;';
     const tilde=el('span',''); tilde.textContent='~';
     tilde.style.cssText=`font-size:14px;font-weight:700;color:${metaC};pointer-events:none;margin-right:2px;line-height:1;`;
     const inp=document.createElement('input');
@@ -6136,7 +6147,6 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     inp.dataset.totalHrsId=ph.id;
     inp.value=ph.totalHours||0;
     inp.min='0'; inp.step='0.5'; inp.placeholder='0';
-    // Width tracks character count so "h" sits flush against the last digit
     const _inpW=v=>Math.max(14,String(v||0).length*8)+'px';
     inp.style.cssText=`color:${metaC};text-align:left;width:${_inpW(ph.totalHours||0)};height:16px;font-size:12px;`;
     const commit=()=>{
@@ -6154,39 +6164,43 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     const hUnit=el('span',''); hUnit.textContent='h';
     hUnit.style.cssText=`font-size:11px;font-weight:700;color:${metaC};pointer-events:none;`;
     hrsRow.appendChild(tilde); hrsRow.appendChild(inp); hrsRow.appendChild(hUnit);
-    hrsStack.appendChild(hrsRow);
 
-    // Row 2: avg h/w — centered below, pulled tight
     const avgSp=el('span','');
-    avgSp.dataset.avghwId=ph.id;
-    avgSp.textContent=_fmtAvgHW(ph);
-    avgSp.style.cssText=`font-size:10px;font-weight:600;color:${metaC};opacity:.85;white-space:nowrap;pointer-events:none;`; // v1013: no vertical offset needed in row layout
-    hrsStack.appendChild(avgSp);
-    bar.appendChild(hrsStack);
+    avgSp.dataset.avghwId=ph.id; avgSp.textContent=_fmtAvgHW(ph);
+    avgSp.style.cssText=`font-size:10px;font-weight:600;color:${metaC};opacity:.85;white-space:nowrap;pointer-events:none;`;
 
-    // Phase name centered in bar — left:50% follows resize automatically
-    const nm=el('span','bar-name');
-    nm.textContent=ph.name;
-    nm.style.cssText=`position:absolute;left:50%;top:33px;transform:translate(-50%,-50%);font-size:13px;white-space:nowrap;color:${txtC};pointer-events:none;`; // v1012: bottom band centre
-    bar.appendChild(nm);
+    const nm=el('span','bar-name'); nm.textContent=ph.name;
 
-    // Right week count
+    // Right week count — always at right:20px, same line as everything else
     const wkcR=el('span','bar-meta'); wkcR.dataset.wksId=ph.id; wkcR.textContent=ph.durWeeks+'w';
-    wkcR.style.cssText=`position:absolute;right:20px;top:33px;transform:translateY(-50%);font-size:13px;font-weight:600;color:${metaC};pointer-events:none;white-space:nowrap;`; // v1012: bottom band
+    wkcR.style.cssText=`position:absolute;right:20px;top:33px;transform:translateY(-50%);font-size:12px;font-weight:600;color:${metaC};pointer-events:none;white-space:nowrap;`;
     bar.appendChild(wkcR);
 
-    // v1012: comps note — Phase I only; clock icon to the left of the hours field
-    const _isPhI=!ph.isDesignProd&&(proj.designLane.phases.filter(p=>!p.isDesignProd)[0]||{}).id===ph.id;
     if(_isPhI){
+      // Phase I: [clock @15px] [~Xh · avg · Phase I label] flowing left — all on one baseline
       const _cn=proj.compsNote||'';
       const cnBtn=el('button','');
       cnBtn.type='button'; cnBtn.setAttribute('data-comps-btn',proj.id);
-      cnBtn.style.cssText=`position:absolute;left:10px;top:33px;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:2px;color:${_cn?'var(--gold,#d8b64f)':metaC};opacity:${_cn?'1':'.45'};display:flex;align-items:center;pointer-events:auto;z-index:2;`; // v1013: clear of resize handle
+      cnBtn.style.cssText=`position:absolute;left:15px;top:33px;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:2px;color:${_cn?'var(--gold,#d8b64f)':metaC};opacity:${_cn?'1':'.45'};display:flex;align-items:center;pointer-events:auto;z-index:2;`;
       cnBtn.innerHTML=_clockSvg(14);
       cnBtn.title='Comps & sources for these hours';
       cnBtn.addEventListener('pointerdown',e=>e.stopPropagation());
       cnBtn.addEventListener('click',ev=>{ev.stopPropagation();openCompsNote(proj.id,cnBtn);});
       bar.appendChild(cnBtn);
+      nm.style.cssText=`font-size:12px;white-space:nowrap;color:${txtC};pointer-events:none;flex-shrink:0;`;
+      const hrsStack=el('div','');
+      hrsStack.style.cssText='display:flex;flex-direction:row;align-items:baseline;gap:5px;pointer-events:none;flex-shrink:0;';
+      hrsStack.appendChild(hrsRow); hrsStack.appendChild(avgSp);
+      const band=el('div','');
+      band.style.cssText='position:absolute;left:37px;right:50px;top:22px;bottom:0;display:flex;align-items:center;gap:8px;overflow:visible;pointer-events:none;';
+      band.appendChild(hrsStack); band.appendChild(nm); bar.appendChild(band);
+    } else {
+      // Phase II: hours left-aligned; phase name centred
+      const hrsStack=el('div','');
+      hrsStack.style.cssText='position:absolute;left:37px;top:33px;transform:translateY(-50%);display:flex;flex-direction:row;align-items:center;gap:5px;pointer-events:none;';
+      hrsStack.appendChild(hrsRow); hrsStack.appendChild(avgSp); bar.appendChild(hrsStack);
+      nm.style.cssText=`position:absolute;left:50%;top:33px;transform:translate(-50%,-50%);font-size:12px;white-space:nowrap;color:${txtC};pointer-events:none;`;
+      bar.appendChild(nm);
     }
 
   } else {
@@ -6330,7 +6344,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   wrap.appendChild(laneRow);
   // ms-overlay: position:absolute over the single lane-row
   const overlay=el('div','ms-overlay'); overlay.dataset.projId=proj.id;
-  overlay.dataset.expandedH=C.laneH; overlay.dataset.collapsedH=BAND_H;
+  overlay.dataset.expandedH=C.laneH; overlay.dataset.collapsedH=BAND_H; overlay.dataset.desExp=_isDesExp?'1':''; // v1015
   overlay.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:absolute;top:0;left:0;overflow:visible;`;
   const _isDesExp=laneIds.includes('design')&&!proj.collapsed; // v1012: two-row layout active when expanded
   const DES_MS_BAND_H=22; // top 22px = milestones; bottom 22px = bar content
@@ -6341,8 +6355,8 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
     ensureCrits(proj); proj.crits.forEach(c=>{ const dot=buildCritDot(proj,c); if(_isDesExp){dot.style.top='1px';dot.style.transform='none';dot.style.height=(DES_MS_BAND_H-2)+'px';} overlay.appendChild(dot); });
     ensurePencilsDown(proj); const pdDot=buildPencilsDot(proj); if(_isDesExp){pdDot.style.top='0px';pdDot.style.transform='none';} overlay.appendChild(pdDot);
   }
-  if(laneIds.includes('design')) (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso); if(mk) overlay.appendChild(mk); }); // v967: Design lens only
-  if(laneIds.includes('design')){ overlay.dataset.exp='1'; ((proj.exploratory&&proj.exploratory.dates)||[]).forEach(iso=>{ const mk=buildExpMarker(proj,iso); if(mk) overlay.appendChild(mk); }); }
+  if(laneIds.includes('design')) (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso); if(mk){ if(_isDesExp) _applyDesExpMarker(mk); overlay.appendChild(mk); } }); // v967+v1015
+  if(laneIds.includes('design')){ overlay.dataset.exp='1'; ((proj.exploratory&&proj.exploratory.dates)||[]).forEach(iso=>{ const mk=buildExpMarker(proj,iso); if(mk){ if(_isDesExp) _applyDesExpMarker(mk); overlay.appendChild(mk); } }); }
   wrap.appendChild(overlay); return wrap;
 }
 
@@ -6616,7 +6630,7 @@ function renderMatterportMarkers(projId){
   document.querySelectorAll(`.ms-overlay[data-proj-id="${projId}"]`).forEach(ov=>{
     const secEl=ov.closest('.section');
     const ww=parseInt(secEl?.dataset?.weekW)||C.weekW;
-    (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso,ww); if(mk) ov.appendChild(mk); });
+    (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso,ww); if(mk){ if(ov.dataset.desExp==='1') _applyDesExpMarker(mk); ov.appendChild(mk); } }); // v1015
   });
   document.querySelectorAll(`[data-mp-btn="${projId}"]`).forEach(b=>b.classList.toggle('has-scans',!!(proj.matterport&&proj.matterport.length)));
 }
@@ -6699,7 +6713,7 @@ function renderExploratoryMarkers(projId){
   document.querySelectorAll('.ms-overlay[data-proj-id="'+projId+'"][data-exp]').forEach(function(ov){
     var secEl=ov.closest('.section');
     var ww=parseInt(secEl&&secEl.dataset&&secEl.dataset.weekW)||C.weekW;
-    ((proj.exploratory&&proj.exploratory.dates)||[]).forEach(function(iso){ var mk=buildExpMarker(proj,iso,ww); if(mk) ov.appendChild(mk); });
+    ((proj.exploratory&&proj.exploratory.dates)||[]).forEach(function(iso){ var mk=buildExpMarker(proj,iso,ww); if(mk){ if(ov.dataset.desExp==='1') _applyDesExpMarker(mk); ov.appendChild(mk); } }); // v1015
   });
   document.querySelectorAll('[data-exp-btn="'+projId+'"]').forEach(function(b){ b.classList.toggle('has-exp',!!(proj.exploratory&&proj.exploratory.dates&&proj.exploratory.dates.length)); });
 }
@@ -9238,10 +9252,16 @@ function tierBubbleHTML(tier){
   const lbls={'T1':'Tier 1','T2':'Tier 2','T3':'Tier 3'};
   return '<div class="gdb-title">'+escH(lbls[tier.name]||tier.name)+' selections due '+fmt(fri)+'</div><div class="gdb-line">Enter into BT by '+fmt(tue)+' at 5:00 pm</div>';
 }
-function critBubbleHTML(crit){
+function critBubbleHTML(crit,proj){
   const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  return '<div class="gdb-title">'+escH(crit.name==='C1'?'Crit 1':'Crit 2')+' \u2014 '+fmt(wkFri(crit.week))+'</div>';
-}
+  const isC2=crit.name==='C2', isHidden=!!crit.hidden;
+  let html='<div class="gdb-title">'+escH(isC2?'Crit 2':'Crit 1')+(isHidden?' \u2014 <span style="font-size:11px;font-weight:400;opacity:.6;">not on this project</span>':' \u2014 '+fmt(wkFri(crit.week)))+'</div>';
+  if(isC2){
+    const projId=(proj&&proj.id)||'';
+    html+=`<div style="margin-top:7px;"><button data-toggle-c2="${escH(crit.id)}" style="font-size:11px;padding:3px 10px;background:none;border:1px solid var(--bdr,#e4dac4);border-radius:4px;cursor:pointer;color:${isHidden?'var(--navy,#1f2e3e)':'#666'};">${isHidden?'Restore C2':'Not on this project'}</button></div>`;
+  }
+  return html;
+} // v1016
 function pdBubbleHTML(pd){
   const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   return '<div class="gdb-title">Pencils Down \u2014 '+fmt(wkFri(pd.week))+'</div><div class="gdb-line">Drawings and plan notes should be complete for CA writing; mark any unresolved items TBD. After Pencils Down, loop in Sales on revisions \u2014 they can affect the CA.</div>';
@@ -9278,6 +9298,9 @@ document.addEventListener('mousemove',e=>{
 // section (Design/Production) as the bar under the cursor.
 let _gdbRingedCell=null;
 function _gdbRingDrag(t){ return t==='ms'||t==='tier'||t==='crit'||t==='pd'||t==='projMove'; }
+function _applyDesExpMarker(mk){ // v1015: shrink mp/exp markers into the top 22px milestone band
+  mk.style.top='1px'; mk.style.transform='none'; mk.style.height='20px'; mk.style.width='16px';
+}
 function _markerWeek(mk){ // v1008: current week of a milestone box or T/C/PD dot, from live data
   if(mk.classList.contains('ms-tall')){ const m=msById(mk.dataset.msId); return m?m.week:(mk.dataset.msWk!==''?parseInt(mk.dataset.msWk):null); }
   if(mk.classList.contains('crit-dot')){ const r=findCrit(mk.dataset.critId); return r?r.c.week:null; } // v1013: before tier-dot — crits carry BOTH classes; tier check was firing first and failing
@@ -9351,7 +9374,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ gdbHide(); if(_CN
 // proj.compsNote — the estimation rationale behind Phase I hours. Rides in GanttData.
 const _CNPOP=document.createElement('div');
 _CNPOP.id='compsNotePopover';
-_CNPOP.style.cssText='position:fixed;z-index:220;background:var(--surface,#fff);border:1px solid var(--bdr,#e4dac4);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:10px 12px;min-width:240px;max-width:320px;display:none;';
+_CNPOP.style.cssText='position:fixed;z-index:220;background:var(--surface,#fff);border:1px solid var(--bdr,#e4dac4);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:10px 12px;min-width:300px;max-width:400px;display:none;'; // v1014: 25% wider
 _CNPOP.innerHTML='<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-sec,#7a7a7a);margin-bottom:6px;">Comps &amp; Sources</div><textarea id="compsNoteTA" style="width:100%;min-height:80px;font-size:12px;font-family:inherit;border:1px solid var(--bdr,#e4dac4);border-radius:4px;padding:5px 7px;resize:vertical;box-sizing:border-box;background:var(--bg,#f5f3ee);color:inherit;line-height:1.4;" placeholder="Note the comparables or references used to estimate these hours…"></textarea><div style="display:flex;justify-content:flex-end;gap:6px;margin-top:7px;"><button class="cn-save" style="font-size:11px;padding:3px 12px;background:#1f2e3e;color:#fff;border:none;border-radius:4px;cursor:pointer;">Save</button><button class="cn-close" style="font-size:11px;padding:3px 10px;background:none;border:1px solid var(--bdr,#e4dac4);border-radius:4px;cursor:pointer;">Close</button></div>';
 document.body.appendChild(_CNPOP);
 let _cnProjId=null;
@@ -9382,6 +9405,31 @@ _CNPOP.addEventListener('click',e=>{
 document.addEventListener('pointerdown',e=>{
   if(_CNPOP.style.display!=='none'&&!_CNPOP.contains(e.target)&&!e.target.closest('[data-comps-btn]')){_CNPOP.style.display='none';_cnProjId=null;}
 },true);
+
+// ── v1016: C2 toggle — "Not on this project" / "Restore C2" ─────────────────
+document.addEventListener('click',e=>{
+  const btn=e.target.closest('[data-toggle-c2]'); if(!btn) return;
+  const r=findCrit(btn.dataset.toggleC2); if(!r) return;
+  r.c.hidden=!r.c.hidden;
+  gdbHide();
+  // Update all rendered dots for this crit in-place (no section rebuild needed)
+  document.querySelectorAll(`.crit-dot[data-crit-id="${r.c.id}"]`).forEach(dot=>{
+    dot.style.opacity=r.c.hidden?'.2':'';
+    dot.style.filter=r.c.hidden?'grayscale(1)':'';
+    dot.classList.toggle('crit-hidden',!!r.c.hidden);
+    // Reposition: C2 flips between left-half (overlap with C1) and right-half
+    const pw=msPillW(), pwS=Math.max(4,pw-4);
+    const _ww=parseInt(dot.closest('.section')?.dataset.weekW||C.weekW);
+    const _w2=w=>Math.round(w*_ww);
+    let lp=_w2(r.c.week)+_ww-pw+(pw-pwS)/2; // right-half default
+    if(r.c.name==='C2'&&!r.c.hidden){
+      const _c1=(r.proj.crits||[]).find(c=>c.name==='C1');
+      if(_c1&&_c1.week===r.c.week&&r.c.week!=null) lp=_w2(r.c.week)+Math.floor((_ww/2-pwS)/2);
+    }
+    dot.style.left=lp+'px';
+  });
+  triggerSave(r.proj);
+});
 
 // ════════════════════════════════════════════════  SAVE INDICATOR
 const SI=document.getElementById('saveStatus');
@@ -9669,6 +9717,7 @@ function triggerSave(dirtyProj){
         const proj=PROJECTS.find(p=>p._spItemId===spItemId);
         if(!proj) return;
         writes.push((async()=>{
+          proj._lastChangedBy=_histUser(); proj._lastChangedAt=new Date().toISOString(); // v1016: stamped before serializing
           const payload=JSON.stringify(projectGanttPayload(proj));
           // v826 conflict check: one light GET before the write. If the stored GanttData
           // moved from our base while we were editing, a colleague changed this project —
@@ -15465,6 +15514,28 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1016', date: '2026-09-03',
+    entries: [
+      'C2 (Crit 2) can now be marked "Not on this project" from the C2 bubble. The dot renders as a faint grey ghost at its seeded position and is still clickable. A "Restore C2" button in the bubble reverses it. Toggling saves immediately.',
+      'Fix: when C1 and C2 land on the same week, C2 now renders in the left half of that week column (same zone as T markers) rather than stacking on top of C1.',
+      'Weekly Brief: each project block now shows who made the last change and when (e.g. "Byron, Mon Sep 1 9:30am") in the project header, provided the change happened after the current baseline was set.',
+    ],
+  },
+  {
+    version: 'v1015', date: '2026-09-03',
+    entries: [
+      'Matterport and exploratory markers now scale and shift into the top 22px milestone band when a Design row is expanded, the same as T, C, and Pencils Down. Works on both the initial build and the live re-render paths.',
+    ],
+  },
+  {
+    version: 'v1014', date: '2026-09-03',
+    entries: [
+      'Phase I bar (Design expanded): clock now at left:15px; hours + avg + phase label flow left-to-right on one baseline in the bottom band; week count stays right. Phase II bar: hours left, label centred. Font sizes reduced 1px on labels and week counts.',
+      'The golden week frame now runs unbroken through the hourly-summary (tl-tally) rows. Today-stripe injected into all three tally builders with position:relative on the container.',
+      'Comps & Sources popover is 25% wider (300–400px).',
+    ],
+  },
+  {
     version: 'v1013', date: '2026-09-03',
     entries: [
       'Fix: C1/C2 markers now correctly ring the date header on hover. Crit dots carry both tier-dot and crit-dot classes; the hover handler was checking tier-dot first, calling findTier on a dataset.critId that was undefined, and returning null. Check order swapped.',
@@ -17207,12 +17278,25 @@ function generateBriefHTML(){
   function renderProjGroup(proj, rows){
     const des=proj.designer?briefPersonLabel(proj.designer)||'?':'—';
     const pm=proj.productionPM?briefPersonLabel(proj.productionPM)||'?':'—';
+    // v1016: who/when attribution — only show if the change happened after the baseline was set
+    let attrHtml='';
+    if(proj._lastChangedBy&&proj._lastChangedAt){
+      const baseTs=WEEKLY_BASELINE?new Date(WEEKLY_BASELINE.ts).getTime():0;
+      const changeTs=new Date(proj._lastChangedAt).getTime();
+      if(changeTs>baseTs){
+        const cd=new Date(proj._lastChangedAt);
+        const when=cd.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
+                  +' '+(cd.getHours()%12||12)+':'+(cd.getMinutes()<10?'0':'')+cd.getMinutes()+(cd.getHours()<12?'am':'pm');
+        attrHtml=` <span style="font-size:10px;font-weight:500;color:#888;margin-left:4px;">${escH(proj._lastChangedBy)}, ${escH(when)}</span>`;
+      }
+    }
     return `<div data-brief-grp="1" style="margin-bottom:8px;">`
       +`<div style="display:flex;align-items:baseline;gap:8px;padding:5px 0 3px;border-bottom:1px solid rgba(228,218,196,.6);">`
       +`<span style="font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:var(--navy);">${escH(briefProjName(proj))}</span>`
       +`<span class="brief-tag ${briefTagClass(proj.status)}" style="font-size:9px;">${briefStatusLabel(proj.status)}</span>`
+      +attrHtml
       +`</div>${rows.join('')}</div>`;
-  }
+  } // v1016
   const _isDesignField=f=>/Phase\s*I|T[123]\s*Selection|Crit\s*[12]|Pencils\s*Down/i.test(f);
 
   // Notes are distributed into Pipeline Planning / Sales Updates / Design Updates / Production Updates above
