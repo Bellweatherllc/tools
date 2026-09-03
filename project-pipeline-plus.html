@@ -3330,7 +3330,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1007';
+const CORE_VERSION = 'v1008';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5924,7 +5924,8 @@ function buildMsTall(proj,ms,headH,totalH,laneIds,grpNudgeY){
   m.appendChild(tab); m.dataset.headH=headH;
   m._gdbBound=true; // v888: click-toggled date bubble (capture fallback skips bound markers)
   m.addEventListener('click',ev=>{ if(DRAG||Date.now()-_gdbDragGuard<250) return; ev.stopPropagation();
-    const r=m.getBoundingClientRect(); gdbToggle('ms-'+(ms.id||ms.name+'-'+ms.week), r.left+r.width/2, r.top, msBubbleHTML(ms)); });
+    const live=msById(m.dataset.msId)||ms; // v1008: read the live milestone — the build-time object can be stale after a sync/restore
+    const r=m.getBoundingClientRect(); gdbToggle('ms-'+(live.id||live.name+'-'+live.week), r.left+r.width/2, r.top, msBubbleHTML(live)); });
   return m;
 }
 // ══ v847: ONE milestone icon language ═════════════════════════════════════════
@@ -7789,7 +7790,7 @@ function initDrag(){
         const origStarts=allPhs.map(p=>p.startWeek);
         const origMsWeeks=proj.milestones.map(m=>m.week);
         ensureTiers(proj); ensurePencilsDown(proj);
-        DRAG={type:'projMove',projId,startX:e.clientX,weekW:_dragWeekW(e.target),allPhs,origStarts,origMsWeeks,
+        DRAG={type:'projMove',projId,msId:id,startX:e.clientX,weekW:_dragWeekW(e.target),allPhs,origStarts,origMsWeeks,
               milestones:proj.milestones,designLane:proj.designLane,prodLane:proj.productionLane,
               tiers:proj.tiers,origTierWeeks:proj.tiers.map(t=>t.week),
               crits:(ensureCrits(proj)||proj.crits),origCritWeeks:proj.crits.map(c=>c.week),
@@ -8792,6 +8793,7 @@ function onMove(e){
     DRAG.designLane.startWeek=DRAG.designLane.phases[0].startWeek;
     DRAG.prodLane.startWeek=DRAG.prodLane.phases[0].startWeek;
     if(DRAG.milestones){ DRAG.milestones.forEach((ms,i)=>{ ms.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origMsWeeks[i]+clampedDw)); refreshMs(ms.id); }); }
+    if(DRAG.msId){ const _gm=msById(DRAG.msId); if(_gm) _gdbRingDragWeek(`.ms-tall[data-ms-id="${DRAG.msId}"]`,_gm.week); } // v1008: grabbed milestone rings the header
     if(DRAG.tiers){ DRAG.tiers.forEach((t,i)=>{ t.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origTierWeeks[i]+clampedDw)); refreshTier(t.id); }); }
     if(DRAG.crits){ DRAG.crits.forEach((c,i)=>{ c.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origCritWeeks[i]+clampedDw)); refreshCrit(c.id); }); }
     if(DRAG.pencilsDown){ DRAG.pencilsDown.week=Math.max(0,Math.min(C.numWeeks-1,DRAG.origPdWeek+clampedDw)); refreshPD(DRAG.pencilsDown.id); }
@@ -8931,6 +8933,7 @@ function onMove(e){
     }
     refreshMs(DRAG.msId);
     const r=findMs(DRAG.msId); if(r) refreshMsOpacity(r.proj.id);
+    _gdbRingDragWeek(`.ms-tall[data-ms-id="${DRAG.msId}"]`,ms.week); // v1008
     // Don't call _updateProjCA here — user is explicitly setting this milestone's position
   }
 
@@ -8940,6 +8943,7 @@ function onMove(e){
     if(_newTierWk!==_t.week) _dragMoved=true;
     _t.week=_newTierWk; { const _ph=_designPhaseII(_tp); if(_ph.dur>0) _t.frac=(_newTierWk-_ph.start)/_ph.dur; }
     document.querySelectorAll(`.tier-dot[data-tier-id="${DRAG.tierId}"]`).forEach(dot=>msPlaceDot(dot,_t.week,'tier'));
+    _gdbRingDragWeek(`.tier-dot[data-tier-id="${DRAG.tierId}"]`,_t.week); // v1008
   }
 
   if(DRAG.type==='crit'){
@@ -8948,6 +8952,7 @@ function onMove(e){
     if(_newCritWk!==_c.week) _dragMoved=true;
     _c.week=_newCritWk; { const _ph=_designPhaseII(_cp); if(_ph.dur>0) _c.frac=(_newCritWk-_ph.start)/_ph.dur; }
     document.querySelectorAll(`.crit-dot[data-crit-id="${DRAG.critId}"]`).forEach(dot=>msPlaceDot(dot,_c.week,'crit'));
+    _gdbRingDragWeek(`.crit-dot[data-crit-id="${DRAG.critId}"]`,_c.week); // v1008
   }
 
   if(DRAG.type==='pd'){
@@ -8956,6 +8961,7 @@ function onMove(e){
     if(_newWk!==_pd.week) _dragMoved=true;
     _pd.week=_newWk; { const _ph=_designPhaseII(_pp); if(_ph.dur>0) _pd.frac=(_newWk-_ph.start)/_ph.dur; }
     document.querySelectorAll(`.pd-dot[data-pd-id="${DRAG.pdId}"]`).forEach(dot=>msPlaceDot(dot,_pd.week,'pd'));
+    _gdbRingDragWeek(`.pd-dot[data-pd-id="${DRAG.pdId}"]`,_pd.week); // v1008
   }
 }
 
@@ -9164,7 +9170,8 @@ function gdbShowAt(px,py,key,html){
 }
 function gdbToggle(key,px,py,html){ if(_gdbKey===key){ gdbHide(); return; } gdbShowAt(px,py,key,html); }
 function msBubbleHTML(ms){
-  const ds=ms.week!=null?wkFri(ms.week).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'Date not set';
+  // v1008: Monday anchor — same as the date header, bar bubbles and Key Dates (v818). Was Friday, reading 4 days past the column.
+  const ds=ms.week!=null?wkMon(ms.week).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'Date not set';
   const st=(ms.status==='da-signed'||ms.status==='ca-signed'||ms.status==='signed')?'\u2713 Signed':'\u25cf Projected';
   return '<div class="gdb-title">'+escH(ms.name)+' \u2014 '+escH(ds)+'</div><div class="gdb-line">'+st+'</div>';
 }
@@ -9184,9 +9191,16 @@ function pdBubbleHTML(pd){
 }
 // Hover: tint the week column the click would capture
 document.addEventListener('mousemove',e=>{
+  if(DRAG){ if(!_gdbRingDrag(DRAG.type)) _gdbClearHeaderRing(); return; } // v1008: milestone drags ring the header from onMove — don't clear under them
+  const mk=e.target.closest&&e.target.closest('.ms-tall,.tier-dot,.crit-dot,.pd-dot'); // v1008: milestones ring the header week too
+  if(mk){
+    if(_gdbHoverCell){ _gdbHoverCell.remove(); _gdbHoverCell=null; }
+    const mw=_markerWeek(mk); if(mw!=null) _gdbRingHeaderWeek(mk,mw); else _gdbClearHeaderRing();
+    return;
+  }
   const t=e.target.closest&&(e.target.closest('.phase-bar')||e.target.closest('.lanes-wrap.proj-collapsed .lane-row')||e.target.closest('.tl-tally[data-person]')); // v890: time strips too
   if(_gdbHoverCell&&(!t||_gdbHoverCell.parentNode!==t)){ _gdbHoverCell.remove(); _gdbHoverCell=null; }
-  if(!t||DRAG){ if(typeof _gdbClearHeaderRing==='function') _gdbClearHeaderRing(); return; }
+  if(!t){ _gdbClearHeaderRing(); return; }
   const isBar=t.classList.contains('phase-bar');
   const dur=isBar?parseInt(t.dataset.phDur||'0'):C.numWeeks;
   if(!dur) return;
@@ -9206,7 +9220,20 @@ document.addEventListener('mousemove',e=>{
 // Ring the header week-cell that corresponds to the hovered column, in the same
 // section (Design/Production) as the bar under the cursor.
 let _gdbRingedCell=null;
+function _gdbRingDrag(t){ return t==='ms'||t==='tier'||t==='crit'||t==='pd'||t==='projMove'; }
+function _markerWeek(mk){ // v1008: current week of a milestone box or T/C/PD dot, from live data
+  if(mk.classList.contains('ms-tall')){ const m=msById(mk.dataset.msId); return m?m.week:(mk.dataset.msWk!==''?parseInt(mk.dataset.msWk):null); }
+  if(mk.classList.contains('tier-dot')){ const r=findTier(mk.dataset.tierId); return r?r.t.week:null; }
+  if(mk.classList.contains('crit-dot')){ const r=findCrit(mk.dataset.critId); return r?r.c.week:null; }
+  if(mk.classList.contains('pd-dot')){ const r=findPD(mk.dataset.pdId); return r?r.pd.week:null; }
+  return null;
+}
 function _gdbClearHeaderRing(){ if(_gdbRingedCell){ _gdbRingedCell.classList.remove('gdb-active'); _gdbRingedCell=null; } }
+function _gdbRingDragWeek(sel,wk){ // v1008: ring from whichever matching marker is in a visible section
+  const els=document.querySelectorAll(sel); let elm=null;
+  els.forEach(x=>{ if(!elm&&x.offsetParent) elm=x; });
+  if(elm) _gdbRingHeaderWeek(elm,wk);
+}
 function _gdbRingHeaderWeek(fromEl,absWk){
   var sec=fromEl.closest&&fromEl.closest('.section');
   var hdr=sec?sec.querySelector('.sticky-cal-hdr .tl-hdr'):null;
@@ -15340,6 +15367,13 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1008', date: '2026-09-03',
+    entries: [
+      'Hovering a DA/CA milestone, a T or C marker, or the Pencils Down pencil now rings the matching week in the date header, the same as hovering a bar \u2014 and the ring follows the marker while you drag it, so placement is exact.',
+      'Fix: the DA/CA milestone date bubble showed the Friday of the week while the header, bar bubbles and Key Dates all read the Monday, so it appeared to be several days off. It now shows the Monday. It also reads the milestone\u2019s current position rather than the position at the time the row was drawn.',
+    ],
+  },
   {
     version: 'v1007', date: '2026-09-03',
     entries: [
