@@ -3352,7 +3352,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1034';
+const CORE_VERSION = 'v1035';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15930,6 +15930,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1035', date: '2026-09-03',
+    entries:['Fix: qbApply ran before the Operations table was written to the DOM, so it searched an empty container and finished silently. It now runs after the render settles, matches on the row label alone rather than the label plus its subtext, and clears the nodata styling when it writes a figure. Operating Cash and Bank Balance were the same Meridian number under two names — Operating Cash removed.'],
+  },
+  {
     version: 'v1034', date: '2026-09-03',
     entries:['Fix: the QuickBooks reader was building an encoded path string, which Graph rejected with a 400 — the numbered folder name does not survive that route. It now resolves the OPSSEC Financial library by name and walks the folder tree by listing children, the same pattern the Doc Linker uses. Key Data — Operations puts presentations between DA and CA.'],
   },
@@ -18933,12 +18937,21 @@ let _qbBusy=false;
 async function qbApply(root){
   if(_qbBusy) return; _qbBusy=true;
   const put=(re,val)=>{
-    root.querySelectorAll('.ops-table tr').forEach(tr=>{
-      const lbl=tr.querySelector('.rl'); if(!lbl||!re.test(lbl.textContent||'')) return;
+    let hit=0;
+    root.querySelectorAll('.ops-table tbody tr').forEach(tr=>{
+      const lbl=tr.querySelector('td.rl'); if(!lbl) return;
+      // Match the label only — not the .ops-src subtext beneath it
+      const name=(lbl.childNodes[0]&&lbl.childNodes[0].nodeValue||'').trim();
+      if(!re.test(name)) return;
+      hit++;
       tr.querySelectorAll('td:not(.rl)').forEach(td=>{
-        if(td.textContent.trim()==='\u2014'||td.textContent.trim()==='') td.textContent=opsMoney(val);
+        td.textContent=(val<0?'':'')+opsMoney(val);
+        td.classList.remove('nodata');
+        td.classList.add(val<0?'negv':'pos');
       });
+      const src=lbl.querySelector('.ops-src'); if(src) src.textContent='QuickBooks weekly drop';
     });
+    return hit;
   };
   const sub=root.querySelector('.ops-h .ops-sub');
   const note=t=>{ if(sub) sub.textContent=sub.textContent.replace(/last QuickBooks drop:.*$/,'last QuickBooks drop: '+t); };
@@ -18946,11 +18959,11 @@ async function qbApply(root){
   try{
     const d=await qbLoad();
     let n=0;
-    if(d.bank!=null){ put(/BANK BALANCE|OPERATING CASH/i,d.bank); n++; }
-    if(d.payroll!=null){ put(/PAYROLL/i,-Math.abs(d.payroll)); n++; }
-    if(d.payables!=null){ put(/PAYABLE/i,-Math.abs(d.payables)); n++; }
-    console.log('[ops] QuickBooks parsed:',d);
-    note(n?(d.file||'file')+' \u00b7 '+n+' figure'+(n===1?'':'s'):(d.file||'file')+' \u00b7 no figures matched \u2014 see console');
+    if(d.bank!=null) n+=put(/^BANK BALANCE$/i,d.bank);
+    if(d.payroll!=null) n+=put(/^PAYROLL$/i,-Math.abs(d.payroll));
+    if(d.payables!=null) n+=put(/^PAYABLES$/i,-Math.abs(d.payables));
+    console.log('[ops] QuickBooks parsed:',d,'rows filled:',n);
+    note(n?(d.file||'file'):(d.file||'file')+' \u00b7 parsed but no rows matched \u2014 see console');
   }catch(e){
     console.warn('[ops] QuickBooks load failed:',e);
     note('failed \u2014 '+(e.message||e));
@@ -18979,7 +18992,8 @@ function opsRenderInto(root){
   const rowNo=(label,src)=>{ let r='<tr><td class="rl">'+label+'<span class="ops-src">'+src+'</span></td>'; for(let i=0;i<4;i++) r+='<td class="'+cls(i)+' nodata">\u2014</td>'; return r+'</tr>'; };
   const rowAr='<tr><td class="rl">AR Expected<span class="ops-src">design invoices today \u00b7 construction invoices to come</span></td>'+ar.map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':'')+'">'+(v>0?'+':'')+opsMoney(v)+'</td>').join('')+'</tr>';
   const rowSc='<tr><td class="rl">Scenarios<span class="ops-src">switched-on maybes, net</span></td>'+scNet.map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':v<0?' negv':' nodata')+'">'+(v===0?'\u2014':(v>0?'+':'')+opsMoney(v))+'</td>').join('')+'</tr>';
-  const body=rowNo('Operating Cash','QuickBooks drop \u2014 not connected')+rowNo('Payroll','QuickBooks drop \u2014 not connected')+rowNo('Bank Balance','QuickBooks drop \u2014 not connected')+rowNo('Payables','QuickBooks drop \u2014 not connected')+rowAr+rowSc;
+  // v1035: Operating Cash and Bank Balance were the same Meridian figure under two names.
+  const body=rowNo('Bank Balance','QuickBooks weekly drop')+rowNo('Payroll','QuickBooks weekly drop')+rowNo('Payables','QuickBooks weekly drop')+rowAr+rowSc;
   let net='<tr class="net-row"><td class="rl">Net Position</td>'; for(let i=0;i<4;i++) net+='<td class="'+cls(i)+' nodata">\u2014</td>'; net+='</tr>';
   // alerts
   const fmtIso=iso=>{ const d=opsIsoToDate(iso); return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):iso; };
@@ -19031,7 +19045,7 @@ function opsRenderInto(root){
 
     +'</div>';
   opsDrawScenarios(W13,root);
-  qbApply(root);
+  setTimeout(()=>qbApply(root),0); // v1035: after the DOM settles — was querying an empty container
   root.querySelectorAll('[data-ops-ack]').forEach(b=>b.addEventListener('click',()=>{ b.disabled=true; b.textContent='Saving\u2026'; opsAckCaMove(b.getAttribute('data-ops-ack'),Number(b.getAttribute('data-ops-n'))); }));
   const form=root.querySelector('#opsAddForm'), addBtn=root.querySelector('#opsAddBtn'); let dir='out';
   const toggleForm=o=>{ form.classList.toggle('on',o); addBtn.classList.toggle('on',o); addBtn.textContent=o?'Close':'+ Add'; if(o) root.querySelector('#opsAfWhat').focus(); };
