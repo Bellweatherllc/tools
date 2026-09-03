@@ -3352,7 +3352,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1035';
+const CORE_VERSION = 'v1037';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15930,6 +15930,14 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1037', date: '2026-09-03',
+    entries:['Copy in Key Data — Operations now uses the same per-row pp-copy-btn and clipboard icon as the other Key Data panels rather than a one-off header button.'],
+  },
+  {
+    version: 'v1036', date: '2026-09-03',
+    entries:['Copy button in Key Data — Operations is now a visible gold outlined button; it was styled as the close button and effectively invisible. Presentation columns are labelled under the icon. QuickBooks parser now matches labels anywhere in the row rather than only the first lettered cell, handles parenthesised negatives, takes the rightmost figure, and logs every labelled row it considered when a figure is missing.'],
+  },
+  {
     version: 'v1035', date: '2026-09-03',
     entries:['Fix: qbApply ran before the Operations table was written to the DOM, so it searched an empty container and finished silently. It now runs after the render settles, matches on the row label alone rather than the label plus its subtext, and clears the nodata styling when it writes a figure. Operating Cash and Bank Balance were the same Meridian number under two names — Operating Cash removed.'],
   },
@@ -18895,19 +18903,31 @@ async function qbFindNewest(){
 }
 // The summary block sits below the payables detail: labelled rows whose text carries
 // the account or category and whose adjacent cell carries the figure.
+// v1036: matches anywhere in the row's text rather than only the first lettered cell,
+// and logs every labelled row it considered so an unexpected layout is diagnosable
+// from the console instead of by guesswork.
 function qbParseSummary(rows){
   const out={bank:null,payroll:null,payables:null};
-  const num=v=>{ if(typeof v==='number') return v; const n=parseFloat(String(v==null?'':v).replace(/[$,\s()]/g,'')); return isNaN(n)?null:n; };
+  const num=v=>{ if(typeof v==='number') return v;
+    let t=String(v==null?'':v).trim(); if(!t) return null;
+    const neg=/^\(.*\)$/.test(t); t=t.replace(/[$,()\s]/g,'');
+    const n=parseFloat(t); return isNaN(n)?null:(neg?-n:n); };
+  const seen=[];
   for(const r of rows){
-    const cells=(r||[]).map(c=>c==null?'':String(c));
-    const label=cells.find(c=>/[A-Za-z]/.test(c))||'';
-    const L=label.toUpperCase();
-    let val=null;
-    for(const c of r||[]){ const n=num(c); if(n!==null&&Math.abs(n)>0){ val=n; break; } }
-    if(val===null) continue;
-    if(out.bank===null&&/MERIDIAN BANK/i.test(L)) out.bank=Math.abs(val);
-    else if(out.payroll===null&&/^PAYROLL/i.test(L.trim())) out.payroll=Math.abs(val);
-    else if(out.payables===null&&/^PAYABLES/i.test(L.trim())) out.payables=Math.abs(val);
+    if(!r||!r.length) continue;
+    const text=r.map(c=>c==null?'':String(c)).join(' ').trim();
+    if(!/[A-Za-z]/.test(text)) continue;
+    const nums=r.map(num).filter(n=>n!==null&&Math.abs(n)>0.005);
+    if(!nums.length) continue;
+    const val=Math.abs(nums[nums.length-1]); // figure sits to the right of its label
+    const T=text.toUpperCase();
+    seen.push({text:text.slice(0,70),val});
+    if(out.bank===null&&/MERIDIAN/.test(T)&&!/LOC|LINE OF CREDIT/.test(T)) out.bank=val;
+    else if(out.payroll===null&&/PAYROLL/.test(T)) out.payroll=val;
+    else if(out.payables===null&&/PAYABLE/.test(T)) out.payables=val;
+  }
+  if(out.bank===null||out.payroll===null||out.payables===null){
+    console.log('[ops] QB rows with a label and a figure (last 40):',seen.slice(-40));
   }
   return out;
 }
@@ -19078,18 +19098,17 @@ function opsRenderInto(root){
 (()=>{
   const _P=document.createElement('div'); _P.id='opsKdPanel';
   _P.innerHTML='<div class="prod-panel-hd"><span class="prod-panel-title">Key Data \u2014 Operations</span>'
-    +'<span style="display:flex;align-items:center;gap:2px;">'
-    +'<button class="prod-panel-close" id="opsKdCopy" data-tip="Copy as text" style="font-size:11px;">\u29c9</button>'
-    +'<button class="prod-panel-close" id="opsKdClose">&#215;</button></span></div>'
+    +'<button class="prod-panel-close" id="opsKdClose">&#215;</button></div>'
     +'<div class="okd-body" id="opsKdBody"></div>';
   document.body.appendChild(_P);
   const _shut=()=>{ _P.classList.remove('is-open'); document.querySelectorAll('#opsKdBtnBar').forEach(b=>b.classList.remove('is-open')); };
   document.getElementById('opsKdClose')?.addEventListener('click',_shut);
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&_P.classList.contains('is-open')) _shut(); });
-  document.getElementById('opsKdCopy')?.addEventListener('click',()=>{
-    const btn=document.getElementById('opsKdCopy');
-    navigator.clipboard.writeText(_P._okdText||'').then(()=>{
-      const o=btn.innerHTML; btn.innerHTML='\u2713'; setTimeout(()=>btn.innerHTML=o,1200);
+  _P.addEventListener('click',e=>{
+    const b=e.target.closest('[data-okd-copy]'); if(!b) return;
+    navigator.clipboard.writeText(b.getAttribute('data-okd-copy')||'').then(()=>{
+      const o=b.innerHTML; b.textContent='\u2713'; b.style.color='#3b7fa8';
+      setTimeout(()=>{b.innerHTML=o;b.style.color='';},1400);
     }).catch(()=>{});
   });
   window._opsKdOpen=function(){
@@ -19103,6 +19122,8 @@ function opsRenderInto(root){
       }).sort((a,b)=>{ const cw=p=>{ const m=p.milestones.find(m=>m.name==='CA'); return m&&m.week!=null?m.week:9999; }; return cw(a)-cw(b); });
       if(!kdProjs.length){ body.innerHTML='<div class="prod-panel-zone-hdr">No dates set</div>'; return; }
       const fmtD=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      const OKD_CLIP='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="8" height="9" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M3 11H2.5A1.5 1.5 0 011 9.5v-7A1.5 1.5 0 012.5 1h7A1.5 1.5 0 0111 2.5V3" stroke="currentColor" stroke-width="1.3"/></svg>';
+      const daT2=ms=>ms&&ms.week!=null?fmtD(wkMon(ms.week))+' '+wkMon(ms.week).getFullYear():'\u2014';
       const PILL='display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;border-radius:3px;padding:1px 5px;line-height:1.5;color:#fff;background:rgba(155,98,39,.80);';
       const dCell=wk=>{ if(wk==null) return '<div class="pp-date-val empty">\u2014</div>';
         const d=wkMon(wk);
@@ -19115,7 +19136,8 @@ function opsRenderInto(root){
         +'<div class="pp-date-col-hdr" data-tip="DA signing date"><span style="'+PILL+'">DA</span></div>';
       for(let i=0;i<maxPres;i++)
         hdr+='<div class="pp-date-col-hdr" style="width:104px;flex-shrink:0;color:#c06820;" data-tip="Presentation '+(i+1)+'">'
-          +'<span style="display:inline-flex;width:16px;height:14px;">'+_presMarkerSvg(i+1)+'</span></div>';
+          +'<span style="display:inline-flex;width:16px;height:14px;">'+_presMarkerSvg(i+1)+'</span>'
+          +'<span style="display:block;margin-top:2px;">Presentation</span></div>';
       hdr+='<div class="pp-date-col-hdr" data-tip="CA signing date"><span style="'+PILL+'">CA</span></div></div>';
       let rows='', txt='KEY DATA \u2014 OPERATIONS\n\n';
       kdProjs.forEach(proj=>{
@@ -19132,8 +19154,13 @@ function opsRenderInto(root){
             +'<span class="pp-date-yr" style="opacity:.9;">'+escH(pTime(pr))+' \u00b7 '+dur+' min</span>'
             +'<span class="pp-date-yr">'+escH(rn(pr.room)||'no room')+(pr.eventId?' \u2713':'')+'</span></div>';
         }
+        const rowTxt=[nm,'DA: '+daT2(daMs),'CA: '+daT2(caMs)]
+          .concat(up.map((pr,i)=>{ const d=new Date(pr.iso+'T12:00:00');
+            return 'Presentation '+(i+1)+': '+fmtD(d)+', '+d.getFullYear()+' \u00b7 '+pTime(pr)+' \u00b7 '+((pr.duration||PRES_DURATION_MIN))+' min \u00b7 '+(rn(pr.room)||'no room'); }))
+          .join('\n');
         rows+='<div class="pp-date-row"><div class="pp-date-info"><div class="pp-date-name">'+escH(nm)+'</div></div>'
-          +dCell(daMs?.week)+pCells+dCell(caMs?.week)+'</div>';
+          +dCell(daMs?.week)+pCells+dCell(caMs?.week)
+          +'<button class="pp-copy-btn" data-okd-copy="'+escH(rowTxt)+'" data-tip="Copy row to clipboard">'+OKD_CLIP+'</button></div>';
         const daT=daMs?.week!=null?fmtD(wkMon(daMs.week))+' '+wkMon(daMs.week).getFullYear():'\u2014';
         const caT=caMs?.week!=null?fmtD(wkMon(caMs.week))+' '+wkMon(caMs.week).getFullYear():'\u2014';
         txt+=nm+'\n  DA '+daT+'   CA '+caT+'\n';
