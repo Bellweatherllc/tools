@@ -3353,7 +3353,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1038';
+const CORE_VERSION = 'v1040';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15931,6 +15931,14 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1040', date: '2026-09-03',
+    entries:['Net Position: payroll and payables are standing balances, not weekly run rates, so they now come out of week one only. Weeks two through four move on AR and scenarios alone. Row subtext says so.'],
+  },
+  {
+    version: 'v1039', date: '2026-09-03',
+    entries:['Fix: scenario rows in the cash view read sc.what and sc.week, but scenarios are stored as {t, weekOf}. Every row showed the label “Scenario” with dashes across all four weeks. Now reads the correct properties, so the name appears and the amount lands in its week.'],
+  },
+  {
     version: 'v1038', date: '2026-09-03',
     entries:['Bank balance now anchors on the account number x7490 rather than the bank name, which was matching the wrong row. Net Position calculates as a running forecast: week one opens from the bank balance, each week subtracts payroll and payables and adds that week\u2019s AR and scenarios, carrying the close forward. Each switched-on scenario is now its own row in the cash view rather than a combined net. The scenario week-picker and scenario cards inherit the same zone colours as the cash view.'],
   },
@@ -18990,13 +18998,13 @@ async function qbApply(root){
     if(d.payroll!=null) n+=put(/^PAYROLL$/i,-Math.abs(d.payroll));
     if(d.payables!=null) n+=put(/^PAYABLES$/i,-Math.abs(d.payables));
     console.log('[ops] QuickBooks parsed:',d,'rows filled:',n);
-    // Running net: open from the bank balance, subtract weekly payroll and payables,
-    // add that week's AR and scenarios, carry the close forward.
+    // v1040: payroll and payables on the QB report are standing balances — what is
+    // owed right now, not a weekly run rate. They come out of week one only. After
+    // that the line moves on AR and scenarios alone.
     if(d.bank!=null){
-      let bal=d.bank;
+      let bal=d.bank-Math.abs(d.payroll||0)-Math.abs(d.payables||0);
       root.querySelectorAll('[data-ops-net]').forEach(td=>{
-        bal += (parseFloat(td.dataset.opsAr)||0) + (parseFloat(td.dataset.opsSc)||0)
-             - Math.abs(d.payroll||0) - Math.abs(d.payables||0);
+        bal += (parseFloat(td.dataset.opsAr)||0) + (parseFloat(td.dataset.opsSc)||0);
         td.textContent=opsMoney(bal);
         td.classList.remove('nodata');
         td.classList.add(bal<0?'negv':'pos');
@@ -19034,9 +19042,10 @@ function opsRenderInto(root){
   // not just the net. Anchored to its Monday, same as the combined row was.
   let rowSc='';
   OPS_SCENARIOS.filter(sc=>sc.on).forEach(sc=>{
-    const d=opsIsoToDate(sc.week); const k=d?wkOf(d):-2;
+    // v1039: the stored shape is {t,m,weekOf,...} — not {what,week}
+    const d=opsIsoToDate(sc.weekOf); const k=d?wkOf(d):-2;
     const amt=(sc.dir==='in'?1:-1)*(sc.amt||0);
-    rowSc+='<tr><td class="rl">'+escH(sc.what||'Scenario')+'<span class="ops-src">maybe'+(sc.by?' \u00b7 '+escH(sc.by):'')+'</span></td>';
+    rowSc+='<tr><td class="rl">'+escH(sc.t||'Scenario')+'<span class="ops-src">maybe'+(sc.by?' \u00b7 '+escH(sc.by.split(' ')[0]):'')+'</span></td>';
     for(let i=0;i<4;i++){
       const hit=(i===k);
       rowSc+='<td class="'+cls(i)+(hit?(amt>0?' pos':' negv'):' nodata')+'">'
@@ -19047,7 +19056,10 @@ function opsRenderInto(root){
   if(!rowSc) rowSc='<tr><td class="rl">Scenarios<span class="ops-src">nothing switched on</span></td>'
     +[0,1,2,3].map(i=>'<td class="'+cls(i)+' nodata">\u2014</td>').join('')+'</tr>';
   // v1035: Operating Cash and Bank Balance were the same Meridian figure under two names.
-  const body=rowNo('Bank Balance','QuickBooks weekly drop')+rowNo('Payroll','QuickBooks weekly drop')+rowNo('Payables','QuickBooks weekly drop')+rowAr+rowSc;
+  const body=rowNo('Bank Balance','QuickBooks weekly drop')
+    +rowNo('Payroll','QuickBooks drop \u00b7 owed now, paid once')
+    +rowNo('Payables','QuickBooks drop \u00b7 owed now, paid once')
+    +rowAr+rowSc;
   // v1038: running forecast — week one opens from the bank balance, each later week
   // opens from the previous week's close. Payroll/payables are recurring weekly costs.
   let net='<tr class="net-row"><td class="rl">Net Position</td>';
