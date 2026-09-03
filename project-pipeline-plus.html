@@ -2988,15 +2988,16 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-wkmenu.on{display:block;}
 .ops-wkopt{padding:7px 10px;font-size:12px;color:#1f2e3e;cursor:pointer;position:relative;}
 .ops-wkopt+.ops-wkopt::before{content:'';position:absolute;left:0;right:0;top:0;height:1px;background:repeating-linear-gradient(to right,#bfb7a6 0 2px,transparent 2px 6px);}
-.ops-wkopt.z-acc{background:#fff;}
-.ops-wkopt.z-proj{background:rgba(216,182,79,.10);}
-.ops-wkopt.z-beyond{background:rgba(59,127,168,.09);}
-.ops-wkopt.z-first-proj{border-top:3px solid #d8b64f;}
+.ops-wkopt.z-acc{background:rgba(216,182,79,.10);}
+.ops-wkopt.z-proj{background:rgba(59,127,168,.07);}
+.ops-wkopt.z-beyond{background:#fff;}
+.ops-wkopt.z-first-proj{border-top:1px solid #e4dac4;}
 .ops-wkopt.z-first-proj::before,.ops-wkopt.z-first-beyond::before{display:none;}
 .ops-wkopt.z-first-beyond{border-top:1px solid #e4dac4;}
 .ops-wkopt:hover,.ops-wkopt.on{background:#1f2e3e;color:#fff;}
-.ops-sc.zone-proj{background:rgba(216,182,79,.055);}
-.ops-sc.zone-beyond{background:rgba(59,127,168,.06);}
+.ops-sc.zone-acc{background:rgba(216,182,79,.10);}
+.ops-sc.zone-proj{background:rgba(59,127,168,.07);}
+.ops-sc.zone-beyond{background:#fff;}
 .ops-sc.zone-past{opacity:.55;}
 .ops-addform input,.ops-addform select{width:100%;padding:6px 8px;border:1px solid #e4dac4;border-radius:4px;background:#fff;color:#1f2e3e;font:inherit;font-size:12px;}
 .ops-af-act{display:flex;gap:8px;justify-content:flex-end;margin-top:10px;}
@@ -3352,7 +3353,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1037';
+const CORE_VERSION = 'v1038';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15930,6 +15931,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1038', date: '2026-09-03',
+    entries:['Bank balance now anchors on the account number x7490 rather than the bank name, which was matching the wrong row. Net Position calculates as a running forecast: week one opens from the bank balance, each week subtracts payroll and payables and adds that week\u2019s AR and scenarios, carrying the close forward. Each switched-on scenario is now its own row in the cash view rather than a combined net. The scenario week-picker and scenario cards inherit the same zone colours as the cash view.'],
+  },
+  {
     version: 'v1037', date: '2026-09-03',
     entries:['Copy in Key Data — Operations now uses the same per-row pp-copy-btn and clipboard icon as the other Key Data panels rather than a one-off header button.'],
   },
@@ -18922,7 +18927,9 @@ function qbParseSummary(rows){
     const val=Math.abs(nums[nums.length-1]); // figure sits to the right of its label
     const T=text.toUpperCase();
     seen.push({text:text.slice(0,70),val});
-    if(out.bank===null&&/MERIDIAN/.test(T)&&!/LOC|LINE OF CREDIT/.test(T)) out.bank=val;
+    // Anchor on the operating account number: 'Meridian' alone also matches the LOC
+    // row and any vendor with a bank name, and those sit above it in the detail.
+    if(out.bank===null&&/X7490/.test(T.replace(/\s/g,''))) out.bank=val;
     else if(out.payroll===null&&/PAYROLL/.test(T)) out.payroll=val;
     else if(out.payables===null&&/PAYABLE/.test(T)) out.payables=val;
   }
@@ -18983,6 +18990,18 @@ async function qbApply(root){
     if(d.payroll!=null) n+=put(/^PAYROLL$/i,-Math.abs(d.payroll));
     if(d.payables!=null) n+=put(/^PAYABLES$/i,-Math.abs(d.payables));
     console.log('[ops] QuickBooks parsed:',d,'rows filled:',n);
+    // Running net: open from the bank balance, subtract weekly payroll and payables,
+    // add that week's AR and scenarios, carry the close forward.
+    if(d.bank!=null){
+      let bal=d.bank;
+      root.querySelectorAll('[data-ops-net]').forEach(td=>{
+        bal += (parseFloat(td.dataset.opsAr)||0) + (parseFloat(td.dataset.opsSc)||0)
+             - Math.abs(d.payroll||0) - Math.abs(d.payables||0);
+        td.textContent=opsMoney(bal);
+        td.classList.remove('nodata');
+        td.classList.add(bal<0?'negv':'pos');
+      });
+    }
     note(n?(d.file||'file'):(d.file||'file')+' \u00b7 parsed but no rows matched \u2014 see console');
   }catch(e){
     console.warn('[ops] QuickBooks load failed:',e);
@@ -19011,10 +19030,32 @@ function opsRenderInto(root){
   thead+='</tr>';
   const rowNo=(label,src)=>{ let r='<tr><td class="rl">'+label+'<span class="ops-src">'+src+'</span></td>'; for(let i=0;i<4;i++) r+='<td class="'+cls(i)+' nodata">\u2014</td>'; return r+'</tr>'; };
   const rowAr='<tr><td class="rl">AR Expected<span class="ops-src">design invoices today \u00b7 construction invoices to come</span></td>'+ar.map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':'')+'">'+(v>0?'+':'')+opsMoney(v)+'</td>').join('')+'</tr>';
-  const rowSc='<tr><td class="rl">Scenarios<span class="ops-src">switched-on maybes, net</span></td>'+scNet.map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':v<0?' negv':' nodata')+'">'+(v===0?'\u2014':(v>0?'+':'')+opsMoney(v))+'</td>').join('')+'</tr>';
+  // v1038: each switched-on scenario is its own row so you can see what is moving,
+  // not just the net. Anchored to its Monday, same as the combined row was.
+  let rowSc='';
+  OPS_SCENARIOS.filter(sc=>sc.on).forEach(sc=>{
+    const d=opsIsoToDate(sc.week); const k=d?wkOf(d):-2;
+    const amt=(sc.dir==='in'?1:-1)*(sc.amt||0);
+    rowSc+='<tr><td class="rl">'+escH(sc.what||'Scenario')+'<span class="ops-src">maybe'+(sc.by?' \u00b7 '+escH(sc.by):'')+'</span></td>';
+    for(let i=0;i<4;i++){
+      const hit=(i===k);
+      rowSc+='<td class="'+cls(i)+(hit?(amt>0?' pos':' negv'):' nodata')+'">'
+        +(hit?((amt>0?'+':'')+opsMoney(amt)):'\u2014')+'</td>';
+    }
+    rowSc+='</tr>';
+  });
+  if(!rowSc) rowSc='<tr><td class="rl">Scenarios<span class="ops-src">nothing switched on</span></td>'
+    +[0,1,2,3].map(i=>'<td class="'+cls(i)+' nodata">\u2014</td>').join('')+'</tr>';
   // v1035: Operating Cash and Bank Balance were the same Meridian figure under two names.
   const body=rowNo('Bank Balance','QuickBooks weekly drop')+rowNo('Payroll','QuickBooks weekly drop')+rowNo('Payables','QuickBooks weekly drop')+rowAr+rowSc;
-  let net='<tr class="net-row"><td class="rl">Net Position</td>'; for(let i=0;i<4;i++) net+='<td class="'+cls(i)+' nodata">\u2014</td>'; net+='</tr>';
+  // v1038: running forecast — week one opens from the bank balance, each later week
+  // opens from the previous week's close. Payroll/payables are recurring weekly costs.
+  let net='<tr class="net-row"><td class="rl">Net Position</td>';
+  window._opsNetCells=[];
+  for(let i=0;i<4;i++){
+    net+='<td class="'+cls(i)+' nodata" data-ops-net="'+i+'" data-ops-ar="'+(ar[i]||0)+'" data-ops-sc="'+(scNet[i]||0)+'">\u2014</td>';
+  }
+  net+='</tr>';
   // alerts
   const fmtIso=iso=>{ const d=opsIsoToDate(iso); return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):iso; };
   const alerts=inv.filter(x=>x.drift).map(x=>({type:'design',tag:'Design drift',title:_projShortName(x.proj)+' \u2014 invoice '+x.n+' of '+x.total+' differs from the DA',detail:x.drift}))
