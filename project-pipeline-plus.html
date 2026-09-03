@@ -2452,22 +2452,7 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 /* ── PRODUCTION PANEL ── */
 #opsKdPanel{position:fixed;top:0;right:0;width:620px;height:100vh;background:#fff;border-left:1px solid #e4dac4;z-index:7600;display:flex;flex-direction:column;box-shadow:-4px 0 16px rgba(0,0,0,.10);transform:translateX(100%);transition:transform .18s cubic-bezier(.4,0,.2,1);overflow:hidden;}
 #opsKdPanel.is-open{transform:translateX(0);}
-#opsKdPanel .okd-hd{background:var(--navy);padding:5px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-#opsKdPanel .okd-title{font-size:9.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);}
-#opsKdPanel .okd-close{font-size:13px;color:rgba(255,255,255,.35);cursor:pointer;background:none;border:none;line-height:1;padding:2px 4px;}
-#opsKdPanel .okd-close:hover{color:rgba(255,255,255,.8);}
 #opsKdPanel .okd-body{flex:1;overflow-y:auto;padding:10px 12px;}
-#opsKdPanel .okd-zone-hdr{font-size:8.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#a3a3a3;padding:8px 0 5px;border-bottom:1px solid var(--bdr,#e4dac4);margin-bottom:6px;}
-#opsKdPanel .okd-row{display:flex;align-items:flex-start;gap:6px;padding:6px 0;border-bottom:1px solid rgba(228,218,196,.5);}
-#opsKdPanel .okd-nm{flex:1;min-width:120px;font-family:'Swear Text',serif;font-size:12px;font-weight:600;color:var(--navy,#1f2e3e);}
-#opsKdPanel .okd-dt{width:74px;flex-shrink:0;text-align:center;font-size:11px;color:#28323c;}
-#opsKdPanel .okd-dt .okd-yr{display:block;font-size:8.5px;color:#a3a3a3;}
-#opsKdPanel .okd-dt.empty{color:#ccc;}
-#opsKdPanel .okd-pres{flex:1.4;min-width:150px;font-size:10.5px;color:#28323c;}
-#opsKdPanel .okd-pres-line{display:flex;align-items:center;gap:4px;padding:1px 0;white-space:nowrap;}
-#opsKdPanel .okd-pres-ico{display:inline-flex;width:13px;height:12px;color:#c06820;flex-shrink:0;}
-#opsKdPanel .okd-pres-room{color:#a3a3a3;font-size:9px;}
-#opsKdPanel .okd-colhdr{display:flex;gap:6px;padding:0 0 4px;font-size:7.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#a3a3a3;}
 .prod-panel{
   position:fixed;top:0;right:0;width:620px;height:100vh;
   background:#fff;border-left:1px solid #e4dac4;
@@ -3359,7 +3344,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1029';
+const CORE_VERSION = 'v1030';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11256,6 +11241,16 @@ function rebuildSection(sType){
 // ── v954: OPERATIONS — fourth screen, landing page while in development ──
 function buildOperationsSection(){
   const sec=sectionShell('operations','Operations');
+  // v1030: command bar in the navy band, matching the other three lenses
+  const cmdBar=el('div','cap-cmd-bar');
+  const cmdLeft=el('div','cap-cmd-left'); cmdLeft.style.cssText='min-width:60px;border-right:none;padding-left:8px;';
+  const cmdRight=el('div','cap-cmd-right');
+  const opsKdBtn=el('button','prod-panel-btn'); opsKdBtn.id='opsKdBtnBar';
+  opsKdBtn.innerHTML='<span class="pp-chev">\u25bc</span> Key Data \u2014 Operations';
+  opsKdBtn.addEventListener('click',()=>window._opsKdOpen&&window._opsKdOpen());
+  cmdRight.appendChild(opsKdBtn);
+  cmdBar.appendChild(cmdLeft); cmdBar.appendChild(cmdRight);
+  sec.appendChild(cmdBar);
   // v988: the live screen replaces the v954 landing page.
   const root=el('div','ops-root');
   try{ opsRenderInto(root); }
@@ -15925,6 +15920,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1030', date: '2026-09-03',
+    entries:['Key Data — Operations moved into the navy command bar, matching the other three lenses, and the panel now reuses the prod-panel classes verbatim so type, spacing and colour match exactly. Presentations are columns of dates rather than inline icons. QuickBooks reader added: finds the newest weekly report across the parent folder and its year subfolders, then reads bank balance, payroll and payables from the summary block.'],
+  },
+  {
     version: 'v1029', date: '2026-09-03',
     entries:['T and C boxes are 4px slimmer and now a fixed width — msPlaceDot was using the full half-cell during drag while the builders used a narrower box, so they visibly expanded when grabbed. Pencil is 2px wider. Fixed the header week highlight for T and C drags. All four calendars now use the same filled-block day cells; today reads as a gold inset ring rather than a border.'],
   },
@@ -18820,6 +18819,74 @@ async function opsAckCaMove(spId,n){
   catch(e){ showToast('Could not save: '+e.message); return; }
   const r=document.querySelector('.ops-root'); if(r) opsRenderInto(r);
 }
+// ── v1030: QuickBooks weekly drop ─────────────────────────────────────
+// Patti drops the current month's report in the parent folder and files it into a
+// year subfolder at the start of the next month, so the finder checks both and takes
+// whichever file is newest by lastModifiedDateTime.
+const OPSSEC_SITE='https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/OperationsSecure:';
+const QB_FOLDER='OPSSEC Financial/2. QuickBooks/Weekly QB Reports';
+let QB_DATA=null; // {bank,payroll,payables,file,modified}
+async function qbFindNewest(){
+  const tok=await getToken();
+  const H={Authorization:'Bearer '+tok};
+  const enc=p=>p.split('/').map(encodeURIComponent).join('/');
+  const listing=async path=>{
+    const url=OPSSEC_SITE+'/drive/root:/'+enc(path)+':/children?$select=id,name,folder,lastModifiedDateTime&$top=200';
+    const r=await fetch(url,{headers:H}); if(!r.ok) throw new Error('Graph '+r.status+' on '+path);
+    return (await r.json()).value||[];
+  };
+  const kids=await listing(QB_FOLDER);
+  const isRpt=f=>!f.folder&&/\.xlsm?x?$/i.test(f.name||'');
+  let files=kids.filter(isRpt).map(f=>({...f,_path:QB_FOLDER}));
+  // Year subfolders — Patti files last month's reports into these
+  for(const d of kids.filter(f=>f.folder)){
+    try{
+      const sub=await listing(QB_FOLDER+'/'+d.name);
+      files=files.concat(sub.filter(isRpt).map(f=>({...f,_path:QB_FOLDER+'/'+d.name})));
+    }catch(_){}
+  }
+  if(!files.length) throw new Error('No QuickBooks report found');
+  files.sort((a,b)=>(b.lastModifiedDateTime||'').localeCompare(a.lastModifiedDateTime||''));
+  return files[0];
+}
+// The summary block sits below the payables detail: labelled rows whose text carries
+// the account or category and whose adjacent cell carries the figure.
+function qbParseSummary(rows){
+  const out={bank:null,payroll:null,payables:null};
+  const num=v=>{ if(typeof v==='number') return v; const n=parseFloat(String(v==null?'':v).replace(/[$,\s]/g,'')); return isNaN(n)?null:n; };
+  for(const r of rows){
+    const cells=(r||[]).map(c=>c==null?'':String(c));
+    const label=cells.find(c=>/[A-Za-z]/.test(c))||'';
+    const L=label.toUpperCase();
+    let val=null;
+    for(const c of r||[]){ const n=num(c); if(n!==null&&Math.abs(n)>0){ val=n; break; } }
+    if(val===null) continue;
+    if(out.bank===null&&/MERIDIAN BANK/i.test(L)) out.bank=Math.abs(val);
+    else if(out.payroll===null&&/^PAYROLL/i.test(L.trim())) out.payroll=Math.abs(val);
+    else if(out.payables===null&&/^PAYABLES/i.test(L.trim())) out.payables=Math.abs(val);
+  }
+  return out;
+}
+async function qbLoad(){
+  const f=await qbFindNewest();
+  const tok=await getToken();
+  const dl=await fetch(OPSSEC_SITE+'/drive/items/'+f.id,{headers:{Authorization:'Bearer '+tok}});
+  if(!dl.ok) throw new Error('Graph '+dl.status);
+  const meta=await dl.json();
+  const url=meta['@microsoft.graph.downloadUrl']; if(!url) throw new Error('No download URL');
+  const buf=await (await fetch(url)).arrayBuffer();
+  if(typeof XLSX==='undefined'){
+    await new Promise((res,rej)=>{ const sc=document.createElement('script');
+      sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload=res; sc.onerror=()=>rej(new Error('SheetJS failed to load')); document.head.appendChild(sc); });
+  }
+  const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+  const ws=wb.Sheets[wb.SheetNames.find(n=>/sheet1/i.test(n))||wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
+  const sum=qbParseSummary(rows);
+  QB_DATA={...sum,file:f.name,modified:f.lastModifiedDateTime};
+  return QB_DATA;
+}
 function opsGateOk(){ return !!CURRENT_USER_OPS_ROLE; }
 // v990: the tab is always present — access changes what the screen shows, not the architecture.
 function opsApplyGate(){ const btn=document.querySelector('[data-focus-btn="operations"]'); if(btn) btn.style.display=''; }
@@ -18872,9 +18939,6 @@ function opsRenderInto(root){
   if(undated.length) invHtml+='<div class="ops-group zone-beyond">Awaiting a date</div>'+undated.map(x=>invRow(x,' zone-beyond')).join('');
   const seededN=PROJECTS.filter(p=>p.status==='da-signed'&&p.designInvoices).length;
   root.innerHTML='<div class="ops-wrap">'+banner
-    +'<div style="display:flex;justify-content:flex-end;margin:0 0 8px;">'
-    +'<button id="opsKdBtnInline" class="prod-panel-btn"><span class="pp-chev">\u25bc</span> Key Data \u2014 Operations</button>'
-    +'</div>'
     +'<div class="ops-top">'
     +'<div class="ops-h"><h2>Four-week cash view</h2><span class="ops-sub">'+W[0].sub.split(' \u2013 ')[0]+' \u2013 '+W[3].end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u00b7 last QuickBooks drop: none yet</span><div class="ops-rule"></div></div>'
     +'<div class="ops-h"><h2>What could move</h2><span class="ops-sub">Only maybes \u00b7 lands in Net Position once cash figures are connected</span><div class="ops-rule"></div></div>'
@@ -18896,7 +18960,6 @@ function opsRenderInto(root){
     +'<div class="ops-card ops-expected">'+invHtml+'</div>'
 
     +'</div>';
-  root.querySelector('#opsKdBtnInline')?.addEventListener('click',window._opsKdOpen);
   opsDrawScenarios(W13,root);
   root.querySelectorAll('[data-ops-ack]').forEach(b=>b.addEventListener('click',()=>{ b.disabled=true; b.textContent='Saving\u2026'; opsAckCaMove(b.getAttribute('data-ops-ack'),Number(b.getAttribute('data-ops-n'))); }));
   const form=root.querySelector('#opsAddForm'), addBtn=root.querySelector('#opsAddBtn'); let dir='out';
@@ -18926,46 +18989,54 @@ function opsRenderInto(root){
     const it=e.target.closest('.ops-sc'); if(!it) return; const s=OPS_SCENARIOS.find(z=>z.id===it.dataset.id); if(s){ s.on=!s.on; persist(); opsRenderInto(root); }
   });
 }
-// ── v1026: OPS Key Dates panel — matches Key Data panel design language ──
+// ── v1030: OPS Key Dates panel — reuses the prod-panel classes verbatim ──
 (()=>{
   const _P=document.createElement('div'); _P.id='opsKdPanel';
-  _P.innerHTML='<div class="okd-hd"><span class="okd-title">Key Data \u2014 Operations</span><button class="okd-close" id="opsKdClose">&#215;</button></div><div class="okd-body" id="opsKdBody"></div>';
+  _P.innerHTML='<div class="prod-panel-hd"><span class="prod-panel-title">Key Data \u2014 Operations</span>'
+    +'<button class="prod-panel-close" id="opsKdClose">&#215;</button></div>'
+    +'<div class="okd-body" id="opsKdBody"></div>';
   document.body.appendChild(_P);
-  document.getElementById('opsKdClose')?.addEventListener('click',()=>{_P.classList.remove('is-open');document.querySelectorAll('#opsKdBtnInline').forEach(b=>b.classList.remove('is-open'));});
-  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&_P.classList.contains('is-open')){_P.classList.remove('is-open');document.querySelectorAll('#opsKdBtnInline').forEach(b=>b.classList.remove('is-open'));} });
+  const _shut=()=>{ _P.classList.remove('is-open'); document.querySelectorAll('#opsKdBtnBar').forEach(b=>b.classList.remove('is-open')); };
+  document.getElementById('opsKdClose')?.addEventListener('click',_shut);
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&_P.classList.contains('is-open')) _shut(); });
   window._opsKdOpen=function(){
-    const wasOpen=_P.classList.contains('is-open');
-    if(wasOpen){ _P.classList.remove('is-open'); document.querySelectorAll('#opsKdBtnInline').forEach(b=>b.classList.remove('is-open')); return; }
-    _P.classList.add('is-open'); document.querySelectorAll('#opsKdBtnInline').forEach(b=>b.classList.add('is-open'));
+    if(_P.classList.contains('is-open')){ _shut(); return; }
+    _P.classList.add('is-open'); document.querySelectorAll('#opsKdBtnBar').forEach(b=>b.classList.add('is-open'));
     const body=document.getElementById('opsKdBody'); if(!body) return;
     try{
       const kdProjs=PROJECTS.filter(p=>isVisible(p)).filter(p=>{
         const da=p.milestones.find(m=>m.name==='DA'), ca=p.milestones.find(m=>m.name==='CA');
         return (da&&da.week!=null)||(ca&&ca.week!=null)||(p.presentations&&p.presentations.length);
       }).sort((a,b)=>{ const cw=p=>{ const m=p.milestones.find(m=>m.name==='CA'); return m&&m.week!=null?m.week:9999; }; return cw(a)-cw(b); });
-      if(!kdProjs.length){ body.innerHTML='<div style="padding:20px;text-align:center;color:#a3a3a3;font-size:11px;">No projects with DA, CA, or presentations set.</div>'; return; }
-      const fmtDt=wk=>{ if(wk==null) return '<span class="okd-dt empty">\u2014</span>'; const d=wkMon(wk); return '<span class="okd-dt">'+d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'<span class="okd-yr">'+d.getFullYear()+'</span></span>'; };
-      const fmtPt=pr=>{ const [h,m]=(pr.time||'10:00').split(':'); const hh=parseInt(h); return (hh%12||12)+':'+(m||'00')+(hh<12?'am':'pm'); };
-      const fmtPd=pr=>new Date(pr.iso+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
-      const rn=email=>(PRES_ROOMS.find(r=>r.email===email)||{name:email||''}).name;
+      if(!kdProjs.length){ body.innerHTML='<div class="prod-panel-zone-hdr">No dates set</div>'; return; }
+      const dCell=wk=>{ if(wk==null) return '<div class="pp-date-val empty">\u2014</div>';
+        const d=wkMon(wk);
+        return '<div class="pp-date-val">'+d.toLocaleDateString('en-US',{month:'short',day:'numeric'})
+          +'<span class="pp-date-yr">'+d.getFullYear()+'</span></div>'; };
+      const pCell=pr=>{ if(!pr) return '<div class="pp-date-val empty">\u2014</div>';
+        const d=new Date(pr.iso+'T12:00:00');
+        const [h,m]=(pr.time||'10:00').split(':'); const hh=parseInt(h);
+        const t=(hh%12||12)+':'+(m||'00')+(hh<12?'am':'pm');
+        return '<div class="pp-date-val" data-tip="'+escH(t+' \u00b7 '+((PRES_ROOMS.find(r=>r.email===pr.room)||{name:''}).name))+'">'
+          +d.toLocaleDateString('en-US',{month:'short',day:'numeric'})
+          +'<span class="pp-date-yr">'+d.getFullYear()+'</span></div>'; };
       const today=_isoDate(new Date());
+      const maxPres=Math.max(1,...kdProjs.map(p=>(p.presentations||[]).filter(x=>x.iso>=today).length));
+      let hdr='<div class="pp-date-cols"><div class="pp-date-col-spacer"></div>'
+        +'<div class="pp-date-col-hdr">DA</div><div class="pp-date-col-hdr">CA</div>';
+      for(let i=0;i<maxPres;i++) hdr+='<div class="pp-date-col-hdr">Pres '+(i+1)+'</div>';
+      hdr+='</div>';
       let rows='';
       kdProjs.forEach(proj=>{
         const daMs=proj.milestones.find(m=>m.name==='DA'), caMs=proj.milestones.find(m=>m.name==='CA');
-        const upcoming=(proj.presentations||[]).filter(pr=>pr.iso>=today);
-        const presHtml=upcoming.length
-          ?upcoming.map((pr,i)=>'<div class="okd-pres-line"><span class="okd-pres-ico">'+_presMarkerSvg(i+1)+'</span>'
-            +escH(fmtPd(pr))+' '+escH(fmtPt(pr))
-            +' <span class="okd-pres-room">'+escH(rn(pr.room))+(pr.eventId?' \u2713':'')+'</span></div>').join('')
-          :'<span style="color:#ccc;">\u2014</span>';
-        rows+='<div class="okd-row"><div class="okd-nm">'+escH(_projShortName(proj)||'?')+'</div>'
-          +fmtDt(daMs?.week)+fmtDt(caMs?.week)
-          +'<div class="okd-pres">'+presHtml+'</div></div>';
+        const up=(proj.presentations||[]).filter(pr=>pr.iso>=today).sort((a,b)=>a.iso.localeCompare(b.iso));
+        let cells=dCell(daMs?.week)+dCell(caMs?.week);
+        for(let i=0;i<maxPres;i++) cells+=pCell(up[i]);
+        rows+='<div class="pp-date-row"><div class="pp-date-info"><div class="pp-date-name">'
+          +escH(_projShortName(proj)||'?')+'</div></div>'+cells+'</div>';
       });
-      body.innerHTML='<div class="okd-zone-hdr">Signing dates &amp; presentations</div>'
-        +'<div class="okd-colhdr"><div style="flex:1;min-width:120px;">Project</div><div style="width:74px;text-align:center;">DA</div><div style="width:74px;text-align:center;">CA</div><div style="flex:1.4;min-width:150px;">Presentations</div></div>'
-        +rows;
-    }catch(e){ console.error('[ops] KD panel:',e); body.innerHTML='<div style="padding:16px;color:#b03020;font-size:11px;">'+e.message+'</div>'; }
+      body.innerHTML='<div class="prod-panel-zone-hdr">Signing dates &amp; presentations</div>'+hdr+rows;
+    }catch(e){ console.error('[ops] KD panel:',e); body.innerHTML='<div class="prod-panel-zone-hdr" style="color:#b03020;">'+e.message+'</div>'; }
   };
 })();
 function opsDrawScenarios(W,root){
