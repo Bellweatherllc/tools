@@ -3330,7 +3330,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1008';
+const CORE_VERSION = 'v1012';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -3495,6 +3495,46 @@ function scrollToPastOffset(){
 }
 // ── Archive ──
 let ARCHIVE=[];
+// ── v1011: archived projects keep their revenue ───────────────────────────────
+// Archive = completed. A completed project leaves the rows but its construction weeks
+// still earned the money, so the revenue row reads from two sources: the visible
+// projects, and a light record for every CORE_Projects row at stage Archive (built at
+// load, at a local archive, and when a colleague's archive arrives via sync). Cancelled
+// never reached CA and Lost (flagged on the ARCHIVE record) never earned — both stay out.
+const ARCHIVED_REVENUE=[]; // {spId,name,budget,cs,dur}
+function _revRecord(spId,name,estValue,gd){
+  const budget=parseBudget(estValue||(gd&&gd.projBudget)); if(!budget) return null;
+  const cPh=((gd&&gd.productionLane&&gd.productionLane.phases)||[]).find(ph=>/^construction$/i.test(String(ph.name||'').trim()));
+  if(!cPh||!(cPh.durWeeks>0)||cPh.startWeek==null) return null;
+  return {spId,name:name||'',budget,cs:cPh.startWeek,dur:cPh.durWeeks};
+}
+function _archivedRevFromItem(item){
+  const f=item.fields||{}; if(f.PipelineStage!=='Archive') return null;
+  let gd=null; try{ gd=JSON.parse(f.GanttData||'null'); }catch(_){ return null; }
+  const est=f.EstimatedProjectValue?String(f.EstimatedProjectValue):'';
+  return _revRecord(item.id,f.ProjectName||f.ClientName||f.Title||'',est,gd);
+}
+function _archivedRevAdd(rec){
+  if(!rec||rec.spId==null) return;
+  const i=ARCHIVED_REVENUE.findIndex(r=>r.spId===rec.spId);
+  if(i>=0) ARCHIVED_REVENUE[i]=rec; else ARCHIVED_REVENUE.push(rec);
+}
+// Every {budget,cs,dur} the revenue row should spread: live board rows plus archived ones.
+function _revenueSources(){
+  const out=[];
+  PROJECTS.forEach(proj=>{
+    if(!isVisible(proj)) return;
+    const budget=parseBudget(proj.estimatedValue||proj.projBudget); if(!budget) return;
+    const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh||!(cPh.durWeeks>0)) return;
+    out.push({budget,cs:cPh.startWeek,dur:cPh.durWeeks});
+  });
+  ARCHIVED_REVENUE.forEach(r=>{
+    if(PROJECTS.some(p=>p._spItemId===r.spId)) return; // back on the board — the live row counts, not the record
+    const arc=ARCHIVE.find(a=>a.id==='sp-proj-'+r.spId); if(arc&&(arc.lost||arc.cancelled)) return;
+    out.push(r);
+  });
+  return out;
+}
 
 // ════════════════════════════════════════════════  PROJECTS
 const PROJECTS = [];
@@ -3543,6 +3583,24 @@ function pushPlanningHistory(desc){
 function _personLabel(id){
   const d=DESIGNERS.find(p=>p.id===id)||PROD_PMS.find(p=>p.id===id);
   return d?d.label:id||'?';
+}
+// v1010: one ghost pill for both lenses — pencil on the left, planning-project name, no
+// "proposed" badge (the dashed border already carries that). Shown beside a slot row
+// whose planning card is connected but not yet confirmed.
+function _buildGhostPill(pp){
+  const ghost=el('div','prod-ghost-pp');
+  const ghostPencil=el('button','prod-ghost-pencil'); ghostPencil.type='button';
+  ghostPencil.dataset.tip='Planning note \u2014 '+(pp.name||'');
+  ghostPencil.dataset.planningNoteBtn=pp.id;
+  ghostPencil.innerHTML='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
+  const ghostNm=el('span','prod-ghost-nm'); ghostNm.textContent=pp.name||'\u2014';
+  ghost.appendChild(ghostPencil); ghost.appendChild(ghostNm);
+  return ghost;
+}
+// v1010: with the pill beside it, the slot row only needs its letter — "Slot C" reads as "C".
+function _shortenSlotName(nameWrap){
+  const nt=nameWrap&&nameWrap.querySelector('.proj-name-text'); if(!nt) return;
+  const m=/^Slot\s+(.+)$/i.exec(nt.textContent||''); if(m) nt.textContent=m[1];
 }
 function _projShortName(proj){
   if(!proj) return '?';
@@ -5236,15 +5294,8 @@ function buildFcMsRow(proj, capacitySection){
   if(capacitySection==='production'&&(proj.isOpenSlot||/^Slot\b/i.test(proj.name))){
     const pendingPP=(PLANNING_PROJECTS||[]).find(pp=>!pp.parked&&pp.ppStatus!=='lost'&&pp.slotId===proj.id);
     if(pendingPP){
-      const ghost=el('div','prod-ghost-pp');
-      const ghostNm=el('span','prod-ghost-nm'); ghostNm.textContent=pendingPP.name||'\u2014';
-      const ghostBadge=el('span','prod-ghost-badge'); ghostBadge.textContent='proposed';
-      const ghostPencil=el('button','prod-ghost-pencil'); ghostPencil.type='button';
-      ghostPencil.dataset.tip='Planning note \u2014 '+(pendingPP.name||'');
-      ghostPencil.dataset.planningNoteBtn=pendingPP.id;
-      ghostPencil.innerHTML='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
-      ghost.appendChild(ghostNm); ghost.appendChild(ghostBadge); ghost.appendChild(ghostPencil);
-      nameWrap.appendChild(ghost);
+      nameWrap.appendChild(_buildGhostPill(pendingPP)); // v1010: dashed border says "proposed" — no badge; pencil leads
+      _shortenSlotName(nameWrap); // v1010: "Slot C" → "C" when the pill is beside it
     }
   }
   const mslbl=el('div','fc-ms-label'); mslbl.textContent='';
@@ -5893,7 +5944,7 @@ function buildTlMsRow(proj){
   }
   return row;
 }
-function buildMsTall(proj,ms,headH,totalH,laneIds,grpNudgeY){
+function buildMsTall(proj,ms,headH,totalH,laneIds,grpNudgeY,bandH){
   grpNudgeY=grpNudgeY||0;
   const m=el('div','ms-tall '+ms.status+(ms.name==='DA'?' ms-da':ms.name==='CA'?' ms-ca':'')); // v889: CA carries its own backing
   m.dataset.msId=ms.id; m.dataset.projId=proj.id;
@@ -5905,8 +5956,9 @@ function buildMsTall(proj,ms,headH,totalH,laneIds,grpNudgeY){
   // years, so it was approximately centred rather than centred. Worse, .ms-head was given
   // the FULL row height while sitting inside a shorter box, so the label centred itself
   // against a different height than the rectangle around it. Two compounding offsets.
-  const _msH=totalH-4;
-  m.style.cssText=`left:${cx-_msW/2}px;top:50%;transform:translateY(-50%);height:${_msH}px;width:${_msW}px;`;
+  const _msH=bandH?bandH-2:totalH-4; // v1012: top-band height in design, full-minus-margin elsewhere
+  const _msTop=bandH?'1px':'50%', _msTx=bandH?'none':'translateY(-50%)';
+  m.style.cssText=`left:${cx-_msW/2}px;top:${_msTop};transform:${_msTx};height:${_msH}px;width:${_msW}px;`;
   const head=el('div','ms-head');
   // With no lane segments (both callers pass none), the head IS the box.
   head.style.height=((laneIds&&laneIds.length)?headH:_msH)+'px';
@@ -6071,7 +6123,7 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
 
     // Stack: "~ 24h" row on top, "4h/w" centered below
     const hrsStack=el('div','');
-    hrsStack.style.cssText='position:absolute;left:20px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;pointer-events:none;';
+    hrsStack.style.cssText='position:absolute;left:20px;top:33px;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;pointer-events:none;'; // v1012: centred in bottom band (22–44px)
 
     // Row 1: ~ [input] h — ~ at 14px for legibility, input tracks digit width
     const hrsRow=el('div','');
@@ -6114,13 +6166,27 @@ function buildBar(proj,ph,laneId,includeControls,showJunctions){
     // Phase name centered in bar — left:50% follows resize automatically
     const nm=el('span','bar-name');
     nm.textContent=ph.name;
-    nm.style.cssText=`position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:13px;white-space:nowrap;color:${txtC};pointer-events:none;`;
+    nm.style.cssText=`position:absolute;left:50%;top:33px;transform:translate(-50%,-50%);font-size:13px;white-space:nowrap;color:${txtC};pointer-events:none;`; // v1012: bottom band centre
     bar.appendChild(nm);
 
     // Right week count
     const wkcR=el('span','bar-meta'); wkcR.dataset.wksId=ph.id; wkcR.textContent=ph.durWeeks+'w';
-    wkcR.style.cssText=`position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:600;color:${metaC};pointer-events:none;white-space:nowrap;`;
+    wkcR.style.cssText=`position:absolute;right:20px;top:33px;transform:translateY(-50%);font-size:13px;font-weight:600;color:${metaC};pointer-events:none;white-space:nowrap;`; // v1012: bottom band
     bar.appendChild(wkcR);
+
+    // v1012: comps note — Phase I only; clock icon to the left of the hours field
+    const _isPhI=!ph.isDesignProd&&(proj.designLane.phases.filter(p=>!p.isDesignProd)[0]||{}).id===ph.id;
+    if(_isPhI){
+      const _cn=proj.compsNote||'';
+      const cnBtn=el('button','');
+      cnBtn.type='button'; cnBtn.setAttribute('data-comps-btn',proj.id);
+      cnBtn.style.cssText=`position:absolute;left:2px;top:33px;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:2px;color:${_cn?'var(--gold,#d8b64f)':metaC};opacity:${_cn?'1':'.45'};display:flex;align-items:center;pointer-events:auto;z-index:2;`;
+      cnBtn.innerHTML=_clockSvg(14);
+      cnBtn.title='Comps & sources for these hours';
+      cnBtn.addEventListener('pointerdown',e=>e.stopPropagation());
+      cnBtn.addEventListener('click',ev=>{ev.stopPropagation();openCompsNote(proj.id,cnBtn);});
+      bar.appendChild(cnBtn);
+    }
 
   } else {
     // Non-design bars: standard name group with left wk count + name + right wk count
@@ -6265,15 +6331,24 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   const overlay=el('div','ms-overlay'); overlay.dataset.projId=proj.id;
   overlay.dataset.expandedH=C.laneH; overlay.dataset.collapsedH=BAND_H;
   overlay.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:absolute;top:0;left:0;overflow:visible;`;
+  const _isDesExp=laneIds.includes('design')&&!proj.collapsed; // v1012: two-row layout active when expanded
+  const DES_MS_BAND_H=22; // top 22px = milestones; bottom 22px = bar content
   const msToRender=skipMsNames?proj.milestones.filter(ms=>!skipMsNames.includes(ms.name)):proj.milestones;
-  msToRender.forEach(ms=>{ const mEl=buildMsTall(proj,ms,rowH,rowH,[],0); overlay.appendChild(mEl); }); // top:1px from buildMsTall default
-  if(laneIds.includes('design')&&!hideTierDots){ ensureTiers(proj); proj.tiers.forEach(t=>overlay.appendChild(buildTierDot(proj,t))); ensureCrits(proj); proj.crits.forEach(c=>overlay.appendChild(buildCritDot(proj,c))); ensurePencilsDown(proj); overlay.appendChild(buildPencilsDot(proj)); }
+  msToRender.forEach(ms=>{ const mEl=buildMsTall(proj,ms,rowH,rowH,[],0,_isDesExp?DES_MS_BAND_H:undefined); overlay.appendChild(mEl); });
+  if(laneIds.includes('design')&&!hideTierDots){
+    ensureTiers(proj); proj.tiers.forEach(t=>{ const dot=buildTierDot(proj,t); if(_isDesExp){dot.style.top='1px';dot.style.transform='none';dot.style.height=(DES_MS_BAND_H-2)+'px';} overlay.appendChild(dot); });
+    ensureCrits(proj); proj.crits.forEach(c=>{ const dot=buildCritDot(proj,c); if(_isDesExp){dot.style.top='1px';dot.style.transform='none';dot.style.height=(DES_MS_BAND_H-2)+'px';} overlay.appendChild(dot); });
+    ensurePencilsDown(proj); const pdDot=buildPencilsDot(proj); if(_isDesExp){pdDot.style.top='0px';pdDot.style.transform='none';} overlay.appendChild(pdDot);
+  }
   if(laneIds.includes('design')) (proj.matterport||[]).forEach(iso=>{ const mk=buildMpMarker(proj,iso); if(mk) overlay.appendChild(mk); }); // v967: Design lens only
   if(laneIds.includes('design')){ overlay.dataset.exp='1'; ((proj.exploratory&&proj.exploratory.dates)||[]).forEach(iso=>{ const mk=buildExpMarker(proj,iso); if(mk) overlay.appendChild(mk); }); }
   wrap.appendChild(overlay); return wrap;
 }
 
 // ════════════════════════════════════════════════  SECTION BUILDERS
+function _clockSvg(sz){ // v1012: watch-face icon for comps note button
+  return `<svg width="${sz}" height="${sz}" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="8" x2="8" y2="4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="8" x2="11" y2="9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+}
 function eyeSvg(screened){
   return screened
     ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="2" y1="2" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
@@ -6801,15 +6876,8 @@ function buildDesignSection(){
         if(ghostDragHdl){ ghostDragHdl.removeAttribute('data-reorder-proj'); ghostDragHdl.style.pointerEvents='none'; ghostDragHdl.style.visibility='hidden'; }
         const nameWrap=ghostFcRow.querySelector('.fc-proj-name-wrap');
         if(nameWrap){
-          const ghost=el('div','prod-ghost-pp');
-          const ghostNm=el('span','prod-ghost-nm'); ghostNm.textContent=pp.name||'\u2014';
-          const ghostBadge=el('span','prod-ghost-badge'); ghostBadge.textContent='proposed';
-          const ghostPencil=el('button','prod-ghost-pencil'); ghostPencil.type='button';
-          ghostPencil.dataset.tip='Planning note \u2014 '+(pp.name||'');
-          ghostPencil.dataset.planningNoteBtn=pp.id;
-          ghostPencil.innerHTML='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
-          ghost.appendChild(ghostNm); ghost.appendChild(ghostBadge); ghost.appendChild(ghostPencil);
-          nameWrap.appendChild(ghost);
+          nameWrap.appendChild(_buildGhostPill(pp)); // v1010
+          _shortenSlotName(nameWrap); // v1010
         }
         fc.appendChild(ghostFcRow);
       });
@@ -6916,11 +6984,8 @@ function _doRefreshRevenueRow(){
 
   const revenueByWeek=new Array(C.numWeeks).fill(0);
   const activeByWeek=new Array(C.numWeeks).fill(0);
-  PROJECTS.forEach(proj=>{
-    if(!isVisible(proj)) return;
-    const budget=parseBudget(proj.estimatedValue||proj.projBudget); if(!budget) return;
-    const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
-    const cs=cPh.startWeek, dur=cPh.durWeeks; if(dur<=0) return;
+  const _src=_revenueSources(); // v1011: live rows + archived (completed) projects
+  _src.forEach(({budget,cs,dur})=>{
     const perWk=budget/dur;
     for(let w=cs;w<cs+dur&&w<C.numWeeks;w++){ revenueByWeek[w]+=perWk; activeByWeek[w]++; }
   });
@@ -6931,11 +6996,8 @@ function _doRefreshRevenueRow(){
     yearRevenue+=revenueByWeek[w];
     if(activeByWeek[w]>0) yearActiveWkCount++;
   }
-  PROJECTS.forEach(proj=>{
-    if(!isVisible(proj)) return;
-    const budget=parseBudget(proj.estimatedValue||proj.projBudget); if(!budget) return;
-    const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
-    const cs=cPh.startWeek, end=cs+cPh.durWeeks;
+  _src.forEach(({cs,dur})=>{
+    const end=cs+dur;
     const overlap=Math.max(0,Math.min(end,yearEndWk)-Math.max(cs,yearStartWk));
     yearConstrWks+=overlap;
   });
@@ -7089,22 +7151,14 @@ function buildProdSection(){
       function parseBudget(s){ return parseInt(String(s||'').replace(/[^0-9]/g,''))||0; }
       const revenueByWeek=new Array(C.numWeeks).fill(0);
       const activeByWeek=new Array(C.numWeeks).fill(0);
-      PROJECTS.forEach(proj=>{
-        if(!isVisible(proj)) return;
-        const budget=parseBudget(proj.estimatedValue||proj.projBudget); if(!budget) return;
-        const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
-        const cs=cPh.startWeek, dur=cPh.durWeeks; if(dur<=0) return;
+      const _src=_revenueSources(); // v1011
+      _src.forEach(({budget,cs,dur})=>{
         const perWk=budget/dur;
         for(let w=cs;w<cs+dur&&w<C.numWeeks;w++){ revenueByWeek[w]+=perWk; activeByWeek[w]++; }
       });
       const nonZero=revenueByWeek.filter(v=>v>0);
       const totalRevenue=nonZero.reduce((a,b)=>a+b,0);
-      const totalProjConstrWks=PROJECTS.reduce((sum,proj)=>{
-        if(!isVisible(proj)) return sum;
-        const budget=parseBudget(proj.estimatedValue||proj.projBudget); if(!budget) return sum;
-        const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return sum;
-        return sum+Math.min(cPh.durWeeks,C.numWeeks);
-      },0);
+      const totalProjConstrWks=_src.reduce((sum,{dur})=>sum+Math.min(dur,C.numWeeks),0);
       const avgPerWk=totalProjConstrWks>0?totalRevenue/totalProjConstrWks:0;
       const fmtK=v=>v>=1000?'$'+(v/1000).toFixed(1).replace(/\.0$/,'')+'k':'$'+Math.round(v);
       const fmtM=v=>v>=1000000?'$'+(v/1000000).toFixed(2).replace(/\.?0+$/,'')+'M':'$'+(v/1000).toFixed(0)+'k';
@@ -9288,7 +9342,43 @@ document.addEventListener('click',e=>{
     return;
   }
 });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') gdbHide(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ gdbHide(); if(_CNPOP.style.display!=='none'){_CNPOP.style.display='none';_cnProjId=null;} } });
+
+// ══════════════════════════════  COMPS NOTE POPOVER  v1012
+// proj.compsNote — the estimation rationale behind Phase I hours. Rides in GanttData.
+const _CNPOP=document.createElement('div');
+_CNPOP.id='compsNotePopover';
+_CNPOP.style.cssText='position:fixed;z-index:220;background:var(--surface,#fff);border:1px solid var(--bdr,#e4dac4);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:10px 12px;min-width:240px;max-width:320px;display:none;';
+_CNPOP.innerHTML='<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-sec,#7a7a7a);margin-bottom:6px;">Comps &amp; Sources</div><textarea id="compsNoteTA" style="width:100%;min-height:80px;font-size:12px;font-family:inherit;border:1px solid var(--bdr,#e4dac4);border-radius:4px;padding:5px 7px;resize:vertical;box-sizing:border-box;background:var(--bg,#f5f3ee);color:inherit;line-height:1.4;" placeholder="Note the comparables or references used to estimate these hours…"></textarea><div style="display:flex;justify-content:flex-end;gap:6px;margin-top:7px;"><button class="cn-save" style="font-size:11px;padding:3px 12px;background:#1f2e3e;color:#fff;border:none;border-radius:4px;cursor:pointer;">Save</button><button class="cn-close" style="font-size:11px;padding:3px 10px;background:none;border:1px solid var(--bdr,#e4dac4);border-radius:4px;cursor:pointer;">Close</button></div>';
+document.body.appendChild(_CNPOP);
+let _cnProjId=null;
+function openCompsNote(projId,anchorEl){
+  if(_cnProjId===projId&&_CNPOP.style.display!=='none'){_CNPOP.style.display='none';_cnProjId=null;return;}
+  const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
+  _cnProjId=projId;
+  const ta=_CNPOP.querySelector('#compsNoteTA');
+  if(ta){ ta.value=proj.compsNote||''; ta.readOnly=!canEdit(); ta.style.opacity=canEdit()?'1':'.7'; }
+  _CNPOP.style.display='block';
+  const r=anchorEl.getBoundingClientRect(), pw=_CNPOP.offsetWidth||260;
+  let left=r.left; if(left+pw>window.innerWidth-8) left=window.innerWidth-pw-8;
+  _CNPOP.style.cssText=_CNPOP.style.cssText; // force reflow for offsetWidth
+  _CNPOP.style.left=Math.max(4,left)+'px'; _CNPOP.style.top=(r.bottom+4)+'px';
+  if(ta&&canEdit()) ta.focus();
+}
+_CNPOP.addEventListener('click',e=>{
+  if(e.target.closest('.cn-save')){
+    const proj=PROJECTS.find(p=>p.id===_cnProjId); if(!proj) return;
+    const ta=_CNPOP.querySelector('#compsNoteTA'); proj.compsNote=(ta?ta.value.trim():'');
+    _CNPOP.style.display='none'; _cnProjId=null;
+    document.querySelectorAll(`[data-comps-btn="${proj.id}"]`).forEach(btn=>{
+      btn.style.color=proj.compsNote?'var(--gold,#d8b64f)':''; btn.style.opacity=proj.compsNote?'1':'.45';
+    });
+    triggerSave(proj);
+  } else if(e.target.closest('.cn-close')){ _CNPOP.style.display='none'; _cnProjId=null; }
+});
+document.addEventListener('pointerdown',e=>{
+  if(_CNPOP.style.display!=='none'&&!_CNPOP.contains(e.target)&&!e.target.closest('[data-comps-btn]')){_CNPOP.style.display='none';_cnProjId=null;}
+},true);
 
 // ════════════════════════════════════════════════  SAVE INDICATOR
 const SI=document.getElementById('saveStatus');
@@ -11216,11 +11306,13 @@ async function loadProjects(saved){
   _corruptProjects.length=0;
   _maxLoadedModified=null;
   _baseGd.clear();
+  ARCHIVED_REVENUE.length=0;
   items.forEach(item=>{
     if(item.lastModifiedDateTime&&(!_maxLoadedModified||item.lastModifiedDateTime>_maxLoadedModified)) _maxLoadedModified=item.lastModifiedDateTime;
     _baseGd.set(item.id,(item.fields||{}).GanttData||'');
     const proj=_projectFromItem(item);
     if(proj) PROJECTS.push(proj);
+    else _archivedRevAdd(_archivedRevFromItem(item)); // v1011: archived rows still feed revenue
   });
 }
 
@@ -11593,6 +11685,7 @@ async function _bgSync(){
         if(!fresh){
           // Remotely archived or cancelled — take it off the board.
           PROJECTS.splice(idx,1); _baseGd.delete(item.id);
+          _archivedRevAdd(_archivedRevFromItem(item)); // v1011
           ['design','production','planning'].forEach(sec=>rebuildNeeded.add(sec));
           patchedCount++;
           return;
@@ -13846,6 +13939,7 @@ function weekToDateStr(w){
 function archiveProject(projId, note='', cancelled=false, lost=false){
   const idx=PROJECTS.findIndex(p=>p.id===projId); if(idx===-1)return;
   const proj=PROJECTS.splice(idx,1)[0];
+  if(!cancelled&&!lost&&proj._spItemId) _archivedRevAdd(_revRecord(proj._spItemId,proj.name,proj.estimatedValue,proj)); // v1011: completed — revenue stays
   // v828 fix: this path bypassed setStatus, so PipelineStage was never written and the
   // project resurrected on the next reload. Persist the final stage (lost maps to
   // Archive — the lost flag lives in the ARCHIVE record for the modal's filter) and a
@@ -15368,6 +15462,31 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1012', date: '2026-09-03',
+    entries: [
+      'Design rows (expanded) now split into two horizontal bands. The top 22px holds DA/CA boxes, T and C markers, and the Pencils Down pencil — all at a compact height so they no longer obscure anything below. The bottom 22px holds the phase name, week count, and hours input/average, centred in the clear space. Row height and collapsed behaviour are unchanged.',
+      'Comps & Sources note: a small clock icon appears on the left edge of the Phase I bar. Clicking it opens a popover where you can record the comparables or references behind those hours. The icon tints gold when a note exists. Stored in GanttData alongside the rest of the project; no new SharePoint column needed.',
+    ],
+  },
+  {
+    version: 'v1011', date: '2026-09-03',
+    entries: [
+      'Archiving a completed project no longer drops it from revenue. The project leaves the rows as before, but its construction weeks still count toward the revenue row and the annual figure for whatever year(s) they fall in. Cancelled and Lost projects still count for nothing. Projects already archived before this version are picked up too \u2014 the revenue figures will change on first load.',
+    ],
+  },
+  {
+    version: 'v1010', date: '2026-09-03',
+    entries: [
+      'The dashed pill beside a slot that has a proposed project no longer says PROPOSED \u2014 the dashed border already says it. The planning-note pencil now sits on the left of the pill, and the slot row shortens to just its letter (\u201cC\u201d rather than \u201cSlot C\u201d) to make room. Same in Design and Production.',
+    ],
+  },
+  {
+    version: 'v1009', date: '2026-09-03',
+    entries: [
+      'Weekly Brief: moving an unassigned slot, or moving the DA/CA milestones on a project nobody is assigned to yet, no longer shows up as a schedule change. Status, assignment and note changes on those rows still report.',
+    ],
+  },
+  {
     version: 'v1008', date: '2026-09-03',
     entries: [
       'Hovering a DA/CA milestone, a T or C marker, or the Pencils Down pencil now rings the matching week in the date header, the same as hovering a bar \u2014 and the ring follows the marker while you drag it, so placement is exact.',
@@ -16670,6 +16789,12 @@ function diffPipeline(){
     // v864 — cost and scope outline. Baselines taken before v864 have no estValue or
     // soUrl key at all; undefined means "unknown", not "was blank", so we stay quiet.
     const _isSlotRow=!!proj.isOpenSlot||/^Slot\b/i.test(proj.name||'');
+    // v1009: nobody's project yet — moving it around is planning noise, not news. Unassigned
+    // slots keep their schedule and milestone moves out of the Brief; unassigned projects keep
+    // their milestone moves out. Status, assignment and note changes still report.
+    const _unassigned=!proj.designer&&!proj.productionPM;
+    const _quietSched=_isSlotRow&&_unassigned;
+    const _pushSched=c=>{ if(!_quietSched) scheduleChanges.push(c); };
     if(snap.estValue!==undefined&&!_isSlotRow){
       const curVal=proj.estimatedValue||proj.projBudget||'';
       if((snap.estValue||'')!==curVal) valueChanges.push({proj,field:'Est. cost',from:snap.estValue||'',to:curVal});
@@ -16681,7 +16806,7 @@ function diffPipeline(){
     (proj.milestones||[]).forEach(ms=>{
       const bm=(snap.milestones||[]).find(m=>m.id===ms.id);
       if(!bm) return;
-      if(bm.status!==ms.status||bm.week!==ms.week) msChanges.push({proj,ms,fromStatus:bm.status,fromWeek:bm.week});
+      if(bm.status!==ms.status||(bm.week!==ms.week&&!_unassigned)) msChanges.push({proj,ms,fromStatus:bm.status,fromWeek:bm.week}); // v1009: week-only moves on unassigned projects stay quiet; status changes still report
     });
     if(proj.pencilsDown){
       const _dp2=(proj.designLane?.phases||[]).filter(ph=>!ph.isDesignProd&&ph.durWeeks>0);
@@ -16689,7 +16814,7 @@ function diffPipeline(){
       const defPdWk=_ph2?(_ph2.startWeek+_ph2.durWeeks):0;
       const snapPdWk=snap.pd?.week??defPdWk; // fallback to Phase II end default
       if(snapPdWk!==proj.pencilsDown.week)
-        scheduleChanges.push({proj,field:'Pencils Down',fromWeek:snapPdWk,toWeek:proj.pencilsDown.week,fromDur:null,toDur:null});
+        _pushSched({proj,field:'Pencils Down',fromWeek:snapPdWk,toWeek:proj.pencilsDown.week,fromDur:null,toDur:null});
     }
     (proj.tiers||[]).forEach(tier=>{
       // If baseline pre-dates tier tracking, fall back to Phase II defaults as implicit baseline
@@ -16699,22 +16824,22 @@ function diffPipeline(){
         return [{id:proj.id+'-t1',week:_ds+4},{id:proj.id+'-t2',week:_ds+7},{id:proj.id+'-t3',week:_ds+9}];
       })();
       const bt=_snapTiers.find(t=>t.id===tier.id); if(!bt) return;
-      if(bt.week!==tier.week) scheduleChanges.push({proj,field:tier.name+' Selection',fromWeek:bt.week,toWeek:tier.week,fromDur:null,toDur:null});
+      if(bt.week!==tier.week) _pushSched({proj,field:tier.name+' Selection',fromWeek:bt.week,toWeek:tier.week,fromDur:null,toDur:null});
     });
     (proj.crits||[]).forEach(crit=>{
       const bc=(snap.crits||[]).find(c=>c.id===crit.id); if(!bc) return;
-      if(bc.week!==crit.week) scheduleChanges.push({proj,field:(crit.name==='C1'?'Crit 1':'Crit 2'),fromWeek:bc.week,toWeek:crit.week,fromDur:null,toDur:null});
+      if(bc.week!==crit.week) _pushSched({proj,field:(crit.name==='C1'?'Crit 1':'Crit 2'),fromWeek:bc.week,toWeek:crit.week,fromDur:null,toDur:null});
     });
     // Construction schedule changes (kept for backward compat with old baselines)
     const cPh=proj.productionLane?.phases?.find(ph=>/^construction$/i.test(ph.name?.trim()));
     if(cPh&&snap.constrStart!=null&&(snap.constrStart!==cPh.startWeek||snap.constrDur!==cPh.durWeeks))
-      scheduleChanges.push({proj,field:'Construction',fromWeek:snap.constrStart,toWeek:cPh.startWeek,fromDur:snap.constrDur,toDur:cPh.durWeeks});
+      _pushSched({proj,field:'Construction',fromWeek:snap.constrStart,toWeek:cPh.startWeek,fromDur:snap.constrDur,toDur:cPh.durWeeks});
     // Design phase changes (using new per-phase snapshot; falls back gracefully for old baselines)
     (snap.designPhases||[]).forEach(snapPh=>{
       const curPh=(proj.designLane?.phases||[]).find(ph=>ph.id===snapPh.id&&!ph.isDesignProd);
       if(!curPh) return;
       if(snapPh.startWeek!==curPh.startWeek||snapPh.durWeeks!==curPh.durWeeks)
-        scheduleChanges.push({proj,field:snapPh.name,fromWeek:snapPh.startWeek,toWeek:curPh.startWeek,fromDur:snapPh.durWeeks,toDur:curPh.durWeeks});
+        _pushSched({proj,field:snapPh.name,fromWeek:snapPh.startWeek,toWeek:curPh.startWeek,fromDur:snapPh.durWeeks,toDur:curPh.durWeeks});
     });
     // Production phase changes (skips construction — already covered above for old baselines)
     (snap.prodPhases||[]).forEach(snapPh=>{
@@ -16723,7 +16848,7 @@ function diffPipeline(){
       const curPh=(proj.productionLane?.phases||[]).find(ph=>ph.id===snapPh.id);
       if(!curPh) return;
       if(snapPh.startWeek!==curPh.startWeek||snapPh.durWeeks!==curPh.durWeeks)
-        scheduleChanges.push({proj,field:snapPh.name,fromWeek:snapPh.startWeek,toWeek:curPh.startWeek,fromDur:snapPh.durWeeks,toDur:curPh.durWeeks});
+        _pushSched({proj,field:snapPh.name,fromWeek:snapPh.startWeek,toWeek:curPh.startWeek,fromDur:snapPh.durWeeks,toDur:curPh.durWeeks});
     });
     // Note changes
     const curNote=proj.notes||'', snapNote=snap.notes||'';
