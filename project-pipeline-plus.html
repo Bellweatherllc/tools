@@ -2848,6 +2848,8 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-table thead th:nth-child(2){border-left:1px solid #e4dac4;border-top-left-radius:6px;}
 .ops-table thead th:last-child{border-right:1px solid #e4dac4;border-top-right-radius:6px;}
 .ops-table tbody td:nth-child(2){border-left:1px solid #e4dac4;}
+.ops-table th:nth-child(3),.ops-table td:nth-child(3),.ops-table th:nth-child(5),.ops-table td:nth-child(5){border-left:1px dotted #bfb7a6;}
+.ops-col-side .ops-card{margin-top:14px;}
 .ops-table tbody td:last-child{border-right:1px solid #e4dac4;}
 .ops-table tbody tr:last-child td{border-bottom:1px solid #e4dac4;}
 .ops-table tbody tr:last-child td:nth-child(2){border-bottom-left-radius:6px;}
@@ -2871,7 +2873,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-card-hd h3{font-family:'Swear Text',serif;font-size:14px;font-weight:600;color:#1f2e3e;margin:0;}
 .ops-card-hd .ops-hint{font-size:11px;color:#a3a3a3;}
 .ops-card-hd .ops-sp{flex:1;}
-.ops-inv{display:flex;align-items:center;gap:13px;padding:10px 16px;border-bottom:1px solid #f0ece2;}
+.ops-inv{display:flex;align-items:center;gap:13px;padding:10px 16px;border-bottom:1px dotted #bfb7a6;}
 .ops-inv:last-child{border-bottom:none;}
 /* v997: the expected list mirrors the cash view's zones exactly — white for the two accurate weeks,
    the same gold wash for the two projected weeks, and the same 3px gold rule between them. */
@@ -2912,6 +2914,9 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-alert-tag{flex-shrink:0;font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:20px;margin-top:1px;white-space:nowrap;}
 .ops-alert-tag.design{background:rgba(59,127,168,.12);color:#3b7fa8;}
 .ops-alert-tag.construction{background:rgba(0,82,27,.10);color:#00521b;}
+.ops-alert-tag.camove{background:rgba(216,182,79,.28);color:#6b5514;}
+.ops-ack{margin-left:auto;align-self:center;font-size:10.5px;font-weight:600;font-family:inherit;color:#1f2e3e;background:#f5f3ee;border:1px solid #e4dac4;border-radius:20px;padding:4px 11px;cursor:pointer;white-space:nowrap;}
+.ops-ack:hover{background:#1f2e3e;color:#fff;border-color:#1f2e3e;}
 .ops-alert-t{font-size:12.5px;font-weight:700;color:#ac2828;}
 .ops-alert-d{font-size:11.5px;color:#7a7a7a;margin-top:2px;line-height:1.5;}
 .ops-sc{display:flex;gap:12px;padding:10px 16px;border-bottom:1px solid #f0ece2;align-items:flex-start;}
@@ -3288,7 +3293,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v997';
+const CORE_VERSION = 'v998';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15320,6 +15325,13 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v998', date: '2026-09-03',
+    entries: [
+      'When a CA milestone moves on the board, the payment due at CA signing raises a CA moved alert on Operations, showing the old and new dates, until someone acknowledges the new date.',
+      'Cash view: dotted dividers between week columns; the same dotted rule between rows in What\u2019s expected. The scenario card lines up with the top of the cash view.',
+    ],
+  },
+  {
     version: 'v997', date: '2026-09-03',
     entries: [
       'What\u2019s expected now mirrors the cash view exactly: white for the two accurate weeks, the same gold wash for the projected weeks, and the same gold rule between them, running past the frame.',
@@ -17935,16 +17947,38 @@ function opsDesignInvoices(){
       }
       // v995: a payment due at CA signing takes its date live from the project's CA milestone,
       // so it moves with the schedule. Never written back — the DA said "at signing", and that stays true.
-      let date=opsIsoToDate(x.date), derived=null;
+      let date=opsIsoToDate(x.date), derived=null, caMove=null;
       const casign=/construction agreement/i.test((x.label||'')+' '+(x.event||''));
       if(!date&&casign){
         const ca=(p.milestones||[]).find(m=>m.name==='CA');
-        if(ca&&ca.week!=null&&typeof wkMon==='function'){ date=wkMon(ca.week); date.setHours(0,0,0,0); derived='CA milestone'; }
+        if(ca&&ca.week!=null&&typeof wkMon==='function'){ date=wkMon(ca.week); date.setHours(0,0,0,0); derived='CA milestone';
+          // v998: the working copy remembers the CA date it last saw. First sighting is recorded
+          // quietly; a later difference is an alert until someone acknowledges the new date.
+          const iso=date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
+          if(!x.caDateSeen){ x.caDateSeen=iso; opsQueueWorkingWrite(p); }
+          else if(x.caDateSeen!==iso) caMove={was:x.caDateSeen,now:iso};
+        }
       }
-      out.push({proj:p,n:x.n,total:total,label:x.label||'',date:date,iso:x.date||null,amount:x.amount==null?null:Number(x.amount),src:'design',drift:drift,derived:derived,casign:casign});
+      out.push({proj:p,n:x.n,total:total,label:x.label||'',date:date,iso:x.date||null,amount:x.amount==null?null:Number(x.amount),src:'design',drift:drift,derived:derived,casign:casign,caMove:caMove});
     });
   });
   return out;
+}
+const _opsWriteQ=new Set();
+function opsQueueWorkingWrite(p){
+  if(!p._spItemId||_opsWriteQ.has(p._spItemId)) return; _opsWriteQ.add(p._spItemId);
+  setTimeout(async()=>{ _opsWriteQ.delete(p._spItemId);
+    try{ p.designInvoices.updatedAt=new Date().toISOString(); await graphPatch(BWC_SITE+'/CORE_Projects/items/'+p._spItemId+'/fields',{DesignInvoices:JSON.stringify(p.designInvoices)}); }
+    catch(e){ console.warn(APP_VER+' Operations: working-copy write failed for '+p.name,e); } },800);
+}
+async function opsAckCaMove(spId,n){
+  const p=PROJECTS.find(q=>String(q._spItemId)===String(spId)); if(!p||!p.designInvoices) return;
+  const x=(p.designInvoices.installments||[]).find(y=>y.n===n); if(!x) return;
+  const ca=(p.milestones||[]).find(m=>m.name==='CA'); if(!ca||ca.week==null) return;
+  const d=wkMon(ca.week); x.caDateSeen=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  try{ p.designInvoices.updatedAt=new Date().toISOString(); await graphPatch(BWC_SITE+'/CORE_Projects/items/'+p._spItemId+'/fields',{DesignInvoices:JSON.stringify(p.designInvoices)}); }
+  catch(e){ showToast('Could not save: '+e.message); return; }
+  const r=document.querySelector('.ops-root'); if(r) opsRenderInto(r);
 }
 function opsGateOk(){ return !!CURRENT_USER_OPS_ROLE; }
 // v990: the tab is always present — access changes what the screen shows, not the architecture.
@@ -17966,9 +18000,12 @@ function opsRenderInto(root){
   const body=rowNo('Operating Cash','QuickBooks drop \u2014 not connected')+rowNo('Payroll','QuickBooks drop \u2014 not connected')+rowNo('Bank Balance','QuickBooks drop \u2014 not connected')+rowNo('Payables','QuickBooks drop \u2014 not connected')+rowAr;
   let net='<tr class="net-row"><td class="rl">Net Position</td>'; for(let i=0;i<4;i++) net+='<td class="'+cls(i)+' nodata">\u2014</td>'; net+='</tr>';
   // alerts
-  const alerts=inv.filter(x=>x.drift).map(x=>({type:'design',title:_projShortName(x.proj)+' \u2014 invoice '+x.n+' of '+x.total+' differs from the DA',detail:x.drift}));
-  const banner=alerts.length?'<div class="ops-banner"><span class="ops-banner-dot"></span><span><b>'+alerts.length+' open alert'+(alerts.length===1?'':'s')+'</b> \u2014 '+alerts.length+' design drift, 0 construction drift</span></div>':'';
-  const alertRows=alerts.length?alerts.map(a=>'<div class="ops-alert"><span class="ops-alert-tag '+a.type+'">Design drift</span><div><div class="ops-alert-t">'+diEsc(a.title)+'</div><div class="ops-alert-d">'+diEsc(a.detail)+'</div></div></div>').join('')
+  const fmtIso=iso=>{ const d=opsIsoToDate(iso); return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):iso; };
+  const alerts=inv.filter(x=>x.drift).map(x=>({type:'design',tag:'Design drift',title:_projShortName(x.proj)+' \u2014 invoice '+x.n+' of '+x.total+' differs from the DA',detail:x.drift}))
+    .concat(inv.filter(x=>x.caMove).map(x=>({type:'camove',tag:'CA moved',title:_projShortName(x.proj)+' \u2014 payment '+x.n+' of '+x.total+' at CA signing has moved',detail:'Expected '+fmtIso(x.caMove.was)+'; the board now has the CA on '+fmtIso(x.caMove.now)+'.',ack:'data-ops-ack="'+x.proj._spItemId+'" data-ops-n="'+x.n+'"'})));
+  const nD=alerts.filter(a=>a.type==='design').length, nC=alerts.filter(a=>a.type==='camove').length;
+  const banner=alerts.length?'<div class="ops-banner"><span class="ops-banner-dot"></span><span><b>'+alerts.length+' open alert'+(alerts.length===1?'':'s')+'</b> \u2014 '+nD+' design drift, '+nC+' CA move'+(nC===1?'':'s')+'</span></div>':'';
+  const alertRows=alerts.length?alerts.map(a=>'<div class="ops-alert"><span class="ops-alert-tag '+a.type+'">'+a.tag+'</span><div><div class="ops-alert-t">'+diEsc(a.title)+'</div><div class="ops-alert-d">'+diEsc(a.detail)+'</div></div>'+(a.ack?'<button type="button" class="ops-ack" '+a.ack+'>Acknowledge new date</button>':'')+'</div>').join('')
     :'<div class="ops-empty">No open alerts. Design drift fires when a seeded invoice is edited away from what the DA said; construction drift arrives with the construction-invoice tool.</div>';
   // what's expected
   const dated=inv.filter(x=>x.date&&x.date>=today).sort((a,b)=>a.date-b.date);
@@ -18009,6 +18046,7 @@ function opsRenderInto(root){
     +'<div class="ops-card ops-expected">'+invHtml+'</div>'
     +'</div>';
   opsDrawScenarios(W,root);
+  root.querySelectorAll('[data-ops-ack]').forEach(b=>b.addEventListener('click',()=>{ b.disabled=true; b.textContent='Saving\u2026'; opsAckCaMove(b.getAttribute('data-ops-ack'),Number(b.getAttribute('data-ops-n'))); }));
   const form=root.querySelector('#opsAddForm'), addBtn=root.querySelector('#opsAddBtn'); let dir='out';
   const toggleForm=o=>{ form.classList.toggle('on',o); addBtn.classList.toggle('on',o); addBtn.textContent=o?'Close':'+ Add'; if(o) root.querySelector('#opsAfWhat').focus(); };
   addBtn.addEventListener('click',()=>toggleForm(!form.classList.contains('on')));
