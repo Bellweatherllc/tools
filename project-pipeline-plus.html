@@ -543,7 +543,7 @@ body.is-transitioning .section:not(.is-focus-outgoing){animation:hdrFadeIn 200ms
 /* ── MILESTONE MARKER ── */
 .ms-tall{position:absolute;width:28px;cursor:grab;user-select:none;pointer-events:auto;border-radius:6px;}
 .lanes-wrap.proj-collapsed .ms-tall{cursor:default;} /* pointer-events restored — collapsed mousedown guard handles click pass-through */
-.ms-tall.dragging{cursor:grabbing;z-index:50;}
+.ms-tall.dragging{cursor:grabbing;z-index:50;filter:brightness(1.3);box-shadow:0 0 0 2px rgba(255,255,255,.75),0 4px 14px rgba(0,0,0,.38);} /* v1020: grabbed state */
 .admin-mode .tl-ms-row{cursor:grab;}
 .admin-mode .tl-ms-row:active{cursor:grabbing;}
 .admin-mode .tl-ms-row .ms-tall{cursor:grab;}
@@ -668,13 +668,13 @@ body.prod-design-hidden .section[data-s-type="production"] .ms-da{display:none!i
 .tier-dot.ms-dotonly::after{content:'';width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.95);}
 .tier-dot.crit-dot{background:#1e8a46;}
 .admin-mode .tier-dot{cursor:grab;}
-.admin-mode .tier-dot.dragging{cursor:grabbing;z-index:50;}
+.admin-mode .tier-dot.dragging{cursor:grabbing;z-index:50;filter:brightness(1.22);box-shadow:0 0 0 1.5px rgba(255,255,255,.82),0 2px 8px rgba(0,0,0,.28);} /* v1020 */
 /* Collapsed: visible on the collapsed band (BAND_H 28px) */
 /* v847: one size fits all — no collapsed-mode shrink for tier/crit pills */
 .lanes-wrap.proj-collapsed .tier-dot{display:flex;}
 .pd-dot{position:absolute;border-radius:0;user-select:none;pointer-events:auto;cursor:default;display:block;z-index:3;background:none;height:23px;top:50%;transform:translateY(-50%);bottom:auto;}
 .admin-mode .pd-dot{cursor:grab;}
-.admin-mode .pd-dot.dragging{cursor:grabbing;z-index:50;}
+.admin-mode .pd-dot.dragging{cursor:grabbing;z-index:50;filter:brightness(1.28) drop-shadow(0 2px 5px rgba(0,0,0,.32));} /* v1020 */
 body.ms-xhair,body.ms-xhair *{cursor:crosshair!important;}
 /* v847: one size fits all — pencil is 23px tall, tip on the floor, in both modes */
 .lanes-wrap.proj-collapsed .pd-dot{display:block;}
@@ -3330,7 +3330,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1017';
+const CORE_VERSION = 'v1020';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5584,7 +5584,8 @@ function buildFcProdPersonHeader(person){
 }
 function buildTlProdPersonHeader(){
   const r=el('div','');
-  r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;background:#dbdbdb;border-bottom:1px solid var(--bdr);`;
+  r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background:#dbdbdb;border-bottom:1px solid var(--bdr);`;
+  const tw=todayDisplayWeek(); if(tw>=0&&tw<C.numWeeks){ const _s=el('div','today-stripe'); _s.style.cssText=`left:${w2px(tw)}px;width:${C.weekW}px;`; r.appendChild(_s); }
   return r;
 }
 // ── LC helpers ──
@@ -5960,7 +5961,7 @@ function buildMsTall(proj,ms,headH,totalH,laneIds,grpNudgeY,bandH){
   // years, so it was approximately centred rather than centred. Worse, .ms-head was given
   // the FULL row height while sitting inside a shorter box, so the label centred itself
   // against a different height than the rectangle around it. Two compounding offsets.
-  const _msH=bandH?bandH-2:totalH-4; // v1012: top-band height in design, full-minus-margin elsewhere
+  const _msH=bandH?bandH:totalH-4; // v1018: fill full top band for easier grab target
   const _msTop=bandH?'1px':'50%', _msTx=bandH?'none':'translateY(-50%)';
   m.style.cssText=`left:${cx-_msW/2}px;top:${_msTop};transform:${_msTx};height:${_msH}px;width:${_msW}px;`;
   const head=el('div','ms-head');
@@ -6411,7 +6412,8 @@ function buildMonthLineOverlay(){
 }
 function buildPersonSep(){
   const fcSep=el('div',''); fcSep.style.cssText=`height:${C.personSepH}px;background:rgba(0,0,0,.30);border-top:1px solid rgba(0,0,0,.35);`;
-  const tcSep=el('div',''); tcSep.style.cssText=`height:${C.personSepH}px;width:${w2px(C.numWeeks)}px;background:rgba(0,0,0,.30);border-top:1px solid rgba(0,0,0,.35);`;
+  const tcSep=el('div',''); tcSep.style.cssText=`height:${C.personSepH}px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;background:rgba(0,0,0,.30);border-top:1px solid rgba(0,0,0,.35);`;
+  const _tws=todayDisplayWeek(); if(_tws>=0&&_tws<C.numWeeks){ const _ss=el('div','today-stripe'); _ss.style.cssText=`left:${w2px(_tws)}px;width:${C.weekW}px;`; tcSep.appendChild(_ss); }
   return[fcSep,tcSep];
 }
 // ════════════════════════════════════════════════  TIME-OFF (day-granular — v929)
@@ -7121,9 +7123,14 @@ function buildProdSection(){
       tl_els.push(buildTlProdPersonHeader());
       if(!collapsed){
         const grp=el('div','person-group-tl'); grp.dataset.personId=pmId; grp.dataset.section='production';
-        const topTlSp=el('div',''); topTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(topTlSp);
+        const _twx=todayDisplayWeek();
+        const topTlSp=el('div',''); topTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;`;
+        if(_twx>=0&&_twx<C.numWeeks){ const _st=el('div','today-stripe'); _st.style.cssText=`left:${w2px(_twx)}px;width:${C.weekW}px;`; topTlSp.appendChild(_st); }
+        grp.appendChild(topTlSp);
         projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,-9,['DA'],[])));
-        const botTlSp=el('div',''); botTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(botTlSp);
+        const botTlSp=el('div',''); botTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;`;
+        if(_twx>=0&&_twx<C.numWeeks){ const _sb=el('div','today-stripe'); _sb.style.cssText=`left:${w2px(_twx)}px;width:${C.weekW}px;`; botTlSp.appendChild(_sb); }
+        grp.appendChild(botTlSp);
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=pmId; ov.dataset.section='production';
         ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:100%;pointer-events:none;z-index:10;`;
         appendTimeoffStrips(ov,person,'production');
@@ -7155,7 +7162,9 @@ function buildProdSection(){
         fc_els.push(fcGrp);
       }
       // TL
-      const tlUnHdr=el('div',''); tlUnHdr.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;background:#c5cdd4;border-bottom:1px solid rgba(40,40,40,.12);`; tl_els.push(tlUnHdr);
+      const tlUnHdr=el('div',''); tlUnHdr.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background:#c5cdd4;border-bottom:1px solid rgba(40,40,40,.12);`;
+      { const _twu=todayDisplayWeek(); if(_twu>=0&&_twu<C.numWeeks){ const _su=el('div','today-stripe'); _su.style.cssText=`left:${w2px(_twu)}px;width:${C.weekW}px;`; tlUnHdr.appendChild(_su); } }
+      tl_els.push(tlUnHdr);
       if(!PROD_UNASSIGNED_COLLAPSED){
         const tlGrp=el('div','unassigned-group-tl'); tlGrp.classList.toggle('has-projects',unassigned.length>0); tlGrp.style.width=w2px(C.numWeeks)+'px';
         if(unassigned.length>0){ unassigned.forEach(proj=>{ const sg=el('div','person-group-tl'); sg.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,0,['DA'],[])); tlGrp.appendChild(sg); }); }
@@ -7807,7 +7816,7 @@ function initDrag(){
     if(e.target.closest('[data-open-status-menu],[data-open-pp-lead-menu],[data-delta],[data-target-person],[data-toggle-collapse],[data-add-timeoff],[data-open-timeoff-cal],[data-mp-btn],[data-mp-marker],[data-toggle-screen],[data-sort-field],[data-nav-ms],[data-nav-end],[data-open-archive],[data-open-pp-da],[data-proj-ms-btn],[data-add-project],[data-cap-sort-section],[data-pick-name],[data-add-designer],[data-add-pm],[data-person-eye],[data-toggle-prod-pms],[data-toggle-designer-view],[data-toggle-unassigned-collapse],[data-toggle-design-unassigned-collapse],[data-toggle-prod-panel],[data-slot-budget-delta],[data-toggle-des-milestones],[data-toggle-lc-design-ms]')||e.target.classList.contains('phase-hrs-input'))return;
 
     const pdEl=e.target.closest('.pd-dot');
-    if(pdEl&&(!canEdit()||pdEl.closest('.lc-proj-tl')||!_msDotCollapsed(pdEl))) return;
+    if(pdEl&&(!canEdit()||pdEl.closest('.lc-proj-tl'))) return; // v1019: draggable in both expanded and collapsed
     if(pdEl){
       e.preventDefault();
       const pdId=pdEl.dataset.pdId, projId=pdEl.dataset.projId;
@@ -7818,7 +7827,7 @@ function initDrag(){
     }
 
     const critEl=e.target.closest('.crit-dot');
-    if(critEl&&(!canEdit()||critEl.closest('.lc-proj-tl')||!_msDotCollapsed(critEl))) return;
+    if(critEl&&(!canEdit()||critEl.closest('.lc-proj-tl'))) return; // v1019
     if(critEl){
       e.preventDefault();
       const critId=critEl.dataset.critId, projId=critEl.dataset.projId;
@@ -7831,7 +7840,7 @@ function initDrag(){
     }
 
     const tierEl=e.target.closest('.tier-dot');
-    if(tierEl&&(!canEdit()||tierEl.closest('.lc-proj-tl')||!_msDotCollapsed(tierEl))) return;
+    if(tierEl&&(!canEdit()||tierEl.closest('.lc-proj-tl'))) return; // v1019
     if(tierEl){
       e.preventDefault();
       const tierId=tierEl.dataset.tierId, projId=tierEl.dataset.projId;
@@ -9259,7 +9268,7 @@ function critBubbleHTML(crit,proj){
   let html='<div class="gdb-title">'+escH(isC2?'Crit 2':'Crit 1')+(isHidden?' \u2014 <span style="font-size:11px;font-weight:400;opacity:.6;">not on this project</span>':' \u2014 '+fmt(wkFri(crit.week)))+'</div>';
   if(isC2){
     const projId=(proj&&proj.id)||'';
-    html+=`<div style="margin-top:7px;"><button data-toggle-c2="${escH(crit.id)}" style="font-size:11px;padding:3px 10px;background:none;border:1px solid var(--bdr,#e4dac4);border-radius:4px;cursor:pointer;color:${isHidden?'var(--navy,#1f2e3e)':'#666'};">${isHidden?'Restore C2':'Not on this project'}</button></div>`;
+    html+=`<div style="margin-top:8px;"><button data-toggle-c2="${escH(crit.id)}" style="font-size:11px;font-weight:600;padding:4px 12px;border-radius:4px;cursor:pointer;${isHidden?'background:var(--navy,#1f2e3e);color:#fff;border:none;':'background:#fff;color:#b03020;border:1.5px solid #b03020;'}">${isHidden?'\u2191 Restore C2':'Remove C2'}</button></div>`;
   }
   return html;
 } // v1016
@@ -15514,6 +15523,26 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1020', date: '2026-09-03',
+    entries: [
+      'Grabbed-marker feedback: DA/CA boxes get a white ring + drop shadow + brightness boost when dragged; T, C, and Pencils Down get the same treatment at a subtler level. Previously all markers only changed to cursor:grabbing with no visual state.',
+    ],
+  },
+  {
+    version: 'v1019', date: '2026-09-03',
+    entries: [
+      'T, C1, C2, and Pencils Down markers are now draggable in both expanded and collapsed mode. The original collapsed-only gate predated the two-band layout — it was protecting against accidental grabs when the dots were buried in bar content. With the top band now a dedicated milestone strip, the gate is just friction.',
+    ],
+  },
+  {
+    version: 'v1018', date: '2026-09-03',
+    entries: [
+      'Production today-stripe: golden column now runs unbroken through PM headers, person separators, group spacers, and Unassigned header.',
+      'DA/CA milestone boxes in expanded Design rows fill the full 22px top band — was leaving a 2px margin making the grab target smaller than necessary.',
+      'C2 bubble: “Remove C2” is a red-bordered outline; “Restore C2” is solid navy — both high-contrast regardless of the dot’s dim state.',
+    ],
+  },
   {
     version: 'v1017', date: '2026-09-03',
     entries: [
