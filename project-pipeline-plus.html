@@ -3346,7 +3346,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1025';
+const CORE_VERSION = 'v1026';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -9506,7 +9506,8 @@ _PPOP.innerHTML=
     +'<div class="pp-pres-fd" style="font-size:10px;font-weight:700;color:var(--navy,#1f2e3e);margin-bottom:5px;"></div>'
     +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">'
       +'<label style="font-size:10px;color:#666;">Time</label>'
-      +'<input type="time" class="pp-pres-time" value="10:00" style="font-size:11px;border:1px solid var(--bdr,#e4dac4);border-radius:3px;padding:2px 4px;width:82px;">'
+      +'<input type="time" class="pp-pres-time" value="10:00" style="font-size:11px;border:1px solid var(--bdr,#e4dac4);border-radius:3px;padding:2px 4px;width:82px;">'+'<label style="font-size:10px;color:#666;margin-left:6px;">Duration</label>'
+      +'<input type="number" class="pp-pres-dur" min="30" max="480" step="15" value="90" style="font-size:11px;border:1px solid var(--bdr,#e4dac4);border-radius:3px;padding:2px 4px;width:50px;"> <span style="font-size:10px;color:#666;">min</span>'
     +'</div>'
     +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:7px;">'
       +'<label style="font-size:10px;color:#666;">Room</label>'
@@ -9532,7 +9533,7 @@ async function _pushPresToOutlook(proj,pres,statusEl){
     const room=PRES_ROOMS.find(r=>r.email===pres.room)||PRES_ROOMS[0];
     const [hh,mm]=(pres.time||'10:00').split(':').map(Number);
     const startMs=new Date(pres.iso+'T00:00:00').getTime()+(hh*60+mm)*60000;
-    const endMs=startMs+PRES_DURATION_MIN*60000;
+    const endMs=startMs+(pres.duration||PRES_DURATION_MIN)*60000;
     const pad=n=>String(n).padStart(2,'0');
     const endD=new Date(endMs);
     const endDT=endD.getFullYear()+'-'+pad(endD.getMonth()+1)+'-'+pad(endD.getDate())+'T'+pad(endD.getHours())+':'+pad(endD.getMinutes())+':00';
@@ -9549,7 +9550,7 @@ async function _pushPresToOutlook(proj,pres,statusEl){
     if(!resp.ok) throw new Error('Graph '+resp.status);
     if(method==='POST'){ const d=await resp.json(); pres.eventId=d.id; }
     triggerSave(proj);
-    if(statusEl) statusEl.textContent='✓ Synced';
+    if(statusEl){ statusEl.textContent='Synced'; statusEl.style.color='#1e8a46'; }
   }catch(e){
     console.error('[pres] Outlook push failed:',e);
     if(statusEl){ statusEl.textContent='Failed: '+(e.message||'see console'); statusEl.style.color='#b03020'; }
@@ -9610,6 +9611,7 @@ function _presGridClick(iso){
   const d=new Date(iso+'T12:00:00');
   _PPOP.querySelector('.pp-pres-fd').textContent=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   _PPOP.querySelector('.pp-pres-time').value=existing?existing.time:'10:00';
+  const _durEl=_PPOP.querySelector('.pp-pres-dur'); if(_durEl) _durEl.value=String(existing?existing.duration||90:90);
   _PPOP.querySelector('.pp-pres-room').value=existing?(existing.room||PRES_DEFAULT_ROOM):PRES_DEFAULT_ROOM;
   _PPOP.querySelector('.pp-pres-save').textContent=existing?'Update':'Add';
   _PPOP.querySelector('.pp-pres-form').style.display='';
@@ -9629,7 +9631,7 @@ function _renderPresPickerList(proj){
     lbl.style.cssText='flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:var(--navy,#1f2e3e);';
     lbl.addEventListener('click',()=>_presGridClick(p.iso));
     const rm=document.createElement('button'); rm.type='button'; rm.textContent='×';
-    rm.style.cssText='background:none;border:none;cursor:pointer;font-size:14px;color:#888;padding:0 2px;flex-shrink:0;';
+    rm.style.cssText='background:none;border:none;cursor:pointer;font-size:14px;color:#b03020;padding:0 2px;flex-shrink:0;';
     rm.addEventListener('click',e=>{
       e.stopPropagation();
       if(p.eventId){ getToken().then(tok=>fetch('https://graph.microsoft.com/v1.0/me/events/'+p.eventId,{method:'DELETE',headers:{Authorization:'Bearer '+tok}})).catch(()=>{}); }
@@ -9656,10 +9658,11 @@ _PPOP.addEventListener('click',e=>{
   if(e.target.closest('.pp-pres-save')){
     const proj=PROJECTS.find(p=>p.id===_presPickProjId); if(!proj||!_presPickFormIso) return;
     const time=_PPOP.querySelector('.pp-pres-time').value||'10:00';
+    const dur=Math.max(30,parseInt(_PPOP.querySelector('.pp-pres-dur')?.value||'90')||90);
     const room=_PPOP.querySelector('.pp-pres-room').value||PRES_DEFAULT_ROOM;
     const existing=proj.presentations.find(p=>p.iso===_presPickFormIso);
-    if(existing){ existing.time=time; existing.room=room; }
-    else { proj.presentations.push({id:'pres-'+Date.now(),iso:_presPickFormIso,time,room,eventId:null}); }
+    if(existing){ existing.time=time; existing.room=room; existing.duration=dur; }
+    else { proj.presentations.push({id:'pres-'+Date.now(),iso:_presPickFormIso,time,duration:dur,room,eventId:null}); }
     proj.presentations.sort((a,b)=>a.iso.localeCompare(b.iso));
     _presPickFormIso=null;
     _renderPresPicker(); renderPresMarkers(proj.id);
@@ -15404,13 +15407,16 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
           for(let i=0;i<Math.max(1,_maxPresCount);i++){
             const cell=document.createElement('div'); cell.className='pp-date-val'; const pp=_sp[i];
             if(pp){
-              const btn=document.createElement('button'); btn.className='pp-mp-btn'; btn.setAttribute('data-pres-btn',proj.id);
               const d=new Date(pp.iso+'T12:00:00');
-              btn.innerHTML='<span style="display:inline-flex;width:11px;height:11px;color:#c06820;">'+_presMarkerSvg(i+1)+'</span>'
-                +'<span style="'+(pp.iso<_tod?'color:#bbb;':'')+'">'+d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</span>'
+              const _dy=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+              const _yr=d.toLocaleDateString('en-US',{year:'numeric'});
+              const _col=pp.iso<_tod?'color:#bbb;':'';
+              cell.style.cssText='cursor:pointer;';
+              cell.innerHTML='<span style="display:block;'+_col+'">'+_dy+'</span><span class="pp-date-yr" style="'+_col+'">'+_yr+'</span>'
                 +(pp.eventId?'<span class="pp-mp-extra" style="color:#1e8a46;">✓</span>':'');
-              btn.dataset.tip=_presIsoFmt(pp); btn.addEventListener('click',e=>{e.stopPropagation();openPresPickerForProj(proj.id,btn);});
-              cell.appendChild(btn); _copy.push(d.toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+              cell.dataset.tip=_presIsoFmt(pp)+(pp.eventId?' · Outlook synced':'');
+              cell.addEventListener('click',e=>{e.stopPropagation();openPresPickerForProj(proj.id,cell);});
+              _copy.push(_dy+' '+_yr);
             } else { const sp=document.createElement('span'); sp.textContent='—'; sp.className='empty'; cell.appendChild(sp); _copy.push(''); }
             row.appendChild(cell);
           }
@@ -15825,6 +15831,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1026', date: '2026-09-03',
+    entries:['Key Data button now embedded inside the OPS screen itself; Design KD pres cells match date format (no icon, stacked); picker has duration field (default 90min, step 15); sync shows one checkmark + green Synced text; remove × is red.'],
+  },
   {
     version: 'v1025', date: '2026-09-03',
     entries:['OPS Key Dates is now a slide-in panel opened by Key Data button in admin strip (OPS mode only). Pres button amber when scheduled; icon solid fill white number; SYNC red; X red; popup no longer clips at bottom.'],
@@ -18757,6 +18767,9 @@ function opsRenderInto(root){
   if(undated.length) invHtml+='<div class="ops-group zone-beyond">Awaiting a date</div>'+undated.map(x=>invRow(x,' zone-beyond')).join('');
   const seededN=PROJECTS.filter(p=>p.status==='da-signed'&&p.designInvoices).length;
   root.innerHTML='<div class="ops-wrap">'+banner
+    +'<div style="display:flex;justify-content:flex-end;margin:0 0 8px;">'
+    +'<button id="opsKdBtnInline" style="font-family:\'TT Norms Pro\',sans-serif;font-size:11px;font-weight:700;padding:5px 14px;background:var(--navy,#1f2e3e);color:#fff;border:none;border-radius:4px;cursor:pointer;">Key Data</button>'
+    +'</div>'
     +'<div class="ops-top">'
     +'<div class="ops-h"><h2>Four-week cash view</h2><span class="ops-sub">'+W[0].sub.split(' \u2013 ')[0]+' \u2013 '+W[3].end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u00b7 last QuickBooks drop: none yet</span><div class="ops-rule"></div></div>'
     +'<div class="ops-h"><h2>What could move</h2><span class="ops-sub">Only maybes \u00b7 lands in Net Position once cash figures are connected</span><div class="ops-rule"></div></div>'
@@ -18778,6 +18791,7 @@ function opsRenderInto(root){
     +'<div class="ops-card ops-expected">'+invHtml+'</div>'
 
     +'</div>';
+  root.querySelector('#opsKdBtnInline')?.addEventListener('click',window._opsKdOpen);
   opsDrawScenarios(W13,root);
   root.querySelectorAll('[data-ops-ack]').forEach(b=>b.addEventListener('click',()=>{ b.disabled=true; b.textContent='Saving\u2026'; opsAckCaMove(b.getAttribute('data-ops-ack'),Number(b.getAttribute('data-ops-n'))); }));
   const form=root.querySelector('#opsAddForm'), addBtn=root.querySelector('#opsAddBtn'); let dir='out';
