@@ -3352,7 +3352,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1033';
+const CORE_VERSION = 'v1034';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15930,6 +15930,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1034', date: '2026-09-03',
+    entries:['Fix: the QuickBooks reader was building an encoded path string, which Graph rejected with a 400 — the numbered folder name does not survive that route. It now resolves the OPSSEC Financial library by name and walks the folder tree by listing children, the same pattern the Doc Linker uses. Key Data — Operations puts presentations between DA and CA.'],
+  },
+  {
     version: 'v1033', date: '2026-09-03',
     entries:['Expected-list group headers are now a darker tint of their own zone rather than navy. Closed the left edge of the gold NOW frame — the label column\u2019s border:none was overriding it. Key Data — Operations uses the DA and CA pills and the presentation icon in its column headers, with each presentation showing date, time, duration and room. Removed the dead Key Data button from the admin strip. The QuickBooks reader now reports its result in the section subheader instead of failing silently.'],
   },
@@ -18845,37 +18849,51 @@ async function opsAckCaMove(spId,n){
 // Patti drops the current month's report in the parent folder and files it into a
 // year subfolder at the start of the next month, so the finder checks both and takes
 // whichever file is newest by lastModifiedDateTime.
-const OPSSEC_SITE='https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/OperationsSecure:';
-const QB_FOLDER='OPSSEC Financial/2. QuickBooks/Weekly QB Reports';
+const OPSSEC_DRIVES='https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/OperationsSecure:/drives';
+let _qbDriveId=null;
 let QB_DATA=null; // {bank,payroll,payables,file,modified}
+// v1034: resolve the document library by name, then walk the folder tree by listing
+// children and matching names. Building a path string and encoding it was returning
+// Graph 400 — the numbered folder name ('2. QuickBooks') doesn't survive that route.
+async function qbDriveId(){
+  if(_qbDriveId) return _qbDriveId;
+  const data=await graphGet(OPSSEC_DRIVES);
+  const d=(data.value||[]).find(x=>/^opssec financial$/i.test((x.name||'').trim()))
+        ||(data.value||[]).find(x=>/financial/i.test(x.name||''));
+  if(!d) throw new Error('OPSSEC Financial library not found on OperationsSecure');
+  _qbDriveId=d.id; return _qbDriveId;
+}
+async function qbChildren(driveId,itemId){
+  const base='https://graph.microsoft.com/v1.0/drives/'+driveId+'/items/'+itemId+'/children';
+  const data=await graphGet(base+'?$select=id,name,folder,file,lastModifiedDateTime&$top=200');
+  return data.value||[];
+}
 async function qbFindNewest(){
-  const tok=await getToken();
-  const H={Authorization:'Bearer '+tok};
-  const enc=p=>p.split('/').map(encodeURIComponent).join('/');
-  const listing=async path=>{
-    const url=OPSSEC_SITE+'/drive/root:/'+enc(path)+':/children?$select=id,name,folder,lastModifiedDateTime&$top=200';
-    const r=await fetch(url,{headers:H}); if(!r.ok) throw new Error('Graph '+r.status+' on '+path);
-    return (await r.json()).value||[];
+  const drive=await qbDriveId();
+  const root=await graphGet('https://graph.microsoft.com/v1.0/drives/'+drive+'/root?$select=id');
+  const step=async(parentId,rx)=>{
+    const kids=await qbChildren(drive,parentId);
+    const hit=kids.find(k=>k.folder&&rx.test((k.name||'').trim()));
+    if(!hit) throw new Error('Folder not found: '+rx);
+    return hit.id;
   };
-  const kids=await listing(QB_FOLDER);
-  const isRpt=f=>!f.folder&&/\.xlsm?x?$/i.test(f.name||'');
-  let files=kids.filter(isRpt).map(f=>({...f,_path:QB_FOLDER}));
-  // Year subfolders — Patti files last month's reports into these
+  const qbId=await step(root.id,/quickbooks/i);
+  const wkId=await step(qbId,/weekly qb reports/i);
+  const kids=await qbChildren(drive,wkId);
+  const isRpt=f=>!f.folder&&/\.xls[xm]$/i.test(f.name||'');
+  let files=kids.filter(isRpt);
   for(const d of kids.filter(f=>f.folder)){
-    try{
-      const sub=await listing(QB_FOLDER+'/'+d.name);
-      files=files.concat(sub.filter(isRpt).map(f=>({...f,_path:QB_FOLDER+'/'+d.name})));
-    }catch(_){}
+    try{ files=files.concat((await qbChildren(drive,d.id)).filter(isRpt)); }catch(_){}
   }
-  if(!files.length) throw new Error('No QuickBooks report found');
+  if(!files.length) throw new Error('No .xlsx/.xlsm report found in Weekly QB Reports');
   files.sort((a,b)=>(b.lastModifiedDateTime||'').localeCompare(a.lastModifiedDateTime||''));
-  return files[0];
+  return {file:files[0],drive};
 }
 // The summary block sits below the payables detail: labelled rows whose text carries
 // the account or category and whose adjacent cell carries the figure.
 function qbParseSummary(rows){
   const out={bank:null,payroll:null,payables:null};
-  const num=v=>{ if(typeof v==='number') return v; const n=parseFloat(String(v==null?'':v).replace(/[$,\s]/g,'')); return isNaN(n)?null:n; };
+  const num=v=>{ if(typeof v==='number') return v; const n=parseFloat(String(v==null?'':v).replace(/[$,\s()]/g,'')); return isNaN(n)?null:n; };
   for(const r of rows){
     const cells=(r||[]).map(c=>c==null?'':String(c));
     const label=cells.find(c=>/[A-Za-z]/.test(c))||'';
@@ -18890,10 +18908,10 @@ function qbParseSummary(rows){
   return out;
 }
 async function qbLoad(){
-  const f=await qbFindNewest();
+  const {file:f,drive}=await qbFindNewest();
   const tok=await getToken();
-  const dl=await fetch(OPSSEC_SITE+'/drive/items/'+f.id,{headers:{Authorization:'Bearer '+tok}});
-  if(!dl.ok) throw new Error('Graph '+dl.status);
+  const dl=await fetch('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+f.id,{headers:{Authorization:'Bearer '+tok}});
+  if(!dl.ok) throw new Error('Graph '+dl.status+' fetching '+f.name);
   const meta=await dl.json();
   const url=meta['@microsoft.graph.downloadUrl']; if(!url) throw new Error('No download URL');
   const buf=await (await fetch(url)).arrayBuffer();
@@ -19080,12 +19098,11 @@ function opsRenderInto(root){
       const today=_isoDate(new Date());
       const maxPres=Math.max(1,...kdProjs.map(p=>(p.presentations||[]).filter(x=>x.iso>=today).length));
       let hdr='<div class="pp-date-cols"><div class="pp-date-col-spacer"></div>'
-        +'<div class="pp-date-col-hdr" data-tip="DA signing date"><span style="'+PILL+'">DA</span></div>'
-        +'<div class="pp-date-col-hdr" data-tip="CA signing date"><span style="'+PILL+'">CA</span></div>';
+        +'<div class="pp-date-col-hdr" data-tip="DA signing date"><span style="'+PILL+'">DA</span></div>';
       for(let i=0;i<maxPres;i++)
         hdr+='<div class="pp-date-col-hdr" style="width:104px;flex-shrink:0;color:#c06820;" data-tip="Presentation '+(i+1)+'">'
           +'<span style="display:inline-flex;width:16px;height:14px;">'+_presMarkerSvg(i+1)+'</span></div>';
-      hdr+='</div>';
+      hdr+='<div class="pp-date-col-hdr" data-tip="CA signing date"><span style="'+PILL+'">CA</span></div></div>';
       let rows='', txt='KEY DATA \u2014 OPERATIONS\n\n';
       kdProjs.forEach(proj=>{
         const daMs=proj.milestones.find(m=>m.name==='DA'), caMs=proj.milestones.find(m=>m.name==='CA');
@@ -19102,7 +19119,7 @@ function opsRenderInto(root){
             +'<span class="pp-date-yr">'+escH(rn(pr.room)||'no room')+(pr.eventId?' \u2713':'')+'</span></div>';
         }
         rows+='<div class="pp-date-row"><div class="pp-date-info"><div class="pp-date-name">'+escH(nm)+'</div></div>'
-          +dCell(daMs?.week)+dCell(caMs?.week)+pCells+'</div>';
+          +dCell(daMs?.week)+pCells+dCell(caMs?.week)+'</div>';
         const daT=daMs?.week!=null?fmtD(wkMon(daMs.week))+' '+wkMon(daMs.week).getFullYear():'\u2014';
         const caT=caMs?.week!=null?fmtD(wkMon(caMs.week))+' '+wkMon(caMs.week).getFullYear():'\u2014';
         txt+=nm+'\n  DA '+daT+'   CA '+caT+'\n';
