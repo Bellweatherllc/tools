@@ -2955,9 +2955,20 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-af-dir button{font-size:11.5px;font-weight:600;padding:7px 4px;border-radius:4px;background:#fff;cursor:pointer;font-family:inherit;border:1.5px solid #e4dac4;color:#7a7a7a;}
 .ops-af-dir button.out.on{border-color:#ac2828;color:#ac2828;background:rgba(172,40,40,.06);}
 .ops-af-dir button.in.on{border-color:#00521b;color:#00521b;background:rgba(0,82,27,.07);}
-#opsAfWk option.z-acc{background:#fff;}
-#opsAfWk option.z-proj{background:#f8f1dc;}
-#opsAfWk option.z-beyond{background:#e6eef3;}
+.ops-wkpick{position:relative;}
+.ops-wkbtn{width:100%;display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border:1px solid #e4dac4;border-radius:4px;background:#fff;color:#1f2e3e;font:inherit;font-size:12px;cursor:pointer;text-align:left;}
+.ops-wkcar{color:#a3a3a3;font-size:11px;}
+.ops-wkmenu{display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:#fff;border:1px solid #e4dac4;border-radius:6px;box-shadow:0 10px 30px rgba(31,46,62,.18);overflow:hidden;max-height:320px;overflow-y:auto;}
+.ops-wkmenu.on{display:block;}
+.ops-wkopt{padding:7px 10px;font-size:12px;color:#1f2e3e;cursor:pointer;position:relative;}
+.ops-wkopt+.ops-wkopt::before{content:'';position:absolute;left:0;right:0;top:0;height:1px;background:repeating-linear-gradient(to right,#bfb7a6 0 2px,transparent 2px 6px);}
+.ops-wkopt.z-acc{background:#fff;}
+.ops-wkopt.z-proj{background:rgba(216,182,79,.10);}
+.ops-wkopt.z-beyond{background:rgba(59,127,168,.09);}
+.ops-wkopt.z-first-proj{border-top:3px solid #d8b64f;}
+.ops-wkopt.z-first-proj::before,.ops-wkopt.z-first-beyond::before{display:none;}
+.ops-wkopt.z-first-beyond{border-top:1px solid #e4dac4;}
+.ops-wkopt:hover,.ops-wkopt.on{background:#1f2e3e;color:#fff;}
 .ops-sc.zone-proj{background:rgba(216,182,79,.055);}
 .ops-sc.zone-beyond{background:rgba(59,127,168,.06);}
 .ops-sc.zone-past{opacity:.55;}
@@ -3315,7 +3326,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1002';
+const CORE_VERSION = 'v1003';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15329,6 +15340,12 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1003', date: '2026-09-03',
+    entries: [
+      'The scenario week picker is now a styled menu that carries the cash view\u2019s zones: white, gold rule, gold, then blue, with dotted dividers.',
+    ],
+  },
+  {
     version: 'v1002', date: '2026-09-03',
     entries: [
       'Scenarios are now saved to CORE and shared among everyone with the OPS role, with who added each one. Switched-on scenarios show as a net row in the cash view.',
@@ -18100,7 +18117,8 @@ function opsRenderInto(root){
     +'<div class="ops-addform" id="opsAddForm"><div class="ops-af-note">A name and an amount are required. Pick the week it would land.</div>'
     +'<div class="ops-af-row"><input type="text" id="opsAfWhat" placeholder="What is it? (required) \u2014 e.g. cabinet package deposit"></div>'
     +'<div class="ops-af-row ops-af-dir" id="opsAfDir"><button type="button" class="out on" data-d="out">Money out</button><button type="button" class="in" data-d="in">Money in</button></div>'
-    +'<div class="ops-af-row ops-af-2"><input type="text" id="opsAfAmt" placeholder="Amount (required)" inputmode="numeric"><select id="opsAfWk">'+W13.map((w,i)=>'<option class="z-'+zoneOf(i)+'" value="'+i+'">'+w.sub+'</option>').join('')+'</select></div>'
+    +'<div class="ops-af-row ops-af-2"><input type="text" id="opsAfAmt" placeholder="Amount (required)" inputmode="numeric"><div class="ops-wkpick"><button type="button" class="ops-wkbtn" id="opsAfWkBtn" data-wk="0"><span>'+W13[0].sub+'</span><span class="ops-wkcar">\u25be</span></button>'
+    +'<div class="ops-wkmenu" id="opsAfWkMenu">'+W13.map((w,i)=>'<div class="ops-wkopt z-'+zoneOf(i)+(i===2?' z-first-proj':'')+(i===4?' z-first-beyond':'')+'" data-wk="'+i+'">'+w.sub+'</div>').join('')+'</div></div></div>'
     +'<div class="ops-af-row"><input type="text" id="opsAfNote" placeholder="Note \u2014 who told you, and when"></div>'
     +'<div class="ops-af-err" id="opsAfErr"></div>'
     +'<div class="ops-af-act"><button type="button" id="opsAfCancel">Cancel</button><button type="button" class="ops-af-save" id="opsAfSave">Add it</button></div></div>'
@@ -18117,10 +18135,15 @@ function opsRenderInto(root){
   const toggleForm=o=>{ form.classList.toggle('on',o); addBtn.classList.toggle('on',o); addBtn.textContent=o?'Close':'+ Add'; if(o) root.querySelector('#opsAfWhat').focus(); };
   addBtn.addEventListener('click',()=>toggleForm(!form.classList.contains('on')));
   root.querySelector('#opsAfCancel').addEventListener('click',()=>toggleForm(false));
+  // week picker: a styled menu, since native <select> popups ignore option styling on macOS
+  const wkBtn=root.querySelector('#opsAfWkBtn'), wkMenu=root.querySelector('#opsAfWkMenu');
+  wkBtn.addEventListener('click',e=>{ e.stopPropagation(); wkMenu.classList.toggle('on'); });
+  wkMenu.addEventListener('click',e=>{ const o=e.target.closest('.ops-wkopt'); if(!o) return; wkBtn.dataset.wk=o.dataset.wk; wkBtn.querySelector('span').textContent=o.textContent; wkMenu.querySelectorAll('.ops-wkopt').forEach(z=>z.classList.toggle('on',z===o)); wkMenu.classList.remove('on'); });
+  document.addEventListener('click',()=>wkMenu.classList.remove('on'));
   root.querySelector('#opsAfDir').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; root.querySelectorAll('#opsAfDir button').forEach(z=>z.classList.remove('on')); b.classList.add('on'); dir=b.dataset.d; });
   const persist=async()=>{ try{ await opsSaveScenarios(); }catch(e){ showToast('Scenario not saved: '+e.message); } };
   root.querySelector('#opsAfSave').addEventListener('click',()=>{
-    const what=root.querySelector('#opsAfWhat').value.trim(), amt=parseInt(root.querySelector('#opsAfAmt').value.replace(/[^0-9]/g,''),10), note=root.querySelector('#opsAfNote').value.trim(), wk=parseInt(root.querySelector('#opsAfWk').value,10);
+    const what=root.querySelector('#opsAfWhat').value.trim(), amt=parseInt(root.querySelector('#opsAfAmt').value.replace(/[^0-9]/g,''),10), note=root.querySelector('#opsAfNote').value.trim(), wk=parseInt(root.querySelector('#opsAfWkBtn').dataset.wk,10);
     const err=root.querySelector('#opsAfErr');
     if(!what){ err.textContent='Give it a name first.'; root.querySelector('#opsAfWhat').focus(); return; }
     if(isNaN(amt)||amt<=0){ err.textContent='Enter an amount in whole dollars.'; root.querySelector('#opsAfAmt').focus(); return; }
