@@ -759,12 +759,11 @@ body.admin-mode .fc-ms-row:not(.is-collapsed) .group-toggle{outline:2px solid rg
 .timeoff-add-btn:hover{background:#f0ede8;border-color:rgba(31,46,62,.50);}
 /* v1041: palm-tree variant — square icon button, same footprint as the mp/exp buttons */
 .timeoff-add-btn.palm{
-  width:20px;padding:2px;justify-content:center;
-  border-radius:3px;border-color:rgba(40,40,40,.22);
-  filter:grayscale(1);opacity:.55;transition:filter .12s,opacity .12s;
+  background:none!important;border:none!important;width:auto!important;padding:2px;
+  filter:grayscale(1);opacity:.45;transition:filter .12s,opacity .12s;
 }
-.timeoff-add-btn.palm svg{width:100%;height:100%;display:block;}
-.timeoff-add-btn.palm:hover{background:#f0ede8;opacity:.85;}
+.timeoff-add-btn.palm img{width:18px;height:18px;display:block;}
+.timeoff-add-btn.palm:hover{background:none!important;opacity:.8;}
 .timeoff-add-btn.palm.has-off{filter:none;opacity:1;}
 /* ── TIME-OFF CALENDAR (v929) ── */
 .toc-pop{
@@ -3363,7 +3362,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1045';
+const CORE_VERSION = 'v1048';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -3966,7 +3965,10 @@ function _planChangeReasons(a,b){
   if((a.proposedDesigner||null)!==(b.proposedDesigner||null)) r.push('proposed designer '+_pName(a.proposedDesigner)+' \u2192 '+_pName(b.proposedDesigner));
   if((a.salesPerson||'')!==(b.salesPerson||'')) r.push('sales '+(a.salesPerson||'none')+' \u2192 '+(b.salesPerson||'none'));
   if(!!a.planningSkipped!==!!b.planningSkipped) r.push(b.planningSkipped?'deferred from planning':'returned to planning');
-  if((a.slotId||null)!==(b.slotId||null)) r.push('slot changed');
+  // v1048: slotWeek is the semantic value; slotId is an SP item ID that changes whenever
+  // planning_projects rows are recreated — comparing it caused spurious 'slot changed' noise.
+  const _aWk=a.slotWeek??null, _bWk=b.slotWeek??null;
+  if(_aWk!==_bWk) r.push(_bWk==null?'removed from slot':'slot '+(a.slotWeek!=null?'moved to week '+_bWk:'assigned to week '+_bWk));
   return r;
 }
 function _snapDiff(snap){
@@ -4147,7 +4149,7 @@ const PERSON_TARGETS={};
 function getTarget(personId){ return PERSON_TARGETS[personId]??20; }
 const CAP_BOOSTS={}; // v1044: {personId:{weekIndex:extraHours}} — stacks on project hours in the design tally
 function getBoost(pid,w){ return (CAP_BOOSTS[pid]&&CAP_BOOSTS[pid][w])||0; }
-function setBoost(pid,w,h){ if(!CAP_BOOSTS[pid])CAP_BOOSTS[pid]={}; if(h<=0)delete CAP_BOOSTS[pid][w]; else CAP_BOOSTS[pid][w]=h; if(!Object.keys(CAP_BOOSTS[pid]).length)delete CAP_BOOSTS[pid]; }
+function setBoost(pid,w,h){ if(!CAP_BOOSTS[pid])CAP_BOOSTS[pid]={}; if(h===0)delete CAP_BOOSTS[pid][w]; else CAP_BOOSTS[pid][w]=h; if(!Object.keys(CAP_BOOSTS[pid]).length)delete CAP_BOOSTS[pid]; } // v1047: zero deletes, negative stores
 
 // ════════════════════════════════════════════════  SORT
 const SORT_STATE={field:null,dir:1};
@@ -5582,7 +5584,18 @@ function buildFcTallyPerson(person, section){
         let _cbPop=null,_cbPid=null;
         window.openCapBoostPicker=function(pid,anchor){
           if(!_cbPop){ _cbPop=document.createElement('div'); _cbPop.id='capBoostPop'; _cbPop.className='toc-pop'; _cbPop.style.width='252px'; document.body.appendChild(_cbPop);
-            document.addEventListener('pointerdown',e=>{ if(_cbPop.style.display!=='none'&&!_cbPop.contains(e.target)&&!e.target.closest('[data-cap-boost]')){ _cbPop.style.display='none'; _cbPid=null; } },true); }
+            document.addEventListener('pointerdown',e=>{ if(_cbPop.style.display!=='none'&&!_cbPop.contains(e.target)&&!e.target.closest('[data-cap-boost]')){ _cbPop.style.display='none'; _cbPid=null; } },true);
+            _cbPop.addEventListener('click',e=>{ // v1046
+              if(e.target.closest('[data-cb-close]')){ _cbPop.style.display='none'; _cbPid=null; return; }
+              const btn=e.target.closest('[data-cbw]'); if(!btn||!_cbPid) return;
+              const w=parseInt(btn.dataset.cbw),d=parseInt(btn.dataset.cbd);
+              setBoost(_cbPid,w,getBoost(_cbPid,w)+d*5); _renderCapBoostPop(); // v1047: no floor — negative reduces below project load
+              renderTally('design');
+              const _on=!!Object.keys(CAP_BOOSTS[_cbPid]||{}).length;
+              document.querySelectorAll('[data-cap-boost="'+_cbPid+'"]').forEach(b=>{ b.style.filter=_on?'none':'grayscale(1)'; b.style.opacity=_on?'1':'.45'; b.style.color=_on?'#3b7fa8':''; });
+              if(typeof saveSharedState==='function') saveSharedState();
+            });
+          }
           if(_cbPid===pid&&_cbPop.style.display!=='none'){ _cbPop.style.display='none'; _cbPid=null; return; }
           _cbPid=pid;
           const person=DESIGNERS.find(d=>d.id===pid)||{};
@@ -5596,22 +5609,12 @@ function buildFcTallyPerson(person, section){
             const cur=getBoost(pid,w);
             html+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid rgba(228,218,196,.5);">'
               +'<span style="flex:1;font-size:11px;">'+lbl+'</span>'
-              +(cur>0?'<span style="font-size:11px;font-weight:700;color:#1f2e3e;min-width:28px;text-align:right;">+'+cur+'h</span>':'<span style="min-width:28px;"></span>')
+              +(cur!==0?'<span style="font-size:11px;font-weight:700;min-width:28px;text-align:right;color:'+(cur>0?'#1f2e3e':'#b03020')+'">'+(cur>0?'+':'')+cur+'h</span>':'<span style="min-width:28px;"></span>')
               +'<button data-cbw="'+w+'" data-cbd="-1" class="toc-nav-btn">−</button>'
               +'<button data-cbw="'+w+'" data-cbd="1" class="toc-nav-btn">+</button>'
               +'</div>';
           }
-          _cbPop.innerHTML=html;
-          document.getElementById('cbClose')?.addEventListener('click',()=>{ _cbPop.style.display='none'; _cbPid=null; });
-          _cbPop.addEventListener('click',e=>{
-            const btn=e.target.closest('[data-cbw]'); if(!btn) return;
-            const w=parseInt(btn.dataset.cbw),d=parseInt(btn.dataset.cbd),cur=getBoost(pid,w);
-            setBoost(pid,w,Math.max(0,cur+d*5));
-            window.openCapBoostPicker(pid,anchor); // re-render in place
-            renderTally('design');
-            document.querySelectorAll('[data-cap-boost="'+pid+'"]').forEach(b=>{ const on=!!Object.keys(CAP_BOOSTS[pid]||{}).length; b.style.filter=on?'none':'grayscale(1)'; b.style.opacity=on?'1':'.45'; });
-            if(typeof saveSharedState==='function') saveSharedState();
-          });
+          _cbPop.innerHTML=html; // single listener at creation handles clicks
           _cbPop.style.display='block';
           const r=anchor.getBoundingClientRect(),pw=_cbPop.offsetWidth||252;
           let x=r.right+8; if(x+pw>innerWidth-8) x=Math.max(8,r.left-pw-8);
@@ -5620,7 +5623,7 @@ function buildFcTallyPerson(person, section){
         };
         window._cbCapBoostSvg=CAP_BOOST_SVG;
       }
-      const cbBtn=el('button','timeoff-add-btn'); cbBtn.style.cssText='filter:grayscale(1);opacity:.45;transition:filter .12s,opacity .12s;'; cbBtn.innerHTML=window._cbCapBoostSvg; cbBtn.dataset.tip='Add capacity hours · 8 weeks'; cbBtn.setAttribute('data-cap-boost',person.id); if(Object.keys(CAP_BOOSTS[person.id]||{}).length){ cbBtn.style.filter='none'; cbBtn.style.opacity='1'; } cbBtn.addEventListener('click',e=>{e.stopPropagation();window.openCapBoostPicker(person.id,cbBtn);}); rWrap.appendChild(cbBtn);
+      const cbBtn=el('button',''); cbBtn.style.cssText='background:none;border:none;padding:2px;cursor:pointer;display:flex;align-items:center;filter:grayscale(1);opacity:.45;transition:filter .12s,opacity .12s,color .12s;'; cbBtn.innerHTML=window._cbCapBoostSvg; cbBtn.dataset.tip='Add capacity hours · 8 weeks'; cbBtn.setAttribute('data-cap-boost',person.id); if(Object.keys(CAP_BOOSTS[person.id]||{}).length){ cbBtn.style.filter='none'; cbBtn.style.opacity='1'; cbBtn.style.color='#3b7fa8'; } cbBtn.addEventListener('click',e=>{e.stopPropagation();window.openCapBoostPicker(person.id,cbBtn);}); rWrap.appendChild(cbBtn);
     })();
     // v936: columns mirror the project rows below — eye over the Matterport
     // column, T over the milestone-set rectangles, hours over the chevrons.
@@ -9447,7 +9450,7 @@ function tierTT(tier,e){
   const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const lbls={'T1':'Tier 1','T2':'Tier 2','T3':'Tier 3'};
   const lbl=lbls[tier.name]||tier.name;
-  showTTraw(`<div class="tt-n">${lbl} selections due Friday, ${fmt(fri)}</div><div class="tt-d">${tier.name==='T1'?'Build out selections in BT and enter T1 by':'Enter into BT by'} ${fmt(tue)} at 5:00 pm</div>`,e);
+  showTTraw(`<div class="tt-n">${lbl} selections due Friday, ${fmt(fri)}</div><div class="tt-d">${tier.name==='T1'?'Build out selections in BT and enter T1 on Friday, '+fmt(fri):'Enter into BT by '+fmt(tue)+' at 5:00 pm'}</div>`,e);
 }
 function critTT(crit,e){
   const fri=wkFri(crit.week);
@@ -9483,7 +9486,7 @@ function tierBubbleHTML(tier){
   const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const lbls={'T1':'Tier 1','T2':'Tier 2','T3':'Tier 3'};
   return '<div class="gdb-title">'+escH(lbls[tier.name]||tier.name)+' selections due Friday, '+fmt(fri)+'</div>'
-  +'<div class="gdb-line">'+(tier.name==='T1'?'Build out selections in BT and enter T1 by':'Enter into BT by')+' '+fmt(tue)+' at 5:00 pm</div>';
+  +'<div class="gdb-line">'+(tier.name==='T1'?'Build out selections in BT and enter T1 on Friday, '+fmt(fri):'Enter into BT by '+fmt(tue)+' at 5:00 pm')+'</div>';
 }
 function critBubbleHTML(crit,proj){
   const fmt=d=>d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
@@ -12297,8 +12300,10 @@ async function _refreshSharedStateFromSP(){
   if(!_configItemId) return;
   // Local edits in flight (inside the save debounce) — don't reconcile over them. Mirrors
   // the _domainDirty guard; the debounce writes within the second and the next tick agrees.
-  const localNow=JSON.stringify(sharedStatePayload());
-  if(localNow!==_lastWrittenShared) return;
+  const _excl=p=>{ const{CAP_BOOSTS:_,...r}=p; return r; }; // v1046: plus-file-only
+  const localNow=JSON.stringify(_excl(sharedStatePayload()));
+  const lastExcl=_lastWrittenShared?(()=>{ try{return JSON.stringify(_excl(JSON.parse(_lastWrittenShared)));}catch(_){return '';} })():'';
+  if(localNow!==lastExcl) return;
   try{
     const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_configItemId+'?$expand=fields&$select=id,fields');
     const f=item?.fields||{};
@@ -12740,7 +12745,10 @@ async function initFromSharePoint(){
     loadBriefBaselineFromSP().then(()=>{
       // v943: rolling baseline — if none has ever been stored, seed one from the
       // current state so change tracking starts now rather than never.
-      if(!WEEKLY_BASELINE&&PROJECTS.length) saveBriefBaseline(snapshotPipeline()).catch(()=>{});
+      // v1048: guard — require that at least some PPs have slotWeek data before seeding the
+      // baseline. An all-null snapshot would fire 'slot changed' for every project on next load.
+      const _ppReady=!PLANNING_PROJECTS.length||PLANNING_PROJECTS.some(pp=>pp.slotWeek!=null);
+      if(!WEEKLY_BASELINE&&PROJECTS.length&&_ppReady) saveBriefBaseline(snapshotPipeline()).catch(()=>{});
     }).catch(()=>{});
     loadBriefBugsFromSP().catch(()=>{});
     loadBriefAcksFromSP().catch(()=>{});
@@ -16005,6 +16013,18 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1048', date: '2026-09-04',
+    entries:['Fix: the weekly brief was comparing slotId (an internal SharePoint item ID that changes whenever planning_projects rows are recreated) instead of slotWeek (which week the project is actually scheduled). Swapped to slotWeek so moving a project to a different week is reported correctly and ID-only changes are silent. Also guarded the auto-baseline seed so it only fires when planning projects have real slot data, preventing an all-null snapshot from triggering noise on every subsequent page load.'],
+  },
+  {
+    version: 'v1047', date: '2026-09-04',
+    entries:['Capacity boost can now go negative — reflects weeks where a designer has less effective capacity than their project load suggests. Negative values show in red in the picker; zero removes the entry.'],
+  },
+  {
+    version: 'v1046', date: '2026-09-04',
+    entries:['T1: both actions on Friday. Palm/+time free-form icons. Cap boost: single listener, exact increments. Sync guard: CAP_BOOSTS excluded so production time off reads through.'],
+  },
   {
     version: 'v1045', date: '2026-09-04',
     entries:['Cursor A on all draggable elements; crosshair-on-drag removed. T/C/PD drag state: red glow matching DA/CA. T tooltip adds Friday and T1 adds BT build-out line. Crit bubble reads CRIT 1/2 — the week of [Monday].'],
