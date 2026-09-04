@@ -3370,7 +3370,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1059';
+const CORE_VERSION = 'v1061';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11745,6 +11745,14 @@ async function loadTeamMembers(saved){
   DESIGNERS.length=0; PROD_PMS.length=0; SALES_PEOPLE.length=0; LC_COORDS.length=0; FIELD_MECHANICS.length=0;
   // Restore saved targets first so existing overrides survive
   if(saved&&saved.PERSON_TARGETS) Object.assign(PERSON_TARGETS,saved.PERSON_TARGETS);
+  // v1060: capacity boosts ride in the same shared-state row. This is the normal
+  // page-load path; the v1044 hook was in _applyRestore(), which only fires for a
+  // Time Machine restore, so boosts saved fine but were never read back.
+  if(saved&&saved.CAP_BOOSTS&&typeof saved.CAP_BOOSTS==='object'){
+    Object.keys(CAP_BOOSTS).forEach(k=>delete CAP_BOOSTS[k]);
+    Object.assign(CAP_BOOSTS,saved.CAP_BOOSTS);
+    console.log('[cap] restored boosts for '+Object.keys(CAP_BOOSTS).length+' designer(s)');
+  }
   items.forEach(item=>{
     const f=item.fields||{};
     const role=(f.Role||'').trim();
@@ -12367,6 +12375,12 @@ async function _refreshSharedStateFromSP(){
         if(added.length) notes.push(added.length+' slot'+(added.length>1?'s':'')+' consumed');
         if(freed.length) notes.push(freed.length+' slot'+(freed.length>1?'s':'')+' freed');
       }
+    }
+    if(parsed.CAP_BOOSTS&&typeof parsed.CAP_BOOSTS==='object'
+       &&JSON.stringify(parsed.CAP_BOOSTS)!==JSON.stringify(CAP_BOOSTS)){
+      Object.keys(CAP_BOOSTS).forEach(k=>{ delete CAP_BOOSTS[k]; });
+      Object.assign(CAP_BOOSTS,parsed.CAP_BOOSTS);
+      notes.push('capacity adjustments'); // v1060
     }
     if(parsed.PERSON_TARGETS&&typeof parsed.PERSON_TARGETS==='object'
        &&JSON.stringify(parsed.PERSON_TARGETS)!==JSON.stringify(PERSON_TARGETS)){
@@ -16064,6 +16078,14 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1061', date: '2026-09-04',
+    entries:['Weekly-brief baseline moved out of a CORE_Config text column and into the snapshot document library as _weekly_baseline.json. A list text column tops out near 64,000 characters and the baseline — every project with its milestones, tiers, crits and phases — had outgrown it, so the PATCH was being rejected and each resolve silently failed to persist. The library has no such ceiling. Reads try the file first and fall back to the old row, and the row is still mirrored when it fits.'],
+  },
+  {
+    version: 'v1060', date: '2026-09-04',
+    entries:['Capacity adjustments finally persist. The v1044 load hook was placed inside _applyRestore(), which only runs when restoring a Time Machine snapshot — not on a normal page load. Boosts were being written to CORE_Config correctly all along but never read back, so every refresh started from an empty object. The read now sits in loadTeamMembers() alongside PERSON_TARGETS, which is the real load path, and the background sync picks up changes from other sessions too.'],
+  },
+  {
     version: 'v1059', date: '2026-09-04',
     entries:['Gold NOW frame border reduced from 2.5px to 2px.'],
   },
@@ -17555,8 +17577,19 @@ function loadBriefBaseline(){
   // Baseline loads from SharePoint only — see loadBriefBaselineFromSP()
   WEEKLY_BASELINE=null;
 }
+const BRIEF_BASELINE_FILE='_weekly_baseline.json'; // v1061: lives in the snapshot library
 async function saveBriefBaseline(snap){
   WEEKLY_BASELINE=snap;
+  // v1061: primary store is the document library — no size ceiling. The CORE_Config
+  // row is still written when it fits, so an older build can still read it.
+  let fileOk=false;
+  try{
+    await _snapWrite(BRIEF_BASELINE_FILE,snap);
+    fileOk=true;
+    console.log('[brief] baseline written to '+BRIEF_BASELINE_FILE);
+  }catch(e){
+    console.error('[brief] baseline file write failed:',e);
+  }
   // Write to CORE_Config (SharePoint is the only store)
   try{
     const token=await getToken().catch(()=>null);
@@ -17588,8 +17621,8 @@ async function saveBriefBaseline(snap){
     }
     return true;
   }catch(e){
-    // v1057: this used to be a console.warn and nothing else, so a failed write was
-    // indistinguishable from a successful one until the next page load.
+    // The list column is the secondary store now. Only shout if the file write also failed.
+    if(fileOk){ console.warn('[brief] CORE_Config mirror failed (file write succeeded):',e); return true; }
     console.error('[brief] BASELINE SAVE FAILED \u2014 your resolve will not survive a refresh:',e);
     if(typeof showToast==='function') showToast('Could not save \u2014 see console');
     return false;
@@ -17602,6 +17635,21 @@ async function loadBriefBaselineFromSP(){
   // catch used to swallow it, leaving WEEKLY_BASELINE null so the auto-seed wrote a
   // fresh baseline over the user's folds. Resolve the row id from the collection, then
   // re-read that single item to get the complete value.
+  // v1061: try the document library first — that is where a full-size baseline lives.
+  try{
+    const drive=await _snapDrive();
+    const meta=await graphGet('https://graph.microsoft.com/v1.0/drives/'+drive
+      +'/root:/'+encodeURIComponent(BRIEF_BASELINE_FILE));
+    const dl=meta&&meta['@microsoft.graph.downloadUrl'];
+    if(dl){
+      const parsed=await (await fetch(dl)).json();
+      if(parsed&&parsed.ts){
+        if(!WEEKLY_BASELINE||new Date(parsed.ts)>new Date(WEEKLY_BASELINE.ts)) WEEKLY_BASELINE=parsed;
+        console.log('[brief] baseline loaded from '+BRIEF_BASELINE_FILE);
+        return;
+      }
+    }
+  }catch(e){ /* not there yet on first run — fall through to the list row */ }
   try{
     let raw=null;
     if(!_briefBaselineItemId){
@@ -19783,13 +19831,21 @@ document.addEventListener('click',e=>{
   const foldBtn=e.target.closest('[data-fold]');
   if(foldBtn){
     let spec=null; try{ spec=JSON.parse(foldBtn.dataset.fold); }catch(_){ }
-    if(spec) _briefFold(spec).catch(err=>console.warn('[brief] fold failed:',err));
     const row=foldBtn.closest('.brief-card-row');
-    if(row){
+    const _dropRow=()=>{ if(!row) return;
       const grp=row.closest('[data-brief-grp]');
       row.remove();
-      if(grp&&!grp.querySelector('.brief-card-row')) grp.remove();
-    }
+      if(grp&&!grp.querySelector('.brief-card-row')) grp.remove(); };
+    if(spec){
+      // v1061: only clear the row once the fold has actually persisted. Removing it
+      // unconditionally is what made a failing save look like a successful resolve.
+      foldBtn.disabled=true; foldBtn.textContent='Saving\u2026';
+      _briefFold(spec).then(()=>_dropRow()).catch(err=>{
+        console.error('[brief] fold failed \u2014 row kept:',err);
+        foldBtn.disabled=false; foldBtn.textContent='Mark Reviewed';
+        if(typeof showToast==='function') showToast('Could not save \u2014 see console');
+      });
+    } else _dropRow();
     return;
   }
 
