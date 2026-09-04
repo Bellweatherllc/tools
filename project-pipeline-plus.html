@@ -3362,7 +3362,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1048';
+const CORE_VERSION = 'v1050';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -4060,7 +4060,7 @@ function _applyRestore(d){
   // Shared state: time off, capacity targets, slots, thresholds
   if(d.shared){
     const sh=d.shared;
-    if(sh.TIME_OFF) _applyTimeOff(sh.TIME_OFF);
+    if(sh.TIME_OFF){ _applyTimeOff(sh.TIME_OFF); setTimeout(_refreshAllPalmBtns,0); } // v1049
     if(sh.PERSON_TARGETS&&typeof sh.PERSON_TARGETS==='object'){ Object.keys(PERSON_TARGETS).forEach(k=>delete PERSON_TARGETS[k]); Object.assign(PERSON_TARGETS,sh.PERSON_TARGETS); }
     if(sh.CAP_BOOSTS&&typeof sh.CAP_BOOSTS==='object'){ Object.keys(CAP_BOOSTS).forEach(k=>delete CAP_BOOSTS[k]); Object.assign(CAP_BOOSTS,sh.CAP_BOOSTS); } // v1044
     if(Array.isArray(sh.USED_SLOTS)){ USED_SLOTS.clear(); sh.USED_SLOTS.forEach(x=>USED_SLOTS.add(x)); }
@@ -5566,8 +5566,8 @@ function buildFcTallyPerson(person, section){
     c.appendChild(lbl);
     const rWrap=el('div',''); rWrap.style.cssText='display:flex;align-items:center;gap:10px;flex-shrink:0;';
     // Time Off — first
-    const addBtn=el('button','timeoff-add-btn palm'); addBtn.innerHTML='<img src="https://bellweatherllc.github.io/tools/logos/palm.svg" alt="" style="width:100%;height:100%;display:block;">';
-    addBtn.dataset.tip='Time off'; // v1041
+    const addBtn=el('button','timeoff-add-btn palm'+(_toRuns(person.timeOff||[]).length?' has-off':'')); addBtn.innerHTML='<img src="https://bellweatherllc.github.io/tools/logos/palm.svg" alt="" style="width:100%;height:100%;display:block;">';
+    addBtn.dataset.tip='Time off'; // v1041 / v1049: has-off at build time
     addBtn.dataset.addTimeoff=person.id; addBtn.dataset.addSection=section;
     rWrap.appendChild(addBtn);
     // v1044: capacity boost button (+clock) — design person header only
@@ -5582,31 +5582,21 @@ function buildFcTallyPerson(person, section){
           +'<line x1="3.5" y1="2.5" x2="3.5" y2="6.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
           +'</svg>';
         let _cbPop=null,_cbPid=null;
-        window.openCapBoostPicker=function(pid,anchor){
-          if(!_cbPop){ _cbPop=document.createElement('div'); _cbPop.id='capBoostPop'; _cbPop.className='toc-pop'; _cbPop.style.width='252px'; document.body.appendChild(_cbPop);
-            document.addEventListener('pointerdown',e=>{ if(_cbPop.style.display!=='none'&&!_cbPop.contains(e.target)&&!e.target.closest('[data-cap-boost]')){ _cbPop.style.display='none'; _cbPid=null; } },true);
-            _cbPop.addEventListener('click',e=>{ // v1046
-              if(e.target.closest('[data-cb-close]')){ _cbPop.style.display='none'; _cbPid=null; return; }
-              const btn=e.target.closest('[data-cbw]'); if(!btn||!_cbPid) return;
-              const w=parseInt(btn.dataset.cbw),d=parseInt(btn.dataset.cbd);
-              setBoost(_cbPid,w,getBoost(_cbPid,w)+d*5); _renderCapBoostPop(); // v1047: no floor — negative reduces below project load
-              renderTally('design');
-              const _on=!!Object.keys(CAP_BOOSTS[_cbPid]||{}).length;
-              document.querySelectorAll('[data-cap-boost="'+_cbPid+'"]').forEach(b=>{ b.style.filter=_on?'none':'grayscale(1)'; b.style.opacity=_on?'1':'.45'; b.style.color=_on?'#3b7fa8':''; });
-              if(typeof saveSharedState==='function') saveSharedState();
-            });
-          }
-          if(_cbPid===pid&&_cbPop.style.display!=='none'){ _cbPop.style.display='none'; _cbPid=null; return; }
-          _cbPid=pid;
-          const person=DESIGNERS.find(d=>d.id===pid)||{};
+
+        // ── render: always reads _cbPid so re-renders reflect current state ──
+        function _renderCapBoostPop(){
+          if(!_cbPop||!_cbPid) return;
+          const person=DESIGNERS.find(d=>d.id===_cbPid)||{};
           const tw=todayWeek();
-          let html='<div class="toc-hdr"><span class="toc-name">'+escH(person.label||'')+'</span><button class="toc-x" id="cbClose">&#215;</button></div>'
+          let html='<div class="toc-hdr">'
+            +'<span class="toc-name">'+escH(person.label||'')+'</span>'
+            +'<button class="toc-x" data-cb-close="1">&#215;</button></div>'
             +'<div style="font-size:9.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a3a3a3;padding:2px 0 6px;">Extra capacity · +5h steps</div>';
           for(let i=0;i<8;i++){
             const w=tw+i; if(w>=C.numWeeks) break;
             const mon=wkMon(w),fri=new Date(mon.getTime()+4*86400000);
             const lbl=mon.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+fri.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-            const cur=getBoost(pid,w);
+            const cur=getBoost(_cbPid,w);
             html+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid rgba(228,218,196,.5);">'
               +'<span style="flex:1;font-size:11px;">'+lbl+'</span>'
               +(cur!==0?'<span style="font-size:11px;font-weight:700;min-width:28px;text-align:right;color:'+(cur>0?'#1f2e3e':'#b03020')+'">'+(cur>0?'+':'')+cur+'h</span>':'<span style="min-width:28px;"></span>')
@@ -5614,7 +5604,36 @@ function buildFcTallyPerson(person, section){
               +'<button data-cbw="'+w+'" data-cbd="1" class="toc-nav-btn">+</button>'
               +'</div>';
           }
-          _cbPop.innerHTML=html; // single listener at creation handles clicks
+          _cbPop.innerHTML=html;
+        }
+
+        window._refreshCapBoostBtns=function(pid){
+          const on=!!Object.keys(CAP_BOOSTS[pid]||{}).length;
+          document.querySelectorAll('[data-cap-boost="'+pid+'"]').forEach(b=>{ b.style.filter=on?'none':'grayscale(1)'; b.style.opacity=on?'1':'.45'; b.style.color=on?'#3b7fa8':''; });
+        };
+
+        window.openCapBoostPicker=function(pid,anchor){
+          if(!_cbPop){
+            _cbPop=document.createElement('div'); _cbPop.id='capBoostPop'; _cbPop.className='toc-pop'; _cbPop.style.width='252px'; document.body.appendChild(_cbPop);
+            document.addEventListener('pointerdown',e=>{
+              if(_cbPop.style.display!=='none'&&!_cbPop.contains(e.target)&&!e.target.closest('[data-cap-boost]')){
+                _cbPop.style.display='none'; _cbPid=null;
+              }
+            },true);
+            _cbPop.addEventListener('click',e=>{
+              if(e.target.closest('[data-cb-close]')){ _cbPop.style.display='none'; _cbPid=null; return; }
+              const btn=e.target.closest('[data-cbw]'); if(!btn||!_cbPid) return;
+              const w=parseInt(btn.dataset.cbw),d=parseInt(btn.dataset.cbd);
+              setBoost(_cbPid,w,getBoost(_cbPid,w)+d*5);
+              _renderCapBoostPop(); // re-render — reads _cbPid and fresh boost values
+              renderTally('design');
+              window._refreshCapBoostBtns(_cbPid);
+              if(typeof saveSharedState==='function') saveSharedState();
+            });
+          }
+          if(_cbPid===pid&&_cbPop.style.display!=='none'){ _cbPop.style.display='none'; _cbPid=null; return; }
+          _cbPid=pid;
+          _renderCapBoostPop();
           _cbPop.style.display='block';
           const r=anchor.getBoundingClientRect(),pw=_cbPop.offsetWidth||252;
           let x=r.right+8; if(x+pw>innerWidth-8) x=Math.max(8,r.left-pw-8);
@@ -6751,7 +6770,11 @@ function openTimeoffCal(personId, section, anchorEl){
     title:()=>(person.fullLabel||person.label)+' \u2014 Time Off',
     days:()=>person.timeOff,
     setDays:a=>{ person.timeOff=a; },
-    afterChange:()=>{ renderTimeoffOverlay(personId,section); triggerSave(); },
+    afterChange:()=>{
+      renderTimeoffOverlay(personId,section); triggerSave();
+      const _to=_toRuns(person.timeOff||[]).length>0;
+      document.querySelectorAll('[data-addtimeoff="'+personId+'"]').forEach(b=>b.classList.toggle('has-off',_to));
+    },
     historyLabel:verb=>`${person.label} \u2014 time off ${verb}`,
     countLabel:n=>n+(n===1?' day off total':' days off total'),
     extra:box=>{ // v1028: Outlook sync — only the signed-in person can write to their own calendar
@@ -9883,12 +9906,20 @@ function setSaveState(state){
 // Personal (pipeline_prefs_{user} row): collapse state, calendar ranges, row and
 // project orders, panel state — Byron's original design intent. Per-user rows have
 // no concurrency story at all (you only collide with yourself).
+// Refresh palm buttons after applying time off from shared state
+function _refreshAllPalmBtns(){
+  [...DESIGNERS,...PROD_PMS].forEach(p=>{
+    const on=_toRuns(p.timeOff||[]).length>0;
+    document.querySelectorAll('[data-addtimeoff="'+p.id+'"]').forEach(b=>b.classList.toggle('has-off',on));
+  });
+}
 function _collectTimeOff(){
   const out={};
   [...DESIGNERS,...PROD_PMS].forEach(p=>{ if(p&&Array.isArray(p.timeOff)&&p.timeOff.length) out[p.id]=[...p.timeOff].sort(); });
   return out;
 }
-function _applyTimeOff(src){
+function _applyTimeOff(src){ // v1049: also refreshes palm button state after applying
+
   if(!src||typeof src!=='object') return;
   [...DESIGNERS,...PROD_PMS].forEach(p=>{ if(!p) return; p.timeOff=_normTimeOff(src[p.id]); });
 }
@@ -16014,6 +16045,14 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1050', date: '2026-09-04',
+    entries:['Slot change noise in the weekly brief: the root cause was diffPlanning comparing slotId (a volatile SharePoint item ID) alongside slotWeek. slotId changes every time the planning_projects CORE_Config row is recreated rather than patched, so the diff fired on every page load even when nothing actually moved. Now compares slotWeek only. slotId also removed from the baseline snapshot.'],
+  },
+  {
+    version: 'v1049', date: '2026-09-04',
+    entries:['Cap boost completely rewritten: _renderCapBoostPop is now a proper named function reading _cbPid directly, so clicks update the panel live. Close button has the correct data attribute. Time off palm button shows its colour at build time and updates when time off changes. _refreshAllPalmBtns runs after shared-state sync so production-file time off is reflected immediately.'],
+  },
+  {
     version: 'v1048', date: '2026-09-04',
     entries:['Fix: the weekly brief was comparing slotId (an internal SharePoint item ID that changes whenever planning_projects rows are recreated) instead of slotWeek (which week the project is actually scheduled). Swapped to slotWeek so moving a project to a different week is reported correctly and ID-only changes are silent. Also guarded the auto-baseline seed so it only fires when planning projects have real slot data, preventing an all-null snapshot from triggering noise on every subsequent page load.'],
   },
@@ -17377,8 +17416,7 @@ function snapshotPipeline(){
 function _snapPlanForBrief(pp){
     return {
       name:pp.name,
-      slotId:pp.slotId||null,
-      slotWeek:pp.slotWeek??null,
+      slotWeek:pp.slotWeek??null, // v1050: slotId removed — it's a volatile SP item ID, not a semantic value
       salesPerson:pp.salesPerson||'',
       proposedDesigner:pp.proposedDesigner||null,
       parked:!!pp.parked,
@@ -17605,12 +17643,14 @@ function diffPlanning(){
       changes.push({type:'added',name:pp.name,detail:'Added to planning board',ppId:pp.id});
       return;
     }
-    // Slot change
-    const curSlotId=pp.slotId||null, snapSlotId=snap.slotId||null;
+    // Slot change — compare slotWeek (semantic position) only.
+    // slotId is a SharePoint item ID assigned when the planning_projects CORE_Config
+    // row is created; it changes whenever the row is recreated instead of patched,
+    // making it an unreliable signal. slotWeek is what actually matters. (v1050)
     const curSlotWk=pp.slotWeek??null, snapSlotWk=snap.slotWeek??null;
-    if(curSlotId!==snapSlotId||curSlotWk!==snapSlotWk){
-      const fromProj=snapSlotId?PROJECTS.find(p=>p.id===snapSlotId):null;
-      const fromName=fromProj?fromProj.name:snapSlotWk!=null?'week of '+wkDate(snapSlotWk):'Unattached';
+    if(curSlotWk!==snapSlotWk){
+      const fromName=snapSlotWk!=null?'week of '+wkDate(snapSlotWk):'Unattached';
+      const curSlotId=pp.slotId||null;
       const toProj=curSlotId?PROJECTS.find(p=>p.id===curSlotId):null;
       const toName=toProj?toProj.name:curSlotWk!=null?'week of '+wkDate(curSlotWk):'Unattached';
       changes.push({type:'moved',name:pp.name,detail:`Moved: ${fromName} → ${toName}`,ppId:pp.id});
