@@ -3370,7 +3370,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1062';
+const CORE_VERSION = 'v1063';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -16080,6 +16080,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1063', date: '2026-09-04',
+    entries:['Weekly brief: resolved Design Updates no longer return on refresh. The diff was comparing raw milestone weeks straight from SharePoint against a baseline written from normalized weeks. tier/crit/pencils-down .week is derived by ensure*() from phase geometry — for unlocked projects it is reset to the default fraction on every call, discarding any stored drag. The snapshot and the fold both normalize; the diff did not, so the two sides never read the same state. diffPipeline now normalizes each project before comparing, the snapshot normalizes crits as well as tiers and pencils-down, and the fold handler keeps the row on screen if the save reports failure.'],
+  },
+  {
     version: 'v1062', date: '2026-09-04',
     entries:['Design person-header controls laid out left to right as Time Off, capacity, weekly hour baseline, milestones toggle, show/hide — with the eye anchored at the right edge and an even 6px between each. v1058 had pushed the eye to the far left to clear an overlap; this places all five deliberately instead. The hour number drops to 11px and the h sits tight against it.'],
   },
@@ -17472,7 +17476,7 @@ function _snapProjForBrief(p){
       .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
     const prodPhases=(p.productionLane?.phases||[])
       .map(ph=>({id:ph.id,name:ph.name,startWeek:ph.startWeek,durWeeks:ph.durWeeks}));
-    ensureTiers(p); ensurePencilsDown(p);
+    ensureTiers(p); ensureCrits(p); ensurePencilsDown(p); // v1063: crits were unnormalized
     return {
       name:briefProjName(p),
       status:p.status||'projected',
@@ -17545,8 +17549,9 @@ async function _briefFold(spec){
   // loadBriefBaselineFromSP — which only adopts a remote baseline when it is NEWER —
   // would discard the saved folds on the next page load.
   WEEKLY_BASELINE.ts=new Date().toISOString();
-  await saveBriefBaseline(WEEKLY_BASELINE);
+  const ok=await saveBriefBaseline(WEEKLY_BASELINE);
   updateBriefBaselineLbl();
+  return ok; // v1063: let the click handler keep the row if the write failed
 }
 function _briefFoldSched(proj,snap,field){
   const f=field||'';
@@ -17698,6 +17703,13 @@ function diffPipeline(){
     const snap=base[proj.id];
     const st=proj.status||'projected';
     if(!snap){ newProjs.push(proj); return; }
+    // v1063: normalize derived milestone weeks BEFORE comparing. tier/crit/PD .week is
+    // recomputed by ensure*() from phase geometry (and, for unlocked projects, from the
+    // default fractions, discarding a stored drag). The baseline writer and the fold
+    // both call ensure*() and so store the derived value; this diff was reading the raw
+    // value straight from SharePoint. That mismatch reported a move on every load for
+    // any project whose stored week differed from its derived week.
+    ensureTiers(proj); ensureCrits(proj); ensurePencilsDown(proj);
     if(snap.status!==st) statusChanges.push({proj,from:snap.status,to:st});
     const snapDes=snap.designer||null, curDes=proj.designer||null;
     if(snapDes!==curDes) assignmentChanges.push({proj,field:'Designer',from:snapDes?briefPersonLabel(snapDes)||snapDes:'Unassigned',to:curDes?briefPersonLabel(curDes)||curDes:'Unassigned'});
@@ -19846,7 +19858,7 @@ document.addEventListener('click',e=>{
       // v1061: only clear the row once the fold has actually persisted. Removing it
       // unconditionally is what made a failing save look like a successful resolve.
       foldBtn.disabled=true; foldBtn.textContent='Saving\u2026';
-      _briefFold(spec).then(()=>_dropRow()).catch(err=>{
+      _briefFold(spec).then(ok=>{ if(ok===false) throw new Error('baseline save returned false'); _dropRow(); }).catch(err=>{
         console.error('[brief] fold failed \u2014 row kept:',err);
         foldBtn.disabled=false; foldBtn.textContent='Mark Reviewed';
         if(typeof showToast==='function') showToast('Could not save \u2014 see console');
