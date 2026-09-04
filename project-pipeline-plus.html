@@ -192,7 +192,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .fc-exp-btn:hover{background:rgba(0,0,0,.07);opacity:.82;}
 .fc-exp-btn.has-exp{filter:none;opacity:1;}
 /* v1022: Presentation scheduling button — sits left of the T milestone-set indicator */
-.fc-pres-btn{position:absolute;top:50%;right:26px;transform:translateY(-50%);width:20px;height:20px;border:none;background:none;padding:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;z-index:10;border-radius:3px;transition:background .12s,opacity .12s;filter:grayscale(1);opacity:.35;color:rgba(40,40,40,.6);}
+.fc-pres-btn{position:absolute;top:50%;right:28px;transform:translateY(-50%);width:20px;height:20px;border:none;background:none;padding:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;z-index:10;border-radius:3px;transition:background .12s,opacity .12s;filter:grayscale(1);opacity:.35;color:rgba(40,40,40,.6);}
 .fc-pres-btn:hover{background:rgba(0,0,0,.07);opacity:.7;}
 .fc-pres-btn.has-pres{filter:none;opacity:1;color:#c06820;}
 /* Presentation Gantt marker */
@@ -573,7 +573,15 @@ body.is-transitioning .section:not(.is-focus-outgoing){animation:hdrFadeIn 200ms
 .lane-row.pan-hover,.tl-ms-row.pan-hover{cursor:grab;}
 body.is-panning{cursor:grabbing!important;}
 body.is-panning *{cursor:grabbing!important;}
-.today-stripe{position:absolute;top:0;bottom:0;background:rgba(216,182,79,.09);border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;z-index:4;pointer-events:none;} /* v971: gold NOW-column outline, bolder */
+/* v1056: the NOW column is a single frame drawn once per section, floating above
+   every row, separator and gap, with a closed bottom edge. The old per-row stripes
+   redrew their own left/right borders on each row, so the line broke at every gap. */
+.today-stripe{display:none;} /* retired — kept so any stale call is harmless */
+.now-frame{position:absolute;top:0;pointer-events:none;z-index:60;
+  background:rgba(216,182,79,.09);
+  border:2.5px solid #d8b64f;border-top:none;
+  border-radius:0 0 3px 3px;
+}
 
 /* ── PHASE BARS ── */
 .phase-bar{
@@ -3362,7 +3370,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1050';
+const CORE_VERSION = 'v1056';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5094,7 +5102,6 @@ function populateCollapsedRow(proj, rowEl, ww, secType){
   // hitting its temporal dead zone and crashing the load; fixed.)
   { const _tw=todayDisplayWeek();
     if(_tw>=0&&_tw<C.numWeeks){
-      const _s=el('div','today-stripe'); _s.style.cssText=`left:${w2px(_tw)}px;width:${Math.round(ww)}px;`; rowEl.appendChild(_s);
     } }
   const isProjected=isUnsignedStatus(proj.status);
   const alpha=isProjected?.34:.74;
@@ -5285,7 +5292,11 @@ function buildFcMsRow(proj, capacitySection){
   if(capacitySection) row.dataset.capacitySection=capacitySection;
   if(proj.collapsed) row.classList.add('is-collapsed');
   const rhdl=el('div','proj-reorder-hdl'); rhdl.dataset.reorderProj=proj.id; rhdl.innerHTML=reorderSvg();
-  const stCol=el('div','fc-st-col'); stCol.style.width=C.statusW+'px';
+  // v1055: even spacing across the row's leading controls. Boxes are sized to their
+  // glyphs and the gaps are set explicitly, rather than falling out of box padding
+  // (which gave 10.5px after the handle and 18.5px before the badge).
+  rhdl.style.cssText='width:10px;margin-left:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
+  const stCol=el('div','fc-st-col'); stCol.style.cssText='width:20px;margin-left:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
   const badge=el('div','status-badge '+proj.status);
   badge.dataset.openStatusMenu='1'; badge.dataset.projId=proj.id; badge.innerHTML=statusSvg(proj.status);
   stCol.appendChild(badge);
@@ -5500,7 +5511,9 @@ function buildFcMsRow(proj, capacitySection){
     // Spacer pushes note+chev to the right edge
     const spacer=el('div',''); spacer.style.flex='1';
     // Note beside chevron — matches active project pattern
-    noteBtn.style.cssText='position:static;transform:none;opacity:0;width:26px;height:26px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:none;background:none;cursor:pointer;color:var(--tm);border-radius:3px;transition:opacity .12s,color .12s;';
+    // v1055: 13px glyph box with 8px padding — visual gap is 12px on each side,
+    // hit area stays 29px square. box-sizing:content-box keeps padding outside the width.
+    noteBtn.style.cssText='position:static;transform:none;opacity:0;box-sizing:content-box;width:13px;height:13px;padding:8px;margin-left:4px;margin-right:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:none;background:none;cursor:pointer;color:var(--tm);border-radius:3px;transition:opacity .12s,color .12s;';
     row.addEventListener('mouseenter',()=>noteBtn.style.opacity='1');
     row.addEventListener('mouseleave',()=>{ if(!proj.notes) noteBtn.style.opacity='0'; });
     if(proj.notes){ noteBtn.style.opacity='0.7'; noteBtn.style.color='var(--gold)'; }
@@ -5516,6 +5529,7 @@ function buildFcMsRow(proj, capacitySection){
     groupBtn.dataset.toggleGrouped=proj.id;
     groupBtn.dataset.tip=linked?'Linked — click to unlink phases':'Unlinked — click to link phases';
     groupBtn.innerHTML=linked?_chainSvg():_brokenChainSvg();
+    info.style.marginLeft='10px'; // v1055: 10px from the status badge to the name
     row.appendChild(rhdl); row.appendChild(noteBtn); row.appendChild(stCol); row.appendChild(info); row.appendChild(groupBtn); row.appendChild(chev);
   }
   return row;
@@ -5565,11 +5579,13 @@ function buildFcTallyPerson(person, section){
     lbl.dataset.pickName=person.id; lbl.dataset.pickSection=section;
     c.appendChild(lbl);
     const rWrap=el('div',''); rWrap.style.cssText='display:flex;align-items:center;gap:10px;flex-shrink:0;';
-    // Time Off — first
+    // v1054: Time Off sits in the Matterport column (right:70px), capacity in the
+    // exploratory column (right:49px) — absolute, matching the project rows below.
     const addBtn=el('button','timeoff-add-btn palm'+(_toRuns(person.timeOff||[]).length?' has-off':'')); addBtn.innerHTML='<img src="https://bellweatherllc.github.io/tools/logos/palm.svg" alt="" style="width:100%;height:100%;display:block;">';
-    addBtn.dataset.tip='Time off'; // v1041 / v1049: has-off at build time
+    addBtn.dataset.tip='Time off';
     addBtn.dataset.addTimeoff=person.id; addBtn.dataset.addSection=section;
-    rWrap.appendChild(addBtn);
+    addBtn.style.cssText='position:absolute;top:50%;right:70px;transform:translateY(-50%);width:18px;height:18px;';
+    c.appendChild(addBtn);
     // v1044: capacity boost button (+clock) — design person header only
     (()=>{
       if(!window._cbPopReady){
@@ -5627,8 +5643,9 @@ function buildFcTallyPerson(person, section){
               setBoost(_cbPid,w,getBoost(_cbPid,w)+d*5);
               _renderCapBoostPop(); // re-render — reads _cbPid and fresh boost values
               renderTally('design');
+              if(typeof rebuildSection==='function') rebuildSection('planning'); // v1053: Sales capacity reads the design tally
               window._refreshCapBoostBtns(_cbPid);
-              if(typeof saveSharedState==='function') saveSharedState();
+              triggerSave(); // v1053: saveSharedState never existed — the typeof guard was silently swallowing every write
             });
           }
           if(_cbPid===pid&&_cbPop.style.display!=='none'){ _cbPop.style.display='none'; _cbPid=null; return; }
@@ -5642,7 +5659,7 @@ function buildFcTallyPerson(person, section){
         };
         window._cbCapBoostSvg=CAP_BOOST_SVG;
       }
-      const cbBtn=el('button',''); cbBtn.style.cssText='background:none;border:none;padding:2px;cursor:pointer;display:flex;align-items:center;filter:grayscale(1);opacity:.45;transition:filter .12s,opacity .12s,color .12s;'; cbBtn.innerHTML=window._cbCapBoostSvg; cbBtn.dataset.tip='Add capacity hours · 8 weeks'; cbBtn.setAttribute('data-cap-boost',person.id); if(Object.keys(CAP_BOOSTS[person.id]||{}).length){ cbBtn.style.filter='none'; cbBtn.style.opacity='1'; cbBtn.style.color='#3b7fa8'; } cbBtn.addEventListener('click',e=>{e.stopPropagation();window.openCapBoostPicker(person.id,cbBtn);}); rWrap.appendChild(cbBtn);
+      const cbBtn=el('button',''); cbBtn.style.cssText='position:absolute;top:50%;right:49px;transform:translateY(-50%);width:18px;height:18px;background:none;border:none;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;filter:grayscale(1);opacity:.45;transition:filter .12s,opacity .12s,color .12s;'; cbBtn.innerHTML=window._cbCapBoostSvg; cbBtn.dataset.tip='Add capacity hours · 8 weeks'; cbBtn.setAttribute('data-cap-boost',person.id); if(Object.keys(CAP_BOOSTS[person.id]||{}).length){ cbBtn.style.filter='none'; cbBtn.style.opacity='1'; cbBtn.style.color='#3b7fa8'; } cbBtn.addEventListener('click',e=>{e.stopPropagation();window.openCapBoostPicker(person.id,cbBtn);}); c.appendChild(cbBtn); // v1054
     })();
     // v936: columns mirror the project rows below — eye over the Matterport
     // column, T over the milestone-set rectangles, hours over the chevrons.
@@ -5669,10 +5686,7 @@ function buildFcTallyPerson(person, section){
     const lbl=el('div','fc-tally-label'); lbl.textContent=person.label;
     lbl.style.cursor='pointer'; lbl.dataset.pickName=person.id; lbl.dataset.pickSection=section;
     const pmRWrap=el('div',''); pmRWrap.style.cssText='display:flex;align-items:center;gap:10px;flex-shrink:0;';
-    const addBtn=el('button','timeoff-add-btn palm'); addBtn.innerHTML='<img src="https://bellweatherllc.github.io/tools/logos/palm.svg" alt="" style="width:100%;height:100%;display:block;">';
-    addBtn.dataset.tip='Time off'; // v1041
-    addBtn.dataset.addTimeoff=person.id; addBtn.dataset.addSection=section;
-    pmRWrap.appendChild(addBtn);
+    // v1051: Time Off is a Design-only control — removed from Production
     const hrsC=el('div','fc-cap-hrs');
     hrsC.style.cssText='display:flex;align-items:center;gap:3px;flex-shrink:0;position:absolute;top:50%;right:0;transform:translateY(-50%);';
     const capInp=_makeCapInp(getTarget(person.id),v=>{ PERSON_TARGETS[person.id]=v; renderTally(section); triggerSave(); });
@@ -5686,7 +5700,6 @@ function buildFcTallyPerson(person, section){
 function buildTlTallyPerson(person, section){
   const r=el('div','tl-tally'); r.dataset.section=section; r.dataset.person=person.id;
   r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background-image:repeating-linear-gradient(90deg,transparent,transparent ${C.weekW-1}px,rgba(0,0,0,.05) ${C.weekW-1}px,rgba(0,0,0,.05) ${C.weekW}px);`;
-  const _tts=el('div','today-stripe'); _tts.style.cssText=`left:${w2px(todayDisplayWeek())}px;width:${C.weekW}px;`; r.appendChild(_tts); // v1014: column frame unbroken through tally
   return r;
 }
 function buildFcProdPersonHeader(person){
@@ -5702,15 +5715,11 @@ function buildFcProdPersonHeader(person){
   lbl.style.cssText='cursor:pointer;font-size:14px;'; 
   lbl.dataset.pickName=person.id; lbl.dataset.pickSection='production';
   c.appendChild(lbl);
-  const addBtn=el('button','timeoff-add-btn palm'); addBtn.innerHTML='<img src="https://bellweatherllc.github.io/tools/logos/palm.svg" alt="" style="width:100%;height:100%;display:block;">';
-  addBtn.dataset.tip='Time off'; // v1041
-  addBtn.dataset.addTimeoff=person.id; addBtn.dataset.addSection='production';
-  c.appendChild(addBtn); return c;
+  return c; // v1051: Time Off removed from Production
 }
 function buildTlProdPersonHeader(){
   const r=el('div','');
   r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background:#dbdbdb;border-bottom:1px solid var(--bdr);`;
-  const tw=todayDisplayWeek(); if(tw>=0&&tw<C.numWeeks){ const _s=el('div','today-stripe'); _s.style.cssText=`left:${w2px(tw)}px;width:${C.weekW}px;`; r.appendChild(_s); }
   return r;
 }
 // ── LC helpers ──
@@ -5743,8 +5752,6 @@ function buildFcLcPersonHeader(lc,key){
   const msToggle=el('button','lc-ms-toggle'+(msOn?' ms-on':''));
   msToggle.textContent='T'; msToggle.dataset.tip='Toggle Designer milestones (T1, T2, T3, C1, C2, Pencils Down)';
   msToggle.dataset.toggleLcDesignMs=lc.id;
-  const toBtn=el('button','timeoff-add-btn palm'); toBtn.innerHTML='<img src="https://bellweatherllc.github.io/tools/logos/palm.svg" alt="" style="width:100%;height:100%;display:block;">';
-  toBtn.dataset.tip='Time off'; // v1041
   const capInp=_makeCapInp(Math.round(getTarget(lc.id)),v=>{
     const rounded=Math.round(v); PERSON_TARGETS[lc.id]=rounded; capInp.value=rounded; // v936: whole hours
     const te=document.querySelector(`[data-person="${lc.id}"][data-section="lc"]`);
@@ -5753,8 +5760,7 @@ function buildFcLcPersonHeader(lc,key){
   });
   c.appendChild(chev); c.appendChild(lbl);
   const lcRWrap=el('div',''); lcRWrap.style.cssText='display:flex;align-items:center;gap:10px;flex-shrink:0;';
-  toBtn.dataset.addTimeoff=lc.id; toBtn.dataset.addSection='production';
-  lcRWrap.appendChild(toBtn);
+  // v1051: Time Off removed from Production LC rows
   // v936: mirrors the Design header — eye over the Matterport column, T over the
   // (empty here) milestone-set column, hours over the chevrons at the row edge.
   msToggle.style.cssText='position:absolute;top:50%;right:61px;transform:translateY(-50%);'; // v937: swapped with the eye
@@ -5897,8 +5903,6 @@ function buildTlLcProject(proj,lcId){
   wrap.dataset.projId=proj.id; wrap.dataset.lcId=lcId; // v846: lets the live repaint find this row
   const laneRow=el('div','lane-row');
   laneRow.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;position:relative;`;
-  { const tw=todayDisplayWeek(); // v969: collapsed LC rows get the NOW stripe too
-    if(tw>=0&&tw<C.numWeeks){ const s=el('div','today-stripe'); s.style.cssText=`left:${w2px(tw)}px;width:${C.weekW}px;`; laneRow.appendChild(s); } }
   if(!isCol){
     const hrs=proj.lcHours?.[lcId]||[0,0,0];
     phases.forEach((ph,i)=>{
@@ -6034,7 +6038,6 @@ function buildTlLcTally(lcId){
   const peakH=Math.max(target,...tally,1), avail=C.tallyH-8;
   const lineY=avail-Math.round((target/peakH)*avail);
   const tLine=el('div','tally-target-line'); tLine.style.top=(lineY+4)+'px'; r.appendChild(tLine);
-  const _ttlc=el('div','today-stripe'); _ttlc.style.cssText=`left:${w2px(todayDisplayWeek())}px;width:${C.weekW}px;`; r.appendChild(_ttlc); // v1014
   const _tw=C.weekW; // C.weekW is already production-zoomed at all valid call sites
   tally.forEach((h,w)=>{
     if(h<0.05) return;
@@ -6061,7 +6064,6 @@ function buildFcTallyTotal(){
 function buildTlTallyTotal(){
   const r=el('div','tl-tally'); r.dataset.section='production'; r.dataset.person='prod-total';
   r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background:#b8c4cc;border-bottom:2px solid rgba(40,40,40,.25);background-image:repeating-linear-gradient(90deg,transparent,transparent ${C.weekW-1}px,rgba(0,0,0,.07) ${C.weekW-1}px,rgba(0,0,0,.07) ${C.weekW}px);`;
-  const _ttpt=el('div','today-stripe'); _ttpt.style.cssText=`left:${w2px(todayDisplayWeek())}px;width:${C.weekW}px;`; r.appendChild(_ttpt); // v1014
   return r;
 }
 function buildTlMsRow(proj){
@@ -6388,7 +6390,6 @@ function buildLaneRow(proj,laneId,includeControls,showJunctions,isGhost){
   const row=el('div','lane-row'); row.dataset.lane=laneId; row.dataset.projId=proj.id;
   row.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.laneH}px;`;
   const tw=todayDisplayWeek();
-  if(tw>=0&&tw<C.numWeeks){ const s=el('div','today-stripe'); s.style.cssText=`left:${w2px(tw)}px;width:${C.weekW}px;`; row.appendChild(s); }
   populateBars(row,proj,laneId,includeControls,showJunctions,isGhost);
   return row;
 }
@@ -6454,7 +6455,6 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
   if(!proj.collapsed){
     // Expanded: today stripe + phase bars
     const tw=todayDisplayWeek();
-    if(tw>=0&&tw<C.numWeeks){ const s=el('div','today-stripe'); s.style.cssText=`left:${w2px(tw)}px;width:${C.weekW}px;`; laneRow.appendChild(s); }
     laneIds.forEach(lid=>populateBars(laneRow,proj,lid,includeControls,showJunctions));
     // v917 — Design screen: a slim cue for where the production phases fall.
     // Phase III's right edge is tied to production start, so seeing pre-con and
@@ -6523,6 +6523,17 @@ function updateSlbYear(ss){
   yrLbl.textContent=visYear;
   yrLbl.style.color=visYear%2===0?'rgba(80,200,120,.90)':'rgba(220,80,80,.85)';
 }
+// v1056: one gold NOW frame per section. Height is measured after layout so the
+// frame closes at the true bottom of the content rather than being clipped.
+function buildNowFrame(){
+  const tw=todayDisplayWeek();
+  if(tw<0||tw>=C.numWeeks) return null;
+  const f=el('div','now-frame');
+  f.style.left=w2px(tw)+'px';
+  f.style.width=C.weekW+'px';
+  f.style.height='100%';
+  return f;
+}
 function buildMonthLineOverlay(){
   const overlay=el('div',''); const totalW=w2px(C.numWeeks);
   overlay.style.cssText=`position:absolute;top:0;left:0;width:${totalW}px;height:9999px;pointer-events:none;z-index:10;`;
@@ -6545,7 +6556,6 @@ function buildMonthLineOverlay(){
 function buildPersonSep(){
   const fcSep=el('div',''); fcSep.style.cssText=`height:${C.personSepH}px;background:rgba(0,0,0,.30);border-top:1px solid rgba(0,0,0,.35);`;
   const tcSep=el('div',''); tcSep.style.cssText=`height:${C.personSepH}px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;background:rgba(0,0,0,.30);border-top:1px solid rgba(0,0,0,.35);`;
-  const _tws=todayDisplayWeek(); if(_tws>=0&&_tws<C.numWeeks){ const _ss=el('div','today-stripe'); _ss.style.cssText=`left:${w2px(_tws)}px;width:${C.weekW}px;`; tcSep.appendChild(_ss); }
   return[fcSep,tcSep];
 }
 // ════════════════════════════════════════════════  TIME-OFF (day-granular — v929)
@@ -6609,6 +6619,9 @@ function appendTimeoffStrips(ov, person, section){
   });
 }
 function renderTimeoffOverlay(personId, section){
+  // v1051: keep the palm button state in step with the data on every overlay render
+  try{ const _p=personById(personId); if(_p){ const _on=_toRuns(_p.timeOff||[]).length>0;
+    document.querySelectorAll('[data-add-timeoff="'+personId+'"]').forEach(b=>b.classList.toggle('has-off',_on)); } }catch(_){}
   const person=personById(personId); if(!person)return;
   document.querySelectorAll(`.timeoff-overlay-cap[data-person-id="${personId}"][data-section="${section}"]`).forEach(ov=>{
     ov.innerHTML=''; appendTimeoffStrips(ov,person,section);
@@ -6773,7 +6786,7 @@ function openTimeoffCal(personId, section, anchorEl){
     afterChange:()=>{
       renderTimeoffOverlay(personId,section); triggerSave();
       const _to=_toRuns(person.timeOff||[]).length>0;
-      document.querySelectorAll('[data-addtimeoff="'+personId+'"]').forEach(b=>b.classList.toggle('has-off',_to));
+      document.querySelectorAll('[data-add-timeoff="'+personId+'"]').forEach(b=>b.classList.toggle('has-off',_to)); // v1051: correct kebab-case attribute
     },
     historyLabel:verb=>`${person.label} \u2014 time off ${verb}`,
     countLabel:n=>n+(n===1?' day off total':' days off total'),
@@ -7040,6 +7053,7 @@ function buildDesignSection(){
     const desMonthOverlay=buildMonthLineOverlay();
     tc.style.position='relative';
     tc.appendChild(desMonthOverlay);
+    { const _nf=buildNowFrame(); if(_nf) tc.appendChild(_nf); } // v1056
     // Date header lives in sticky-cal-hdr above the scroll area
     // Unassigned separator bar
     const tlUnSep=el('div',''); tlUnSep.style.cssText=`width:${w2px(C.numWeeks)}px;height:22px;background:var(--sep);`;
@@ -7372,11 +7386,9 @@ function buildProdSection(){
         const grp=el('div','person-group-tl'); grp.dataset.personId=pmId; grp.dataset.section='production';
         const _twx=todayDisplayWeek();
         const topTlSp=el('div',''); topTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;`;
-        if(_twx>=0&&_twx<C.numWeeks){ const _st=el('div','today-stripe'); _st.style.cssText=`left:${w2px(_twx)}px;width:${C.weekW}px;`; topTlSp.appendChild(_st); }
         grp.appendChild(topTlSp);
         projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,-9,['DA'],[])));
         const botTlSp=el('div',''); botTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;`;
-        if(_twx>=0&&_twx<C.numWeeks){ const _sb=el('div','today-stripe'); _sb.style.cssText=`left:${w2px(_twx)}px;width:${C.weekW}px;`; botTlSp.appendChild(_sb); }
         grp.appendChild(botTlSp);
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=pmId; ov.dataset.section='production';
         ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:100%;pointer-events:none;z-index:10;`;
@@ -7410,7 +7422,6 @@ function buildProdSection(){
       }
       // TL
       const tlUnHdr=el('div',''); tlUnHdr.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background:#c5cdd4;border-bottom:1px solid rgba(40,40,40,.12);`;
-      { const _twu=todayDisplayWeek(); if(_twu>=0&&_twu<C.numWeeks){ const _su=el('div','today-stripe'); _su.style.cssText=`left:${w2px(_twu)}px;width:${C.weekW}px;`; tlUnHdr.appendChild(_su); } }
       tl_els.push(tlUnHdr);
       if(!PROD_UNASSIGNED_COLLAPSED){
         const tlGrp=el('div','unassigned-group-tl'); tlGrp.classList.toggle('has-projects',unassigned.length>0); tlGrp.style.width=w2px(C.numWeeks)+'px';
@@ -7546,6 +7557,7 @@ function buildProdSection(){
   function populateProdTl(tc){
     tcInner.style.position='relative';
     tcInner.appendChild(buildMonthLineOverlay());
+    { const _nf=buildNowFrame(); if(_nf) tcInner.appendChild(_nf); } // v1056
     tc.appendChild(tcInner);
   }
   const prodGanttScroll=buildGanttRow('production',fc,populateProdTl,prodCmdBar);
@@ -9908,9 +9920,9 @@ function setSaveState(state){
 // no concurrency story at all (you only collide with yourself).
 // Refresh palm buttons after applying time off from shared state
 function _refreshAllPalmBtns(){
-  [...DESIGNERS,...PROD_PMS].forEach(p=>{
+  DESIGNERS.forEach(p=>{ // v1051: Design only
     const on=_toRuns(p.timeOff||[]).length>0;
-    document.querySelectorAll('[data-addtimeoff="'+p.id+'"]').forEach(b=>b.classList.toggle('has-off',on));
+    document.querySelectorAll('[data-add-timeoff="'+p.id+'"]').forEach(b=>b.classList.toggle('has-off',on)); // v1051
   });
 }
 function _collectTimeOff(){
@@ -12779,7 +12791,11 @@ async function initFromSharePoint(){
       // v1048: guard — require that at least some PPs have slotWeek data before seeding the
       // baseline. An all-null snapshot would fire 'slot changed' for every project on next load.
       const _ppReady=!PLANNING_PROJECTS.length||PLANNING_PROJECTS.some(pp=>pp.slotWeek!=null);
-      if(!WEEKLY_BASELINE&&PROJECTS.length&&_ppReady) saveBriefBaseline(snapshotPipeline()).catch(()=>{});
+      // v1052: only seed when SharePoint genuinely has no baseline — re-check after the
+      // load resolves so a slow fetch can't cause us to overwrite existing folds.
+      if(!WEEKLY_BASELINE&&PROJECTS.length&&_ppReady){
+        loadBriefBaselineFromSP().then(()=>{ if(!WEEKLY_BASELINE) saveBriefBaseline(snapshotPipeline()).catch(()=>{}); }).catch(()=>{});
+      }
     }).catch(()=>{});
     loadBriefBugsFromSP().catch(()=>{});
     loadBriefAcksFromSP().catch(()=>{});
@@ -16045,6 +16061,30 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1056', date: '2026-09-04',
+    entries:['The gold NOW column is now a single frame per section rather than twelve per-row stripes. It floats above every row, separator, proposed-project pill and inter-row gap at z-index 60, runs the full height of the section, and closes with a bottom edge instead of trailing off. The date header keeps its own gold cell so the frame reads as continuing up into it.'],
+  },
+  {
+    version: 'v1055', date: '2026-09-04',
+    entries:['Design project row spacing evened out. The leading controls previously took their spacing from box padding, which produced a 10.5px gap after the drag handle and 18.5px before the status badge. Each box is now sized to its own glyph with explicit gaps: 12px either side of the pencil, 10px from the badge to the project name. The pencil keeps a 29px hit area via padding with content-box sizing. Net effect is roughly 13px more room for the name before it meets the Matterport icon.'],
+  },
+  {
+    version: 'v1054', date: '2026-09-04',
+    entries:['Design person header: Time Off now sits in the Matterport column and the capacity button in the exploratory column, both absolutely positioned to line up with the project rows below rather than floating in a flex wrapper. Presentation icon nudged 2px left.'],
+  },
+  {
+    version: 'v1053', date: '2026-09-04',
+    entries:['Capacity adjustments now persist. The handler called saveSharedState(), which does not exist — and the typeof guard I wrapped it in silently swallowed the failure, so every change was in-memory only and vanished on reload. It now calls triggerSave(), the real write path, which already includes CAP_BOOSTS in its payload. The Sales planning section is also rebuilt on each change so adjusted capacity is reflected there immediately.'],
+  },
+  {
+    version: 'v1052', date: '2026-09-04',
+    entries:['Resolving brief entries now sticks across reloads. _briefFold saved the updated baseline but never refreshed its ts, and loadBriefBaselineFromSP only adopts a remote baseline when it is newer than the one in memory — so the saved folds were being discarded on the next load. The fold now stamps the current time, and the auto-seed re-checks SharePoint before writing so a slow fetch cannot overwrite existing folds.'],
+  },
+  {
+    version: 'v1051', date: '2026-09-04',
+    entries:['Time Off is now Design-only — removed from Production PM headers and LC rows. Palm colour fixed: the update selector was querying [data-addtimeoff] but dataset.addTimeoff writes the attribute as data-add-timeoff, so it never matched. Corrected, and the button state is now also refreshed on every time-off overlay render so pre-existing data shows immediately.'],
+  },
+  {
     version: 'v1050', date: '2026-09-04',
     entries:['Slot change noise in the weekly brief: the root cause was diffPlanning comparing slotId (a volatile SharePoint item ID) alongside slotWeek. slotId changes every time the planning_projects CORE_Config row is recreated rather than patched, so the diff fired on every page load even when nothing actually moved. Now compares slotWeek only. slotId also removed from the baseline snapshot.'],
   },
@@ -17456,6 +17496,10 @@ async function _briefFold(spec){
     case 'sched':   if(proj&&snap) _briefFoldSched(proj,snap,spec.f); break;
   }
   WEEKLY_BASELINE.version=getPipelineVersion();
+  // v1052: stamp the fold time. Without this the ts stayed at first-creation, and
+  // loadBriefBaselineFromSP — which only adopts a remote baseline when it is NEWER —
+  // would discard the saved folds on the next page load.
+  WEEKLY_BASELINE.ts=new Date().toISOString();
   await saveBriefBaseline(WEEKLY_BASELINE);
   updateBriefBaselineLbl();
 }
