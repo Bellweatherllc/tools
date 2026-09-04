@@ -211,4 +211,94 @@ What's *not* covered: the documents behind the pills (those live in project fold
 
 This manual describes the Pipeline and its companion Projects Manager as deployed in early-September 2026. It should be re-edited whenever a feature changes how a person works — not for every release, but for every change a first-time reader would notice. The edition line at the top is the manual's own date; update it on every edit.
 
+# Pipeline Manual — New Sections (September 2026)
+
+*These sections belong in Part I of the manual, under the Design Planning screen and the Operations screen respectively. Exploratory scheduling was documented in the August 2026 session and is already in the manual — reference it where noted.*
+
+---
+
+## Time Off
+
+Each designer has a palm-tree icon on their row header in Design Planning. Clicking it opens a calendar picker — a Monday-through-Friday grid using the same style as the presentation and Matterport calendars — where you can mark individual days off. Click a day to toggle it on or off; the calendar stays open while you work. Close it with the × button or the Escape key.
+
+Days you mark are drawn as gold-tinted strips on the designer's Gantt row, spanning across weekends so consecutive workdays read as one continuous block. The palm icon turns green when any days are booked.
+
+**Syncing to Outlook.** The calendar has a "Sync to Outlook" link at the bottom. It writes each run of consecutive days as a single all-day out-of-office event on your calendar — so a Thursday and the following Monday become one event. Events are updated when you re-sync, not duplicated. This link is only active when you're looking at your own time off; you can mark days for another designer, but only they can push them to Outlook.
+
+Time Off is a Design-screen feature only. It does not appear on Production rows.
+
+---
+
+## Presentation Scheduling
+
+On each project row in Design Planning, the presentation icon (a small numbered screen) opens a scheduling picker. You can set the date, time, and duration of a client presentation, and choose which conference room to book.
+
+Scheduled presentations appear as numbered amber markers on the Gantt — "1," "2," and so on — in the same column as the milestone markers. The presentation count appears in the project's Key Dates column.
+
+**Pushing to Outlook.** When you save a presentation, the tool posts an event to the signed-in designer's Outlook calendar and sends a calendar invite to the conference room as a required attendee. If you later edit or remove the presentation, the calendar event is updated or deleted accordingly. The event stores its Outlook event ID so it stays in sync.
+
+Conference rooms available: Conference Room 1 (default), Conference Room 2, Conference Room 3.
+
+**Key Data — Operations panel.** The Key Data panel (accessible from the Operations header bar) shows a summary table of DA signing dates, presentations, and CA signing dates for every active project. Presentations appear as dated columns between DA and CA, with time, duration, and room on each row. There is a copy button on each project row for pasting into an email or message.
+
+---
+
+## Designer Capacity Adjustment
+
+Each designer's row header in Design Planning has a clock-with-plus icon. Clicking it opens an eight-week picker showing the hours already allocated to that designer from projects, plus any manual adjustment you've made.
+
+Use the + and − buttons to add or remove hours in 5-hour steps. Positive values reflect extra capacity available — say, a light week. Negative values reflect reduced capacity — a week of meetings, site visits, or partial availability. The adjustment stacks on top of the project hours in the tally bar; it does not change the target line.
+
+Changes are saved automatically and appear in two places: the tally bar on the Design screen, and the designer capacity chips and 8-week detail panel on the Sales screen. Both update immediately. Adjustments persist across sessions and are shared across all open instances of the tool.
+
+The weekly hour baseline (the number next to the "h" in the row header) is a separate control — it sets the target line, not the tally.
+
+---
+
+## Operations Screen
+
+The Operations screen is the fourth tab on the pipeline, accessible to the leadership team and Patti. It is gated by the OPS role on CORE_TeamMembers; the tab does not appear for anyone without that role.
+
+### Four-Week Cash View
+
+The main table shows four weeks of cash position, running across as columns. The first two weeks (NOW, shown with a gold background) reflect real figures from the QuickBooks weekly report. The next two weeks are projected.
+
+**Rows:**
+
+- **Bank Balance** — the Meridian operating account (x7490), read from the QuickBooks summary block.
+- **Payroll** — the current payroll obligation. This is a standing balance, not a weekly figure: it is subtracted once in week one only.
+- **Payables** — the current payables total, treated the same way as payroll: subtracted once from week one.
+- **AR Expected** — design invoices seeded from each project's DA, showing the week each invoice is expected. Construction invoices are separate (pending full build-out).
+- **Scenarios** — each switched-on maybe appears as its own row, landing in the week it's anchored to. Scenarios are shared across all OPS users and saved to CORE.
+- **Net Position** — a running forecast. Week one opens from the bank balance minus payroll and payables, then each subsequent week adds that week's AR and any active scenarios.
+
+**Zone colors:** Weeks 1–2 carry a gold tint (NOW). Weeks 3–4 carry a blue tint (projected). The gold frame around the NOW column matches the one on the Design and Production Gantt.
+
+### QuickBooks Connection
+
+The screen reads the most recent weekly QB report automatically when you open Operations. Patti files reports into the `OPSSEC Financial / 2. QuickBooks / Weekly QB Reports` folder on OperationsSecure; the tool finds the newest file in the parent folder and its year subfolders, so the filing delay at the start of each month is invisible to the tool.
+
+The subheader line shows the filename of the report that was read. If it says "failed," check the console for the specific error.
+
+### Scenarios ("What Could Move")
+
+The scenario panel on the right lets anyone with the OPS role add, toggle, and remove maybe-items — money that might come in or go out but isn't certain. Each scenario has a name, an amount, a direction (in or out), an anchored week, and an attribution. Toggling one on or off immediately shifts the Net Position for that week and all subsequent weeks.
+
+Scenarios persist in CORE_Config and are shared across all users.
+
+### Key Data — Operations
+
+The "Key Data — Operations" button in the Operations header opens a slide-in panel showing signing dates and presentations for every active project, sorted by CA date. Columns are DA, then any upcoming presentations, then CA. Click the copy icon on any project row to copy its dates as plain text.
+
+### Alerts
+
+The Alerts section surfaces design drift (when a seeded invoice date moves away from what the DA said) and construction drift (when a production date shifts against the pipeline's own dates). Alerts appear with a type tag, the project name, and the specific change. Acknowledging an alert removes it until the next drift occurs.
+
+---
+
+## A note on Exploratory Scheduling
+
+Exploratory scheduling (the star icon on project rows) was added in August 2026 and is already documented in the manual. It works on the same calendar-picker system as Time Off and Matterport — the three share the same component. See the Exploratory section in Part I for details.
+
+
 The words of this manual live in a plain-text file (`pipeline-manual.md` stored on GitHub) that anyone can read and the maintainer can edit — no web-page code involved. The page that displays it (`pipeline-manual.html`) handles all the styling automatically and never needs touching. Edit the words, save, and the manual updates.
