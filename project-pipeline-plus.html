@@ -3063,6 +3063,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-sw-mini.on{background:#d8b64f;}
 .ops-sw-mini.on::after{transform:translateX(11px);}
 .ops-sc-off-amt{color:#c4bfb2 !important;} /* v1090: off = grayed figure, not a ghosted row */
+.ops-sc-num{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.02em;color:#7a5c00;background:rgba(216,182,79,.28);border-radius:20px;padding:1px 7px;margin-right:6px;vertical-align:1px;} /* v1098: ties the card row to its cash-view row */
 .ops-sc-edit{font-size:10.5px;font-weight:600;font-family:inherit;color:#1f2e3e;background:#f5f3ee;border:1px solid #e4dac4;border-radius:20px;padding:3px 10px;cursor:pointer;white-space:nowrap;flex-shrink:0;align-self:center;} /* v1093 */
 .ops-sc-edit:hover{background:#1f2e3e;color:#fff;border-color:#1f2e3e;}
 .ops-sc-cell{display:flex;align-items:center;justify-content:flex-end;gap:5px;}
@@ -3427,7 +3428,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1097';
+const CORE_VERSION = 'v1098';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -20140,7 +20141,14 @@ function opsDrawScenarios(W,root){
   // v1091: the card lists every scenario, in-window ones included, as a reference and an
   // edit surface. No toggles here — on/off only means something inside the four-week
   // window, and there it lives on the cash-table cell. Click a row to view and edit it.
-  const _sorted=[...OPS_SCENARIOS].sort((a,b)=>{ const wa=a.wk<0?9999:a.wk; const wb=b.wk<0?9999:b.wk; return wa-wb; });
+  // v1098: numbered (in-window) scenarios first, in cash-table order, so #1 #2 #3 read
+  // top to bottom and line up with the rows above; everything else follows by week.
+  const _sorted=[...OPS_SCENARIOS].sort((a,b)=>{
+    if(a._num&&b._num) return a._num-b._num;
+    if(a._num) return -1;
+    if(b._num) return 1;
+    const wa=a.wk<0?9999:a.wk, wb=b.wk<0?9999:b.wk; return wa-wb;
+  });
   const _accSc=_sorted.filter(sc=>sc.wk>=0&&sc.wk<2); // v1097: close the gold frame top and bottom
   let inWin=0;
   el.innerHTML=_sorted.length?_sorted.map(s=>{
@@ -20148,8 +20156,10 @@ function opsDrawScenarios(W,root){
     const zone=s.wk<0?'past':s.wk<2?'acc':s.wk<4?'proj':'beyond';
     const _fc=zone==='acc'?(_accSc[0]===s?' zone-acc-first':'')+(_accSc[_accSc.length-1]===s?' zone-acc-last':''):'';
     return '<div class="ops-sc zone-'+zone+_fc+'" data-id="'+s.id+'" style="cursor:pointer;">'
-    +'<div class="ops-sc-bd"><div class="ops-sc-t">'+diEsc(s.t)+(here?' <span style="font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#7a5c00;background:rgba(216,182,79,.25);border-radius:20px;padding:2px 7px;margin-left:5px;">in cash view</span>':'')+'</div>'
-    +'<div class="ops-sc-m">'+diEsc(s.m?s.m+'. ':'')+(w?'Lands the week of '+w.lab+'.':(s.wk<0?'That week has passed.':'Beyond four weeks.'))+(s.by?' <span style="color:#a3a3a3;">\u2014 '+diEsc(s.by.split(' ')[0])+'</span>':'')+'</div></div>'
+    +'<div class="ops-sc-bd"><div class="ops-sc-t">'
+      +(s._num?'<span class="ops-sc-num" title="Scenario #'+s._num+' in the cash view">#'+s._num+'</span>':'')
+      +diEsc(s.t)+'</div>'
+    +'<div class="ops-sc-m">'+diEsc(s.m?s.m+'. ':'')+(s._num?'Scenario #'+s._num+' in the cash view. ':'')+(w?'Lands the week of '+w.lab+'.':(s.wk<0?'That week has passed.':'Beyond four weeks.'))+(s.by?' <span style="color:#a3a3a3;">\u2014 '+diEsc(s.by.split(' ')[0])+'</span>':'')+'</div></div>'
     +'<div class="ops-sc-amt '+s.dir+'">'+(s.dir==='in'?'+':'\u2212')+opsMoney(s.amt)+'</div>'
     +'<button type="button" class="ops-sc-edit" data-sc-cardedit="'+s.id+'">Edit</button>'
     +'<button type="button" class="ops-sc-del" data-del="'+s.id+'" aria-label="Remove">\u00d7</button></div>'; }).join('')
