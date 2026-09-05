@@ -3425,7 +3425,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1090';
+const CORE_VERSION = 'v1091';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -19802,7 +19802,7 @@ function opsRenderInto(root){
     +'<div class="ops-af-row"><input type="text" id="opsAfNote" placeholder="Note \u2014 who told you, and when"></div>'
     +'<div class="ops-af-err" id="opsAfErr"></div>'
     +'<div class="ops-af-act"><button type="button" id="opsAfCancel">Cancel</button><button type="button" class="ops-af-save" id="opsAfSave">Add it</button></div></div>'
-    +'<div id="opsScList"></div><div class="ops-sc-foot"><span>Add here · scenarios within four weeks move to the cash view.</span><span id="opsScCount"></span></div></div>'
+    +'<div id="opsScList"></div><div class="ops-sc-foot"><span>Click any scenario to view or edit it · switch them on and off in the cash view.</span><span id="opsScCount"></span></div></div>'
     +'</div>'
     // v1084: alerts removed from here — now inline on invoice rows
     +(caMoves.length?'<div class="ops-h"><h2>CA dates that have moved</h2><span class="ops-sub">Moving a CA here does not change BuilderTrend \u2014 an LC makes that change by hand</span><div class="ops-rule"></div></div>'+'<div class="ops-card">'+caRows+'</div>':'')
@@ -19956,27 +19956,39 @@ function opsRenderInto(root){
 (()=>{
   const el=document.createElement('div'); el.id='opsCellTip';
   document.body.appendChild(el);
-  let _curCell=null;
-  function showTip(cell){
-    if(_curCell===cell){ el.classList.remove('on'); _curCell=null; return; }
-    _curCell=cell;
-    const rk=cell.dataset.opsRow, wk=parseInt(cell.dataset.opsWk||'0'), scId=cell.dataset.opsScId||'';
-    el.innerHTML=opsCellTipHtml(rk,wk,scId);
-    const cr=cell.getBoundingClientRect(), tw=Math.min(290,window.innerWidth-16);
+  let _curCell=null, _curWk=0, _curScId='';
+  function place(anchor){
+    const cr=anchor.getBoundingClientRect(), tw=Math.min(290,window.innerWidth-16);
     let lx=cr.left, ty=cr.bottom+6;
     if(lx+tw>window.innerWidth-8) lx=window.innerWidth-tw-8;
     if(ty+220>window.innerHeight) ty=Math.max(6,cr.top-el.offsetHeight-6);
     el.style.cssText='left:'+lx+'px;top:'+ty+'px;max-width:'+tw+'px;';
     el.classList.add('on');
   }
+  function showTip(cell){
+    if(_curCell===cell&&el.classList.contains('on')){ el.classList.remove('on'); _curCell=null; return; }
+    _curCell=cell;
+    _curWk=parseInt(cell.dataset.opsWk||'0'); _curScId=cell.dataset.opsScId||'';
+    el.innerHTML=opsCellTipHtml(cell.dataset.opsRow,_curWk,_curScId);
+    place(cell);
+  }
   window._opsCellTipShow=showTip;
+  // v1091: open the same panel from the scenario card, where there is no table cell to anchor to
+  window._opsScTipShow=function(scId,anchor){
+    if(_curScId===scId&&el.classList.contains('on')){ el.classList.remove('on'); _curScId=''; return; }
+    _curCell=null; _curScId=scId; _curWk=0;
+    el.innerHTML=opsCellTipHtml('sc',0,scId);
+    place(anchor);
+  };
   // v1086: re-render the tip body in place (used to swap between view and edit)
   function repaint(rk){
-    if(!_curCell) return;
-    el.innerHTML=opsCellTipHtml(rk,parseInt(_curCell.dataset.opsWk||'0'),_curCell.dataset.opsScId||'');
+    el.innerHTML=opsCellTipHtml(rk,_curWk,_curScId);
   }
   let _editDir=null;
   el.addEventListener('click',e=>{
+    // v1091: repaint() detaches the clicked button, so the document close-listener would
+    // see a node with no #opsCellTip ancestor and shut the panel. Stop it here.
+    e.stopPropagation();
     const ed=e.target.closest('[data-sc-edit]');
     if(ed){ const sc=OPS_SCENARIOS.find(x=>x.id===ed.dataset.scEdit); _editDir=sc?sc.dir:'out'; repaint('sc-edit'); return; }
     const ca=e.target.closest('[data-sc-cancel]');
@@ -19994,7 +20006,7 @@ function opsRenderInto(root){
       if(!isNaN(amt)&&amt>0) sc.amt=amt;
       if(m!=null) sc.m=m.trim();
       if(_editDir) sc.dir=_editDir;
-      el.classList.remove('on'); _curCell=null;
+      el.classList.remove('on'); _curCell=null; _curScId='';
       opsSaveScenarios().catch(err=>showToast('Scenario not saved: '+err.message));
       const r=document.querySelector('.ops-root'); if(r) opsRenderInto(r);
       return;
@@ -20112,17 +20124,22 @@ function opsCellTipHtml(rk,wk,scId){
 }
 function opsDrawScenarios(W,root){
   const el=(root||document).querySelector('#opsScList'); if(!el) return;
-  let on=0;
-  // v1090: in-window scenarios (wk 0-3) live in the cash table — this list holds only
-  // the ones outside that window, so nothing appears twice.
-  const _all=[...OPS_SCENARIOS].sort((a,b)=>{ const wa=a.wk<0?9999:a.wk; const wb=b.wk<0?9999:b.wk; return wa-wb; });
-  const _sorted=_all.filter(sc=>sc.wk<0||sc.wk>=4);
-  el.innerHTML=_sorted.length?_sorted.map(s=>{ if(s.on) on++; const w=W[s.wk]; const zone=s.wk<0?'past':'beyond';
-    return '<div class="ops-sc zone-'+zone+(s.on?' on':'')+'" data-id="'+s.id+'"><button type="button" class="ops-sw" role="switch" aria-checked="'+s.on+'"></button>'
-    +'<div class="ops-sc-bd"><div class="ops-sc-t">'+diEsc(s.t)+'</div><div class="ops-sc-m">'+diEsc(s.m?s.m+'. ':'')+(w?'Lands the week of '+w.lab+'.':(s.wk<0?'That week has passed.':'Beyond four weeks.'))+(s.by?' <span style="color:#a3a3a3;">\u2014 '+diEsc(s.by.split(' ')[0])+'</span>':'')+'</div></div>'
-    +'<div class="ops-sc-amt '+s.dir+'">'+(s.dir==='in'?'+':'\u2212')+opsMoney(s.amt)+'</div><button type="button" class="ops-sc-del" data-del="'+s.id+'" aria-label="Remove">\u00d7</button></div>'; }).join('')
-    :'<div class="ops-empty">'+(OPS_SCENARIOS.length?'All scenarios fall inside the four-week window \u2014 see the cash view above.':'Nothing on the maybe list.')+'</div>';
-  const c=(root||document).querySelector('#opsScCount'); if(c) c.textContent=(_sorted.length?on+' of '+_sorted.length+' beyond window':(OPS_SCENARIOS.length?'all in cash view':''));
+  // v1091: the card lists every scenario, in-window ones included, as a reference and an
+  // edit surface. No toggles here — on/off only means something inside the four-week
+  // window, and there it lives on the cash-table cell. Click a row to view and edit it.
+  const _sorted=[...OPS_SCENARIOS].sort((a,b)=>{ const wa=a.wk<0?9999:a.wk; const wb=b.wk<0?9999:b.wk; return wa-wb; });
+  let inWin=0;
+  el.innerHTML=_sorted.length?_sorted.map(s=>{
+    const w=W[s.wk]; const here=s.wk>=0&&s.wk<4; if(here) inWin++;
+    const zone=s.wk<0?'past':s.wk<2?'acc':s.wk<4?'proj':'beyond';
+    return '<div class="ops-sc zone-'+zone+'" data-id="'+s.id+'" style="cursor:pointer;">'
+    +'<div class="ops-sc-bd"><div class="ops-sc-t">'+diEsc(s.t)+(here?' <span style="font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#7a5c00;background:rgba(216,182,79,.25);border-radius:20px;padding:2px 7px;margin-left:5px;">in cash view</span>':'')+'</div>'
+    +'<div class="ops-sc-m">'+diEsc(s.m?s.m+'. ':'')+(w?'Lands the week of '+w.lab+'.':(s.wk<0?'That week has passed.':'Beyond four weeks.'))+(s.by?' <span style="color:#a3a3a3;">\u2014 '+diEsc(s.by.split(' ')[0])+'</span>':'')+'</div></div>'
+    +'<div class="ops-sc-amt '+s.dir+'">'+(s.dir==='in'?'+':'\u2212')+opsMoney(s.amt)+'</div>'
+    +'<button type="button" class="ops-sc-del" data-del="'+s.id+'" aria-label="Remove">\u00d7</button></div>'; }).join('')
+    :'<div class="ops-empty">Nothing on the maybe list.</div>';
+  const c=(root||document).querySelector('#opsScCount');
+  if(c) c.textContent=OPS_SCENARIOS.length?(inWin?inWin+' of '+OPS_SCENARIOS.length+' in the cash view':OPS_SCENARIOS.length+' beyond the window'):'';
 }
 
 // ════════════════════════════════  DESIGN INVOICES — DA seed (v981–v982)
