@@ -2936,7 +2936,9 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-group.zone-acc{position:relative;border-top:2.5px solid #d8b64f;}
 .ops-inv.zone-acc{border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;}
 .ops-group.zone-acc{border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;}
-.ops-inv.zone-acc-last,.ops-empty.zone-acc-last{border-bottom:2.5px solid #d8b64f;border-bottom-left-radius:4px;border-bottom-right-radius:4px;} /* v1077: explicit class; :last-of-type was resolving to the wrong sibling */
+.ops-inv.zone-acc-last,.ops-empty.zone-acc-last{border-bottom:2.5px solid #d8b64f;border-bottom-left-radius:4px;border-bottom-right-radius:4px;}
+.ops-empty.zone-acc-last{border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;} /* v1078: empty-state case needs side borders too */
+.ops-inv.zone-acc-last::after{display:none;} /* v1078: suppress dotted separator at bottom of gold frame */
 .ops-group.zone-proj{border-top:1px solid #e4dac4;}
 .ops-group.zone-beyond{border-top:1px solid #e4dac4;}
 .ops-inv.zone-beyond:last-child{border-bottom-left-radius:6px;border-bottom-right-radius:6px;}
@@ -2972,6 +2974,18 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-alert-tag.camove{background:rgba(0,82,27,.10);color:#00521b;}
 .ops-alert-tag.btmissing{background:rgba(192,104,32,.12);color:#c06820;} /* v1076: amber — not in BT */
 .ops-alert.btmissing{opacity:.92;}
+/* v1078: cell derivation tip */
+#opsCellTip{position:fixed;z-index:9200;background:#fff;border:1px solid #e4dac4;border-radius:6px;padding:10px 14px;box-shadow:0 6px 22px rgba(31,46,62,.14);font-family:'DM Sans',sans-serif;font-size:12px;color:#1f2e3e;max-width:290px;min-width:180px;display:none;pointer-events:none;}
+#opsCellTip.on{display:block;}
+#opsCellTip h4{font-family:'Swear Text',serif;font-size:13px;margin:0 0 7px;color:#1f2e3e;line-height:1.3;}
+#opsCellTip .ctp-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:3px 0;border-bottom:1px solid #f0ece2;font-size:11px;}
+#opsCellTip .ctp-row:last-child{border-bottom:none;}
+#opsCellTip .ctp-lbl{color:#7a7a7a;flex-shrink:0;}
+#opsCellTip .ctp-val{font-weight:600;text-align:right;word-break:break-word;}
+#opsCellTip .ctp-src{font-size:10px;color:#a3a3a3;margin-bottom:5px;}
+#opsCellTip .ctp-note{font-size:10.5px;color:#a3a3a3;line-height:1.45;margin-top:4px;}
+.ops-table td[data-ops-row]{cursor:pointer;}
+.ops-table td[data-ops-row]:hover{background:rgba(31,46,62,.05) !important;}
 .ops-ack{margin-left:auto;align-self:center;font-size:10.5px;font-weight:600;font-family:inherit;color:#1f2e3e;background:#f5f3ee;border:1px solid #e4dac4;border-radius:20px;padding:4px 11px;cursor:pointer;white-space:nowrap;}
 .ops-ack:hover{background:#1f2e3e;color:#fff;border-color:#1f2e3e;}
 .ops-alert-t{font-size:12.5px;font-weight:700;color:#ac2828;}
@@ -3378,7 +3392,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1077';
+const CORE_VERSION = 'v1078';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -19365,7 +19379,7 @@ async function qbApply(root){
   const note=t=>{ if(sub) sub.textContent=sub.textContent.replace(/last QuickBooks drop:.*$/,'last QuickBooks drop: '+t); };
   note('reading\u2026');
   try{
-    const d=await qbLoad();
+    const d=QB_DATA||await qbLoad(); // v1078: use cached parse; re-downloads on page reload only
     let n=0;
     if(d.bank!=null) n+=put(/^BANK BALANCE$/i,d.bank);
     if(d.payroll!=null) n+=put(/^PAYROLL$/i,-Math.abs(d.payroll));
@@ -19502,7 +19516,7 @@ async function arApply(root){
   const note=t=>{ if(sub) sub.textContent=t; };
   note('reading…');
   try{
-    const d=await arLoad();
+    const d=AR_DATA||await arLoad(); // v1078: use cached parse; re-downloads on page reload only
     // Bucket Pending/Sent invoices by week
     const ar=[0,0,0,0];
     d.invoices.forEach(x=>{ const k=wkOf(x.deadline); if(k>=0&&k<4) ar[k]+=x.balance; });
@@ -19624,8 +19638,8 @@ function opsRenderInto(root){
   const cls=i=>(i<2?'znow':'zproj')+(i===0?' znow-l':'')+(i===1?' znow-r':'');
   let thead='<tr><th class="rl"></th>'; W.forEach((w,i)=>{ thead+='<th class="'+cls(i)+'"><span class="ops-wk-lab">'+w.lab+'</span><span class="ops-wk-sub">'+w.sub+'</span></th>'; });
   thead+='</tr>';
-  const rowNo=(label,src)=>{ let r='<tr><td class="rl">'+label+'<span class="ops-src">'+src+'</span></td>'; for(let i=0;i<4;i++) r+='<td class="'+cls(i)+' nodata">\u2014</td>'; return r+'</tr>'; };
-  const rowAr='<tr><td class="rl">AR Expected<span class="ops-src">design invoices today \u00b7 construction invoices to come</span></td>'+ar.map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':'')+'">'+(v>0?'+':'')+opsMoney(v)+'</td>').join('')+'</tr>';
+  const rowNo=(label,src,rk)=>{ let r='<tr><td class="rl">'+label+'<span class="ops-src">'+src+'</span></td>'; for(let i=0;i<4;i++) r+='<td class="'+cls(i)+' nodata"'+(rk?' data-ops-row="'+rk+'" data-ops-wk="'+i+'"':'')+'>\u2014</td>'; return r+'</tr>'; }; // v1078: rk = row key for cell tip
+  const rowAr='<tr><td class="rl">AR Expected<span class="ops-src">design invoices today \u00b7 construction invoices to come</span></td>'+ar.map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':'')+'" data-ops-row="ar" data-ops-wk="'+i+'">'+(v>0?'+':'')+opsMoney(v)+'</td>').join('')+'</tr>'; // v1078
   // v1038: each switched-on scenario is its own row so you can see what is moving,
   // not just the net. Anchored to its Monday, same as the combined row was.
   let rowSc='';
@@ -19636,24 +19650,24 @@ function opsRenderInto(root){
     rowSc+='<tr><td class="rl">'+escH(sc.t||'Scenario')+'<span class="ops-src">maybe'+(sc.by?' \u00b7 '+escH(sc.by.split(' ')[0]):'')+'</span></td>';
     for(let i=0;i<4;i++){
       const hit=(i===k);
-      rowSc+='<td class="'+cls(i)+(hit?(amt>0?' pos':' negv'):' nodata')+'">'
-        +(hit?((amt>0?'+':'')+opsMoney(amt)):'\u2014')+'</td>';
+      rowSc+='<td class="'+cls(i)+(hit?(amt>0?' pos':' negv'):' nodata')+'" data-ops-row="sc" data-ops-sc-id="'+sc.id+'" data-ops-wk="'+i+'">'
+        +(hit?((amt>0?'+':'')+opsMoney(amt)):'\u2014')+'</td>'; // v1078
     }
     rowSc+='</tr>';
   });
   if(!rowSc) rowSc='<tr><td class="rl">Scenarios<span class="ops-src">nothing switched on</span></td>'
     +[0,1,2,3].map(i=>'<td class="'+cls(i)+' nodata">\u2014</td>').join('')+'</tr>';
   // v1035: Operating Cash and Bank Balance were the same Meridian figure under two names.
-  const body=rowNo('Bank Balance','QuickBooks weekly drop')
-    +rowNo('Payroll','QuickBooks drop \u00b7 owed now, paid once')
-    +rowNo('Payables','QuickBooks drop \u00b7 owed now, paid once')
+  const body=rowNo('Bank Balance','QuickBooks weekly drop','bank')
+    +rowNo('Payroll','QuickBooks drop \u00b7 owed now, paid once','payroll')
+    +rowNo('Payables','QuickBooks drop \u00b7 owed now, paid once','payables')
     +rowAr+rowSc;
   // v1038: running forecast — week one opens from the bank balance, each later week
   // opens from the previous week's close. Payroll/payables are recurring weekly costs.
   let net='<tr class="net-row"><td class="rl">Net Position</td>';
   window._opsNetCells=[];
   for(let i=0;i<4;i++){
-    net+='<td class="'+cls(i)+' nodata" data-ops-net="'+i+'" data-ops-ar="'+(ar[i]||0)+'" data-ops-sc="'+(scNet[i]||0)+'">\u2014</td>';
+    net+='<td class="'+cls(i)+' nodata" data-ops-net="'+i+'" data-ops-ar="'+(ar[i]||0)+'" data-ops-sc="'+(scNet[i]||0)+'" data-ops-row="net" data-ops-wk="'+i+'">\u2014</td>'; // v1078
   }
   net+='</tr>';
   // alerts
@@ -19731,6 +19745,11 @@ function opsRenderInto(root){
   opsDrawScenarios(W13,root);
   setTimeout(()=>qbApply(root),0); // v1035: after the DOM settles — was querying an empty container
   setTimeout(()=>arApply(root),0); // v1075: AR Two-Week Reports — after DOM settles
+  // v1078: cell click → derivation tip
+  root.querySelector('.ops-table')?.addEventListener('click',e=>{
+    const cell=e.target.closest('[data-ops-row]'); if(!cell) return;
+    e.stopPropagation(); window._opsCellTipShow&&window._opsCellTipShow(cell);
+  });
   root.querySelectorAll('[data-ops-ack]').forEach(b=>b.addEventListener('click',()=>{ b.disabled=true; b.textContent='Saving\u2026'; opsAckCaMove(b.getAttribute('data-ops-ack'),Number(b.getAttribute('data-ops-n'))); }));
   const form=root.querySelector('#opsAddForm'), addBtn=root.querySelector('#opsAddBtn'); let dir='out';
   const toggleForm=o=>{ form.classList.toggle('on',o); addBtn.classList.toggle('on',o); addBtn.textContent=o?'Close':'+ Add'; if(o) root.querySelector('#opsAfWhat').focus(); };
@@ -19856,6 +19875,117 @@ function opsRenderInto(root){
     }catch(e){ console.error('[ops] KD panel:',e); body.innerHTML='<div class="prod-panel-zone-hdr" style="color:#b03020;">'+e.message+'</div>'; }
   };
 })();
+// ── v1078: Cash table cell derivation tip ────────────────────────────────────
+// Shows on click of any data cell ([data-ops-row]). Hides on click elsewhere or Escape.
+(()=>{
+  const el=document.createElement('div'); el.id='opsCellTip';
+  document.body.appendChild(el);
+  let _curCell=null;
+  function showTip(cell){
+    if(_curCell===cell){ el.classList.remove('on'); _curCell=null; return; }
+    _curCell=cell;
+    const rk=cell.dataset.opsRow, wk=parseInt(cell.dataset.opsWk||'0'), scId=cell.dataset.opsScId||'';
+    el.innerHTML=opsCellTipHtml(rk,wk,scId);
+    const cr=cell.getBoundingClientRect(), tw=Math.min(290,window.innerWidth-16);
+    let lx=cr.left, ty=cr.bottom+6;
+    if(lx+tw>window.innerWidth-8) lx=window.innerWidth-tw-8;
+    if(ty+220>window.innerHeight) ty=Math.max(6,cr.top-el.offsetHeight-6);
+    el.style.cssText='left:'+lx+'px;top:'+ty+'px;max-width:'+tw+'px;';
+    el.classList.add('on');
+  }
+  window._opsCellTipShow=showTip;
+  document.addEventListener('click',e=>{ if(!e.target.closest('[data-ops-row]')&&!e.target.closest('#opsCellTip')){ el.classList.remove('on'); _curCell=null; } });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ el.classList.remove('on'); _curCell=null; } });
+})();
+function opsCellTipHtml(rk,wk,scId){
+  const W=opsWeeks();
+  const fmtV=v=>v!=null?opsMoney(v):'\u2014';
+  const wkLab=(W[wk]?W[wk].sub:'Week '+(wk+1));
+  const zone=wk<2?'Accurate':'Projected';
+  const row=(lbl,val)=>'<div class="ctp-row"><span class="ctp-lbl">'+escH(lbl)+'</span><span class="ctp-val">'+val+'</span></div>';
+  const src=t=>'<div class="ctp-src">'+escH(t)+'</div>';
+  const note=t=>'<div class="ctp-note">'+escH(t)+'</div>';
+  const head=(t)=>'<h4>'+t+' <span style="font-family:\'DM Sans\',sans-serif;font-size:9.5px;font-weight:400;color:#a3a3a3;text-transform:uppercase;letter-spacing:.06em;">'+zone+'</span></h4>';
+  const wkOf=d=>{ if(!d) return -1; for(let i=0;i<4;i++) if(d>=W[i].start&&d<=W[i].end) return i; return d>W[3].end?4:-2; };
+
+  if(rk==='bank'){
+    let b=head('Bank Balance');
+    if(QB_DATA&&QB_DATA.bank!=null){
+      b+=src(QB_DATA.file||'QB weekly drop');
+      b+=row('Account x7490',fmtV(QB_DATA.bank));
+      b+=note('Same figure shown across all weeks. Payroll and payables are deducted from the week\u00a01 net only.');
+    } else b+=note('Load the QuickBooks weekly drop to see the figure.');
+    return b;
+  }
+  if(rk==='payroll'){
+    let b=head('Payroll');
+    if(QB_DATA&&QB_DATA.payroll!=null){
+      b+=src(QB_DATA.file||'QB weekly drop');
+      b+=row('Balance owed',fmtV(-Math.abs(QB_DATA.payroll)));
+      b+=note('Standing balance — what is owed right now. Deducted from Net Position in week\u00a01 only, not as a weekly run rate.');
+    } else b+=note('Load the QuickBooks weekly drop to see the figure.');
+    return b;
+  }
+  if(rk==='payables'){
+    let b=head('Payables');
+    if(QB_DATA&&QB_DATA.payables!=null){
+      b+=src(QB_DATA.file||'QB weekly drop');
+      b+=row('Balance owed',fmtV(-Math.abs(QB_DATA.payables)));
+      b+=note('Standing balance — what is owed right now. Deducted from Net Position in week\u00a01 only, not as a weekly run rate.');
+    } else b+=note('Load the QuickBooks weekly drop to see the figure.');
+    return b;
+  }
+  if(rk==='ar'){
+    let b=head('AR Expected');
+    if(AR_DATA&&AR_DATA.invoices){
+      const inv=AR_DATA.invoices.filter(x=>wkOf(x.deadline)===wk);
+      b+=src(AR_DATA.file||'AR Two-Week Report');
+      if(inv.length){
+        inv.forEach(x=>{ b+=row(escH((x.ownerName||x.job||'').split('&')[0].trim().toUpperCase())+' ('+escH(x.job.trim())+')',opsMoney(x.balance)); });
+      } else b+=note('No Pending/Sent invoices due in this window per the AR report.');
+    } else {
+      const di=opsDesignInvoices().filter(x=>wkOf(x.date)===wk&&x.amount!=null);
+      b+=src('CORE design invoices \u2014 AR Two-Week Report not yet loaded');
+      if(di.length) di.forEach(x=>{ b+=row(_projShortName(x.proj)+' '+x.n+'\u2009/\u2009'+x.total,fmtV(x.amount)); });
+      else b+=note('No design invoices due in this window.');
+    }
+    return b;
+  }
+  if(rk==='sc'){
+    const sc=OPS_SCENARIOS.find(x=>x.id===scId);
+    if(!sc) return '<h4>Scenario</h4>'+note('Details not available.');
+    const amt=(sc.dir==='in'?1:-1)*(sc.amt||0);
+    let b='<h4>'+escH(sc.t||'Scenario')+'</h4>';
+    b+=row('Direction',sc.dir==='in'?'Money in':'Money out');
+    b+=row('Amount',(amt>0?'+':'')+fmtV(Math.abs(sc.amt||0)));
+    if(sc.weekOf) b+=row('Week of',escH(sc.weekOf));
+    if(sc.by) b+=row('Added by',escH(sc.by.split(' ')[0]));
+    if(sc.m) b+='<div class="ctp-row" style="flex-direction:column;gap:2px;"><span class="ctp-lbl">Note</span><span style="font-size:11px;color:#1f2e3e;word-break:break-word;">'+escH(sc.m)+'</span></div>';
+    return b;
+  }
+  if(rk==='net'){
+    let b=head('Net Position');
+    if(QB_DATA&&QB_DATA.bank!=null){
+      const arAmt=AR_DATA&&AR_DATA.invoices?AR_DATA.invoices.filter(x=>wkOf(x.deadline)===wk).reduce((s,x)=>s+x.balance,0):opsDesignInvoices().filter(x=>wkOf(x.date)===wk&&x.amount!=null).reduce((s,x)=>s+(x.amount||0),0);
+      const scAmt=OPS_SCENARIOS.filter(sc=>sc.on).reduce((sum,sc)=>{ const d=opsIsoToDate(sc.weekOf); return d&&wkOf(d)===wk?sum+(sc.dir==='in'?1:-1)*(sc.amt||0):sum; },0);
+      if(wk===0){
+        b+=row('Bank Balance',fmtV(QB_DATA.bank));
+        if(QB_DATA.payroll) b+=row('\u2212 Payroll',fmtV(-Math.abs(QB_DATA.payroll)));
+        if(QB_DATA.payables) b+=row('\u2212 Payables',fmtV(-Math.abs(QB_DATA.payables)));
+        if(arAmt) b+=row('+ AR Expected',fmtV(arAmt));
+        if(scAmt) b+=row('+ Scenarios',fmtV(scAmt));
+        const net=QB_DATA.bank-Math.abs(QB_DATA.payroll||0)-Math.abs(QB_DATA.payables||0)+arAmt+scAmt;
+        b+='<div class="ctp-row" style="border-top:1px solid #e4dac4;margin-top:2px;padding-top:5px;"><span class="ctp-lbl" style="font-weight:700;">Net</span><span class="ctp-val" style="'+(net<0?'color:#ac2828':net>0?'color:#00521b':'')+';font-size:13px;">'+fmtV(net)+'</span></div>';
+      } else {
+        b+=note('Opens at prior week\u2019s net position.');
+        if(arAmt) b+=row('+ AR Expected this week',fmtV(arAmt));
+        if(scAmt) b+=row('+ Scenarios this week',fmtV(scAmt));
+      }
+    } else b+=note('Connect the QuickBooks weekly drop to see the breakdown.');
+    return b;
+  }
+  return '<h4>'+escH(rk)+'</h4>';
+}
 function opsDrawScenarios(W,root){
   const el=(root||document).querySelector('#opsScList'); if(!el) return;
   let on=0;
