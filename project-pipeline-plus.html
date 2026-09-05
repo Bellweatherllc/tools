@@ -2955,6 +2955,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-inv-amt{font-size:13px;font-weight:600;color:#1f2e3e;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .ops-inv-amt.tbd{color:#a3a3a3;font-weight:500;}
 .ops-chg{font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#d07820;border:1px solid rgba(208,120,32,.4);border-radius:20px;padding:2px 8px;flex-shrink:0;cursor:help;}
+.ops-inv-notbt{font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#ac2828;border:1px solid rgba(172,40,40,.4);border-radius:20px;padding:2px 8px;flex-shrink:0;} /* v1084: not sent indicator */
 .ops-group{padding:7px 16px;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a3a3;background:#faf8f3;border-bottom:1px solid #f0ece2;}
 .ops-empty{padding:16px;font-size:12px;color:#a3a3a3;}
 .ops-banner{display:flex;align-items:center;gap:10px;background:rgba(172,40,40,.08);border:1px solid rgba(172,40,40,.45);border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:12.5px;color:#ac2828;}
@@ -3035,7 +3036,20 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-wkopt.z-acc:not(:has(+.ops-wkopt.z-acc)){border-bottom:2.5px solid #d8b64f;border-bottom-left-radius:4px;border-bottom-right-radius:4px;}
 .ops-wkopt.z-first-beyond{border-top:1px solid #e4dac4;}
 .ops-wkopt:hover,.ops-wkopt.on{background:#1f2e3e;color:#fff;}
-.ops-sc.zone-acc{background:rgba(216,182,79,.10);}
+.ops-sc.zone-acc{background:rgba(216,182,79,.10);border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;}
+/* v1085: in-window scenario rows live in the cash table */
+.ops-sw-mini{width:24px;height:13px;border-radius:7px;background:#e4dac4;border:none;cursor:pointer;flex-shrink:0;position:relative;transition:background .15s;padding:0;}
+.ops-sw-mini::after{content:'';position:absolute;width:9px;height:9px;background:#fff;border-radius:50%;top:2px;left:2px;transition:transform .15s;}
+.ops-sw-mini.on{background:#d8b64f;}
+.ops-sw-mini.on::after{transform:translateX(11px);}
+.ops-sc-tbl-row td.rl{text-align:left !important;font-weight:500 !important;font-size:11px;text-transform:none !important;letter-spacing:0 !important;color:#1f2e3e !important;padding-left:10px !important;}
+.ops-sc-tbl-row td.rl .ops-src{display:inline;font-size:9.5px;color:#a3a3a3;font-weight:400;text-transform:none;letter-spacing:0;margin-left:5px;}
+.ops-sc-tbl-row.ops-sc-tbl-off{opacity:.5;}
+.ops-sc-cell{display:flex;align-items:center;justify-content:flex-end;gap:5px;}
+.ops-sc-cell-del{font-size:12px;line-height:1;color:#c4bfb2;background:none;border:none;cursor:pointer;padding:1px 3px;border-radius:3px;flex-shrink:0;}
+.ops-sc-cell-del:hover{background:#f0ece2;color:#ac2828;} /* v1083: gold frame matches invoice zones */
+.ops-sc.zone-acc-first{border-top:2.5px solid #d8b64f;border-top-left-radius:4px;border-top-right-radius:4px;}
+.ops-sc.zone-acc-last{border-bottom:2.5px solid #d8b64f !important;border-bottom-left-radius:4px;border-bottom-right-radius:4px;}
 .ops-sc.zone-proj{background:rgba(59,127,168,.07);}
 .ops-sc.zone-beyond{background:#fff;}
 .ops-sc.zone-past{opacity:.55;}
@@ -3393,7 +3407,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1081';
+const CORE_VERSION = 'v1085';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -19518,10 +19532,20 @@ async function arApply(root){
   note('reading…');
   try{
     const d=AR_DATA||await arLoad(); // v1078: use cached parse; re-downloads on page reload only
-    // Bucket Pending/Sent invoices by week
+    // v1084: BT confirmed invoices bucket into ar[], then CORE planned invoices
+    // not already in BT are added for all 4 weeks — giving the best available forecast.
     const ar=[0,0,0,0];
     d.invoices.forEach(x=>{ const k=wkOf(x.deadline); if(k>=0&&k<4) ar[k]+=x.balance; });
-    // Update the AR Expected cash row
+    // Augment with CORE planned amounts for invoices without a BT match
+    const _diAug=opsDesignInvoices();
+    _diAug.forEach(x=>{
+      if(!x.date||x.amount==null) return;
+      const k=wkOf(x.date); if(k<0||k>=4) return;
+      const jc=x.proj.jobCode?x.proj.jobCode.trim():null;
+      const inBT=jc&&d.invoices.some(b=>b.job.trim()===jc&&Math.abs(b.balance-x.amount)/Math.max(x.amount,1)<0.05);
+      if(!inBT) ar[k]+=x.amount;
+    });
+    // Update the AR Expected cash row with combined BT + CORE planned amounts
     const cls=i=>(i<2?'znow':'zproj')+(i===0?' znow-l':'')+(i===1?' znow-r':'');
     const put=(re,wkAmounts)=>{
       root.querySelectorAll('.ops-table tbody tr').forEach(tr=>{
@@ -19535,7 +19559,7 @@ async function arApply(root){
           td.classList.toggle('pos',v>0);
         });
         const src=lbl.querySelector('.ops-src');
-        if(src) src.textContent='BuilderTrend AR Two-Week Report';
+        if(src) src.textContent='BT confirmed + CORE planned';
       });
     };
     put(/^AR EXPECTED$/i,ar);
@@ -19565,7 +19589,12 @@ async function arApply(root){
       const acc=inWin.filter(x=>wkOf(x.deadline)<2), prj=inWin.filter(x=>wkOf(x.deadline)>=2);
       const fmtDate=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
       const fmtDateLong=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'date TBD';
-      const btRow=(x,extra)=>'<div class="ops-inv'+(extra||'')+'">'        +'<span class="ops-inv-date">'+fmtDate(x.deadline)+'</span>'        +'<span class="ops-inv-src construction">Outstanding</span>'        +'<span class="ops-inv-desc"><b>'+escH((x.ownerName||x.job||'').toUpperCase())+'</b>'        +(x.job?' <span style="color:#a3a3a3;font-size:10px;">'+escH(x.job)+'</span>':'')        +', '+fmtDateLong(x.deadline)+' <small>'+escH(x.title)+'</small></span>'        +'<span class="ops-inv-amt">'+opsMoney(x.balance)+'</span></div>';
+      const btRow=(x,extra)=>'<div class="ops-inv'+(extra||'')+'"><span class="ops-inv-date">'+fmtDate(x.deadline)+'</span>'
+        +'<span class="ops-inv-src construction">Outstanding</span>'
+        +'<span class="ops-inv-desc"><b>'+escH((x.ownerName||x.job||'').toUpperCase())+'</b>'
+        +(x.job?' <span style="color:#a3a3a3;font-size:10px;">'+escH(x.job)+'</span>':'')
+        +', '+fmtDateLong(x.deadline)+' <small>'+escH(x.title)+'</small></span>'
+        +'<span class="ops-inv-amt">'+opsMoney(x.balance)+'</span></div>';
       let html='<div class="ops-group zone-acc">Now · two weeks · '+W[0].lab+' – '+W[1].sub.split(' – ')[1]+'</div>'+(acc.length?acc.map((x,i)=>btRow(x,' zone-acc'+(i===acc.length-1?' zone-acc-last':''))).join(''):'<div class="ops-empty zone-acc-last">Nothing outstanding in this window.</div>');
       html+='<div class="ops-group zone-proj">Projected · weeks three and four · '+W[2].lab+' – '+W[3].sub.split(' – ')[1]+'</div>'+(prj.length?prj.map(x=>btRow(x,' zone-proj')).join(''):'<div class="ops-empty">Nothing outstanding in this window.</div>');
       if(beyond.length) html+='<div class="ops-group zone-beyond">Beyond four weeks</div>'+beyond.map(x=>btRow(x,' zone-beyond')).join('');
@@ -19573,48 +19602,21 @@ async function arApply(root){
       btDiv.innerHTML=html;
     }
     note((d.file||'file')+' · '+d.invoices.length+' outstanding');
-    console.log('[ops] AR Two-Week Report parsed:',d.file,'invoices:',d.invoices.length,'ar totals:',ar);
-    // v1076: cross-check CORE design invoices against BT Pending/Sent rows.
-    // Fires for installments due within 60 days where no BT row matches this project's
-    // job code AND a comparable amount (within 5%). Amount gating avoids false positives
-    // when an earlier installment is already paid and no longer appears in BT.
-    // v1080: only alert within the accurate two-week window (wkOf 0 or 1);
-    // anything beyond is premature. Sort by date so earlier due dates appear first.
-    const _coreInv=opsDesignInvoices();
-    const btAlerts=[];
-    _coreInv.forEach(x=>{
+    console.log('[ops] AR Two-Week Report:',d.file,'invoices:',d.invoices.length,'ar totals:',ar);
+    // v1084: mark design schedule invoice rows with "Not sent" badge where CORE has
+    // a planned invoice but BT has no matching Pending/Sent entry for that project+amount.
+    _diAug.forEach(x=>{
       if(!x.proj.jobCode||!x.date||x.amount==null) return;
-      const _xWk=wkOf(x.date); if(_xWk<0||_xWk>=2) return;
       const jc=x.proj.jobCode.trim();
-      const match=d.invoices.find(b=>b.job.trim()===jc&&Math.abs(b.balance-x.amount)/Math.max(x.amount,1)<0.05);
-      if(!match) btAlerts.push({type:'btmissing',tag:'Not in BT',date:x.date,
-        title:_projShortName(x.proj)+' — design invoice '+x.n+' of '+x.total+' not found in AR Two-Week Report',
-        detail:'Planned: '+opsMoney(x.amount)+' due '+(x.date?x.date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'TBD')+'. Not appearing as Pending/Sent in BuilderTrend.'});
+      const inBT=d.invoices.some(b=>b.job.trim()===jc&&Math.abs(b.balance-x.amount)/Math.max(x.amount,1)<0.05);
+      const rowEl=root.querySelector('[data-inv-id="'+x.proj.id+'-'+x.n+'"]');
+      if(!rowEl) return;
+      rowEl.querySelectorAll('.ops-inv-notbt').forEach(el=>el.remove());
+      if(!inBT){
+        const amt=rowEl.querySelector('.ops-inv-amt');
+        if(amt) amt.insertAdjacentHTML('beforebegin','<span class="ops-inv-notbt">Not sent</span>');
+      }
     });
-    btAlerts.sort((a,b)=>(a.date||0)-(b.date||0)); // earliest due date first
-    const alertCard=root.querySelector('#opsAlertCard');
-    const alertBanner=root.querySelector('#opsAlertBanner');
-    if(alertCard){
-      alertCard.querySelectorAll('.ops-alert.btmissing').forEach(el=>el.remove());
-      if(btAlerts.length){
-        const emptyEl=alertCard.querySelector('#opsAlertEmpty');
-        if(emptyEl) emptyEl.remove();
-        alertCard.classList.add('ops-card-alert');
-        const btHtml=btAlerts.map(a=>'<div class="ops-alert btmissing"><span class="ops-alert-tag btmissing">'+a.tag+'</span><div><div class="ops-alert-t">'+diEsc(a.title)+'</div><div class="ops-alert-d">'+diEsc(a.detail)+'</div></div></div>').join('');
-        alertCard.insertAdjacentHTML('afterbegin',btHtml);
-      }
-      if(alertBanner){
-        const totalAlerts=alertCard.querySelectorAll('.ops-alert').length;
-        const nBT=btAlerts.length;
-        const nOther=totalAlerts-nBT;
-        const parts=[nBT?nBT+' not in BT':'',nOther?nOther+' other':''].filter(Boolean).join(', ');
-        if(totalAlerts>0){
-          alertBanner.innerHTML='<span class="ops-banner-dot"></span><span><b>'+totalAlerts+' open alert'+(totalAlerts===1?'':'s')+'</b> — '+parts+'</span>';
-          alertBanner.style.display='';
-        }
-      }
-    }
-    if(btAlerts.length) console.log('[ops] BT cross-check:',btAlerts.length,'alerts',btAlerts.map(a=>a.title));
   }catch(e){
     console.warn('[ops] AR Two-Week Report load failed:',e);
     note('failed — '+(e.message||e));
@@ -19644,22 +19646,28 @@ function opsRenderInto(root){
   thead+='</tr>';
   const rowNo=(label,src,rk)=>{ let r='<tr><td class="rl">'+label+'<span class="ops-src">'+src+'</span></td>'; for(let i=0;i<4;i++) r+='<td class="'+cls(i)+' nodata"'+(rk?' data-ops-row="'+rk+'" data-ops-wk="'+i+'"':'')+'>\u2014</td>'; return r+'</tr>'; }; // v1078: rk = row key for cell tip
   const rowAr='<tr><td class="rl">AR Expected<span class="ops-src">design invoices today \u00b7 construction invoices to come</span></td>'+ar.map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':'')+'" data-ops-row="ar" data-ops-wk="'+i+'">'+(v>0?'+':'')+opsMoney(v)+'</td>').join('')+'</tr>'; // v1078
-  // v1038: each switched-on scenario is its own row so you can see what is moving,
-  // not just the net. Anchored to its Monday, same as the combined row was.
+  // v1085: in-window scenarios (wk 0–3) appear in the cash table with toggle+delete.
+  // Out-of-window scenarios stay in the "What could move" card.
   let rowSc='';
-  OPS_SCENARIOS.filter(sc=>sc.on).forEach(sc=>{
-    // v1039: the stored shape is {t,m,weekOf,...} — not {what,week}
-    const d=opsIsoToDate(sc.weekOf); const k=d?wkOf(d):-2;
+  OPS_SCENARIOS.filter(sc=>sc.wk>=0&&sc.wk<4).forEach(sc=>{
     const amt=(sc.dir==='in'?1:-1)*(sc.amt||0);
-    rowSc+='<tr><td class="rl">'+escH(sc.t||'Scenario')+'<span class="ops-src">maybe'+(sc.by?' \u00b7 '+escH(sc.by.split(' ')[0]):'')+'</span></td>';
+    rowSc+='<tr class="ops-sc-tbl-row'+(sc.on?'':' ops-sc-tbl-off')+'" data-sc-id="'+sc.id+'">';
+    rowSc+='<td class="rl"><div style="display:flex;align-items:center;gap:7px;">';
+    rowSc+='<button type="button" class="ops-sw-mini'+(sc.on?' on':'')+' " data-sc-toggle="'+sc.id+'" role="switch" aria-checked="'+sc.on+'"></button>';
+    rowSc+=escH(sc.t||'Maybe')+'<span class="ops-src">'+(sc.by?escH(sc.by.split(' ')[0])+' \u00b7 ':'')+'maybe</span>';
+    rowSc+='</div></td>';
     for(let i=0;i<4;i++){
-      const hit=(i===k);
-      rowSc+='<td class="'+cls(i)+(hit?(amt>0?' pos':' negv'):' nodata')+'" data-ops-row="sc" data-ops-sc-id="'+sc.id+'" data-ops-wk="'+i+'">'
-        +(hit?((amt>0?'+':'')+opsMoney(amt)):'\u2014')+'</td>'; // v1078
+      const hit=(i===sc.wk);
+      rowSc+='<td class="'+cls(i)+(hit&&sc.on?(amt>0?' pos':' negv'):' nodata')+'" data-ops-row="sc" data-ops-sc-id="'+sc.id+'" data-ops-wk="'+i+'">';
+      if(hit){
+        rowSc+='<div class="ops-sc-cell"><span>'+(sc.on?(amt>0?'+':'\u2212')+opsMoney(Math.abs(sc.amt||0)):'\u2014')+'</span>';
+        rowSc+='<button type="button" class="ops-sc-cell-del" data-del="'+sc.id+'" aria-label="Remove">\u00d7</button></div>';
+      } else rowSc+='\u2014';
+      rowSc+='</td>';
     }
     rowSc+='</tr>';
   });
-  if(!rowSc) rowSc='<tr><td class="rl">Scenarios<span class="ops-src">nothing switched on</span></td>'
+  if(!rowSc) rowSc='<tr><td class="rl">Maybe<span class="ops-src">add scenarios below</span></td>'
     +[0,1,2,3].map(i=>'<td class="'+cls(i)+' nodata">\u2014</td>').join('')+'</tr>';
   // v1035: Operating Cash and Bank Balance were the same Meridian figure under two names.
   const body=rowNo('Bank Balance','QuickBooks weekly drop','bank')
@@ -19676,25 +19684,19 @@ function opsRenderInto(root){
   net+='</tr>';
   // alerts
   const fmtIso=iso=>{ const d=opsIsoToDate(iso); return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):iso; };
-  const alerts=inv.filter(x=>x.drift).map(x=>({type:'design',tag:'Design drift',title:_projShortName(x.proj)+' \u2014 invoice '+x.n+' of '+x.total+' differs from the DA',detail:x.drift}))
-    .concat(inv.filter(x=>x.caMove).map(x=>({type:'camove',tag:'CA moved',title:_projShortName(x.proj)+' \u2014 payment '+x.n+' of '+x.total+' at CA signing has moved',detail:'Expected '+fmtIso(x.caMove.was)+'; the board now has the CA on '+fmtIso(x.caMove.now)+'.',ack:'data-ops-ack="'+x.proj._spItemId+'" data-ops-n="'+x.n+'"'})));
-  const nD=alerts.filter(a=>a.type==='design').length, nC=alerts.filter(a=>a.type==='camove').length;
-  // v1076: banner always renders so arApply can update it; hidden when count is zero.
-  const _syncSummary=[nD?nD+' design drift':'',nC?nC+' CA move'+(nC===1?'':'s'):''].filter(Boolean).join(', ');
-  const banner='<div id="opsAlertBanner" class="ops-banner"'+(alerts.length?'':' style="display:none"')+'><span class="ops-banner-dot"></span><span><b>'+alerts.length+' open alert'+(alerts.length===1?'':'s')+'</b>'+(alerts.length?' \u2014 '+_syncSummary:'')+'</span></div>';
-  const alertRows=alerts.length?alerts.map(a=>'<div class="ops-alert"><span class="ops-alert-tag '+a.type+'">'+a.tag+'</span><div><div class="ops-alert-t">'+diEsc(a.title)+'</div><div class="ops-alert-d">'+diEsc(a.detail)+'</div></div>'+(a.ack?'<button type="button" class="ops-ack" '+a.ack+'>Acknowledge new date</button>':'')+'</div>').join('')
-    :'<div class="ops-empty" id="opsAlertEmpty">No open alerts. Design drift fires when a seeded invoice is edited away from what the DA said; BT cross-check alerts appear once the AR Two-Week Report loads.</div>';
+  // v1084: alerts are inline on invoice rows — no separate alerts section
   // what's expected
   const dated=inv.filter(x=>x.date&&x.date>=today).sort((a,b)=>a.date-b.date);
   const inWin=dated.filter(x=>wkOf(x.date)<4), beyond=dated.filter(x=>wkOf(x.date)===4);
   const undated=inv.filter(x=>!x.date&&x.amount!==0);
   const past=inv.filter(x=>x.date&&x.date<today).length;
-  const invRow=(x,extra)=>'<div class="ops-inv'+(extra||'')+'"><span class="ops-inv-date">'+(x.date?x.date.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'\u2014')+'</span>'
+  const invRow=(x,extra)=>'<div class="ops-inv'+(extra||'')+' " data-inv-id="'+x.proj.id+'-'+x.n+'"><span class="ops-inv-date">'+(x.date?x.date.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'\u2014')+'</span>'
     +(x.casign?'<span class="ops-inv-src casign">Construction</span>':'<span class="ops-inv-src '+x.src+'">Design</span>')
     +'<span class="ops-inv-desc"><b>'+diEsc(String(x.proj.name||_projShortName(x.proj)).toUpperCase())+'</b>'+(x.proj.clientName&&x.proj.clientName!==x.proj.name?': '+diEsc(x.proj.clientName):'')
     +', '+(x.date?x.date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'date TBD')+' <small>('+x.n+' of '+x.total+(x.derived?' \u00b7 date from the '+x.derived:'')+')</small></span>'
     +(x.drift?'<span class="ops-chg" title="'+diEsc(x.drift)+'">Changed</span>':'')
-    +'<span class="ops-inv-amt'+(x.amount==null?' tbd':'')+'">'+(x.amount==null?'TBD':opsMoney(x.amount))+'</span></div>';
+    +(x.caMove?'<span class="ops-chg" style="color:#ac2828;border-color:rgba(172,40,40,.4);" title="Expected '+fmtIso(x.caMove.was)+'; board now shows '+fmtIso(x.caMove.now)+'">CA moved</span><button type="button" class="ops-ack" data-ops-ack="'+x.proj._spItemId+'" data-ops-n="'+x.n+'">Acknowledge</button>':'')
+    +'<span class="ops-inv-amt'+(x.amount==null?' tbd':'')+'">'+(x.amount==null?'TBD':opsMoney(x.amount))+'</span></div>'; // v1084
   let invHtml='';
   // v993: rows carry the zone tint of the cash view — white for the two accurate weeks, gold for the two projected, a third color beyond.
   const acc=inWin.filter(x=>wkOf(x.date)<2), prj=inWin.filter(x=>wkOf(x.date)>=2);
@@ -19721,7 +19723,7 @@ function opsRenderInto(root){
     +'<span style="font-size:11px;color:#7a7a7a;flex:1;min-width:160px;">Shared maybes \u2014 anyone with the OPS role can add, toggle, or remove</span>'
     +'<span style="font-size:10.5px;color:#a3a3a3;white-space:nowrap;">OPS role \u00b7\u00a0'+srcLink(OPS_SITES_BASE+'BWCore/Lists/CORE_Config/AllItems.aspx','BWCore \u2192 CORE_Config \u2192 ops_scenarios')+'</span>'
     +'</div>';
-  root.innerHTML='<div class="ops-wrap">'+banner
+  root.innerHTML='<div class="ops-wrap">'
     +'<div class="ops-top">'
     +'<div class="ops-h"><h2>Four-week cash view</h2><span class="ops-sub">'+W[0].sub.split(' \u2013 ')[0]+' \u2013 '+W[3].end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u00b7 last QuickBooks drop: none yet</span><div class="ops-rule"></div></div>'
     +'<div class="ops-h"><h2>What could move</h2><span class="ops-sub">Only maybes \u00b7 lands in Net Position once cash figures are connected</span><div class="ops-rule"></div></div>'
@@ -19735,10 +19737,9 @@ function opsRenderInto(root){
     +'<div class="ops-af-row"><input type="text" id="opsAfNote" placeholder="Note \u2014 who told you, and when"></div>'
     +'<div class="ops-af-err" id="opsAfErr"></div>'
     +'<div class="ops-af-act"><button type="button" id="opsAfCancel">Cancel</button><button type="button" class="ops-af-save" id="opsAfSave">Add it</button></div></div>'
-    +'<div id="opsScList"></div><div class="ops-sc-foot"><span>Anyone with the OPS role can add, switch, or remove these.</span><span id="opsScCount"></span></div></div>'
+    +'<div id="opsScList"></div><div class="ops-sc-foot"><span>Add here · scenarios within four weeks move to the cash view.</span><span id="opsScCount"></span></div></div>'
     +'</div>'
-    +'<div class="ops-h"><h2>Alerts</h2><span class="ops-sub">Design drift against the DA \u00b7 construction drift against the pipeline\u2019s own dates</span><div class="ops-rule"></div></div>'
-    +'<div class="ops-card'+(alerts.length?' ops-card-alert':'')+'" id="opsAlertCard">'+alertRows+'</div>'
+    // v1084: alerts removed from here — now inline on invoice rows
     +'<div class="ops-h"><h2>What\u2019s expected \u2014 invoices outstanding</h2><span class="ops-sub ops-ar-sub">AR Two-Week Report \u00b7 reading\u2026</span><div class="ops-rule"></div></div>'
     +'<div class="ops-card ops-expected"><div id="opsBtInv"><div class="ops-empty">Loading AR Two-Week Report\u2026</div></div></div>'
     +'<div class="ops-h"><h2>What\u2019s expected \u2014 design &amp; construction schedule</h2><span class="ops-sub">Design invoices seeded from signed DAs \u00b7 construction schedule via CA and LC entries'+(past?' \u00b7 '+past+' past-dated not shown':'')+'</span><div class="ops-rule"></div></div>'
@@ -19749,8 +19750,12 @@ function opsRenderInto(root){
   opsDrawScenarios(W13,root);
   setTimeout(()=>qbApply(root),0); // v1035: after the DOM settles — was querying an empty container
   setTimeout(()=>arApply(root),0); // v1075: AR Two-Week Reports — after DOM settles
-  // v1078: cell click → derivation tip
+  // v1078+v1085: scenario toggle/delete in table, then derivation tip
   root.querySelector('.ops-table')?.addEventListener('click',e=>{
+    const tog=e.target.closest('[data-sc-toggle]');
+    const del=e.target.closest('[data-del]');
+    if(tog){ e.stopPropagation(); const _sc=OPS_SCENARIOS.find(z=>z.id===tog.dataset.scToggle); if(_sc){ _sc.on=!_sc.on; persist(); opsRenderInto(root); } return; }
+    if(del){ e.stopPropagation(); OPS_SCENARIOS=OPS_SCENARIOS.filter(z=>z.id!==del.dataset.del); persist(); opsRenderInto(root); return; }
     const cell=e.target.closest('[data-ops-row]'); if(!cell) return;
     e.stopPropagation(); window._opsCellTipShow&&window._opsCellTipShow(cell);
   });
@@ -19993,8 +19998,12 @@ function opsCellTipHtml(rk,wk,scId){
 function opsDrawScenarios(W,root){
   const el=(root||document).querySelector('#opsScList'); if(!el) return;
   let on=0;
-  el.innerHTML=OPS_SCENARIOS.length?OPS_SCENARIOS.map(s=>{ if(s.on) on++; const w=W[s.wk]; const zone=s.wk<0?'past':s.wk<2?'acc':s.wk<4?'proj':'beyond';
-    return '<div class="ops-sc zone-'+zone+(s.on?' on':'')+'" data-id="'+s.id+'"><button type="button" class="ops-sw" role="switch" aria-checked="'+s.on+'"></button>'
+  // v1082: render in ascending week order; past scenarios (wk<0) sink to the bottom
+  const _sorted=[...OPS_SCENARIOS].sort((a,b)=>{ const wa=a.wk<0?9999:a.wk; const wb=b.wk<0?9999:b.wk; return wa-wb; });
+  const _accSc=_sorted.filter(sc=>sc.wk>=0&&sc.wk<2);
+  el.innerHTML=_sorted.length?_sorted.map(s=>{ if(s.on) on++; const w=W[s.wk]; const zone=s.wk<0?'past':s.wk<2?'acc':s.wk<4?'proj':'beyond';
+    const _fc=zone==='acc'?(_accSc[0]===s?' zone-acc-first':'')+(_accSc[_accSc.length-1]===s?' zone-acc-last':''):'';
+    return '<div class="ops-sc zone-'+zone+_fc+(s.on?' on':'')+'" data-id="'+s.id+'"><button type="button" class="ops-sw" role="switch" aria-checked="'+s.on+'"></button>'
     +'<div class="ops-sc-bd"><div class="ops-sc-t">'+diEsc(s.t)+'</div><div class="ops-sc-m">'+diEsc(s.m?s.m+'. ':'')+(w?'Lands the week of '+w.lab+'.':(s.wk<0?'That week has passed.':'Beyond three months.'))+(s.by?' <span style="color:#a3a3a3;">\u2014 '+diEsc(s.by.split(' ')[0])+'</span>':'')+'</div></div>'
     +'<div class="ops-sc-amt '+s.dir+'">'+(s.dir==='in'?'+':'\u2212')+opsMoney(s.amt)+'</div><button type="button" class="ops-sc-del" data-del="'+s.id+'" aria-label="Remove">\u00d7</button></div>'; }).join('')
     :'<div class="ops-empty">Nothing on the maybe list.</div>';
