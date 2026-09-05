@@ -3062,9 +3062,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-sw-mini::after{content:'';position:absolute;width:9px;height:9px;background:#fff;border-radius:50%;top:2px;left:2px;transition:transform .15s;}
 .ops-sw-mini.on{background:#d8b64f;}
 .ops-sw-mini.on::after{transform:translateX(11px);}
-.ops-sc-tbl-row td.rl{text-align:left !important;font-weight:500 !important;font-size:11px;text-transform:none !important;letter-spacing:0 !important;color:#1f2e3e !important;padding-left:10px !important;}
-.ops-sc-tbl-row td.rl .ops-src{display:inline;font-size:9.5px;color:#a3a3a3;font-weight:400;text-transform:none;letter-spacing:0;margin-left:5px;}
-.ops-sc-tbl-row.ops-sc-tbl-off{opacity:.5;}
+.ops-sc-off-amt{color:#c4bfb2 !important;} /* v1090: off = grayed figure, not a ghosted row */
 .ops-sc-cell{display:flex;align-items:center;justify-content:flex-end;gap:5px;}
 .ops-sc-cell-del{font-size:12px;line-height:1;color:#c4bfb2;background:none;border:none;cursor:pointer;padding:1px 3px;border-radius:3px;flex-shrink:0;}
 .ops-sc-cell-del:hover{background:#f0ece2;color:#ac2828;} /* v1083: gold frame matches invoice zones */
@@ -3427,7 +3425,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1088';
+const CORE_VERSION = 'v1090';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -4243,7 +4241,7 @@ function updateSortBtns(){
 }
 
 // ════════════════════════════════════════════════  SECTION SORTS
-const CAP_SORT={design:{field:null,dir:1},production:{field:null,dir:1}};
+const CAP_SORT={design:{field:'des-start',dir:1},production:{field:'con-start',dir:1}}; // v1089: sections open sorted by start date; a manual drag clears the field (see DRAG handler)
 let PROD_SHOW_PMS=true;
 let DESIGN_SHOW_DESIGNERS=true;
 let DES_CURVES_ENABLED=new Set(); // v1007: retired — kept only so old saved state loads without error; never consulted
@@ -19710,15 +19708,15 @@ function opsRenderInto(root){
   _inWinSc.forEach((sc,idx)=>{
     sc._num=idx+1; // display number, recalculated each render
     const amt=(sc.dir==='in'?1:-1)*(sc.amt||0);
-    rowSc+='<tr class="ops-sc-tbl-row'+(sc.on?'':' ops-sc-tbl-off')+'" data-sc-id="'+sc.id+'">';
-    rowSc+='<td class="rl">Scenario #'+(idx+1)+'<span class="ops-src">'+escH((sc.t||'').slice(0,26))+'</span></td>';
+    rowSc+='<tr class="ops-sc-tbl-row" data-sc-id="'+sc.id+'">';
+    rowSc+='<td class="rl" title="'+escH(sc.t||'')+'">Scenario #'+(idx+1)+'<span class="ops-src">'+escH(sc.by?sc.by.split(' ')[0]:'maybe')+'</span></td>';
     for(let i=0;i<4;i++){
       const hit=(i===sc.wk);
-      rowSc+='<td class="'+cls(i)+(hit&&sc.on?(amt>0?' pos':' negv'):' nodata')+'" data-ops-row="sc" data-ops-sc-id="'+sc.id+'" data-ops-wk="'+i+'">';
+      rowSc+='<td class="'+cls(i)+(hit?(sc.on?(amt>0?' pos':' negv'):' ops-sc-off-amt'):' nodata')+'" data-ops-row="sc" data-ops-sc-id="'+sc.id+'" data-ops-wk="'+i+'">';
       if(hit){
         rowSc+='<div class="ops-sc-cell">'
           +'<button type="button" class="ops-sw-mini'+(sc.on?' on':'')+'" data-sc-toggle="'+sc.id+'" role="switch" aria-checked="'+sc.on+'" title="Include in Net Position"></button>'
-          +'<span>'+(sc.on?(amt>0?'+':'\u2212')+opsMoney(Math.abs(sc.amt||0)):'\u2014')+'</span>'
+          +'<span>'+(amt>0?'+':'\u2212')+opsMoney(Math.abs(sc.amt||0))+'</span>'
           +'<button type="button" class="ops-sc-cell-del" data-del="'+sc.id+'" aria-label="Remove" title="Remove">\u00d7</button>'
           +'</div>';
       } else rowSc+='\u2014';
@@ -20115,16 +20113,16 @@ function opsCellTipHtml(rk,wk,scId){
 function opsDrawScenarios(W,root){
   const el=(root||document).querySelector('#opsScList'); if(!el) return;
   let on=0;
-  // v1082: render in ascending week order; past scenarios (wk<0) sink to the bottom
-  const _sorted=[...OPS_SCENARIOS].sort((a,b)=>{ const wa=a.wk<0?9999:a.wk; const wb=b.wk<0?9999:b.wk; return wa-wb; });
-  const _accSc=_sorted.filter(sc=>sc.wk>=0&&sc.wk<2);
-  el.innerHTML=_sorted.length?_sorted.map(s=>{ if(s.on) on++; const w=W[s.wk]; const zone=s.wk<0?'past':s.wk<2?'acc':s.wk<4?'proj':'beyond';
-    const _fc=zone==='acc'?(_accSc[0]===s?' zone-acc-first':'')+(_accSc[_accSc.length-1]===s?' zone-acc-last':''):'';
-    return '<div class="ops-sc zone-'+zone+_fc+(s.on?' on':'')+'" data-id="'+s.id+'"><button type="button" class="ops-sw" role="switch" aria-checked="'+s.on+'"></button>'
-    +'<div class="ops-sc-bd"><div class="ops-sc-t">'+diEsc(s.t)+'</div><div class="ops-sc-m">'+diEsc(s.m?s.m+'. ':'')+(w?'Lands the week of '+w.lab+'.':(s.wk<0?'That week has passed.':'Beyond three months.'))+(s.by?' <span style="color:#a3a3a3;">\u2014 '+diEsc(s.by.split(' ')[0])+'</span>':'')+'</div></div>'
+  // v1090: in-window scenarios (wk 0-3) live in the cash table — this list holds only
+  // the ones outside that window, so nothing appears twice.
+  const _all=[...OPS_SCENARIOS].sort((a,b)=>{ const wa=a.wk<0?9999:a.wk; const wb=b.wk<0?9999:b.wk; return wa-wb; });
+  const _sorted=_all.filter(sc=>sc.wk<0||sc.wk>=4);
+  el.innerHTML=_sorted.length?_sorted.map(s=>{ if(s.on) on++; const w=W[s.wk]; const zone=s.wk<0?'past':'beyond';
+    return '<div class="ops-sc zone-'+zone+(s.on?' on':'')+'" data-id="'+s.id+'"><button type="button" class="ops-sw" role="switch" aria-checked="'+s.on+'"></button>'
+    +'<div class="ops-sc-bd"><div class="ops-sc-t">'+diEsc(s.t)+'</div><div class="ops-sc-m">'+diEsc(s.m?s.m+'. ':'')+(w?'Lands the week of '+w.lab+'.':(s.wk<0?'That week has passed.':'Beyond four weeks.'))+(s.by?' <span style="color:#a3a3a3;">\u2014 '+diEsc(s.by.split(' ')[0])+'</span>':'')+'</div></div>'
     +'<div class="ops-sc-amt '+s.dir+'">'+(s.dir==='in'?'+':'\u2212')+opsMoney(s.amt)+'</div><button type="button" class="ops-sc-del" data-del="'+s.id+'" aria-label="Remove">\u00d7</button></div>'; }).join('')
-    :'<div class="ops-empty">Nothing on the maybe list.</div>';
-  const c=(root||document).querySelector('#opsScCount'); if(c) c.textContent=on+' of '+OPS_SCENARIOS.length+' on';
+    :'<div class="ops-empty">'+(OPS_SCENARIOS.length?'All scenarios fall inside the four-week window \u2014 see the cash view above.':'Nothing on the maybe list.')+'</div>';
+  const c=(root||document).querySelector('#opsScCount'); if(c) c.textContent=(_sorted.length?on+' of '+_sorted.length+' beyond window':(OPS_SCENARIOS.length?'all in cash view':''));
 }
 
 // ════════════════════════════════  DESIGN INVOICES — DA seed (v981–v982)
