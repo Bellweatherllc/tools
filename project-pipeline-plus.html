@@ -2906,7 +2906,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-table tbody tr:last-child td.rl{border-bottom:none;}
 /* v1032: weeks 1–2 read as NOW (gold wash + gold frame, mirroring the calendar's
    today column); weeks 3–4 are the projected blue; anything beyond stays white. */
-.ops-table th.znow,.ops-table td.znow{background:rgba(216,182,79,.10);}
+.ops-table th.znow,.ops-table td.znow{background:rgba(216,182,79,.18);} /* v1077: darker */
 .ops-table th.zproj,.ops-table td.zproj{background:rgba(59,127,168,.07);}
 .ops-table th.rl.znow,.ops-table td.rl.znow,.ops-table th.rl.zproj,.ops-table td.rl.zproj{background:transparent;}
 /* Gold frame around the two NOW columns */
@@ -2936,7 +2936,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-group.zone-acc{position:relative;border-top:2.5px solid #d8b64f;}
 .ops-inv.zone-acc{border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;}
 .ops-group.zone-acc{border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;}
-.ops-inv.zone-acc:last-of-type{border-bottom:2.5px solid #d8b64f;}
+.ops-inv.zone-acc-last,.ops-empty.zone-acc-last{border-bottom:2.5px solid #d8b64f;border-bottom-left-radius:4px;border-bottom-right-radius:4px;} /* v1077: explicit class; :last-of-type was resolving to the wrong sibling */
 .ops-group.zone-proj{border-top:1px solid #e4dac4;}
 .ops-group.zone-beyond{border-top:1px solid #e4dac4;}
 .ops-inv.zone-beyond:last-child{border-bottom-left-radius:6px;border-bottom-right-radius:6px;}
@@ -3015,6 +3015,9 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-wkopt.z-beyond{background:#fff;}
 .ops-wkopt.z-first-proj{border-top:1px solid #e4dac4;}
 .ops-wkopt.z-first-proj::before,.ops-wkopt.z-first-beyond::before{display:none;}
+.ops-wkopt.z-acc{border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;} /* v1077: gold frame matching invoice zones */
+.ops-wkopt.z-acc:first-child{border-top:2.5px solid #d8b64f;border-top-left-radius:4px;border-top-right-radius:4px;}
+.ops-wkopt.z-acc:not(:has(+.ops-wkopt.z-acc)){border-bottom:2.5px solid #d8b64f;border-bottom-left-radius:4px;border-bottom-right-radius:4px;}
 .ops-wkopt.z-first-beyond{border-top:1px solid #e4dac4;}
 .ops-wkopt:hover,.ops-wkopt.on{background:#1f2e3e;color:#fff;}
 .ops-sc.zone-acc{background:rgba(216,182,79,.10);}
@@ -3375,7 +3378,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1076';
+const CORE_VERSION = 'v1077';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -19419,8 +19422,7 @@ async function arFindNewest(){
     if(!hit) throw new Error('Folder not found: '+rx);
     return hit.id;
   };
-  const finId=await step(root.id,/financial/i);
-  const arId=await step(finId,/ar two.week reports/i);
+  const arId=await step(root.id,/ar two.week reports/i); // folder is at FINANCIAL drive root — no intermediate step
   const kids=await arChildren(drive,arId);
   const isRpt=f=>!f.folder&&/\.xlsx?$/i.test(f.name||'');
   let files=kids.filter(isRpt);
@@ -19549,7 +19551,7 @@ async function arApply(root){
       const fmtDate=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
       const fmtDateLong=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'date TBD';
       const btRow=(x,extra)=>'<div class="ops-inv'+(extra||'')+'">'        +'<span class="ops-inv-date">'+fmtDate(x.deadline)+'</span>'        +'<span class="ops-inv-src construction">Outstanding</span>'        +'<span class="ops-inv-desc"><b>'+escH((x.ownerName||x.job||'').toUpperCase())+'</b>'        +(x.job?' <span style="color:#a3a3a3;font-size:10px;">'+escH(x.job)+'</span>':'')        +', '+fmtDateLong(x.deadline)+' <small>'+escH(x.title)+'</small></span>'        +'<span class="ops-inv-amt">'+opsMoney(x.balance)+'</span></div>';
-      let html='<div class="ops-group zone-acc">Now · two weeks · '+W[0].lab+' – '+W[1].sub.split(' – ')[1]+'</div>'+(acc.length?acc.map(x=>btRow(x,' zone-acc')).join(''):'<div class="ops-empty">Nothing outstanding in this window.</div>');
+      let html='<div class="ops-group zone-acc">Now · two weeks · '+W[0].lab+' – '+W[1].sub.split(' – ')[1]+'</div>'+(acc.length?acc.map((x,i)=>btRow(x,' zone-acc'+(i===acc.length-1?' zone-acc-last':''))).join(''):'<div class="ops-empty zone-acc-last">Nothing outstanding in this window.</div>');
       html+='<div class="ops-group zone-proj">Projected · weeks three and four · '+W[2].lab+' – '+W[3].sub.split(' – ')[1]+'</div>'+(prj.length?prj.map(x=>btRow(x,' zone-proj')).join(''):'<div class="ops-empty">Nothing outstanding in this window.</div>');
       if(beyond.length) html+='<div class="ops-group zone-beyond">Beyond four weeks</div>'+beyond.map(x=>btRow(x,' zone-beyond')).join('');
       if(undated.length) html+='<div class="ops-group zone-beyond">No due date</div>'+undated.map(x=>btRow(x,' zone-beyond')).join('');
