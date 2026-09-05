@@ -3428,7 +3428,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1098';
+const CORE_VERSION = 'v1099';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -19263,6 +19263,14 @@ function opsDesignInvoices(){
       // so it moves with the schedule. Never written back — the DA said "at signing", and that stays true.
       let date=opsIsoToDate(x.date), derived=null, caMove=null;
       const casign=/construction agreement/i.test((x.label||'')+' '+(x.event||''));
+      // v1099: a payment due at DA signing with no date on it falls back to the DA milestone
+      // on the board. The DA is already signed by definition here, so this is a historical
+      // date, not a moving target — read live, never written back.
+      const dasign=/design agreement signing/i.test((x.label||'')+' '+(x.event||''));
+      if(!date&&dasign){
+        const da=(p.milestones||[]).find(m=>m.name==='DA');
+        if(da&&da.week!=null&&typeof wkMon==='function'){ date=wkMon(da.week); date.setHours(0,0,0,0); derived='DA milestone'; }
+      }
       if(!date&&casign){
         const ca=(p.milestones||[]).find(m=>m.name==='CA');
         if(ca&&ca.week!=null&&typeof wkMon==='function'){ date=wkMon(ca.week); date.setHours(0,0,0,0); derived='CA milestone';
@@ -20217,8 +20225,19 @@ function diParseDa(lines){
   const ad=text.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (\d{4})\b/);
   if(ad){ const mo=['January','February','March','April','May','June','July','August','September','October','November','December'].indexOf(ad[1])+1; out.agreementDate=diIsoFromMDY(mo,ad[2],ad[3]); }
   const ti=text.match(/ESTIMATED TARGET INVESTMENT AMOUNT\s+\$?([\d,]+)/i); if(ti) out.targetInvestment=diNum(ti[1]);
-  const sigs=[...text.matchAll(/(\d{2}) \/ (\d{2}) \/ (\d{4})/g)].map(m=>diIsoFromMDY(m[1],m[2],m[3])).sort();
-  if(sigs.length) out.signedDate=sigs[sigs.length-1];
+  // v1099: the signature block is not always DocuSign's '08 / 14 / 2026'. Accept one or two
+  // digits, slash or dash, with or without spaces, and also a spelled-out date sitting on a
+  // line that mentions Date/Signed/Signature. Latest date found wins, as before.
+  const sigs=[...text.matchAll(/\b(\d{1,2})\s*[\/\-]\s*(\d{1,2})\s*[\/\-]\s*(\d{4})\b/g)]
+    .map(m=>diIsoFromMDY(m[1],m[2],m[3])).filter(Boolean);
+  const _MON=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  lines.forEach(l=>{
+    if(!/\b(date|signed|signature)\b/i.test(l)) return;
+    const m=l.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b/i);
+    if(m){ const mo=_MON.findIndex(x=>x.toLowerCase()===m[1].toLowerCase())+1; if(mo) sigs.push(diIsoFromMDY(mo,m[2],m[3])); }
+  });
+  const _sigOk=sigs.filter(Boolean).sort();
+  if(_sigOk.length) out.signedDate=_sigOk[_sigOk.length-1];
   let i=lines.findIndex(l=>/^PAYMENT SCHEDULE/i.test(l));
   if(i<0) return out;
   // v986: the table can straddle a page break (footer "Doc ID", header, blank rows), and a
