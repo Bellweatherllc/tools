@@ -2941,6 +2941,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-group.zone-beyond{border-top:1px solid #e4dac4;}
 .ops-inv.zone-beyond:last-child{border-bottom-left-radius:6px;border-bottom-right-radius:6px;}
 .ops-inv-date{font-family:'Swear Text',serif;font-size:13px;font-weight:600;color:#1f2e3e;width:56px;flex-shrink:0;}
+.ops-ar-sub{font-size:11px;color:#7a7a7a;}
 .ops-inv-src{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:20px;flex-shrink:0;}
 .ops-inv-src.design{background:rgba(59,127,168,.12);color:#3b7fa8;}
 .ops-inv-src.construction{background:rgba(0,82,27,.10);color:#00521b;}
@@ -2969,6 +2970,8 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-alert-tag.design{background:rgba(59,127,168,.12);color:#3b7fa8;}
 .ops-alert-tag.construction{background:rgba(0,82,27,.10);color:#00521b;}
 .ops-alert-tag.camove{background:rgba(0,82,27,.10);color:#00521b;}
+.ops-alert-tag.btmissing{background:rgba(192,104,32,.12);color:#c06820;} /* v1076: amber — not in BT */
+.ops-alert.btmissing{opacity:.92;}
 .ops-ack{margin-left:auto;align-self:center;font-size:10.5px;font-weight:600;font-family:inherit;color:#1f2e3e;background:#f5f3ee;border:1px solid #e4dac4;border-radius:20px;padding:4px 11px;cursor:pointer;white-space:nowrap;}
 .ops-ack:hover{background:#1f2e3e;color:#fff;border-color:#1f2e3e;}
 .ops-alert-t{font-size:12.5px;font-weight:700;color:#ac2828;}
@@ -3372,7 +3375,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1074';
+const CORE_VERSION = 'v1076';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11955,6 +11958,7 @@ function _projectFromItem(item){
     const _lc2=matchPersonByName(proj.logisticsCoord2,LC_COORDS);
     proj.lc1=_lc1?.id||null; proj.lc2=_lc2?.id||null;
     if(!proj.lcHours) proj.lcHours={};
+    proj.jobCode=f.JobCode||''; // v1076: BT job code for AR Two-Week Report cross-check
     proj.salesPerson=f.SalesPerson||'';
     proj.shortDescription=f.ShortDescription||'';
     proj.projectDescription=f.ProjectDescription||'';
@@ -19163,11 +19167,11 @@ function dlOpenPanel(review,stats,scan,fill){
 
 
 // ── v988: OPERATIONS — four-week cash view, grafted from ops-screen-prototype.html ──
-// Live today: design invoices (DesignInvoices on CORE_Projects) → "What's expected" and the
-// AR Expected row; design drift = DesignInvoices vs DesignInvoiceSeed. Not connected yet:
-// the QuickBooks weekly drop (operating cash, payroll, payables, bank balance) and
-// construction invoices — those rows read "—" until their feeds exist. Scenarios are
-// in-memory for the session. Gated by OpsRole on CORE_TeamMembers.
+// Live data feeds: QuickBooks weekly drop (bank balance, payroll, payables) ← OperationsSecure;
+// AR Two-Week Reports / BuilderTrend Pending/Sent invoices (v1075) ← Operations/FINANCIAL;
+// design invoice schedule from CORE_Projects (DA-seeded, editable). Drift alert when a
+// CORE-planned design payment has no matching BT Pending/Sent row. Scenarios shared via CORE_Config.
+// Gated by OpsRole on CORE_TeamMembers.
 let CURRENT_USER_OPS_ROLE='';
 let OPS_SCENARIOS=[]; let _opsScenarioRowId=null;
 function opsWho(){ try{ const a=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]; return (a&&(a.name||a.username))||''; }catch(_){ return ''; } }
@@ -19383,6 +19387,222 @@ async function qbApply(root){
   }
   finally{ _qbBusy=false; }
 }
+// ── v1075: AR Two-Week Reports — BuilderTrend Pending/Sent invoices ──────────────
+// Patti exports from BuilderTrend and drops the .xlsx in Operations/FINANCIAL/6. AR Two-Week Reports.
+// Filing pattern is identical to QB: current report in the parent folder, prior months
+// filed into year subfolders. The finder checks both and takes the newest file.
+// Source of truth for what is actually outstanding AR. Feeds the AR Expected cash row and
+// the "What's expected — outstanding" section. CORE design invoices remain the planning
+// reference and the drift baseline.
+const OPS_SITE_DRIVES='https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/Operations:/drives';
+let _arDriveId=null;
+let AR_DATA=null; // {invoices:[{ownerName,job,title,balance,deadline}],file,modified}
+async function arDriveId(){
+  if(_arDriveId) return _arDriveId;
+  const data=await graphGet(OPS_SITE_DRIVES);
+  const d=(data.value||[]).find(x=>/^financial$/i.test((x.name||'').trim()))
+        ||(data.value||[]).find(x=>/financial/i.test(x.name||''));
+  if(!d) throw new Error('FINANCIAL library not found on Operations site');
+  _arDriveId=d.id; return _arDriveId;
+}
+async function arChildren(driveId,itemId){
+  const base='https://graph.microsoft.com/v1.0/drives/'+driveId+'/items/'+itemId+'/children';
+  const data=await graphGet(base+'?$select=id,name,folder,file,lastModifiedDateTime&$top=200');
+  return data.value||[];
+}
+async function arFindNewest(){
+  const drive=await arDriveId();
+  const root=await graphGet('https://graph.microsoft.com/v1.0/drives/'+drive+'/root?$select=id');
+  const step=async(parentId,rx)=>{
+    const kids=await arChildren(drive,parentId);
+    const hit=kids.find(k=>k.folder&&rx.test((k.name||'').trim()));
+    if(!hit) throw new Error('Folder not found: '+rx);
+    return hit.id;
+  };
+  const finId=await step(root.id,/financial/i);
+  const arId=await step(finId,/ar two.week reports/i);
+  const kids=await arChildren(drive,arId);
+  const isRpt=f=>!f.folder&&/\.xlsx?$/i.test(f.name||'');
+  let files=kids.filter(isRpt);
+  for(const d of kids.filter(f=>f.folder)){
+    try{ files=files.concat((await arChildren(drive,d.id)).filter(isRpt)); }catch(_){}
+  }
+  if(!files.length) throw new Error('No .xlsx report found in AR Two-Week Reports');
+  files.sort((a,b)=>(b.lastModifiedDateTime||'').localeCompare(a.lastModifiedDateTime||''));
+  return {file:files[0],drive};
+}
+// Parse the BuilderTrend Customer Invoices export.
+// Finds the header row (contains a "Status" column), then reads Pending/Sent rows only.
+// Dates in the export are Excel serial numbers (days since 1899-12-30).
+function arParseInvoices(rows){
+  const excelDate=serial=>{ if(!serial||typeof serial!=='number') return null;
+    return new Date((serial-25569)*86400000); };
+  const num=v=>{ if(typeof v==='number') return v;
+    const t=String(v==null?'':v).replace(/[$,\s]/g,''); const n=parseFloat(t);
+    return isNaN(n)?null:n; };
+  // Find the header row — look for a row containing 'Status'
+  let hdr=null, hIdx=-1;
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i]; if(!r) continue;
+    const texts=r.map(c=>String(c==null?'':c).trim().toLowerCase());
+    if(texts.indexOf('status')>=0){ hdr=texts; hIdx=i; break; }
+  }
+  if(!hdr) return [];
+  const col=k=>hdr.indexOf(k.toLowerCase());
+  const cOwner=col('ownername'), cJob=col('job'), cTitle=col('title'), cStatus=col('status');
+  const cBalance=col('invoice balance'), cDeadline=col('deadline');
+  if(cStatus<0||cBalance<0) return [];
+  const out=[];
+  for(let i=hIdx+1;i<rows.length;i++){
+    const r=rows[i]; if(!r||!r.length) continue;
+    const status=String(r[cStatus]||'').trim();
+    if(!/^pending.sent$/i.test(status)) continue;
+    const balance=num(r[cBalance]); if(balance==null||balance<=0) continue;
+    const deadline=cDeadline>=0?excelDate(r[cDeadline]):null;
+    out.push({
+      ownerName:String(r[cOwner]||'').trim(),
+      job:String(r[cJob]||'').trim(),
+      title:String(r[cTitle]||'').trim(),
+      balance:balance,
+      deadline:deadline
+    });
+  }
+  return out;
+}
+async function arLoad(){
+  const {file:f,drive}=await arFindNewest();
+  const tok=await getToken();
+  const dl=await fetch('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+f.id,{headers:{Authorization:'Bearer '+tok}});
+  if(!dl.ok) throw new Error('Graph '+dl.status+' fetching '+f.name);
+  const meta=await dl.json();
+  const url=meta['@microsoft.graph.downloadUrl']; if(!url) throw new Error('No download URL');
+  const buf=await (await fetch(url)).arrayBuffer();
+  if(typeof XLSX==='undefined'){
+    await new Promise((res,rej)=>{ const sc=document.createElement('script');
+      sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload=res; sc.onerror=()=>rej(new Error('SheetJS failed to load')); document.head.appendChild(sc); });
+  }
+  const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+  const ws=wb.Sheets[wb.SheetNames.find(n=>/sheet1/i.test(n)||/customer/i.test(n))||wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
+  const invoices=arParseInvoices(rows);
+  AR_DATA={invoices,file:f.name,modified:f.lastModifiedDateTime};
+  return AR_DATA;
+}
+// v1075: fetch the newest AR Two-Week Report and fill the AR Expected row and
+// the "outstanding" invoice list. Runs after the render settles, same as qbApply.
+let _arBusy=false;
+async function arApply(root){
+  if(_arBusy) return; _arBusy=true;
+  const W=opsWeeks();
+  const wkOf=d=>{ if(!d) return -1; for(let i=0;i<4;i++) if(d>=W[i].start&&d<=W[i].end) return i; return d>W[3].end?4:-2; };
+  const sub=root.querySelector('.ops-ar-sub');
+  const note=t=>{ if(sub) sub.textContent=t; };
+  note('reading…');
+  try{
+    const d=await arLoad();
+    // Bucket Pending/Sent invoices by week
+    const ar=[0,0,0,0];
+    d.invoices.forEach(x=>{ const k=wkOf(x.deadline); if(k>=0&&k<4) ar[k]+=x.balance; });
+    // Update the AR Expected cash row
+    const cls=i=>(i<2?'znow':'zproj')+(i===0?' znow-l':'')+(i===1?' znow-r':'');
+    const put=(re,wkAmounts)=>{
+      root.querySelectorAll('.ops-table tbody tr').forEach(tr=>{
+        const lbl=tr.querySelector('td.rl'); if(!lbl) return;
+        const name=(lbl.childNodes[0]&&lbl.childNodes[0].nodeValue||'').trim();
+        if(!re.test(name)) return;
+        tr.querySelectorAll('td:not(.rl)').forEach((td,i)=>{
+          const v=wkAmounts[i]||0;
+          td.textContent=(v>0?'+':'')+opsMoney(v);
+          td.classList.remove('nodata');
+          td.classList.toggle('pos',v>0);
+        });
+        const src=lbl.querySelector('.ops-src');
+        if(src) src.textContent='BuilderTrend AR Two-Week Report';
+      });
+    };
+    put(/^AR EXPECTED$/i,ar);
+    // Update data-ops-ar on net cells so running forecast recalculates
+    root.querySelectorAll('[data-ops-net]').forEach(td=>{
+      const i=parseInt(td.dataset.opsNet);
+      td.dataset.opsAr=ar[i]||0;
+    });
+    // Recalculate Net Position using whatever QB data is already applied
+    const qbBank=QB_DATA&&QB_DATA.bank!=null?QB_DATA.bank:null;
+    if(qbBank!=null){
+      let bal=qbBank-Math.abs(QB_DATA.payroll||0)-Math.abs(QB_DATA.payables||0);
+      root.querySelectorAll('[data-ops-net]').forEach(td=>{
+        bal+=(parseFloat(td.dataset.opsAr)||0)+(parseFloat(td.dataset.opsSc)||0);
+        td.textContent=opsMoney(bal);
+        td.classList.remove('nodata');
+        td.classList.add(bal<0?'negv':'pos');
+      });
+    }
+    // Fill the BT outstanding invoice list
+    const today=new Date(); today.setHours(0,0,0,0);
+    const btDiv=root.querySelector('#opsBtInv');
+    if(btDiv){
+      const beyond=d.invoices.filter(x=>x.deadline&&wkOf(x.deadline)===4).sort((a,b)=>a.deadline-b.deadline);
+      const inWin=d.invoices.filter(x=>x.deadline&&wkOf(x.deadline)>=0&&wkOf(x.deadline)<4).sort((a,b)=>a.deadline-b.deadline);
+      const undated=d.invoices.filter(x=>!x.deadline);
+      const acc=inWin.filter(x=>wkOf(x.deadline)<2), prj=inWin.filter(x=>wkOf(x.deadline)>=2);
+      const fmtDate=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
+      const fmtDateLong=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'date TBD';
+      const btRow=(x,extra)=>'<div class="ops-inv'+(extra||'')+'">'        +'<span class="ops-inv-date">'+fmtDate(x.deadline)+'</span>'        +'<span class="ops-inv-src construction">Outstanding</span>'        +'<span class="ops-inv-desc"><b>'+escH((x.ownerName||x.job||'').toUpperCase())+'</b>'        +(x.job?' <span style="color:#a3a3a3;font-size:10px;">'+escH(x.job)+'</span>':'')        +', '+fmtDateLong(x.deadline)+' <small>'+escH(x.title)+'</small></span>'        +'<span class="ops-inv-amt">'+opsMoney(x.balance)+'</span></div>';
+      let html='<div class="ops-group zone-acc">Now · two weeks · '+W[0].lab+' – '+W[1].sub.split(' – ')[1]+'</div>'+(acc.length?acc.map(x=>btRow(x,' zone-acc')).join(''):'<div class="ops-empty">Nothing outstanding in this window.</div>');
+      html+='<div class="ops-group zone-proj">Projected · weeks three and four · '+W[2].lab+' – '+W[3].sub.split(' – ')[1]+'</div>'+(prj.length?prj.map(x=>btRow(x,' zone-proj')).join(''):'<div class="ops-empty">Nothing outstanding in this window.</div>');
+      if(beyond.length) html+='<div class="ops-group zone-beyond">Beyond four weeks</div>'+beyond.map(x=>btRow(x,' zone-beyond')).join('');
+      if(undated.length) html+='<div class="ops-group zone-beyond">No due date</div>'+undated.map(x=>btRow(x,' zone-beyond')).join('');
+      btDiv.innerHTML=html;
+    }
+    note((d.file||'file')+' · '+d.invoices.length+' outstanding');
+    console.log('[ops] AR Two-Week Report parsed:',d.file,'invoices:',d.invoices.length,'ar totals:',ar);
+    // v1076: cross-check CORE design invoices against BT Pending/Sent rows.
+    // Fires for installments due within 60 days where no BT row matches this project's
+    // job code AND a comparable amount (within 5%). Amount gating avoids false positives
+    // when an earlier installment is already paid and no longer appears in BT.
+    const _today60=new Date(today.getTime()+60*24*3600*1000);
+    const _coreInv=opsDesignInvoices();
+    const btAlerts=[];
+    _coreInv.forEach(x=>{
+      if(!x.proj.jobCode||!x.date||x.date<today||x.date>_today60||x.amount==null) return;
+      const jc=x.proj.jobCode.trim();
+      const match=d.invoices.find(b=>b.job.trim()===jc&&Math.abs(b.balance-x.amount)/Math.max(x.amount,1)<0.05);
+      if(!match) btAlerts.push({type:'btmissing',tag:'Not in BT',
+        title:_projShortName(x.proj)+' — design invoice '+x.n+' of '+x.total+' not found in AR Two-Week Report',
+        detail:'Planned: '+opsMoney(x.amount)+' due '+(x.date?x.date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'TBD')+'. Not appearing as Pending/Sent in BuilderTrend — check whether it has been sent or was recently paid.'});
+    });
+    const alertCard=root.querySelector('#opsAlertCard');
+    const alertBanner=root.querySelector('#opsAlertBanner');
+    if(alertCard){
+      alertCard.querySelectorAll('.ops-alert.btmissing').forEach(el=>el.remove());
+      if(btAlerts.length){
+        const emptyEl=alertCard.querySelector('#opsAlertEmpty');
+        if(emptyEl) emptyEl.remove();
+        alertCard.classList.add('ops-card-alert');
+        const btHtml=btAlerts.map(a=>'<div class="ops-alert btmissing"><span class="ops-alert-tag btmissing">'+a.tag+'</span><div><div class="ops-alert-t">'+diEsc(a.title)+'</div><div class="ops-alert-d">'+diEsc(a.detail)+'</div></div></div>').join('');
+        alertCard.insertAdjacentHTML('afterbegin',btHtml);
+      }
+      if(alertBanner){
+        const totalAlerts=alertCard.querySelectorAll('.ops-alert').length;
+        const nBT=btAlerts.length;
+        const nOther=totalAlerts-nBT;
+        const parts=[nBT?nBT+' not in BT':'',nOther?nOther+' other':''].filter(Boolean).join(', ');
+        if(totalAlerts>0){
+          alertBanner.innerHTML='<span class="ops-banner-dot"></span><span><b>'+totalAlerts+' open alert'+(totalAlerts===1?'':'s')+'</b> — '+parts+'</span>';
+          alertBanner.style.display='';
+        }
+      }
+    }
+    if(btAlerts.length) console.log('[ops] BT cross-check:',btAlerts.length,'alerts',btAlerts.map(a=>a.title));
+  }catch(e){
+    console.warn('[ops] AR Two-Week Report load failed:',e);
+    note('failed — '+(e.message||e));
+    const btDiv=root.querySelector('#opsBtInv');
+    if(btDiv) btDiv.innerHTML='<div class="ops-empty">Could not load the AR Two-Week Report — '+escH(e.message||String(e))+'</div>';
+  }
+  finally{ _arBusy=false; }
+}
 function opsGateOk(){ return !!CURRENT_USER_OPS_ROLE; }
 // v990: the tab is always present — access changes what the screen shows, not the architecture.
 function opsApplyGate(){ const btn=document.querySelector('[data-focus-btn="operations"]'); if(btn) btn.style.display=''; }
@@ -19439,9 +19659,11 @@ function opsRenderInto(root){
   const alerts=inv.filter(x=>x.drift).map(x=>({type:'design',tag:'Design drift',title:_projShortName(x.proj)+' \u2014 invoice '+x.n+' of '+x.total+' differs from the DA',detail:x.drift}))
     .concat(inv.filter(x=>x.caMove).map(x=>({type:'camove',tag:'CA moved',title:_projShortName(x.proj)+' \u2014 payment '+x.n+' of '+x.total+' at CA signing has moved',detail:'Expected '+fmtIso(x.caMove.was)+'; the board now has the CA on '+fmtIso(x.caMove.now)+'.',ack:'data-ops-ack="'+x.proj._spItemId+'" data-ops-n="'+x.n+'"'})));
   const nD=alerts.filter(a=>a.type==='design').length, nC=alerts.filter(a=>a.type==='camove').length;
-  const banner=alerts.length?'<div class="ops-banner"><span class="ops-banner-dot"></span><span><b>'+alerts.length+' open alert'+(alerts.length===1?'':'s')+'</b> \u2014 '+nD+' design drift, '+nC+' CA move'+(nC===1?'':'s')+'</span></div>':'';
+  // v1076: banner always renders so arApply can update it; hidden when count is zero.
+  const _syncSummary=[nD?nD+' design drift':'',nC?nC+' CA move'+(nC===1?'':'s'):''].filter(Boolean).join(', ');
+  const banner='<div id="opsAlertBanner" class="ops-banner"'+(alerts.length?'':' style="display:none"')+'><span class="ops-banner-dot"></span><span><b>'+alerts.length+' open alert'+(alerts.length===1?'':'s')+'</b>'+(alerts.length?' \u2014 '+_syncSummary:'')+'</span></div>';
   const alertRows=alerts.length?alerts.map(a=>'<div class="ops-alert"><span class="ops-alert-tag '+a.type+'">'+a.tag+'</span><div><div class="ops-alert-t">'+diEsc(a.title)+'</div><div class="ops-alert-d">'+diEsc(a.detail)+'</div></div>'+(a.ack?'<button type="button" class="ops-ack" '+a.ack+'>Acknowledge new date</button>':'')+'</div>').join('')
-    :'<div class="ops-empty">No open alerts. Design drift fires when a seeded invoice is edited away from what the DA said; construction drift arrives with the construction-invoice tool.</div>';
+    :'<div class="ops-empty" id="opsAlertEmpty">No open alerts. Design drift fires when a seeded invoice is edited away from what the DA said; BT cross-check alerts appear once the AR Two-Week Report loads.</div>';
   // what's expected
   const dated=inv.filter(x=>x.date&&x.date>=today).sort((a,b)=>a.date-b.date);
   const inWin=dated.filter(x=>wkOf(x.date)<4), beyond=dated.filter(x=>wkOf(x.date)===4);
@@ -19461,6 +19683,24 @@ function opsRenderInto(root){
   if(beyond.length) invHtml+='<div class="ops-group zone-beyond">Beyond four weeks</div>'+beyond.map(x=>invRow(x,' zone-beyond')).join('');
   if(undated.length) invHtml+='<div class="ops-group zone-beyond">Awaiting a date</div>'+undated.map(x=>invRow(x,' zone-beyond')).join('');
   const seededN=PROJECTS.filter(p=>p.status==='da-signed'&&p.designInvoices).length;
+  // v1075: data sources panel — static listing of every feed and its owner/location
+  const OPS_SITES_BASE='https://bellweather.sharepoint.com/sites/';
+  const srcLink=(url,txt)=>'<a href="'+url+'" target="_blank" rel="noopener" style="color:#3b7fa8;text-decoration:none;">'+escH(txt)+'</a>';
+  const srcRow=(name,who,feed,url,urlLabel)=>'<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;padding:9px 0;border-bottom:1px solid #f0ece2;">'
+    +'<span style="font-size:11px;font-weight:700;color:#1f2e3e;min-width:180px;flex-shrink:0;">'+escH(name)+'</span>'
+    +'<span style="font-size:11px;color:#7a7a7a;flex:1;min-width:160px;">'+escH(feed)+'</span>'
+    +'<span style="font-size:10.5px;color:#a3a3a3;white-space:nowrap;">'+escH(who)+'\u00b7\u00a0'+srcLink(url,urlLabel)+'</span>'
+    +'</div>';
+  const dataSrcHtml=''
+    +srcRow('QuickBooks weekly drop','Patti \u00b7 ','Bank Balance, Payroll, Payables',OPS_SITES_BASE+'OperationsSecure/FINANCIAL/Forms/AllItems.aspx','OperationsSecure \u2192 FINANCIAL \u2192 2. QuickBooks')
+    +srcRow('AR Two-Week Reports','Patti \u00b7 ','Outstanding invoices (Pending/Sent from BuilderTrend)',OPS_SITES_BASE+'Operations/FINANCIAL/Forms/AllItems.aspx?id=%2Fsites%2FOperations%2FFINANCIAL%2F6%2E%20AR%20Two%2DWeek%20Reports','Operations \u2192 FINANCIAL \u2192 6. AR Two-Week Reports')
+    +srcRow('Design invoice schedule','CORE \u00b7 ','Planned design payments, seeded at DA signing',OPS_SITES_BASE+'BWCore/Lists/CORE_Projects/AllItems.aspx','BWCore \u2192 CORE_Projects \u2192 DesignInvoices')
+    +srcRow('Human inputs','Melissa, Mario, PMs \u00b7 ','Major upcoming purchases, judgment figures, PM flags','https://bellweatherllc.github.io/tools/project-updates.html','Project Updates \u2192 OPS notes')
+    +'<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;padding:9px 0;">'
+    +'<span style="font-size:11px;font-weight:700;color:#1f2e3e;min-width:180px;flex-shrink:0;">Scenarios</span>'
+    +'<span style="font-size:11px;color:#7a7a7a;flex:1;min-width:160px;">Shared maybes \u2014 anyone with the OPS role can add, toggle, or remove</span>'
+    +'<span style="font-size:10.5px;color:#a3a3a3;white-space:nowrap;">OPS role \u00b7\u00a0'+srcLink(OPS_SITES_BASE+'BWCore/Lists/CORE_Config/AllItems.aspx','BWCore \u2192 CORE_Config \u2192 ops_scenarios')+'</span>'
+    +'</div>';
   root.innerHTML='<div class="ops-wrap">'+banner
     +'<div class="ops-top">'
     +'<div class="ops-h"><h2>Four-week cash view</h2><span class="ops-sub">'+W[0].sub.split(' \u2013 ')[0]+' \u2013 '+W[3].end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u00b7 last QuickBooks drop: none yet</span><div class="ops-rule"></div></div>'
@@ -19476,15 +19716,19 @@ function opsRenderInto(root){
     +'<div class="ops-af-err" id="opsAfErr"></div>'
     +'<div class="ops-af-act"><button type="button" id="opsAfCancel">Cancel</button><button type="button" class="ops-af-save" id="opsAfSave">Add it</button></div></div>'
     +'<div id="opsScList"></div><div class="ops-sc-foot"><span>Anyone with the OPS role can add, switch, or remove these.</span><span id="opsScCount"></span></div></div>'
-        +'</div>'
+    +'</div>'
     +'<div class="ops-h"><h2>Alerts</h2><span class="ops-sub">Design drift against the DA \u00b7 construction drift against the pipeline\u2019s own dates</span><div class="ops-rule"></div></div>'
-    +'<div class="ops-card'+(alerts.length?' ops-card-alert':'')+'">'+alertRows+'</div>'
-    +'<div class="ops-h"><h2>What\u2019s expected</h2><span class="ops-sub">'+seededN+' project'+(seededN===1?'':'s')+' in design, seeded from a DA \u00b7 CA-signed projects are past design invoicing'+(past?' \u00b7 '+past+' past-dated invoice'+(past===1?'':'s')+' not shown':'')+'</span><div class="ops-rule"></div></div>'
+    +'<div class="ops-card'+(alerts.length?' ops-card-alert':'')+'" id="opsAlertCard">'+alertRows+'</div>'
+    +'<div class="ops-h"><h2>What\u2019s expected \u2014 outstanding</h2><span class="ops-sub ops-ar-sub">AR Two-Week Report \u00b7 reading\u2026</span><div class="ops-rule"></div></div>'
+    +'<div class="ops-card ops-expected"><div id="opsBtInv"><div class="ops-empty">Loading AR Two-Week Report\u2026</div></div></div>'
+    +'<div class="ops-h"><h2>What\u2019s expected \u2014 design schedule</h2><span class="ops-sub">'+seededN+' project'+(seededN===1?'':'s')+' in design, seeded from a DA \u00b7 CA-signed projects are past design invoicing'+(past?' \u00b7 '+past+' past-dated invoice'+(past===1?'':'s')+' not shown':'')+'</span><div class="ops-rule"></div></div>'
     +'<div class="ops-card ops-expected">'+invHtml+'</div>'
-
+    +'<div class="ops-h"><h2>Data sources</h2><span class="ops-sub">What feeds this screen, who provides it, and where to find it</span><div class="ops-rule"></div></div>'
+    +'<div class="ops-card"><div style="padding:0 16px 4px;">'+dataSrcHtml+'</div></div>'
     +'</div>';
   opsDrawScenarios(W13,root);
   setTimeout(()=>qbApply(root),0); // v1035: after the DOM settles — was querying an empty container
+  setTimeout(()=>arApply(root),0); // v1075: AR Two-Week Reports — after DOM settles
   root.querySelectorAll('[data-ops-ack]').forEach(b=>b.addEventListener('click',()=>{ b.disabled=true; b.textContent='Saving\u2026'; opsAckCaMove(b.getAttribute('data-ops-ack'),Number(b.getAttribute('data-ops-n'))); }));
   const form=root.querySelector('#opsAddForm'), addBtn=root.querySelector('#opsAddBtn'); let dir='out';
   const toggleForm=o=>{ form.classList.toggle('on',o); addBtn.classList.toggle('on',o); addBtn.textContent=o?'Close':'+ Add'; if(o) root.querySelector('#opsAfWhat').focus(); };
