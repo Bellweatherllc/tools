@@ -3267,7 +3267,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
   <span style="width:8px;"></span>
   <button class="admin-expand-toggle" id="expandCollapseBtn" onclick="toggleExpandCollapse()">Collapse All</button>
   <button class="admin-expand-toggle" data-doc-linker="1" data-tip="Doc Links" data-tip-d="Run the Doc Linker now and open its review panel: folder anchors, links written this run, expected documents that are missing, and corrections.">Doc Links</button>
-  <button class="admin-expand-toggle" id="adminDesignInvoicesBtn" data-design-invoices="1" data-tip="Design Invoices" data-tip-d="Seed each signed project’s design invoice dates and amounts from its signed DA. A review step confirms what was read before anything is saved.">Design Invoices</button>
+  <button class="admin-expand-toggle" id="adminDesignInvoicesBtn" data-design-invoices="1" data-tip="Scrape DA for Payment Schedule" data-tip-d="Read each signed Design Agreement and seed the project’s design payment schedule — dates and amounts. A review step confirms what was read before anything is saved. The DA must be a PDF.">Scrape DA for Payment Schedule</button>
 </div>
 <div id="hdrBackdrop"></div>
 <div class="outer-scroll"><div id="iw"></div></div>
@@ -3427,7 +3427,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1093';
+const CORE_VERSION = 'v1095';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -20233,32 +20233,44 @@ function diParseDa(lines){
 // URL via the shares endpoint, then a live look in the signed-documents folder (the pill
 // may not be lit yet at the moment of signing).
 async function diFetchDaPdf(proj){
-  const link=proj.docLinkMeta&&proj.docLinkMeta.links&&proj.docLinkMeta.links.da;
   let drive=null; try{ drive=await dlCustomersDriveId(); }catch(_){}
-  let url=null,name='';
-  if(link&&link.id&&drive){ url='https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+link.id+'/content'; name=link.name||''; }
-  if(!url&&proj.docUrls&&proj.docUrls.da&&drive){
-    try{ const it=await dlResolveHref(proj.docUrls.da); url='https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+it.id+'/content'; name=it.name||''; }
-    catch(e){ console.warn(APP_VER+' Design Invoices: linked DA could not be resolved for '+proj.name+' \u2014 looking in the signed folder instead.'); }
+  if(!drive) return null;
+  // v1094: gather every candidate, then prefer a PDF. Previously the cached docLinkMeta
+  // entry won outright, so a stale .docx link blocked a freshly linked PDF and the run
+  // failed on the type check instead of falling through to the good file.
+  const cands=[];
+  const link=proj.docLinkMeta&&proj.docLinkMeta.links&&proj.docLinkMeta.links.da;
+  if(link&&link.id) cands.push({id:link.id,name:link.name||''});
+  if(proj.docUrls&&proj.docUrls.da){
+    try{ const it=await dlResolveHref(proj.docUrls.da); if(it&&it.id) cands.push({id:it.id,name:it.name||''}); }
+    catch(e){ console.warn(APP_VER+' DA Payments: linked DA could not be resolved for '+proj.name+' \u2014 looking in the signed folder instead.'); }
   }
-  if(!url&&proj.spFolderItemId&&drive){
-    const items=await dlListForKind(proj,'da');
-    const files=(items||[]).filter(it=>it.file&&DL_DOC_RULES.da.match(it.name))
-      .sort((a,b)=>String(b.lastModifiedDateTime||'').localeCompare(String(a.lastModifiedDateTime||'')));
-    if(files.length){ url='https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+files[0].id+'/content'; name=files[0].name; }
+  if(proj.spFolderItemId){
+    try{
+      const items=await dlListForKind(proj,'da');
+      (items||[]).filter(it=>it.file&&DL_DOC_RULES.da.match(it.name))
+        .sort((a,b)=>String(b.lastModifiedDateTime||'').localeCompare(String(a.lastModifiedDateTime||'')))
+        .forEach(f=>cands.push({id:f.id,name:f.name||''}));
+    }catch(_){}
   }
-  if(!url) return null;
+  if(!cands.length) return null;
+  const seen=new Set();
+  const uniq=cands.filter(c=>!seen.has(c.id)&&seen.add(c.id));
+  const pick=uniq.find(c=>/\.pdf$/i.test(c.name))||uniq[0];
   const token=await getToken();
-  const res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
-  if(!res.ok) throw new Error('DA download failed ('+res.status+') \u2014 '+(name||'linked file'));
+  const res=await fetch('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+pick.id+'/content',{headers:{Authorization:'Bearer '+token}});
+  if(!res.ok) throw new Error('DA download failed ('+res.status+') \u2014 '+(pick.name||'linked file'));
   const buf=await res.arrayBuffer();
-  return {bytes:new Uint8Array(buf),name:name};
+  return {bytes:new Uint8Array(buf),name:pick.name};
 }
 
 async function diExtract(proj){
   const pdf=await diFetchDaPdf(proj);
   if(!pdf) return {error:'noDa'};
-  if(pdf.name&&!/\.pdf$/i.test(pdf.name)) throw new Error('Linked DA is not a PDF ('+pdf.name+')');
+  if(pdf.name&&!/\.pdf$/i.test(pdf.name)){
+    const ext=(pdf.name.match(/\.([a-z0-9]+)$/i)||[,'file'])[1].toUpperCase();
+    throw new Error('The only DA found for this project is a '+ext+' ('+pdf.name+'). Save a PDF copy into the project folder, then run this again \u2014 the reader cannot open '+ext+'.');
+  }
   const lines=await diPdfLines(pdf.bytes);
   return {result:diParseDa(lines),file:pdf.name};
 }
@@ -20272,9 +20284,9 @@ async function diSeedProject(proj,anchor){
   showToast('Reading the signed DA\u2026',anchor);
   try{
     const r=await diExtract(proj);
-    if(r.error==='noDa'){ showToast('No signed DA found for '+_projShortName(proj)+' \u2014 seed later from Design Invoices.',anchor); return; }
+    if(r.error==='noDa'){ showToast('No signed DA found for '+_projShortName(proj)+' \u2014 seed later from Scrape DA for Payment Schedule.',anchor); return; }
     diOpenReview(proj,r);
-  }catch(e){ console.warn(APP_VER+' Design Invoices: seed failed for '+proj.name,e); showToast('DA seed failed: '+e.message,anchor); }
+  }catch(e){ console.warn(APP_VER+' DA Payments: seed failed for '+proj.name,e); showToast('DA seed failed: '+e.message,anchor); }
 }
 function diAutoSeed(proj){
   if(!proj||proj.designInvoiceSeed) return;
@@ -20372,7 +20384,7 @@ function diOpenPanel(){
   const seeded=projs.filter(p=>p.designInvoiceSeed).length;
   const hdr=document.createElement('div');
   hdr.style.cssText='background:#1f2e3e;color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;';
-  hdr.innerHTML='<div><div style="font-size:14px;font-weight:700;">Design Invoices</div>'
+  hdr.innerHTML='<div><div style="font-size:14px;font-weight:700;">Scrape DA for Payment Schedule</div>'
     +'<div style="font-size:10.5px;color:rgba(255,255,255,.55);margin-top:2px;">'+seeded+' of '+projs.length+' DA-signed project'+(projs.length===1?'':'s')+' seeded'+(caN?' \u00b7 '+caN+' CA-signed skipped \u2014 design invoicing is complete once the CA is signed':'')+'</div></div>'
     +'<button id="diPanelClose" style="background:none;border:none;color:rgba(255,255,255,.65);font-size:20px;cursor:pointer;line-height:1;padding:4px;">\u00d7</button>';
   card.appendChild(hdr);
