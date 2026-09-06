@@ -18,6 +18,8 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/project-updat
 
 Across the top, a row of tabs — one per Project Manager — lets you jump to any PM's projects. You'll normally live on your own tab, but nothing stops you from looking at someone else's if you need to.
 
+Below the tabs, **or jump directly to a project** is a second way in: a picker listing every project regardless of PM, each with its budget-status dot (see below). Pick one and it becomes the only card on screen, replacing whatever the PM tabs were showing — useful when you know the project you want but not who's PM on it. Click any PM tab, or the **✕ Show all** button that appears next to the picker, to drop back to the normal tab view.
+
 ### Making an update
 
 Open a project card and you'll find its editable fields: end date and cost figures. Type the change and save it. Two things are deliberate:

@@ -65,6 +65,27 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
 .pm-tab:hover{background:rgba(255,255,255,.18);color:#fff;}
 .pm-tab.active{background:rgba(216,182,79,.22);color:var(--gold);border-color:rgba(216,182,79,.55);}
 
+/* Jump-to-project picker — sits under the PM tabs, a second way in besides the tabs.
+   Trigger matches the .pm-tab dark-pill look; the dropdown panel is a light popover
+   (like a native listbox) since it's read against whatever's below it, not the header. */
+.jump-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;}
+.jump-label{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.35);white-space:nowrap;}
+.jump-picker{position:relative;min-width:240px;}
+.jump-picker-btn{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:600;display:flex;align-items:center;gap:8px;width:100%;background:rgba(255,255,255,.10);color:rgba(255,255,255,.70);border:1px solid rgba(255,255,255,.20);border-radius:4px;padding:6px 13px;cursor:pointer;text-align:left;transition:all .12s;}
+.jump-picker-btn:hover{background:rgba(255,255,255,.18);color:#fff;}
+.jump-picker-btn.open{border-color:var(--gold);}
+.jump-picker-btn.active-filter{background:rgba(216,182,79,.22);color:var(--gold);border-color:rgba(216,182,79,.55);}
+.jump-picker-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.jump-picker-caret{font-size:10px;opacity:.7;}
+.jump-picker-clear{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:none;color:rgba(255,255,255,.45);cursor:pointer;padding:4px 2px;}
+.jump-picker-clear:hover{color:#fff;}
+#jumpClearBtn.hidden{display:none;}
+.jump-picker-panel{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:500;background:#fff;border:1px solid var(--border);border-radius:4px;box-shadow:0 8px 22px rgba(0,0,0,.22);max-height:min(60vh,440px);overflow-y:auto;}
+.jump-picker-row{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:12px;font-family:'TT Norms Pro',sans-serif;color:var(--navy);cursor:pointer;}
+.jump-picker-row:hover{background:var(--bg);}
+.jump-picker-row.active{background:#f9e6ae;}
+.jump-picker-row-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
 /* ── Main ── */
 #mainApp{padding-top:var(--app-h);}
 #mainApp.hidden{display:none;}
@@ -98,13 +119,15 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
 .card-budget-btn{display:flex;align-items:center;gap:5px;margin-left:6px;padding:3px 9px;border:1px solid var(--border);border-radius:3px;color:var(--text-sec);font-family:'TT Norms Pro',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;flex-shrink:0;background:#fff;transition:color .14s,background .14s,border-color .14s;text-decoration:none;white-space:nowrap;}
 .card-budget-btn:hover{color:var(--navy);background:#f8f7f4;border-color:var(--navy);}
 .budget-status{display:flex;align-items:center;gap:5px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-left:6px;white-space:nowrap;flex-shrink:0;}
-.budget-status .proj-dot{width:7.5px;height:7.5px;border-radius:50%;flex-shrink:0;}
 .budget-status.none{color:#a30a0a;}
-.budget-status.none .proj-dot{background:#c26e6e;}
 .budget-status.partial{color:#8a6215;}
-.budget-status.partial .proj-dot{background:#c9a24a;}
 .budget-status.complete{color:var(--green);}
-.budget-status.complete .proj-dot{background:#6aa873;}
+/* Flat status dot — same convention as the Budget Workbook's picker, used both in
+   the status label above and the header's jump-to-project picker below. */
+.proj-dot{width:7.5px;height:7.5px;border-radius:50%;flex-shrink:0;background:var(--text-sec);}
+.proj-dot.ok{background:#6aa873;}
+.proj-dot.partial{background:#c9a24a;}
+.proj-dot.no{background:#c26e6e;}
 .manual-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.55);font-size:11px;font-weight:700;text-decoration:none;flex-shrink:0;transition:all .12s;}
 .manual-btn:hover{border-color:var(--gold);color:var(--gold);background:rgba(216,182,79,.08);}
 
@@ -266,6 +289,18 @@ body.delete-mode .log-trash-btn{display:flex;}
   </div>
   <div class="pm-tabs-label">Access projects by Project Manager</div>
   <div class="pm-tabs" id="pmTabs"></div>
+  <div class="jump-row">
+    <span class="jump-label">or jump directly to a project</span>
+    <div class="jump-picker" id="jumpPickerWrap">
+      <button type="button" class="jump-picker-btn" id="jumpPickerBtn" onclick="toggleJumpPicker()" aria-haspopup="listbox">
+        <span class="proj-dot" id="jumpPickerDot" style="visibility:hidden;"></span>
+        <span class="jump-picker-label" id="jumpPickerLabel">— pick a project —</span>
+        <span class="jump-picker-caret">▾</span>
+      </button>
+      <div class="jump-picker-panel" id="jumpPickerPanel" role="listbox" hidden></div>
+    </div>
+    <button type="button" class="jump-picker-clear hidden" id="jumpClearBtn" onclick="clearJumpProject()">✕ Show all</button>
+  </div>
 </div>
 
 <div id="tt"></div>
@@ -286,7 +321,7 @@ body.delete-mode .log-trash-btn{display:flex;}
 <script>
 'use strict';
 
-const CORE_VERSION='v73';
+const CORE_VERSION='v74';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 // ── Styled tooltips via data-tip (replaces native title everywhere) ──
@@ -344,6 +379,7 @@ const EPOCH_MS=Date.UTC(2025,0,5);
 
 let msalApp=null,accessToken='',currentUser='',currentUserEmail='',currentUserFullName='',isAdmin=false,adminModeOn=false,canDelete=false,deleteModeOn=false;
 let activePM=null;
+let jumpProjectId=null; // set by the header's "jump directly to a project" picker — overrides the PM-tab filter to show just this one project
 let projects=[],reviews=[];
 // Titles (CORE_Budget_Config.ProjectKey) -> 'none'|'partial'|'complete', judged by
 // the same three fillable financial fields the Budget Workbook itself uses
@@ -357,6 +393,7 @@ function computeBudgetStatus(fields){
   if(filled===BUDGET_STATUS_FIELDS.length) return 'complete';
   return 'partial';
 }
+function dotClassFor(status){ return status==='complete'?'ok':status==='partial'?'partial':'no'; }
 let budgetStatusMap=new Map();
 
 // ── Auth ──────────────────────────────────────────────────────────────────
@@ -632,17 +669,78 @@ function renderAll(){
       label=(firstNameCounts[fn]>1&&parts.length>1)?`${fn} ${parts[parts.length-1][0]}.`:fn;
     }
     tab.textContent=label;
-    tab.addEventListener('click',()=>{ activePM=pm; renderAll(); });
+    tab.addEventListener('click',()=>{ activePM=pm; jumpProjectId=null; renderAll(); });
     tabsEl.appendChild(tab);
   });
 
-  const list=sortGroup(groups[activePM]||[]);
+  // A jump-to-project pick overrides the PM-tab grouping entirely — just that one
+  // project's card shows, regardless of which PM tab is (still) marked active.
+  const jumpProj=jumpProjectId?projects.find(p=>p.id===jumpProjectId):null;
+  const list=jumpProj?[jumpProj]:sortGroup(groups[activePM]||[]);
 
   area.innerHTML='';
   list.forEach(proj=>{
     buildCard(proj,area,open.has(proj.id),editingEnd.has(proj.id),editingCost.has(proj.id));
   });
+
+  renderJumpPicker();
 }
+
+// ── Jump directly to a project (header picker, bypasses PM-tab filtering) ──────
+function renderJumpPicker(){
+  const panel=document.getElementById('jumpPickerPanel');
+  if(!panel) return;
+  const list=[...projects].sort((a,b)=>a.displayName.localeCompare(b.displayName));
+  panel.innerHTML=list.map(p=>{
+    const st=budgetStatusMap.get(p.rawTitle)||'none';
+    return '<div class="jump-picker-row" role="option" data-id="'+p.id+'" onclick="pickJumpProject(\''+p.id+'\')">'+
+      '<span class="proj-dot '+dotClassFor(st)+'"></span>'+
+      '<span class="jump-picker-row-label">'+_ttEsc(p.displayName)+'</span></div>';
+  }).join('');
+  updateJumpPickerTrigger();
+}
+function updateJumpPickerTrigger(){
+  const btn=document.getElementById('jumpPickerBtn');
+  const label=document.getElementById('jumpPickerLabel');
+  const dot=document.getElementById('jumpPickerDot');
+  const clearBtn=document.getElementById('jumpClearBtn');
+  const proj=jumpProjectId?projects.find(p=>p.id===jumpProjectId):null;
+  if(!btn||!label||!dot||!clearBtn) return;
+  if(proj){
+    label.textContent=proj.displayName;
+    dot.style.visibility='visible';
+    dot.className='proj-dot '+dotClassFor(budgetStatusMap.get(proj.rawTitle)||'none');
+    btn.classList.add('active-filter');
+    clearBtn.classList.remove('hidden');
+  }else{
+    label.textContent='— pick a project —';
+    dot.style.visibility='hidden';
+    btn.classList.remove('active-filter');
+    clearBtn.classList.add('hidden');
+  }
+  document.querySelectorAll('.jump-picker-row').forEach(r=>r.classList.toggle('active',r.dataset.id===jumpProjectId));
+}
+function pickJumpProject(id){
+  jumpProjectId=id;
+  closeJumpPicker();
+  renderAll();
+}
+function clearJumpProject(){
+  jumpProjectId=null;
+  renderAll();
+}
+function toggleJumpPicker(){ document.getElementById('jumpPickerPanel').hidden?openJumpPicker():closeJumpPicker(); }
+function openJumpPicker(){
+  document.getElementById('jumpPickerPanel').hidden=false;
+  document.getElementById('jumpPickerBtn').classList.add('open');
+}
+function closeJumpPicker(){
+  document.getElementById('jumpPickerPanel').hidden=true;
+  document.getElementById('jumpPickerBtn').classList.remove('open');
+}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#jumpPickerWrap')) closeJumpPicker();
+});
 
 // Soonest end date first, so project order is consistent every time the page is
 // viewed — projects with no end date yet sort last, alphabetically among themselves.
@@ -705,7 +803,7 @@ function buildCard(proj,container,startOpen,startEditEnd,startEditCost){
   const bStatusLabel=bStatus==='complete'?'Budget set up':bStatus==='partial'?'Budget partially set up':'Not set up yet';
   const statusEl=document.createElement('span');
   statusEl.className='budget-status '+bStatus;
-  statusEl.innerHTML='<span class="proj-dot"></span><span>'+bStatusLabel+'</span>';
+  statusEl.innerHTML='<span class="proj-dot '+dotClassFor(bStatus)+'"></span><span>'+bStatusLabel+'</span>';
   hdrL.appendChild(statusEl);
 
   hdr.appendChild(hdrL);
