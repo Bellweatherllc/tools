@@ -98,6 +98,8 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
 .card-budget-btn{display:flex;align-items:center;gap:5px;margin-left:6px;padding:3px 9px;border:1px solid var(--border);border-radius:3px;color:var(--text-sec);font-family:'TT Norms Pro',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;flex-shrink:0;background:#fff;transition:color .14s,background .14s,border-color .14s;text-decoration:none;white-space:nowrap;}
 .card-budget-btn:hover{color:var(--navy);background:#f8f7f4;border-color:var(--navy);}
 .budget-not-set{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#2b4a6f;margin-left:6px;white-space:nowrap;flex-shrink:0;}
+.manual-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.55);font-size:11px;font-weight:700;text-decoration:none;flex-shrink:0;transition:all .12s;}
+.manual-btn:hover{border-color:var(--gold);color:var(--gold);background:rgba(216,182,79,.08);}
 
 .proj-card-body{border-top:1px solid var(--border);display:none;background:#fff;}
 .proj-card.open .proj-card-body{display:block;}
@@ -209,6 +211,12 @@ body.delete-mode .log-trash-btn{display:flex;}
 .toast.show{opacity:1;}
 .state-msg{padding:40px 18px;color:var(--text-sec);font-size:12px;}
 .state-msg strong{display:block;font-size:14px;color:var(--navy);margin-bottom:4px;}
+
+/* Tooltip (data-tip) */
+#tt{position:fixed;z-index:9999;background:var(--navy);color:#fff;font-size:11px;line-height:1.5;padding:6px 11px;border-radius:6px;pointer-events:none;opacity:0;transition:opacity .1s;box-shadow:0 4px 12px rgba(0,0,0,.22);max-width:220px;}
+#tt.show{opacity:1;}
+#tt .tt-n{font-weight:700;color:var(--gold);}
+#tt .tt-d{font-size:10px;color:rgba(255,255,255,.55);}
 </style>
 </head>
 <body>
@@ -247,10 +255,13 @@ body.delete-mode .log-trash-btn{display:flex;}
       <div class="conn-label" id="connLabel">Connecting…</div>
     </div>
     <div class="hsp"></div>
+    <a class="manual-btn" href="pm-tools-manual.html" target="_blank" rel="noopener" data-tip="Help &amp; repair manual">?</a>
   </div>
   <div class="pm-tabs-label">Access projects by Project Manager</div>
   <div class="pm-tabs" id="pmTabs"></div>
 </div>
+
+<div id="tt"></div>
 
 <!-- Main -->
 <div id="mainApp" class="hidden">
@@ -268,8 +279,46 @@ body.delete-mode .log-trash-btn{display:flex;}
 <script>
 'use strict';
 
-const CORE_VERSION='v71';
+const CORE_VERSION='v72';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
+
+// ── Styled tooltips via data-tip (replaces native title everywhere) ──
+const TT=document.getElementById('tt');
+function _ttEsc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function _tipHTML(el){
+  const n=el.getAttribute('data-tip')||'';
+  const d=el.getAttribute('data-tip-d')||'';
+  if(d) return `<div class="tt-n">${_ttEsc(n)}</div><div class="tt-d">${_ttEsc(d)}</div>`;
+  return _ttEsc(n).replace(/\n/g,'<br>');
+}
+function showTTraw(html,e){TT.innerHTML=html;TT.classList.add('show');moveTT(e);}
+function moveTT(e){
+  const tw=TT.offsetWidth||140, th=TT.offsetHeight||60;
+  const vw=window.innerWidth, vh=window.innerHeight;
+  let top=e.clientY-th-10;
+  if(top<4) top=Math.min(vh-th-4, e.clientY+18);
+  let left=e.clientX-tw-14;
+  if(left<4) left=e.clientX+14;
+  left=Math.max(4,Math.min(left, vw-tw-4));
+  top=Math.max(4,Math.min(top, vh-th-4));
+  TT.style.left=left+'px';
+  TT.style.top=top+'px';
+}
+function hideTT(){TT.classList.remove('show');}
+document.addEventListener('mouseover',e=>{
+  const t=e.target&&e.target.closest?e.target.closest('[data-tip]'):null;
+  if(!t||!t.getAttribute('data-tip')) return;
+  showTTraw(_tipHTML(t),e);
+});
+document.addEventListener('mousemove',e=>{
+  if(e.target.closest&&e.target.closest('[data-tip]')&&TT.classList.contains('show')) moveTT(e);
+});
+document.addEventListener('mouseout',e=>{
+  const t=e.target&&e.target.closest?e.target.closest('[data-tip]'):null;
+  if(!t) return;
+  if(t.contains&&t.contains(e.relatedTarget)) return;
+  hideTT();
+});
 // Header height varies with how many PM tabs wrap onto a second row — measure it
 // live instead of guessing a fixed px value, so #mainApp never overlaps it.
 (function(){
