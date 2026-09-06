@@ -37,12 +37,27 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
 .bw-logo{height:22px;width:auto;display:block;}
 .auth-logo{height:44px;width:auto;opacity:.90;}
 .hdr-title{font-family:'Swear Text',serif;color:rgba(255,255,255,.85);font-size:14px;}
-.hdr-badge{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--gold);}
+/* Version badge — red, matches Project Updates / project-pipeline exactly */
+.proto-badge{font-size:10px;font-weight:600;letter-spacing:.08em;color:#ef4444;}
 .hdr-spacer{flex:1;}
 .hdr-user{font-size:10px;color:rgba(255,255,255,.55);letter-spacing:.03em;}
 .hdr-btn{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;background:none;color:rgba(255,255,255,.70);border:1px solid rgba(255,255,255,.28);border-radius:4px;padding:4px 12px;cursor:pointer;transition:all .12s;}
 .hdr-btn:hover{border-color:rgba(255,255,255,.60);color:#fff;}
 .hdr-btn.gold{color:var(--gold);border-color:rgba(216,182,79,.45);}
+
+/* Admin control — gear + track/knob, matches Project Updates' .admin-control exactly */
+.admin-control{display:none;align-items:center;gap:7px;flex-shrink:0;}
+.admin-control.visible{display:flex;}
+.admin-ctrl-label{font-family:'TT Norms Pro',sans-serif;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.35);user-select:none;}
+.admin-switch{cursor:pointer;flex-shrink:0;}
+.admin-switch input{display:none;}
+.admin-track{width:36px;height:20px;border-radius:10px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.20);position:relative;display:flex;align-items:center;transition:background .18s,border-color .18s;}
+.admin-thumb{position:absolute;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .18s;}
+.admin-switch input:checked + .admin-track{background:#c53030;border-color:#c53030;}
+.admin-switch input:checked + .admin-track .admin-thumb{transform:translateX(16px);}
+.admin-gear{font-size:18px;line-height:1;color:rgba(255,255,255,.35);cursor:pointer;user-select:none;transition:color .18s,transform .25s;}
+body.admin-mode .admin-ctrl-label{color:rgba(255,255,255,.70);}
+body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
 
 /* ---------- Layout ---------- */
 .main{max-width:760px;margin:0 auto;padding:66px 18px 60px;}
@@ -208,7 +223,7 @@ tr.col-hdr td.fx{text-align:center;}
     <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
     <div class="auth-title">PM Budget Workbook</div>
     <div class="auth-subtitle">Bellweather CORE</div>
-    <div class="auth-version" id="authVersionBadge">v30</div>
+    <div class="auth-version" id="authVersionBadge"></div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -217,7 +232,15 @@ tr.col-hdr td.fx{text-align:center;}
 <header class="app-header">
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <span class="hdr-title">PM Budget Workbook</span>
-  <span class="hdr-badge" id="versionBadge">v30</span>
+  <div class="admin-control" id="adminControl">
+    <span class="admin-ctrl-label">Admin</span>
+    <label class="admin-switch">
+      <input type="checkbox" id="adminCheckbox" onchange="toggleAdminMode()">
+      <span class="admin-track"><span class="admin-thumb"></span></span>
+    </label>
+    <span class="admin-gear" id="adminGear" onclick="toggleAdminMode()">⚙</span>
+  </div>
+  <span class="proto-badge" id="versionBadge"></span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
   <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
@@ -296,9 +319,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v30';
+const CORE_VERSION = 'v31';
+(function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v31', date:'2026-09-06', notes:'Header now has the same Admin gear/switch control and red version badge as Project Updates.' },
   { v:'v30', date:'2026-08-26', notes:'Fixed checkbox now sits centered in its cell, horizontally and vertically.' },
   { v:'v29', date:'2026-08-26', notes:'Trash can redrawn as a clean simple icon, slightly larger \u2014 no more red block.' },
   { v:'v28', date:'2026-08-26', notes:'The question-mark cursor on hoverable fields is gone \u2014 tooltips still appear, the cursor just stays normal.' },
@@ -342,6 +367,13 @@ const SP_LISTS = 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.
 const SP_SITE  = 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:';
 
 let msalApp = null, accessToken = '', currentUser = '', currentUserEmail = '';
+let adminModeOn = false;
+function toggleAdminMode(){
+  adminModeOn = !adminModeOn;
+  document.body.classList.toggle('admin-mode', adminModeOn);
+  const cb = document.getElementById('adminCheckbox');
+  if(cb) cb.checked = adminModeOn;
+}
 const PROJ_META = {};
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
 /* Instant tooltips: [data-tip] elements show a styled box immediately, no native-title delay */
@@ -408,6 +440,8 @@ async function loadRole(){
     const budgetRole = ((me && me.fields && me.fields.BudgetRole) || '').trim().toLowerCase();
     const pipelineRole = ((me && me.fields && me.fields.PipelineRole) || '').trim().toLowerCase();
     isBudgetAdmin = budgetRole === 'admin' || pipelineRole === 'admin';
+    const ac = document.getElementById('adminControl');
+    if(ac && isBudgetAdmin) ac.classList.add('visible');
   }catch(e){ console.warn('role', e); isBudgetAdmin = false; }
 }
 async function getManageToken(){
