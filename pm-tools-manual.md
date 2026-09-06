@@ -74,6 +74,8 @@ An admin picks a project with no budget yet, and either sees the estimate link p
 
 **Change estimate / tab**, available to admins from an open workbook, re-runs setup against a (possibly different) file or tab — useful if the wrong tab was picked originally. It moves the estimate figures and comments to match the new tab and cleans up anything left over from the old one; PM budget lines and budgeting comments are never touched by this.
 
+**Reset Budget**, next to it, is the more drastic option: it permanently deletes the project's budget config, every budget line (estimate-seeded and PM-added alike), and every comment (estimating and budgeting), putting the project straight back to Not set up — a red dot in the picker, no leftover data. Use it when a setup needs to start over from nothing, not just correct which tab was used. There's no undo, and it asks for confirmation before doing anything.
+
 ### Working the grid
 
 Once a budget exists, it opens as a spreadsheet-style grid: gray division headers, a scope line per row, an Estimate column (read-only, from the snapshot) beside an editable Budget column. A few things worth knowing:
