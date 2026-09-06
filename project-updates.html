@@ -61,25 +61,18 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
 .page-intro{padding:11px 18px 4px;margin:0;font-size:13.5px;color:#4a4a4a;line-height:1.55;}
 
 /* ── Controls bar ── */
-.controls-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:7px 18px;display:flex;align-items:center;gap:10px;position:sticky;top:var(--app-h);z-index:100;}
-.sort-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);}
-.sort-btn{background:none;border:1px solid var(--border);border-radius:3px;padding:3px 10px;font-family:'TT Norms Pro',sans-serif;font-size:10px;font-weight:600;letter-spacing:.04em;color:var(--text-sec);cursor:pointer;transition:all .12s;}
-.sort-btn.active{background:var(--navy);color:#fff;border-color:var(--navy);}
-.proj-count{margin-left:auto;font-size:10px;color:var(--text-muted);}
+.controls-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 18px;display:flex;align-items:center;gap:10px;position:sticky;top:var(--app-h);z-index:100;}
+.pm-tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;}
+.pm-tabs::-webkit-scrollbar{display:none;}
+.pm-tab{flex-shrink:0;display:flex;align-items:center;gap:6px;background:none;border:none;border-bottom:2px solid transparent;padding:9px 12px 8px;font-family:'TT Norms Pro',sans-serif;font-size:11.5px;font-weight:600;color:var(--text-sec);cursor:pointer;white-space:nowrap;transition:color .12s,border-color .12s;}
+.pm-tab:hover{color:var(--navy);}
+.pm-tab.active{color:var(--navy);border-bottom-color:var(--gold);}
+.pm-tab-count{font-size:9px;font-weight:700;color:var(--text-muted);background:var(--bg);border-radius:8px;padding:1px 6px;}
+.pm-tab.active .pm-tab-count{background:rgba(216,182,79,.20);color:var(--navy);}
+.proj-count{margin-left:auto;font-size:10px;color:var(--text-muted);white-space:nowrap;}
 
-/* ── Projects area ── */
-.projects-area{padding:14px 18px;display:flex;flex-direction:column;gap:14px;}
-
-/* ── PM group ── */
-.pm-group{padding-bottom:20px;}
-.pm-group-hdr{display:flex;align-items:center;gap:10px;padding:8px 0 10px;margin-bottom:8px;border-bottom:2px solid var(--border);cursor:pointer;user-select:none;}
-.pm-group-hdr:hover .pm-group-name{color:#2d4258;}
-.pm-group-name{font-size:15px;font-weight:700;color:var(--navy);letter-spacing:.01em;transition:color .12s;}
-.pm-group-count{font-size:10px;color:var(--text-muted);}
-.pm-group-chev{font-size:12px;color:var(--text-muted);transition:transform .18s;flex-shrink:0;transform:rotate(90deg);}
-.pm-group.collapsed .pm-group-chev{transform:rotate(0deg);}
-.pm-group.collapsed .pm-group-cards{display:none;}
-.pm-group-cards{display:flex;flex-direction:column;gap:8px;padding-left:16px;overflow:hidden;}
+/* ── Projects area — cards for the active PM tab ── */
+.projects-area{padding:14px 18px;display:flex;flex-direction:column;gap:8px;}
 
 /* ── Project card — softer ── */
 
@@ -224,7 +217,7 @@ body.delete-mode .log-trash-btn{display:flex;}
       <div class="auth-title">Project Updates</div>
       <div class="auth-subtitle">Bellweather Design Build</div>
     </div>
-    <div class="auth-version" id="authVersionBadge">v60</div>
+    <div class="auth-version" id="authVersionBadge"></div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
     <div class="auth-status" id="authStatus"></div>
   </div>
@@ -235,7 +228,7 @@ body.delete-mode .log-trash-btn{display:flex;}
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
   <div class="hd"></div>
   <div class="hdr-title">Project Updates</div>
-  <div class="proto-badge" id="versionBadge">v60</div>
+  <div class="proto-badge" id="versionBadge"></div>
   <div id="adminSlider">
     <span class="slider-lbl">Admin</span>
     <div class="slider-track" id="sliderTrack" onclick="toggleDeleteMode()">
@@ -253,6 +246,7 @@ body.delete-mode .log-trash-btn{display:flex;}
 <div id="mainApp" class="hidden">
   <div class="content-wrap">
     <div class="controls-bar">
+      <div class="pm-tabs" id="pmTabs"></div>
       <span class="proj-count" id="projCount"></span>
     </div>
     <p class="page-intro">Make simple edits to project end dates and costs. Changes are tracked and automatically shared with Ryan. After saving a change, it can't be re-edited — just make another entry to correct it.</p>
@@ -268,16 +262,17 @@ body.delete-mode .log-trash-btn{display:flex;}
 <script>
 'use strict';
 
+const CORE_VERSION='v61';
+(function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
+
 const MSAL_CONFIG={auth:{clientId:'84b37f0e-b149-4089-9bdc-fc654715db23',authority:'https://login.microsoftonline.com/ff0e3f46-615a-4a22-8a80-4bb83d627785',redirectUri:window.location.origin+window.location.pathname},cache:{cacheLocation:'localStorage',storeAuthStateInCookie:false}};
 const SCOPES=['https://graph.microsoft.com/Sites.ReadWrite.All'];
 const SP='https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
 const EPOCH_MS=Date.UTC(2025,0,5);
 
-let msalApp=null,accessToken='',currentUser='',currentUserEmail='',isAdmin=false,adminModeOn=false,canDelete=false,deleteModeOn=false;
-const expandedPMGroups=new Set();
+let msalApp=null,accessToken='',currentUser='',currentUserEmail='',currentUserFullName='',isAdmin=false,adminModeOn=false,canDelete=false,deleteModeOn=false;
+let activePM=null;
 let projects=[],reviews=[];
-// Per-group sort state: pmKey → 'alpha'|'end'
-const groupSort={};
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 async function initMsal(){
@@ -329,6 +324,8 @@ function buildProjectsList(items){
   return items
     .filter(item=>{
       const f=item.fields||{};
+      const nm=(f.ProjectName||f.ClientName||f.Title||'').trim();
+      if(/^slot\b/i.test(nm)) return false;
       const stage=(f.PipelineStage||'').toLowerCase().replace(/[-\s]/g,'');
       if(!stage||stage==='archived'||stage==='archive'||stage==='cancelled'||stage==='cancel'||stage==='lost') return false;
       let gantt={}; try{gantt=JSON.parse(f.GanttData||'{}');}catch(e){}
@@ -379,6 +376,7 @@ async function loadAll(){
       if(email&&currentUserEmail&&email===currentUserEmail) return true;
       return name&&signedInName&&(signedInName.includes(name.split(' ')[0])||name.includes(signedInName.split(' ')[0]));
     });
+    currentUserFullName=(me?.fields?.EmployeeName||me?.fields?.Title||currentUser||'').trim();
     const projUpdatesRole=(me?.fields?.ProjectUpdatesRole||'').trim();
     const pipelineRole=(me?.fields?.PipelineRole||'').trim().toLowerCase();
     isAdmin=!!(projUpdatesRole)||(pipelineRole==='admin');
@@ -458,20 +456,35 @@ function toggleDeleteMode(){
   const track=document.getElementById('sliderTrack');
   if(track) track.classList.toggle('on',deleteModeOn);
 }
+function defaultPMTab(keys){
+  const cu=currentUserFullName.trim().toLowerCase();
+  if(cu){
+    const exact=keys.find(k=>k.trim().toLowerCase()===cu);
+    if(exact) return exact;
+    const cuFirst=cu.split(' ')[0];
+    const partial=keys.find(k=>{
+      const kl=k.trim().toLowerCase();
+      return kl!=='unassigned'&&(kl.split(' ')[0]===cuFirst||kl.includes(cuFirst));
+    });
+    if(partial) return partial;
+  }
+  return keys.find(k=>k!=='Unassigned')||keys[0];
+}
+
 function renderAll(){
   const area=document.getElementById('projectsArea');
+  const tabsEl=document.getElementById('pmTabs');
   const _lm=document.getElementById('loadingMsg');if(_lm)_lm.style.display='none';
-  document.getElementById('projCount').textContent=projects.length+' active project'+(projects.length!==1?'s':'');
+
+  if(!projects.length){
+    tabsEl.innerHTML='';
+    document.getElementById('projCount').textContent='';
+    area.innerHTML='<div class="state-msg"><strong>No projects in construction</strong>CA-signed projects appear here.</div>';
+    return;
+  }
 
   const open=new Set([...area.querySelectorAll('.proj-card.open')].map(el=>el.dataset.pid));
   const editing=new Set([...area.querySelectorAll('.proj-card.editing')].map(el=>el.dataset.pid));
-  // Snapshot which PM groups user has expanded/collapsed before wiping the DOM
-  area.querySelectorAll('.pm-group').forEach(el=>{
-    el.classList.contains('collapsed')?expandedPMGroups.delete(el.dataset.pmKey):expandedPMGroups.add(el.dataset.pmKey);
-  });
-  area.innerHTML='';
-
-  if(!projects.length){area.innerHTML='<div class="state-msg"><strong>No projects in construction</strong>CA-signed projects appear here.</div>';return;}
 
   // Group by PM
   const groups={};
@@ -487,56 +500,30 @@ function renderAll(){
     return a.localeCompare(b);
   });
 
-  // Determine which PM groups should be open:
-  // current user's group always open; previously-open groups stay open; others collapsed
+  // First render lands the signed-in PM on their own tab; a tab that disappears
+  // (e.g. their last project left construction) falls back the same way.
+  if(!activePM||!groups[activePM]) activePM=defaultPMTab(keys);
+
+  tabsEl.innerHTML='';
   keys.forEach(pm=>{
-    const grpEl=document.createElement('div');
-    grpEl.className=expandedPMGroups.has(pm)?'pm-group':'pm-group collapsed';
-    grpEl.dataset.pmKey=pm;
+    const tab=document.createElement('button');
+    tab.className='pm-tab'+(pm===activePM?' active':'');
+    tab.innerHTML=`<span>${pm}</span><span class="pm-tab-count">${groups[pm].length}</span>`;
+    tab.addEventListener('click',()=>{ activePM=pm; renderAll(); });
+    tabsEl.appendChild(tab);
+  });
 
-    const ghdr=document.createElement('div');
-    ghdr.className='pm-group-hdr';
-    ghdr.innerHTML=`<span class="pm-group-chev">▶</span><span class="pm-group-name">${pm}</span><span class="pm-group-count">${groups[pm].length} project${groups[pm].length!==1?'s':''}</span>`;
-    ghdr.addEventListener('click',()=>{
-      grpEl.classList.toggle('collapsed');
-      grpEl.classList.contains('collapsed')?expandedPMGroups.delete(pm):expandedPMGroups.add(pm);
-    });
-    grpEl.appendChild(ghdr);
+  const list=sortGroup(groups[activePM]||[]);
+  document.getElementById('projCount').textContent=list.length+' active project'+(list.length!==1?'s':'');
 
-    const cards=document.createElement('div');
-    cards.className='pm-group-cards';
-
-    sortGroup(groups[pm],'alpha').forEach(proj=>{
-      buildCard(proj,cards,open.has(proj.id),editing.has(proj.id));
-    });
-
-    grpEl.appendChild(cards);
-    area.appendChild(grpEl);
+  area.innerHTML='';
+  list.forEach(proj=>{
+    buildCard(proj,area,open.has(proj.id),editing.has(proj.id));
   });
 }
 
-function sortGroup(list,mode){
-  const c=[...list];
-  if(mode==='alpha') c.sort((a,b)=>a.displayName.localeCompare(b.displayName));
-  else c.sort((a,b)=>{
-    const ea=latestEnd(a),eb=latestEnd(b);
-    if(!ea&&!eb) return 0;if(!ea) return 1;if(!eb) return -1;
-    return ea.localeCompare(eb);
-  });
-  return c;
-}
-
-function setGroupSort(pm,mode,btn){
-  groupSort[pm]=mode;
-  const grp=btn.closest('.pm-group');
-  grp.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  const cards=grp.querySelector('.pm-group-cards');
-  const open=new Set([...cards.querySelectorAll('.proj-card.open')].map(el=>el.dataset.pid));
-  const editing=new Set([...cards.querySelectorAll('.proj-card.editing')].map(el=>el.dataset.pid));
-  cards.innerHTML='';
-  const list=projects.filter(p=>(p.pm||'Unassigned')===pm);
-  sortGroup(list,mode).forEach(proj=>buildCard(proj,cards,open.has(proj.id),editing.has(proj.id)));
+function sortGroup(list){
+  return [...list].sort((a,b)=>a.displayName.localeCompare(b.displayName));
 }
 
 function buildCard(proj,container,startOpen,startEditing){
