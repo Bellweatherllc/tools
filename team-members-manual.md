@@ -18,7 +18,9 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/team-members.
 
 Team Members uses your regular Bellweather Microsoft account — the same one you use for email. Click **Sign in with Microsoft**, pick your Bellweather account if asked, and the roster loads.
 
-Anyone with a Bellweather account can sign in and look at the roster. Actually changing it — adding people, editing their details, or touching the Access matrix — depends on permissions set up ahead of time on the underlying SharePoint list. If you sign in and can't save a change, that's a permissions question — ask Byron.
+Anyone with a Bellweather account can sign in and look at the roster. Actually changing it — adding people, editing their details, or touching the Access matrix or Tool Settings — depends on permissions set up ahead of time on the underlying SharePoint list. If you sign in and can't save a change, that's a permissions question — ask Byron.
+
+> **Where editing access is actually controlled.** Unlike the Pipeline, PM Updater, and Budget Worksheet, Team Members has no admin toggle or admin role built into the page itself — there's no on/off switch in here that decides who can edit. Whether you can save a change comes entirely from your permission level on the **CORE_TeamMembers list**, in the **BWCore** SharePoint site: **Edit/Contribute** lets you save changes on any tab; **Read** lets you sign in and see the roster, but every save (adding, editing, or removing a person; changing an Access-matrix cell; flipping a Tool Settings toggle) will fail with a permissions error. To grant or remove someone's editing access, go to the BWCore site, open the CORE_TeamMembers list's permissions, and add or remove them from the group (or individual permission) that has Edit/Contribute there — that's the one and only place this is controlled.
 
 ### The three tabs
 
@@ -49,6 +51,8 @@ The delete button on a row asks for confirmation, then removes them from the Sha
 ### Reading the matrix
 
 The Access tab is a grid: one row per person, one column per CORE tool. Above the grid, a **Tool Reference** legend spells out, for each tool, what a **Member** can do versus what an **Admin** can do — read that first if you're not sure what a given level actually unlocks.
+
+This matrix controls access to the *other* CORE tools — Pipeline, PM Updater, PM Budget Worksheet, and OPS/Cash Flow. It has no effect on who can edit Team Members itself; that's a separate SharePoint permission, covered under **Signing in** above.
 
 The four tools, and roughly what each level means:
 
@@ -84,3 +88,5 @@ Like the Access matrix, each toggle saves immediately.
 **I don't see a Sign Out button.** Team Members doesn't have one — it isn't needed day to day. Signing out of your Bellweather Microsoft account (or closing the browser) signs you out everywhere, including here.
 
 **What's the difference between "inactive" and "delete"?** Inactive hides someone from active lists but keeps every setting intact, ready to switch back on. Delete removes the person and everything tied to them, permanently. When in doubt, use inactive.
+
+**Where do I go to give someone edit access to Team Members itself?** Not on this page — there's no admin switch here. Go to the CORE_TeamMembers list in the BWCore SharePoint site and give them Edit/Contribute permission on that list. See **Where editing access is actually controlled** under Signing in.
