@@ -319,10 +319,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v36';
+const CORE_VERSION = 'v37';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v37', date:'2026-09-06', notes:'Toggling admin mode while a not-yet-set-up project is selected now immediately swaps the setup card and the plain heads-up message, instead of requiring you to reselect the project. The picker now marks every project · Set up or · Not set up, and dropped the DA/CA-signed stage label, which wasn’t worth the space.' },
   { v:'v36', date:'2026-09-06', notes:'Budget admins now browse every active project in the picker whether admin mode is on or off — admin mode only gates financials and Setup, not project scope. (Real PMs are still scoped to their own assigned projects either way.) So an admin can pick any project off admin mode and, if it has no budget yet, see the "hasn’t been set up" message instead of the picker being effectively empty.' },
   { v:'v35', date:'2026-09-06', notes:'The "no budget yet" message now says a project’s Budget Workbook hasn’t been set up and that Ryan’s been alerted via the Project Pipeline weekly summary — which is now true: Pipeline Housekeeping actually flags it there.' },
   { v:'v34', date:'2026-09-06', notes:'Removed Sign Out (leftover from earlier troubleshooting — it signed you out of every CORE tool, since they share one sign-in). Comment buttons are now a speech bubble instead of a "+", so the last line in a division (usually "Other") no longer reads like an add-row control. More breathing room under each comment. GPM (Budget) replaces GPD — both GPM figures now use Ryan’s formula: (Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll) ÷ either the Estimate or Budget total, so the two show the gap between them directly.' },
@@ -380,6 +381,22 @@ function toggleAdminMode(){
   if(cb) cb.checked = adminModeOn;
   renderProjectOptions();
   syncAdminUI();
+  reactToAdminModeChange();
+}
+// If the selected project has no budget yet, which of the setup card (admin) vs the
+// plain heads-up (everyone else) shows depends on admin mode — so flipping admin
+// mode while that project is still selected has to swap them immediately, without
+// waiting for the person to reselect the project to trigger onProjectChanged again.
+function reactToAdminModeChange(){
+  const proj = document.getElementById('projectSelect').value;
+  if(!proj || wb || existingConfig) return; // has an open workbook or a real config — nothing to swap
+  if(adminModeOn){
+    document.getElementById('noBudgetMsg').classList.add('hidden');
+    showSetupCard(proj);
+  }else{
+    document.getElementById('setupCardPanel').classList.add('hidden');
+    document.getElementById('noBudgetMsg').classList.remove('hidden');
+  }
 }
 // Admin mode reveals Setup and the financials block (wbHead); the project picker
 // stays visible either way, but its options switch between every active project
@@ -535,11 +552,24 @@ async function fetchAllItems(listName){
 
 /* ---------- Projects ---------- */
 let ALL_PROJECTS = [];
+// ProjectKeys with a CORE_Budget_Config row — loaded once alongside the project
+// list and kept current from setupCreate(), so the picker can flag "not set up"
+// without a per-selection fetch of the whole config list.
+let BUDGET_CONFIGURED = new Set();
+async function loadBudgetConfigStatus(){
+  try{
+    const items = await fetchAllItems('CORE_Budget_Config');
+    BUDGET_CONFIGURED = new Set(items.map(it => it.fields && it.fields.ProjectKey).filter(Boolean));
+  }catch(e){ console.warn('budget config status', e); }
+}
 async function loadProjects(){
   const sel = document.getElementById('projectSelect');
   sel.addEventListener('change', onProjectChanged);
   try{
-    const pd = await graphGet(SP_LISTS + '/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
+    const [pd] = await Promise.all([
+      graphGet(SP_LISTS + '/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500'),
+      loadBudgetConfigStatus()
+    ]);
     let items = (pd.value || []).map(it => {
       const f = it.fields || {};
       let gantt = {}; try{ gantt = JSON.parse(f.GanttData || '{}'); }catch(e){}
@@ -578,7 +608,7 @@ function renderProjectOptions(){
   });
   sel.innerHTML = '<option value="">— pick a project —</option>' + items.map(p =>
     '<option value="' + escAttr(p.title) + '" data-id="' + p.spItemId + '">' +
-    escHtml(p.title) + (p.stage ? ' — ' + escHtml(p.stage) : '') + '</option>').join('');
+    escHtml(p.title) + (BUDGET_CONFIGURED.has(p.title) ? ' · Set up' : ' · Not set up') + '</option>').join('');
   // Prefer keeping whatever project is actually loaded selected (e.g. an admin
   // toggling admin mode on should see their already-open project stay selected).
   const wantValue = (wb && wb.proj) || prevValue;
@@ -1087,6 +1117,7 @@ async function setupCreate(){
       await cleanupAfterReimport(proj, model, tabName, say);
       reimportMode = false;
     }
+    if(!BUDGET_CONFIGURED.has(proj)){ BUDGET_CONFIGURED.add(proj); renderProjectOptions(); }
     say('Budget ' + (wasRedo ? 'updated' : 'created') + ' \u2014 opening\u2026','ok');
     document.getElementById('setupCardPanel').classList.add('hidden');
     openWorkbook(proj);
