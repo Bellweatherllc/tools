@@ -31,7 +31,13 @@ A gear-and-switch control in the header toggles delete mode for admins — it le
 
 ### The Budget Worksheet button
 
-Next to a project's name is a small **Budget Worksheet** button. It opens that exact project directly in the PM Budget Workbook — see Part III for how that handoff works. If a project has no budget set up yet, a small blue **Not set up yet** label appears next to the button instead of hiding it, so it's visible at a glance which projects still need one.
+Next to a project's name is a small **Budget Worksheet** button. It opens that exact project directly in the PM Budget Workbook — see Part III for how that handoff works. Beside it, a dot and a label always show that project's budget status:
+
+- **red dot — Not set up yet** — no budget config, or one exists but nothing's been filled in.
+- **muted gold dot — Budget partially set up** — some of the three key financial fields are filled in, some aren't.
+- **green dot — Budget set up** — all three are filled in.
+
+See **Setting up a budget**, below, for exactly which three fields decide this.
 
 ## Part II — The PM Budget Workbook
 
@@ -56,8 +62,11 @@ Admin mode does **not** control which projects you can pick — see the picker, 
 
 The dropdown at the top lists projects to choose from, each with a small flat-colored dot in front of its name — a plain CSS circle, not an emoji, matching the status dots used elsewhere in CORE:
 
-- **muted green** — this project already has a budget set up.
-- **muted red** — it doesn't yet.
+- **red** — none of the three key financial fields are filled in yet (see **Setting up a budget**, below, for which three).
+- **muted gold** — some are filled in, some aren't.
+- **green** — all three are filled in.
+
+The dot is about those three fields specifically, not about whether a budget config row exists at all. A project can have a config row — meaning picking it opens the real workbook grid, not the Setup card — and still show red, if nobody's filled in Selections, Unresolved Allowance, or DESIGN COGS yet.
 
 If the list looks incomplete, scroll within the panel — it holds every project that matches your access (see below), just capped in height so it doesn't run off the bottom of the screen.
 
@@ -72,9 +81,11 @@ Toggling admin mode while a not-yet-set-up project is selected immediately swaps
 
 An admin picks a project with no budget yet, and either sees the estimate link pulled automatically from the Pipeline or pastes one in. Loading it shows the tabs in that workbook — pick the one that matches the project, and **Create budget** copies its divisions, cost codes, and every estimating comment into the Budget Workbook. From then on the project's budget lives independently: PM edits to budget lines never touch the estimate file, and re-loading the estimate later (see **Change estimate / tab**, below) never overwrites a PM's budget entries.
 
-**Change estimate / tab**, available to admins from an open workbook, re-runs setup against a (possibly different) file or tab — useful if the wrong tab was picked originally. It moves the estimate figures and comments to match the new tab and cleans up anything left over from the old one; PM budget lines and budgeting comments are never touched by this.
+Creating the budget alone doesn't turn its dot green — that only happens once someone fills in the three fields the financials strip asks for: **Selections**, **Unresolved Allowance**, and **DESIGN COGS**. Fill in none and it's red, some and it's gold, all three and it's green.
 
-**Reset Budget**, next to it, is the more drastic option: it permanently deletes the project's budget config, every budget line (estimate-seeded and PM-added alike), and every comment (estimating and budgeting), putting the project straight back to Not set up — a red dot in the picker, no leftover data. Use it when a setup needs to start over from nothing, not just correct which tab was used. There's no undo, and it asks for confirmation before doing anything.
+**Back to Estimate Spreadsheet and Tab** (labeled **Change estimate / tab** in earlier versions), available to admins from an open workbook, re-runs setup against a (possibly different) file or tab — useful if the wrong tab was picked originally. It moves the estimate figures and comments to match the new tab and cleans up anything left over from the old one; PM budget lines and budgeting comments are never touched by this.
+
+**Reset Budget**, next to it, is the more drastic option: it permanently deletes the project's budget config, every budget line (estimate-seeded and PM-added alike), and every comment (estimating and budgeting), putting the project straight back to a red dot — no leftover data. Use it when a setup needs to start over from nothing, not just correct which tab was used. There's no undo, and it asks for confirmation before doing anything.
 
 ### Working the grid
 
@@ -100,14 +111,14 @@ Neither tool duplicates the other's data — the Updater never touches a budget 
 
 The Updater's **Budget Worksheet** button opens `pm-budget-workbook.html?project=<id>` — `<id>` being that project's SharePoint item ID from CORE_Projects. On load, the Workbook checks for that `?project=` parameter and, if present, opens straight to that project — bypassing the normal picker (and its PM-only scoping) entirely, so the link works even for a project outside your own picker filter. This is the same mechanism an admin relies on to jump straight to any project.
 
-### The shared "has a budget or not" flag
+### The shared status logic
 
-Both tools independently check the same thing — whether a project has a row in **CORE_Budget_Config** — and show it two different ways:
+Both tools independently compute the same thing — red / partial / green, from the same three CORE_Budget_Config fields (Selections, Unresolved Allowance, DESIGN COGS) — and show it two different ways:
 
-- The Updater shows a blue **Not set up yet** label next to the Budget Worksheet button.
-- The Workbook shows a red dot next to the project's name in its own picker.
+- The Updater shows a dot and a label (**Not set up yet** / **Budget partially set up** / **Budget set up**) next to the Budget Worksheet button.
+- The Workbook shows the same-colored dot next to the project's name in its own picker.
 
-They're reading the same underlying fact, just at different moments (the Updater checks once per project list load; the Workbook keeps its own copy current as budgets get created), so the two should never disagree by more than a page refresh.
+They're reading the same underlying fields, just at different moments (the Updater checks once per project list load; the Workbook keeps its own copy current as fields get filled in and as budgets get created or reset), so the two should never disagree by more than a page refresh.
 
 ### Getting Ryan's attention
 
@@ -132,9 +143,9 @@ A person can be an admin in one and a plain member (or nothing at all) in the ot
 
 **A project I expect to see in the picker isn't there.** The picker only lists projects whose Pipeline stage is CA Signed, DA Signed, or Paused. A lead-stage or archived project won't appear in either tool.
 
-**The Updater says "Not set up yet" but I just set it up.** Reload the Updater — its "has a budget" check runs once when the page loads, not continuously, so it won't notice a budget created in another tab until you refresh.
+**The Updater's status doesn't match what I just did in the Workbook.** Reload the Updater — its status check runs once when the page loads, not continuously, so it won't notice a field filled in or a budget reset in another tab until you refresh.
 
-**I edited a Budget line and it disappeared after Change estimate / tab.** It shouldn't have — re-import is built to leave PM budget lines and budgeting comments alone, only refreshing the read-only estimate side. If a PM entry is genuinely gone, that's worth reporting rather than re-entering, since it points at a bug in the sync.
+**I edited a Budget line and it disappeared after Back to Estimate Spreadsheet and Tab.** It shouldn't have — re-import is built to leave PM budget lines and budgeting comments alone, only refreshing the read-only estimate side. If a PM entry is genuinely gone, that's worth reporting rather than re-entering, since it points at a bug in the sync.
 
 **Why don't Estimating comments let me reply or edit?** They're a straight read from the original estimate file, refreshed whenever setup re-runs against that file. Anything you want to say about a line goes in a Budgeting comment instead — that one's yours.
 
