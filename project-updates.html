@@ -97,6 +97,7 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
 /* Per-project link out to the Budget Worksheet — sits right next to the project name */
 .card-budget-btn{display:flex;align-items:center;gap:5px;margin-left:6px;padding:3px 9px;border:1px solid var(--border);border-radius:3px;color:var(--text-sec);font-family:'TT Norms Pro',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;flex-shrink:0;background:#fff;transition:color .14s,background .14s,border-color .14s;text-decoration:none;white-space:nowrap;}
 .card-budget-btn:hover{color:var(--navy);background:#f8f7f4;border-color:var(--navy);}
+.budget-not-set{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-left:6px;white-space:nowrap;flex-shrink:0;}
 
 .proj-card-body{border-top:1px solid var(--border);display:none;background:#fff;}
 .proj-card.open .proj-card-body{display:block;}
@@ -267,7 +268,7 @@ body.delete-mode .log-trash-btn{display:flex;}
 <script>
 'use strict';
 
-const CORE_VERSION='v69';
+const CORE_VERSION='v70';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 // Header height varies with how many PM tabs wrap onto a second row — measure it
 // live instead of guessing a fixed px value, so #mainApp never overlaps it.
@@ -288,6 +289,7 @@ const EPOCH_MS=Date.UTC(2025,0,5);
 let msalApp=null,accessToken='',currentUser='',currentUserEmail='',currentUserFullName='',isAdmin=false,adminModeOn=false,canDelete=false,deleteModeOn=false;
 let activePM=null;
 let projects=[],reviews=[];
+let budgetConfigTitles=new Set(); // Titles (CORE_Budget_Config.ProjectKey) that already have a budget set up
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 async function initMsal(){
@@ -369,6 +371,7 @@ function buildProjectsList(items){
       return{
         spItemId:item.id,id:item.id,
         displayName:f.ProjectName||f.ClientName||f.Title||item.id,
+        rawTitle:f.Title||'',
         estimatedValue:f.EstimatedProjectValue||'',
         designer:resolveName(f.DesignerName||(gantt.designer&&window._tmById?window._tmById[gantt.designer]:'')||''),
         secondaryDesigner:resolveName(f.SecondaryDesigner||(gantt.secondaryDesigner&&window._tmById?window._tmById[gantt.secondaryDesigner]:'')||''),
@@ -421,6 +424,8 @@ async function loadAll(){
 
     try{ await loadReviews(); }
     catch(e){ console.warn('[loadReviews] non-fatal:',e.message); reviews=[]; }
+    try{ await loadBudgetConfigTitles(); }
+    catch(e){ console.warn('[loadBudgetConfigTitles] non-fatal:',e.message); budgetConfigTitles=new Set(); }
     renderAll();
   }catch(e){
     console.error('[load]',e);
@@ -438,6 +443,19 @@ async function loadReviews(){
     console.warn('[loadReviews]',e.message);
     // List may not exist yet — continue with empty reviews
     reviews=[];
+  }
+}
+
+// CORE_Budget_Config lives in the Budget Workbook, keyed by ProjectKey (= raw Title,
+// not the resolved displayName) — read here just to know which projects already have
+// one, so the Budget Worksheet button can flag the ones that don't.
+async function loadBudgetConfigTitles(){
+  try{
+    const cd=await graphGet(SP+'/CORE_Budget_Config/items?$expand=fields&$select=id,fields&$top=500');
+    budgetConfigTitles=new Set((cd.value||[]).map(it=>(it.fields&&it.fields.ProjectKey)||'').filter(Boolean));
+  }catch(e){
+    console.warn('[loadBudgetConfigTitles]',e.message);
+    budgetConfigTitles=new Set();
   }
 }
 
@@ -610,6 +628,13 @@ function buildCard(proj,container,startOpen,startEditEnd,startEditCost){
   budgetBtn.innerHTML=BUDGET_ICON_SVG+'<span>Budget Worksheet</span>';
   budgetBtn.addEventListener('click',e=>e.stopPropagation());
   hdrL.appendChild(budgetBtn);
+
+  if(!budgetConfigTitles.has(proj.rawTitle)){
+    const notSet=document.createElement('span');
+    notSet.className='budget-not-set';
+    notSet.textContent='Not set up yet';
+    hdrL.appendChild(notSet);
+  }
 
   hdr.appendChild(hdrL);
 
