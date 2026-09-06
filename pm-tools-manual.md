@@ -54,10 +54,12 @@ Admin mode does **not** control which projects you can pick — see the picker, 
 
 ### The project picker
 
-The dropdown at the top lists projects to choose from, each with a small dot in front of its name:
+The dropdown at the top lists projects to choose from, each with a small flat-colored dot in front of its name — a plain CSS circle, not an emoji, matching the status dots used elsewhere in CORE:
 
-- 🟢 (muted green) — this project already has a budget set up.
-- 🔴 (muted red) — it doesn't yet.
+- **muted green** — this project already has a budget set up.
+- **muted red** — it doesn't yet.
+
+If the list looks incomplete, scroll within the panel — it holds every project that matches your access (see below), just capped in height so it doesn't run off the bottom of the screen.
 
 Who sees which projects:
 
