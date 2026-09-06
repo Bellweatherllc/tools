@@ -119,6 +119,10 @@ pre.spec{background:var(--bg);border:1px solid var(--border);border-radius:5px;p
 .fin-cell input{width:100%;min-width:0;font-size:13.5px;font-weight:700;color:var(--navy);padding:4px 7px;}
 .fin-cell input:disabled{background:var(--bg);color:var(--text-sec);border-color:#eee9df;}
 .fin-cell .fin-ref{font-size:9px;color:var(--muted);margin-top:2px;}
+/* Two figures stacked in one fin-cell — GPM (Estimate) over GPD (Budget) */
+.fin-gp-item{margin-bottom:6px;}
+.fin-gp-item:last-child{margin-bottom:0;}
+.fin-gp-item .fin-ro{padding-top:0;font-size:12.5px;}
 .fin-docs{font-size:11.5px;font-weight:700;padding-top:5px;}
 .fin-docs a{color:var(--navy);}
 table.wb{width:100%;border-collapse:collapse;font-size:11.5px;}
@@ -269,7 +273,7 @@ tr.col-hdr td.fx{text-align:center;}
   <!-- WORKBOOK -->
   <div class="panel" id="wbPanel">
     <div class="wb-sticky">
-      <div class="field-row hidden" id="projectPickerRow" style="margin-bottom:6px;">
+      <div class="field-row" id="projectPickerRow" style="margin-bottom:6px;">
         <label>Project</label>
         <select id="projectSelect"><option value="">Loading projects&hellip;</option></select>
         <button class="wb-reimport hidden" id="btnReimport" onclick="startReimport()">← Back to Estimate &amp; Tab</button>
@@ -315,10 +319,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v32';
+const CORE_VERSION = 'v33';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v33', date:'2026-09-06', notes:'The project picker is back for everyone, not just admin mode — but off admin mode it only lists projects you’re the PM on. Replaced Available for Construction with two stacked figures: GPM (Estimate) and GPD (Budget), which now update live as budget lines change. The Mark-Up % field is gone from financials. Fixed the sticky header sitting at a stale offset after toggling admin mode.' },
   { v:'v32', date:'2026-09-06', notes:'Admin mode now actually does something: turn it on to see the project picker and financials (the separate Hide/Show financials button is gone — financials just show whenever admin mode is on). With it off, a PM sees only their project’s budget grid — no picker, no financials, no Setup button. Opened from a project’s Budget Worksheet link in Project Updates, the right project loads automatically either way. If a PM lands on a project with no budget set up yet, they see a plain heads-up instead of the admin-only setup card.' },
   { v:'v31', date:'2026-09-06', notes:'Header now has the same Admin gear/switch control and red version badge as Project Updates.' },
   { v:'v30', date:'2026-08-26', notes:'Fixed checkbox now sits centered in its cell, horizontally and vertically.' },
@@ -370,13 +375,13 @@ function toggleAdminMode(){
   document.body.classList.toggle('admin-mode', adminModeOn);
   const cb = document.getElementById('adminCheckbox');
   if(cb) cb.checked = adminModeOn;
+  renderProjectOptions();
   syncAdminUI();
 }
-// Admin mode reveals the project picker, Setup, and the financials block (wbHead);
-// with it off, the signed-in PM sees nothing but their project's budget grid.
+// Admin mode reveals Setup and the financials block (wbHead); the project picker
+// stays visible either way, but its options switch between every active project
+// (admin mode) and just the ones this PM is assigned to (see renderProjectOptions).
 function syncAdminUI(){
-  const pickerRow = document.getElementById('projectPickerRow');
-  if(pickerRow) pickerRow.classList.toggle('hidden', !adminModeOn);
   const setupBtn = document.getElementById('btnSetup');
   if(setupBtn) setupBtn.classList.toggle('hidden', !adminModeOn);
   const head = document.getElementById('wbHead');
@@ -385,6 +390,10 @@ function syncAdminUI(){
     const sp = document.getElementById('setupPanel');
     if(sp) sp.classList.add('hidden');
   }
+  // The picker row's own height, and wbHead's, both changed — the sticky table
+  // headers below (which measure .wb-sticky's height) need to catch up or they
+  // sit at a stale offset until the next unrelated re-render.
+  updateStickyOffsets();
 }
 const PROJ_META = {};
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
@@ -434,14 +443,29 @@ function onAuthenticated(account){
   currentUserEmail = (account.username || '').toLowerCase();
   document.getElementById('hdrUser').textContent = currentUser;
   document.getElementById('authOverlay').style.display = 'none';
+  initRoleThenProjects();
+}
+// Role must resolve before the project list renders — the non-admin picker is
+// filtered to "my" projects, which needs myFullName and the id→name maps below.
+async function initRoleThenProjects(){
+  await loadRole();
   loadProjects();
-  loadRole();
 }
 let isBudgetAdmin = false;
+let myFullName = '';
+const TM_BY_ID = {}, TM_FIRST_TO_FULL = {};
 async function loadRole(){
   try{
     const td = await graphGet(SP_LISTS + '/CORE_TeamMembers/items?$expand=fields&$select=id,fields&$top=200');
-    const me = (td.value || []).find(m => {
+    const members = td.value || [];
+    members.forEach(m => {
+      const f = m.fields || {};
+      const name = f.EmployeeName || f.Title || '';
+      if(!name) return;
+      if(m.id){ TM_BY_ID[m.id] = name; TM_BY_ID['sp-person-' + m.id] = name; }
+      TM_FIRST_TO_FULL[name.split(' ')[0].toLowerCase()] = name;
+    });
+    const me = members.find(m => {
       const f = m.fields || {};
       const email = (f.WorkEmail || f.Email || f.UserEmail || f.EMail || '').trim().toLowerCase();
       const name = (f.EmployeeName || f.Title || '').trim().toLowerCase();
@@ -449,6 +473,7 @@ async function loadRole(){
       if(email && currentUserEmail && email === currentUserEmail) return true;
       return name && sn && (sn.includes(name.split(' ')[0]) || name.includes(sn.split(' ')[0]));
     });
+    myFullName = ((me && me.fields && (me.fields.EmployeeName || me.fields.Title)) || currentUser || '').trim();
     const budgetRole = ((me && me.fields && me.fields.BudgetRole) || '').trim().toLowerCase();
     const pipelineRole = ((me && me.fields && me.fields.PipelineRole) || '').trim().toLowerCase();
     isBudgetAdmin = budgetRole === 'admin' || pipelineRole === 'admin';
@@ -504,6 +529,7 @@ async function fetchAllItems(listName){
 }
 
 /* ---------- Projects ---------- */
+let ALL_PROJECTS = [];
 async function loadProjects(){
   const sel = document.getElementById('projectSelect');
   sel.addEventListener('change', onProjectChanged);
@@ -511,7 +537,10 @@ async function loadProjects(){
     const pd = await graphGet(SP_LISTS + '/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
     let items = (pd.value || []).map(it => {
       const f = it.fields || {};
-      const rec = { spItemId: it.id, title: f.Title || '(untitled)', stage: f.PipelineStage || '' };
+      let gantt = {}; try{ gantt = JSON.parse(f.GanttData || '{}'); }catch(e){}
+      const rawPM = f.PMName || (gantt.productionPM && TM_BY_ID[gantt.productionPM]) || '';
+      const pm = (rawPM && !rawPM.includes(' ')) ? (TM_FIRST_TO_FULL[rawPM.toLowerCase()] || rawPM) : rawPM;
+      const rec = { spItemId: it.id, title: f.Title || '(untitled)', stage: f.PipelineStage || '', pm };
       PROJ_META[rec.title] = { spItemId: it.id, stage: rec.stage,
         estUrl: urlOf(f.EstimateUrl), daUrl: urlOf(f.DAUrl), caUrl: urlOf(f.CAUrl),
         saleVal: parsePipelineValue(f.EstimatedProjectValue) };
@@ -521,9 +550,8 @@ async function loadProjects(){
     items = items.filter(p => p.title && p.title !== '(untitled)' && ACTIVE_STAGES.indexOf(p.stage) !== -1);
     const stageRank = { 'CA Signed':0, 'DA Signed':1, 'Paused':2 };
     items.sort((a,b) => (stageRank[a.stage] ?? 9) - (stageRank[b.stage] ?? 9) || a.title.localeCompare(b.title));
-    sel.innerHTML = '<option value="">— pick a project —</option>' + items.map(p =>
-      '<option value="' + escAttr(p.title) + '" data-id="' + p.spItemId + '">' +
-      escHtml(p.title) + (p.stage ? ' — ' + escHtml(p.stage) : '') + '</option>').join('');
+    ALL_PROJECTS = items;
+    renderProjectOptions();
     applyDeepLinkProject();
   }catch(e){
     sel.innerHTML = '<option value="">Could not load CORE_Projects</option>';
@@ -531,17 +559,38 @@ async function loadProjects(){
   }
 }
 
-// Opened from a project's Budget Worksheet link (e.g. in Project Updates) — the
-// URL carries that project's CORE_Projects item id, so pick it automatically
-// instead of waiting on the (admin-only) project picker.
+// Admins with admin mode on browse every active project. Everyone else — including
+// an admin who hasn't switched admin mode on yet — only sees projects where they're
+// the assigned PM, matched the same fuzzy way Project Updates matches PM tabs.
+function renderProjectOptions(){
+  const sel = document.getElementById('projectSelect');
+  const prevValue = sel.value;
+  const mine = myFullName.trim().toLowerCase();
+  const items = (isBudgetAdmin && adminModeOn) ? ALL_PROJECTS : ALL_PROJECTS.filter(p => {
+    const pm = (p.pm || '').trim().toLowerCase();
+    return !!pm && (pm === mine || pm.split(' ')[0] === mine.split(' ')[0]);
+  });
+  sel.innerHTML = '<option value="">— pick a project —</option>' + items.map(p =>
+    '<option value="' + escAttr(p.title) + '" data-id="' + p.spItemId + '">' +
+    escHtml(p.title) + (p.stage ? ' — ' + escHtml(p.stage) : '') + '</option>').join('');
+  // Prefer keeping whatever project is actually loaded selected (e.g. an admin
+  // toggling admin mode on should see their already-open project stay selected).
+  const wantValue = (wb && wb.proj) || prevValue;
+  if(wantValue && items.some(p => p.title === wantValue)) sel.value = wantValue;
+}
+
+// Opened from a project's Budget Worksheet link (e.g. in Project Updates) — the URL
+// carries that project's CORE_Projects item id. Looked up against the full,
+// unfiltered list so it works even for a project outside the current picker filter
+// (an admin opening a link for a project that isn't their own, say).
 function applyDeepLinkProject(){
   const pid = new URLSearchParams(location.search).get('project');
   if(!pid) return;
+  const match = ALL_PROJECTS.find(p => String(p.spItemId) === pid);
+  if(!match) return;
+  onProjectChanged(match.title);
   const sel = document.getElementById('projectSelect');
-  const opt = [...sel.options].find(o => o.dataset.id === pid);
-  if(!opt) return;
-  sel.value = opt.value;
-  onProjectChanged();
+  if([...sel.options].some(o => o.value === match.title)) sel.value = match.title;
 }
 
 /* ---------- File fetch ---------- */
@@ -922,8 +971,10 @@ let existingConfig = null; // { spItemId, fields } for selected project, if any
 let setupState = null;     // { meta, url, parsed } during setup-card flow
 let reimportMode = false;  // true when redoing tab/file choice for an existing budget
 
-async function onProjectChanged(){
-  const proj = document.getElementById('projectSelect').value;
+// explicitProj lets a caller (the deep-link handler) pick a project outside of a
+// real 'change' event — guard against the DOM Event object the listener passes.
+async function onProjectChanged(explicitProj){
+  const proj = typeof explicitProj === 'string' ? explicitProj : document.getElementById('projectSelect').value;
   existingConfig = null;
   wb = null;
   document.getElementById('wbHead').classList.add('hidden');
@@ -976,7 +1027,7 @@ function updateStickyOffsets(){
 }
 window.addEventListener('resize', () => updateStickyOffsets());
 function startReimport(){
-  if(!wb || !isBudgetAdmin) return;
+  if(!wb || !isBudgetAdmin || !adminModeOn) return;
   document.getElementById('wbHead').classList.add('hidden');
   document.getElementById('wbGridWrap').classList.add('hidden');
   showSetupCard(wb.proj, true);
@@ -1284,8 +1335,16 @@ function calcChain(){
   Object.keys(wb.estByCode).forEach(c => { if(c !== SELECTIONS_EST_CODE) estTotalC += wb.estByCode[c].amountC; });
   let budTotalC = 0;
   wb.scopeRows.forEach(r => budTotalC += r.budgetC);
+  const ouBudC = availableC - budTotalC;
+  // Gross profit target baked into the deal (Sale Price − Cost Basis); GPM is that as a
+  // % of Sale Price. GPD tracks the same dollars but live: it moves with the Budget
+  // Worksheet's Over/Under, since every dollar under (or over) the available-for-
+  // construction target falls straight to (or out of) gross profit.
+  const gpTargetC = saleC - costBasisC;
+  const gpmEstimatePct = saleC ? gpTargetC / saleC : 0;
+  const gpdBudgetC = gpTargetC + ouBudC;
   return { saleC, mk, selC, allowC, ddC, costBasisC, overheadC, staffC, availableC, indirectPct, payrollPct,
-           estTotalC, budTotalC, ouEstC: availableC - estTotalC, ouBudC: availableC - budTotalC };
+           estTotalC, budTotalC, ouEstC: availableC - estTotalC, ouBudC, gpTargetC, gpmEstimatePct, gpdBudgetC };
 }
 
 /* --- render --- */
@@ -1332,7 +1391,7 @@ function renderWorkbook(){
     ? (document.activeElement.dataset.line || document.activeElement.dataset.adddiv || document.activeElement.dataset.cfg || null) : null;
   const k = calcChain();
   const f = (wb.cfg && wb.cfg.fields) || {};
-  document.getElementById('btnReimport').classList.toggle('hidden', !isBudgetAdmin);
+  document.getElementById('btnReimport').classList.toggle('hidden', !(isBudgetAdmin && adminModeOn));
   // wbMeta only ever renders while wbHead is visible, which now requires admin mode
   // (and admin mode requires isBudgetAdmin) \u2014 so this is always the admin-mode PM sees.
   document.getElementById('wbMeta').textContent =
@@ -1354,15 +1413,19 @@ function renderWorkbook(){
     (f.SalePrice != null ? ' \u00B7 estimate sale price: ' + money(f.SalePrice) : ''), null,
     'Set in the Project Pipeline \u2014 the workbook always uses the Pipeline value');
   const finFields = [
-    ['ContractMarkupPct','Mark-Up %', f.ContractMarkupPct, 'estimate: ' + (f.MarkupPct ?? '\u2014'), 'Turns sale price into cost basis: Sale Price \u00F7 (1 + Mark-Up)'],
     ['SelectionsAmount','Selections (5100)', f.SelectionsAmount, estSel ? 'estimate: ' + moneyC(estSel.amountC) : '', 'Subtracted from cost basis when figuring Available for Construction'],
     ['UnresolvedAllowance','Unresolved Allowance', f.UnresolvedAllowance, '', 'Subtracted from cost basis when figuring Available for Construction'],
     ['DDCogs','DESIGN COGS', f.DDCogs, '', 'Subtracted from cost basis when figuring Available for Construction'],
   ];
-  const availCell = roCell('Available for Construction', moneyC(k.availableC), '', 'finAvail',
-    'Sale Price \u00F7 (1 + Mark-Up) \u2212 Selections \u2212 Unresolved Allowance \u2212 DESIGN COGS \u2212 Indirect \u2212 Payroll');
+  const gpCell =
+    '<div class="fin-cell">' +
+      '<div class="fin-gp-item" data-tip="From the Estimate\u2019s deal structure: (Sale Price \u2212 Cost Basis) \u00F7 Sale Price">' +
+        '<label>GPM (Estimate)</label><div class="fin-ro" id="finGpmEst">' + fmtPct(k.gpmEstimatePct) + '</div></div>' +
+      '<div class="fin-gp-item" data-tip="Estimate\u2019s target gross profit, adjusted by the Budget Worksheet\u2019s current Over/Under (available \u2212 total budgeted)">' +
+        '<label>GPD (Budget)</label><div class="fin-ro" id="finGpdBud">' + moneyC(k.gpdBudgetC) + '</div></div>' +
+    '</div>';
   document.getElementById('wbFin').innerHTML =
-    '<div class="fin-row">' + saleCell + availCell + '</div>' +
+    '<div class="fin-row">' + saleCell + gpCell + '</div>' +
     '<div class="fin-row">' + finFields.map(ff =>
     '<div class="fin-cell"' + (ff[4] ? ' data-tip="' + ff[4] + '"' : '') + '><label>' + ff[1] + '</label>' +
     '<input type="text" data-cfg="' + ff[0] + '" value="' + (ff[2] ?? '') + '"' +
@@ -1455,8 +1518,10 @@ function docsCellHtml(){
 /* Live recalculation: updates computed cells only — never rebuilds inputs. */
 function renderTotals(){
   const k = calcChain();
-  const fa = document.getElementById('finAvail');
-  if(fa) fa.textContent = moneyC(k.availableC);
+  const fge = document.getElementById('finGpmEst');
+  if(fge) fge.textContent = fmtPct(k.gpmEstimatePct);
+  const fgb = document.getElementById('finGpdBud');
+  if(fgb) fgb.textContent = moneyC(k.gpdBudgetC);
   const fi = document.getElementById('finIndirect');
   if(fi) fi.textContent = moneyC(k.overheadC);
   const fp = document.getElementById('finPayroll');
