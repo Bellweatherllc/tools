@@ -27,7 +27,7 @@
   --sep:#D4D1CC;--proj-row:#f0f0f0;
   /* Clock-state colors — functional indicators, aligned to pipeline tally semantics */
   --st-ok:#3b7fa8;--st-warn:#d07820;--st-over:#ac2828;--st-hold:#8a8a8a;--st-done:#019425;
-  --popbg:rgba(40,40,40,.88); /* v63: quick-comments popover ground */
+  --popbg:rgba(40,40,40,.94); /* v67: darkened — the same alpha read lighter here than in the prototype since it composites over this file's much lighter page background */
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smoothing:antialiased;color:var(--navy);}
@@ -115,7 +115,10 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .roll-over{background:var(--st-over);}
 .roll-hold{background:var(--st-hold);}
 .roll-done{background:var(--st-done);}
-.app-row{display:flex;align-items:center;gap:14px;padding:11px 16px;border-bottom:1px solid rgba(40,40,40,.16);}
+/* v67: fixed height, same for every row (dots-only rows and hold/closed/unknown
+   chip rows alike) — sized to comfortably hold a dot plus its label and clock text,
+   the tallest a phase-track step gets, so nothing ever flexes row to row. */
+.app-row{display:flex;align-items:center;gap:14px;min-height:60px;padding:11px 16px;border-bottom:1px solid rgba(40,40,40,.16);}
 .app-row:last-child{border-bottom:none;}
 /* v63: redesigned per nine rounds of prototyping (see the "Tracker Noise Test" artifact).
    Zoning/Permit is no longer a loud full-bleed color band — it's text only, sharing the
@@ -146,7 +149,6 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .cmt-icon:hover{color:var(--navy);}
 .cmt-icon.none{visibility:hidden;cursor:default;} /* v38: placeholder holds the slot so the timeline never shifts */
 .cmt-count{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);color:inherit;font-size:9px;font-weight:600;line-height:1;pointer-events:none;} /* v65: moved back up 1.5px */
-.app-jur{font-size:12px;color:var(--ts);flex-shrink:0;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* Phase track */
 /* v63: centered in its space (was packed left, which read as arbitrary once the row
@@ -188,17 +190,20 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    Split into an outer wrapper (owns the tail, no overflow so it isn't clipped) and
    an inner card (owns the scroll) — overflow set on only one axis forces a browser
    to clip the OTHER axis too, which silently crops a tail positioned outside the box. */
-#cmtPop{display:none;position:fixed;width:270px;z-index:600;}
+#cmtPop{display:none;position:fixed;width:473px;z-index:600;} /* v67: 75% wider (was 270px) */
 #cmtPop.open{display:block;}
 #cmtPopInner{background:var(--popbg);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.30);padding:14px 16px;overflow-y:auto;}
 #cmtPop::before{content:'';position:absolute;right:16px;width:0;height:0;border:8px solid transparent;}
 #cmtPop.tail-down::before{bottom:-15px;border-top-color:var(--popbg);}
 #cmtPop.tail-up::before{top:-15px;border-bottom-color:var(--popbg);}
+/* v67: writer name and comment body share one color now; @mentions inside the
+   body render light gray, distinct from the surrounding text */
 .qc-item{margin-bottom:13px;}
 .qc-item:last-child{margin-bottom:0;}
 .qc-meta{font-size:9.5px;color:rgba(255,255,255,.42);margin-bottom:3px;}
-.qc-meta b{color:rgba(255,255,255,.72);}
-.qc-text{font-size:11.5px;line-height:1.5;color:rgba(255,255,255,.78);white-space:pre-wrap;}
+.qc-meta b{color:rgba(255,255,255,.82);}
+.qc-text{font-size:11.5px;line-height:1.5;color:rgba(255,255,255,.82);white-space:pre-wrap;}
+.qc-mention{color:rgba(255,255,255,.45);}
 .qc-empty{color:rgba(255,255,255,.5);font-size:11.5px;text-align:center;padding:4px 0;}
 
 /* ── DETAIL DRAWER ── */
@@ -415,7 +420,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v66';
+const CORE_VERSION = 'v67';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -497,6 +502,7 @@ let _spListOk=true;
 let _view='board';
 let _deepLinked=false;
 let DESIGNER_BY_PROJECT={}; // normalized project name → designer of record (read-only borrow from CORE_Projects GanttData)
+let ADDRESS_BY_PROJECT={}; // v67: normalized project name → site address, if CORE_Projects has one under any of a few likely column names (see loadProjectAddresses) — stays blank per project until the real column name is confirmed
 let CHECKINS={}; // v39: weekly check-in notes — normalized project → {note,by,at}; lives in CORE_Config 'pz_checkins'
 // v62: header navigation — once many projects are active at once the board is a wall
 // of cards, so an Owner tab-filter (mirrors PM Updater's PM tabs, keyed off the same
@@ -679,6 +685,26 @@ async function loadProjectCAs(){
       }catch(e2){}
     });
   }catch(e){ console.warn('[ca-clock]',e); }
+}
+/* v67: site address per project, for the header row. Not a confirmed column — this
+   tries several plausible internal names and takes whichever exists, same defensive
+   read-only borrow pattern as the two functions above. A full $expand=fields (not a
+   restrictive $select) so an unrecognized name is just absent from the object,
+   never a Graph error — but if every project shows blank here, tell Byron the real
+   CORE_Projects column name so this can point at it directly. */
+async function loadProjectAddresses(){
+  try{
+    const projs=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,fields');
+    ADDRESS_BY_PROJECT={};
+    const candidates=['Address','ProjectAddress','SiteAddress','StreetAddress','PropertyAddress','FullAddress'];
+    projs.forEach(it=>{
+      const f=it.fields||{};
+      const name=f.ProjectName||f.ClientName||f.Title||'';
+      if(!name) return;
+      const key=candidates.find(k=>f[k]);
+      if(key) ADDRESS_BY_PROJECT[normName(name)]=String(f[key]);
+    });
+  }catch(e){ console.warn('[address]',e); }
 }
 
 /* v43: the CA-protection runway verdict for one application card. Pure — reads the
@@ -1109,7 +1135,7 @@ function appRowHtml(a){
   // Permit Type field (already read from Trello, never surfaced before) shows below it
   return '<div class="app-row '+trackChipCls(a.track)+'" data-card-id="'+esc(a.cardId)+'">'+
     '<div class="trk-band '+trackChipCls(a.track)+'"><div>'+esc(a.track)+'</div>'+(a.ptype?'<div class="trk-band-sub">'+esc(a.ptype)+'</div>':'')+'</div>'+
-    badges+mid+'<span class="app-jur">'+esc(a.jur||'')+'</span>'+cmt+statBand+'</div>';
+    badges+mid+cmt+statBand+'</div>'; // v67: jurisdiction dropped from the row — it's on the project header now, showing it twice was redundant
 }
 // v62: owner = CardOwner, the same per-card field the Absolutes table's "Owner"
 // column and the drawer's "Managed By" already show — filtering is per-application,
@@ -1135,12 +1161,14 @@ function renderBoard(){
     wrap.innerHTML=names.map(n=>{
       const apps=projects[n];
       const sorted=apps.slice().sort((x,y)=>trackSortRank(x.track)-trackSortRank(y.track)||String(x.track).localeCompare(String(y.track))); // v48; v62: Zoning before Permit
-      // v65: city follows the project name — real per-application Jurisdiction data,
-      // deduped across the project's cards. No address field exists yet anywhere in
-      // this tool to show one; flagging rather than inventing placeholder text.
+      // v67: address, then city, follow the project name — address is a best-effort
+      // borrow (see loadProjectAddresses, may be blank until the real column name is
+      // confirmed); city is real per-application Jurisdiction data, deduped.
+      const addr=ADDRESS_BY_PROJECT[normName(n)]||'';
       const jurs=[...new Set(apps.map(a=>a.jur).filter(Boolean))].join(' / ');
       return '<div class="proj-group"><div class="proj-hdr">'+
         '<div class="proj-name">'+esc(n)+'</div>'+
+        (addr?'<div class="proj-city">'+esc(addr)+'</div>':'')+
         (jurs?'<div class="proj-city">'+esc(jurs)+'</div>':'')+
         '<div class="hsp"></div></div>'+
         sorted.map(appRowHtml).join('')+
@@ -1343,13 +1371,16 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeCardPop(); })
    showing just the dated thread. Independent of #cardPop entirely — clicking the
    icon stops propagation so it never also triggers the row's full detail popup. */
 let _qcOpenFor=null;
+// v67: @mentions read light gray — applied after esc() so the regex only ever sees
+// plain text, never markup, and can't be tricked by anything inside the comment
+function _qcMentions(s){ return esc(s).replace(/@[A-Za-z0-9_]+/g,m=>'<span class="qc-mention">'+m+'</span>'); }
 function openQuickComments(cardId,badge){
   const a=APPS.find(x=>x.cardId===cardId); if(!a) return;
   const pop=document.getElementById('cmtPop');
   if(_qcOpenFor===cardId&&pop.classList.contains('open')){ closeQuickComments(); return; }
   const inner=document.getElementById('cmtPopInner');
   inner.innerHTML=(a.comments&&a.comments.length)
-    ? a.comments.map(cm=>'<div class="qc-item"><div class="qc-meta"><b>'+esc(cm.by||'?')+'</b> &middot; '+fmtDate(new Date(cm.at))+'</div><div class="qc-text">'+esc(cm.text)+'</div></div>').join('')
+    ? a.comments.map(cm=>'<div class="qc-item"><div class="qc-meta"><b>'+esc(cm.by||'?')+'</b> &middot; '+fmtDate(new Date(cm.at))+'</div><div class="qc-text">'+_qcMentions(cm.text)+'</div></div>').join('')
     : '<div class="qc-empty">No comments yet.</div>';
   pop.classList.add('open');
   _qcOpenFor=cardId;
@@ -1358,7 +1389,7 @@ function openQuickComments(cardId,badge){
 function _positionQuickComments(badge){
   const pop=document.getElementById('cmtPop'), inner=document.getElementById('cmtPopInner');
   const r=badge.getBoundingClientRect();
-  const vw=window.innerWidth, vh=window.innerHeight, pw=270, gap=12, tailInset=16;
+  const vw=window.innerWidth, vh=window.innerHeight, pw=473, gap=12, tailInset=16; // v67: 75% wider (was 270)
   const spaceAbove=r.top-gap-10, spaceBelow=vh-r.bottom-gap-10;
   // v65: the old cap (flat 300, or whatever fit the viewport height overall) ignored
   // how much room actually existed in the direction chosen — a long thread could get
@@ -1389,7 +1420,12 @@ document.addEventListener('click',e=>{
   closeQuickComments();
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeQuickComments(); });
-window.addEventListener('scroll',()=>{ if(document.getElementById('cmtPop').classList.contains('open')) closeQuickComments(); },true);
+window.addEventListener('scroll',e=>{
+  const pop=document.getElementById('cmtPop');
+  if(!pop.classList.contains('open')) return;
+  if(e.target&&pop.contains(e.target)) return; // v67: scrolling the thread itself, not the page — don't close
+  closeQuickComments();
+},true);
 window.addEventListener('resize',()=>{ if(document.getElementById('cmtPop').classList.contains('open')) closeQuickComments(); });
 
 function renderAbsolutes(){
@@ -1540,6 +1576,7 @@ async function boot(){
   loadProjectCAs().then(()=>{
     if(APPS.length){ computeClocks(); renderBoard(); renderAbsolutes(); }
   }).catch(e=>console.warn('[ca-clock]',e));
+  loadProjectAddresses().then(()=>{ if(APPS.length) renderBoard(); }).catch(e=>console.warn('[address]',e));
   await refreshAll();
 }
 
