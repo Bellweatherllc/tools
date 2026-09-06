@@ -97,7 +97,14 @@ body{font-family:'TT Norms Pro',system-ui,sans-serif;background:var(--bg);color:
 /* Per-project link out to the Budget Worksheet — sits right next to the project name */
 .card-budget-btn{display:flex;align-items:center;gap:5px;margin-left:6px;padding:3px 9px;border:1px solid var(--border);border-radius:3px;color:var(--text-sec);font-family:'TT Norms Pro',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;flex-shrink:0;background:#fff;transition:color .14s,background .14s,border-color .14s;text-decoration:none;white-space:nowrap;}
 .card-budget-btn:hover{color:var(--navy);background:#f8f7f4;border-color:var(--navy);}
-.budget-not-set{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#2b4a6f;margin-left:6px;white-space:nowrap;flex-shrink:0;}
+.budget-status{display:flex;align-items:center;gap:5px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-left:6px;white-space:nowrap;flex-shrink:0;}
+.budget-status .proj-dot{width:7.5px;height:7.5px;border-radius:50%;flex-shrink:0;}
+.budget-status.none{color:#a30a0a;}
+.budget-status.none .proj-dot{background:#c26e6e;}
+.budget-status.partial{color:#8a6215;}
+.budget-status.partial .proj-dot{background:#c9a24a;}
+.budget-status.complete{color:var(--green);}
+.budget-status.complete .proj-dot{background:#6aa873;}
 .manual-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.55);font-size:11px;font-weight:700;text-decoration:none;flex-shrink:0;transition:all .12s;}
 .manual-btn:hover{border-color:var(--gold);color:var(--gold);background:rgba(216,182,79,.08);}
 
@@ -279,7 +286,7 @@ body.delete-mode .log-trash-btn{display:flex;}
 <script>
 'use strict';
 
-const CORE_VERSION='v72';
+const CORE_VERSION='v73';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 // ── Styled tooltips via data-tip (replaces native title everywhere) ──
@@ -338,7 +345,19 @@ const EPOCH_MS=Date.UTC(2025,0,5);
 let msalApp=null,accessToken='',currentUser='',currentUserEmail='',currentUserFullName='',isAdmin=false,adminModeOn=false,canDelete=false,deleteModeOn=false;
 let activePM=null;
 let projects=[],reviews=[];
-let budgetConfigTitles=new Set(); // Titles (CORE_Budget_Config.ProjectKey) that already have a budget set up
+// Titles (CORE_Budget_Config.ProjectKey) -> 'none'|'partial'|'complete', judged by
+// the same three fillable financial fields the Budget Workbook itself uses
+// (Selections, Unresolved Allowance, DESIGN COGS) — a config row existing isn't
+// enough on its own; a fresh-out-of-Setup row with all three still blank is 'none'.
+const BUDGET_STATUS_FIELDS=['SelectionsAmount','UnresolvedAllowance','DDCogs'];
+function computeBudgetStatus(fields){
+  if(!fields) return 'none';
+  const filled=BUDGET_STATUS_FIELDS.filter(k=>fields[k]!==null&&fields[k]!==undefined&&fields[k]!=='').length;
+  if(filled===0) return 'none';
+  if(filled===BUDGET_STATUS_FIELDS.length) return 'complete';
+  return 'partial';
+}
+let budgetStatusMap=new Map();
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 async function initMsal(){
@@ -473,8 +492,8 @@ async function loadAll(){
 
     try{ await loadReviews(); }
     catch(e){ console.warn('[loadReviews] non-fatal:',e.message); reviews=[]; }
-    try{ await loadBudgetConfigTitles(); }
-    catch(e){ console.warn('[loadBudgetConfigTitles] non-fatal:',e.message); budgetConfigTitles=new Set(); }
+    try{ await loadBudgetStatuses(); }
+    catch(e){ console.warn('[loadBudgetStatuses] non-fatal:',e.message); budgetStatusMap=new Map(); }
     renderAll();
   }catch(e){
     console.error('[load]',e);
@@ -496,15 +515,19 @@ async function loadReviews(){
 }
 
 // CORE_Budget_Config lives in the Budget Workbook, keyed by ProjectKey (= raw Title,
-// not the resolved displayName) — read here just to know which projects already have
-// one, so the Budget Worksheet button can flag the ones that don't.
-async function loadBudgetConfigTitles(){
+// not the resolved displayName) — read here just to know each project's status, so
+// the Budget Worksheet button can show it (same three-field logic as the Workbook).
+async function loadBudgetStatuses(){
   try{
     const cd=await graphGet(SP+'/CORE_Budget_Config/items?$expand=fields&$select=id,fields&$top=500');
-    budgetConfigTitles=new Set((cd.value||[]).map(it=>(it.fields&&it.fields.ProjectKey)||'').filter(Boolean));
+    budgetStatusMap=new Map();
+    (cd.value||[]).forEach(it=>{
+      const key=it.fields&&it.fields.ProjectKey;
+      if(key) budgetStatusMap.set(key, computeBudgetStatus(it.fields));
+    });
   }catch(e){
-    console.warn('[loadBudgetConfigTitles]',e.message);
-    budgetConfigTitles=new Set();
+    console.warn('[loadBudgetStatuses]',e.message);
+    budgetStatusMap=new Map();
   }
 }
 
@@ -678,12 +701,12 @@ function buildCard(proj,container,startOpen,startEditEnd,startEditCost){
   budgetBtn.addEventListener('click',e=>e.stopPropagation());
   hdrL.appendChild(budgetBtn);
 
-  if(!budgetConfigTitles.has(proj.rawTitle)){
-    const notSet=document.createElement('span');
-    notSet.className='budget-not-set';
-    notSet.textContent='Not set up yet';
-    hdrL.appendChild(notSet);
-  }
+  const bStatus=budgetStatusMap.get(proj.rawTitle)||'none';
+  const bStatusLabel=bStatus==='complete'?'Budget set up':bStatus==='partial'?'Budget partially set up':'Not set up yet';
+  const statusEl=document.createElement('span');
+  statusEl.className='budget-status '+bStatus;
+  statusEl.innerHTML='<span class="proj-dot"></span><span>'+bStatusLabel+'</span>';
+  hdrL.appendChild(statusEl);
 
   hdr.appendChild(hdrL);
 

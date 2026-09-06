@@ -87,6 +87,7 @@ input.wide{flex:1;min-width:320px;}
 .proj-dot{width:7.5px;height:7.5px;border-radius:50%;flex-shrink:0;background:var(--muted);}
 .proj-dot.ok{background:#6aa873;}
 .proj-dot.no{background:#c26e6e;}
+.proj-dot.partial{background:#c9a24a;}
 /* Tall enough that a full active-project list (40-60+) rarely needs scrolling —
    the panel was capped at 280px, which only fit ~10 rows and made most of the
    list read as "missing" rather than "scroll for more". */
@@ -190,9 +191,9 @@ tr.subtotal td{font-weight:700;background:var(--bg);border-top:1px solid var(--b
 .save-flash{font-size:9px;color:var(--ok);margin-left:6px;opacity:0;transition:opacity .2s;}
 .save-flash.show{opacity:1;}
 .wb-sticky{position:sticky;top:38px;z-index:60;background:var(--surface);margin:0 -20px;padding:2px 20px 12px;border-bottom:1px solid var(--border);box-shadow:0 4px 10px rgba(0,0,0,.05);}
-.wb-reimport{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-sec);padding:3px 10px;cursor:pointer;margin-bottom:8px;}
+.wb-reimport{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-sec);padding:7px 16px;cursor:pointer;margin-bottom:8px;}
 .wb-reimport:hover{border-color:var(--navy);color:var(--navy);}
-.wb-reset{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid rgba(163,10,10,.35);border-radius:4px;color:var(--err);padding:3px 10px;cursor:pointer;margin-bottom:8px;margin-left:6px;}
+.wb-reset{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid rgba(163,10,10,.35);border-radius:4px;color:var(--err);padding:7px 16px;cursor:pointer;margin-bottom:8px;margin-left:6px;}
 .wb-reset:hover{border-color:var(--err);background:rgba(163,10,10,.06);}
 .wb-reset:disabled{opacity:.5;cursor:default;}
 .wb-back{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--navy);cursor:pointer;background:var(--gold);border:none;border-radius:4px;padding:5px 14px;margin-bottom:12px;}
@@ -314,7 +315,7 @@ tr.col-hdr td.fx{text-align:center;}
           </button>
           <div class="proj-picker-panel" id="projPickerPanel" role="listbox" hidden></div>
         </div>
-        <button class="wb-reimport hidden" id="btnReimport" onclick="startReimport()">← Back to Estimate &amp; Tab</button>
+        <button class="wb-reimport hidden" id="btnReimport" onclick="startReimport()">← Back to Estimate Spreadsheet and Tab</button>
         <button class="wb-reset hidden" id="btnResetBudget" onclick="resetBudget()" data-tip="Delete this project's budget config, lines, and comments — puts it back to Not set up.">Reset Budget</button>
         <span class="status-line" id="importStatus" style="margin-top:0;flex:1;"></span>
       </div>
@@ -358,10 +359,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v43';
+const CORE_VERSION = 'v44';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v44', date:'2026-09-06', notes:'Status is smarter now: a project counts as set up only once its three financial fields (Selections, Unresolved Allowance, DESIGN COGS) are all filled in, not just because a budget config row exists. Some filled and some blank shows a new muted-gold "partial" dot; none filled is red; all three is green — same three states Project Updates now shows. Change estimate / tab and Reset Budget are bigger, and the former reads "Back to Estimate Spreadsheet and Tab."' },
   { v:'v43', date:'2026-09-06', notes:'Same timing bug as before, different spot: Change estimate / tab and Reset Budget only appeared after reselecting the project, because their visibility was decided in renderWorkbook() (which only re-runs on an edit) instead of syncAdminUI() (which runs the instant admin mode toggles). Moved it — both buttons now appear or disappear the moment admin mode does, on an already-open workbook.' },
   { v:'v42', date:'2026-09-06', notes:'Added Reset Budget, next to Change estimate / tab, admin-mode only. It permanently deletes the project’s budget config, every budget line, and every comment, putting it straight back to Not set up — for when a setup needs to be redone from scratch rather than re-imported over.' },
   { v:'v41', date:'2026-09-06', notes:'Picker dots are 25% bigger and 20% more saturated. Also fixed the real bug behind "projects are missing": the dropdown panel was capped at 280px tall — room for about 10 rows — so most of a long active-project list needed scrolling to even see. It now grows up to 520px (or 60% of the screen, whichever is smaller).' },
@@ -604,14 +606,33 @@ async function fetchAllItems(listName){
 
 /* ---------- Projects ---------- */
 let ALL_PROJECTS = [];
-// ProjectKeys with a CORE_Budget_Config row — loaded once alongside the project
-// list and kept current from setupCreate(), so the picker can flag "not set up"
+// A project's status is judged by the three fillable financial fields (Selections,
+// Unresolved Allowance, DESIGN COGS) on its CORE_Budget_Config row, not just whether
+// the row exists — a row with all three still blank (fresh out of Setup) is 'none',
+// same as no row at all. 'partial' means some but not all three are filled.
+const BUDGET_STATUS_FIELDS = ['SelectionsAmount', 'UnresolvedAllowance', 'DDCogs'];
+function computeBudgetStatus(fields){
+  if(!fields) return 'none';
+  const filled = BUDGET_STATUS_FIELDS.filter(k => fields[k] !== null && fields[k] !== undefined && fields[k] !== '').length;
+  if(filled === 0) return 'none';
+  if(filled === BUDGET_STATUS_FIELDS.length) return 'complete';
+  return 'partial';
+}
+function dotClassFor(status){
+  return status === 'complete' ? 'ok' : status === 'partial' ? 'partial' : 'no';
+}
+// ProjectKey -> status, loaded once alongside the project list and kept current
+// from setupCreate()/saveCfgField()/resetBudget(), so the picker can flag status
 // without a per-selection fetch of the whole config list.
-let BUDGET_CONFIGURED = new Set();
+let BUDGET_STATUS = new Map();
 async function loadBudgetConfigStatus(){
   try{
     const items = await fetchAllItems('CORE_Budget_Config');
-    BUDGET_CONFIGURED = new Set(items.map(it => it.fields && it.fields.ProjectKey).filter(Boolean));
+    BUDGET_STATUS = new Map();
+    items.forEach(it => {
+      const key = it.fields && it.fields.ProjectKey;
+      if(key) BUDGET_STATUS.set(key, computeBudgetStatus(it.fields));
+    });
   }catch(e){ console.warn('budget config status', e); }
 }
 async function loadProjects(){
@@ -669,7 +690,7 @@ function renderProjectOptions(){
   const panel = document.getElementById('projPickerPanel');
   panel.innerHTML = items.map(p =>
     '<div class="proj-picker-row" role="option" data-value="' + escAttr(p.title) + '" onclick="pickProject(this.dataset.value)">' +
-    '<span class="proj-dot ' + (BUDGET_CONFIGURED.has(p.title) ? 'ok' : 'no') + '"></span>' +
+    '<span class="proj-dot ' + dotClassFor(BUDGET_STATUS.get(p.title) || 'none') + '"></span>' +
     '<span class="proj-picker-row-label">' + escHtml(p.title) + '</span></div>').join('');
   // Prefer keeping whatever project is actually loaded selected (e.g. an admin
   // toggling admin mode on should see their already-open project stay selected).
@@ -685,7 +706,7 @@ function updatePickerTrigger(){
   label.classList.toggle('placeholder', !val);
   label.textContent = val || '— pick a project —';
   dot.style.visibility = val ? 'visible' : 'hidden';
-  dot.className = 'proj-dot' + (val ? (BUDGET_CONFIGURED.has(val) ? ' ok' : ' no') : '');
+  dot.className = 'proj-dot' + (val ? ' ' + dotClassFor(BUDGET_STATUS.get(val) || 'none') : '');
   document.querySelectorAll('.proj-picker-row').forEach(r => r.classList.toggle('active', r.dataset.value === val));
 }
 function pickProject(title){
@@ -1186,7 +1207,7 @@ async function resetBudget(){
     for(const it of cmts){
       if(it.fields && it.fields.ProjectKey === proj) await graphDelete(SP_LISTS + '/CORE_Budget_Comments/items/' + it.id);
     }
-    BUDGET_CONFIGURED.delete(proj);
+    BUDGET_STATUS.delete(proj);
     renderProjectOptions();
     await onProjectChanged(proj);
     setStatus('importStatus', 'Budget reset — "' + proj + '" is now Not set up.', 'ok');
@@ -1246,7 +1267,8 @@ async function setupCreate(){
       await cleanupAfterReimport(proj, model, tabName, say);
       reimportMode = false;
     }
-    if(!BUDGET_CONFIGURED.has(proj)){ BUDGET_CONFIGURED.add(proj); renderProjectOptions(); }
+    BUDGET_STATUS.set(proj, computeBudgetStatus(existingConfig.fields));
+    renderProjectOptions();
     say('Budget ' + (wasRedo ? 'updated' : 'created') + ' \u2014 opening\u2026','ok');
     document.getElementById('setupCardPanel').classList.add('hidden');
     openWorkbook(proj);
@@ -1902,6 +1924,10 @@ function saveCfgField(inp){
   const val = raw === '' ? null : num;
   wb.cfg.fields[field] = val;
   renderTotals();
+  if(BUDGET_STATUS_FIELDS.includes(field)){
+    BUDGET_STATUS.set(wb.proj, computeBudgetStatus(wb.cfg.fields));
+    renderProjectOptions();
+  }
   const itemId = wb.cfg.spItemId;
   enqueueSave(async () => {
     await graphPatch(SP_LISTS + '/CORE_Budget_Config/items/' + itemId + '/fields', { [field]: val });
