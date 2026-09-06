@@ -29,7 +29,7 @@ Open a project card and you'll find its editable fields: end date and cost figur
 
 ### Admin / delete mode
 
-A gear-and-switch control in the header toggles delete mode for admins — it lets an admin remove a logged entry outright, which an ordinary PM can't do. Everyone else never sees it.
+A gear-and-switch control in the header — only visible to admins in the first place — toggles delete mode. Hover it and it says exactly what it does: it only controls whether you can remove entries from a project's Change History outright. It has nothing to do with submitting updates — filling in an end date or cost is already open to anyone with ProjectUpdatesRole access, Member or Admin, whether this switch is on or off.
 
 ### The Budget Worksheet button
 
