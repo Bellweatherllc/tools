@@ -192,6 +192,9 @@ tr.subtotal td{font-weight:700;background:var(--bg);border-top:1px solid var(--b
 .wb-sticky{position:sticky;top:38px;z-index:60;background:var(--surface);margin:0 -20px;padding:2px 20px 12px;border-bottom:1px solid var(--border);box-shadow:0 4px 10px rgba(0,0,0,.05);}
 .wb-reimport{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-sec);padding:3px 10px;cursor:pointer;margin-bottom:8px;}
 .wb-reimport:hover{border-color:var(--navy);color:var(--navy);}
+.wb-reset{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid rgba(163,10,10,.35);border-radius:4px;color:var(--err);padding:3px 10px;cursor:pointer;margin-bottom:8px;margin-left:6px;}
+.wb-reset:hover{border-color:var(--err);background:rgba(163,10,10,.06);}
+.wb-reset:disabled{opacity:.5;cursor:default;}
 .wb-back{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--navy);cursor:pointer;background:var(--gold);border:none;border-radius:4px;padding:5px 14px;margin-bottom:12px;}
 .wb-back:hover{background:var(--gold-light);}
 .est-note-block{margin-bottom:14px;}
@@ -312,6 +315,7 @@ tr.col-hdr td.fx{text-align:center;}
           <div class="proj-picker-panel" id="projPickerPanel" role="listbox" hidden></div>
         </div>
         <button class="wb-reimport hidden" id="btnReimport" onclick="startReimport()">← Back to Estimate &amp; Tab</button>
+        <button class="wb-reset hidden" id="btnResetBudget" onclick="resetBudget()" data-tip="Delete this project's budget config, lines, and comments — puts it back to Not set up.">Reset Budget</button>
         <span class="status-line" id="importStatus" style="margin-top:0;flex:1;"></span>
       </div>
       <div id="wbHead" class="hidden">
@@ -354,10 +358,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v41';
+const CORE_VERSION = 'v42';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v42', date:'2026-09-06', notes:'Added Reset Budget, next to Change estimate / tab, admin-mode only. It permanently deletes the project’s budget config, every budget line, and every comment, putting it straight back to Not set up — for when a setup needs to be redone from scratch rather than re-imported over.' },
   { v:'v41', date:'2026-09-06', notes:'Picker dots are 25% bigger and 20% more saturated. Also fixed the real bug behind "projects are missing": the dropdown panel was capped at 280px tall — room for about 10 rows — so most of a long active-project list needed scrolling to even see. It now grows up to 520px (or 60% of the screen, whichever is smaller).' },
   { v:'v40', date:'2026-09-06', notes:'Added a "?" help button in the header, opening a new combined manual for the Budget Workbook, the PM Updater, and how the two connect — shared with Project Updates.' },
   { v:'v39', date:'2026-09-06', notes:'The emoji dots were garish and didn’t match anything else in CORE. Replaced the picker with a custom trigger + panel over a hidden native select: a small (6px), muted, flat CSS dot — the same plain-dot style used elsewhere — with real space before each project name, no gradient or glow.' },
@@ -1100,6 +1105,7 @@ async function onProjectChanged(explicitProj){
   document.getElementById('setupCardPanel').classList.add('hidden');
   document.getElementById('noBudgetMsg').classList.add('hidden');
   document.getElementById('btnReimport').classList.add('hidden');
+  document.getElementById('btnResetBudget').classList.add('hidden');
   if(!proj){ setStatus('importStatus','',''); return; }
   setStatus('importStatus','Checking for an existing budget\u2026');
   try{
@@ -1149,6 +1155,39 @@ function startReimport(){
   document.getElementById('wbHead').classList.add('hidden');
   document.getElementById('wbGridWrap').classList.add('hidden');
   showSetupCard(wb.proj, true);
+}
+
+// Full wipe, not a soft toggle: deletes the CORE_Budget_Config row plus every
+// CORE_Budget_Lines and CORE_Budget_Comments row for the project, so the picker's
+// dot goes back to red and Setup starts completely clean next time — no leftover
+// PM lines or comments reappearing from a prior setup.
+async function resetBudget(){
+  if(!wb || !isBudgetAdmin || !adminModeOn || !existingConfig) return;
+  const proj = wb.proj;
+  if(!confirm('Reset the budget for "' + proj + '"?\n\nThis permanently deletes its budget config, every budget line, and every estimating/budgeting comment for this project. This cannot be undone.')) return;
+  const btn = document.getElementById('btnResetBudget');
+  btn.disabled = true;
+  try{
+    setStatus('wbStatus','Resetting budget…');
+    await graphDelete(SP_LISTS + '/CORE_Budget_Config/items/' + existingConfig.spItemId);
+    const lines = await fetchAllItems('CORE_Budget_Lines');
+    for(const it of lines){
+      if(it.fields && it.fields.ProjectKey === proj) await graphDelete(SP_LISTS + '/CORE_Budget_Lines/items/' + it.id);
+    }
+    const cmts = await fetchAllItems('CORE_Budget_Comments');
+    for(const it of cmts){
+      if(it.fields && it.fields.ProjectKey === proj) await graphDelete(SP_LISTS + '/CORE_Budget_Comments/items/' + it.id);
+    }
+    BUDGET_CONFIGURED.delete(proj);
+    renderProjectOptions();
+    await onProjectChanged(proj);
+    setStatus('importStatus', 'Budget reset — "' + proj + '" is now Not set up.', 'ok');
+  }catch(e){
+    console.error(e);
+    setStatus('wbStatus','Reset failed: ' + e.message, 'err');
+  }finally{
+    btn.disabled = false;
+  }
 }
 
 async function setupLoad(){
@@ -1510,6 +1549,7 @@ function renderWorkbook(){
   const k = calcChain();
   const f = (wb.cfg && wb.cfg.fields) || {};
   document.getElementById('btnReimport').classList.toggle('hidden', !(isBudgetAdmin && adminModeOn));
+  document.getElementById('btnResetBudget').classList.toggle('hidden', !(isBudgetAdmin && adminModeOn));
   // wbMeta only ever renders while wbHead is visible, which now requires admin mode
   // (and admin mode requires isBudgetAdmin) \u2014 so this is always the admin-mode PM sees.
   document.getElementById('wbMeta').textContent =
