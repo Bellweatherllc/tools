@@ -176,8 +176,6 @@ table.diff td.num{text-align:right;white-space:nowrap;}
 .chg-new{color:var(--warn);font-weight:700;}
 /* ---------- v20 readability ---------- */
 table.wb{width:auto;margin-top:8px;}
-.fin-toggle{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--navy);border:1px solid var(--navy);border-radius:4px;color:#fff;cursor:pointer;padding:5px 14px;}
-.fin-toggle:hover{opacity:.88;}
 /* ---------- v19 spreadsheet skin ---------- */
 table.wb{font-size:13.5px;color:#1a1a1a;border-collapse:collapse;}
 table.wb td{border:1px solid #e2e2e2;padding:3px 8px;}
@@ -243,7 +241,7 @@ tr.col-hdr td.fx{text-align:center;}
   <span class="proto-badge" id="versionBadge"></span>
   <span class="hdr-spacer"></span>
   <span class="hdr-user" id="hdrUser"></span>
-  <button class="hdr-btn gold" onclick="showSetup()">Setup</button>
+  <button class="hdr-btn gold hidden" id="btnSetup" onclick="showSetup()">Setup</button>
   <button class="hdr-btn" onclick="signOut()">Sign out</button>
 </header>
 
@@ -271,7 +269,7 @@ tr.col-hdr td.fx{text-align:center;}
   <!-- WORKBOOK -->
   <div class="panel" id="wbPanel">
     <div class="wb-sticky">
-      <div class="field-row" style="margin-bottom:6px;">
+      <div class="field-row hidden" id="projectPickerRow" style="margin-bottom:6px;">
         <label>Project</label>
         <select id="projectSelect"><option value="">Loading projects&hellip;</option></select>
         <button class="wb-reimport hidden" id="btnReimport" onclick="startReimport()">← Back to Estimate &amp; Tab</button>
@@ -279,9 +277,6 @@ tr.col-hdr td.fx{text-align:center;}
       </div>
       <div id="wbHead" class="hidden">
       <div class="sub" id="wbMeta"></div>
-      <div class="field-row" style="margin-bottom:4px;">
-        <button class="fin-toggle" id="btnFinToggle" onclick="toggleFin()">Hide financials ▴</button>
-      </div>
       <div id="wbDrift"></div>
       <div id="wbFinWrap">
         <div class="wb-fin" id="wbFin"></div>
@@ -303,6 +298,7 @@ tr.col-hdr td.fx{text-align:center;}
       </div>
       <div class="status-line" id="scStatus"></div>
     </div>
+    <div class="sub hidden" id="noBudgetMsg" style="padding:8px 0 14px;">This project's budget hasn't been set up yet — check with Ryan.</div>
     <div id="wbGridWrap" class="hidden">
     <table class="wb"><tbody id="wbBody"></tbody></table>
     <div class="status-line" id="wbStatus"></div>
@@ -319,10 +315,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v31';
+const CORE_VERSION = 'v32';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v32', date:'2026-09-06', notes:'Admin mode now actually does something: turn it on to see the project picker and financials (the separate Hide/Show financials button is gone — financials just show whenever admin mode is on). With it off, a PM sees only their project’s budget grid — no picker, no financials, no Setup button. Opened from a project’s Budget Worksheet link in Project Updates, the right project loads automatically either way. If a PM lands on a project with no budget set up yet, they see a plain heads-up instead of the admin-only setup card.' },
   { v:'v31', date:'2026-09-06', notes:'Header now has the same Admin gear/switch control and red version badge as Project Updates.' },
   { v:'v30', date:'2026-08-26', notes:'Fixed checkbox now sits centered in its cell, horizontally and vertically.' },
   { v:'v29', date:'2026-08-26', notes:'Trash can redrawn as a clean simple icon, slightly larger \u2014 no more red block.' },
@@ -373,6 +370,21 @@ function toggleAdminMode(){
   document.body.classList.toggle('admin-mode', adminModeOn);
   const cb = document.getElementById('adminCheckbox');
   if(cb) cb.checked = adminModeOn;
+  syncAdminUI();
+}
+// Admin mode reveals the project picker, Setup, and the financials block (wbHead);
+// with it off, the signed-in PM sees nothing but their project's budget grid.
+function syncAdminUI(){
+  const pickerRow = document.getElementById('projectPickerRow');
+  if(pickerRow) pickerRow.classList.toggle('hidden', !adminModeOn);
+  const setupBtn = document.getElementById('btnSetup');
+  if(setupBtn) setupBtn.classList.toggle('hidden', !adminModeOn);
+  const head = document.getElementById('wbHead');
+  if(head) head.classList.toggle('hidden', !(adminModeOn && wb));
+  if(!adminModeOn){
+    const sp = document.getElementById('setupPanel');
+    if(sp) sp.classList.add('hidden');
+  }
 }
 const PROJ_META = {};
 const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
@@ -442,6 +454,7 @@ async function loadRole(){
     isBudgetAdmin = budgetRole === 'admin' || pipelineRole === 'admin';
     const ac = document.getElementById('adminControl');
     if(ac && isBudgetAdmin) ac.classList.add('visible');
+    syncAdminUI();
   }catch(e){ console.warn('role', e); isBudgetAdmin = false; }
 }
 async function getManageToken(){
@@ -511,10 +524,24 @@ async function loadProjects(){
     sel.innerHTML = '<option value="">— pick a project —</option>' + items.map(p =>
       '<option value="' + escAttr(p.title) + '" data-id="' + p.spItemId + '">' +
       escHtml(p.title) + (p.stage ? ' — ' + escHtml(p.stage) : '') + '</option>').join('');
+    applyDeepLinkProject();
   }catch(e){
     sel.innerHTML = '<option value="">Could not load CORE_Projects</option>';
     setStatus('importStatus', 'Project list failed to load: ' + e.message, 'err');
   }
+}
+
+// Opened from a project's Budget Worksheet link (e.g. in Project Updates) — the
+// URL carries that project's CORE_Projects item id, so pick it automatically
+// instead of waiting on the (admin-only) project picker.
+function applyDeepLinkProject(){
+  const pid = new URLSearchParams(location.search).get('project');
+  if(!pid) return;
+  const sel = document.getElementById('projectSelect');
+  const opt = [...sel.options].find(o => o.dataset.id === pid);
+  if(!opt) return;
+  sel.value = opt.value;
+  onProjectChanged();
 }
 
 /* ---------- File fetch ---------- */
@@ -898,9 +925,11 @@ let reimportMode = false;  // true when redoing tab/file choice for an existing 
 async function onProjectChanged(){
   const proj = document.getElementById('projectSelect').value;
   existingConfig = null;
+  wb = null;
   document.getElementById('wbHead').classList.add('hidden');
   document.getElementById('wbGridWrap').classList.add('hidden');
   document.getElementById('setupCardPanel').classList.add('hidden');
+  document.getElementById('noBudgetMsg').classList.add('hidden');
   document.getElementById('btnReimport').classList.add('hidden');
   if(!proj){ setStatus('importStatus','',''); return; }
   setStatus('importStatus','Checking for an existing budget\u2026');
@@ -911,8 +940,10 @@ async function onProjectChanged(){
     if(hit){
       existingConfig = { spItemId: hit.id, fields: hit.fields };
       openWorkbook(proj);
-    }else{
+    }else if(adminModeOn){
       showSetupCard(proj);
+    }else{
+      document.getElementById('noBudgetMsg').classList.remove('hidden');
     }
   }catch(e){ setStatus('importStatus','Could not check budgets: ' + e.message,'err'); }
 }
@@ -934,13 +965,6 @@ function showSetupCard(proj, redo){
       'Estimate link found on the Pipeline.' :
       'No estimate link on the Pipeline for this project \u2014 paste one above.', document.getElementById('scUrl').value ? 'ok' : 'warn');
   }
-}
-function toggleFin(){
-  const wrap = document.getElementById('wbFinWrap');
-  const btn = document.getElementById('btnFinToggle');
-  const nowHidden = wrap.classList.toggle('hidden');
-  btn.textContent = nowHidden ? 'Show financials \u25BE' : 'Hide financials \u25B4';
-  updateStickyOffsets();
 }
 function updateStickyOffsets(){
   const st = document.querySelector('.wb-sticky');
@@ -1184,7 +1208,6 @@ function normName(x){ return String(x || '').toLowerCase().replace(/[^a-z0-9]/g,
 async function openWorkbook(proj){
   document.getElementById('setupCardPanel').classList.add('hidden');
   document.getElementById('setupPanel').classList.add('hidden');
-  document.getElementById('wbHead').classList.remove('hidden');
   document.getElementById('wbGridWrap').classList.remove('hidden');
   setStatus('wbStatus','Loading budget data\u2026');
   try{
@@ -1224,6 +1247,7 @@ async function openWorkbook(proj){
     TEMPLATE.forEach(g => { firstDivOf['GRP-' + g.code] = g.divisions[0].key; });
     comments.forEach(cm => { if(firstDivOf[cm.code]) cm.code = firstDivOf[cm.code]; });
     wb = { proj, cfg: existingConfig, estByCode, scopeRows, comments, unmappedEst, addingCmt: null, editingCmt: null };
+    syncAdminUI();
     renderWorkbook();
     setStatus('wbStatus','');
     checkDrift();
@@ -1309,10 +1333,11 @@ function renderWorkbook(){
   const k = calcChain();
   const f = (wb.cfg && wb.cfg.fields) || {};
   document.getElementById('btnReimport').classList.toggle('hidden', !isBudgetAdmin);
+  // wbMeta only ever renders while wbHead is visible, which now requires admin mode
+  // (and admin mode requires isBudgetAdmin) \u2014 so this is always the admin-mode PM sees.
   document.getElementById('wbMeta').textContent =
     'Estimate snapshot: tab "' + (f.EstimateTab || '?') + '" of ' + (f.EstimateFileName || '?') +
-    ', taken ' + fmtDate(f.SnapshotDate) + '. ' + (isBudgetAdmin ? 'Admin mode \u2014 financials editable.' :
-    'Estimate figures and financial settings are read-only.');
+    ', taken ' + fmtDate(f.SnapshotDate) + '. Admin mode \u2014 financials editable.';
 
   /* Financial strip \u2014 estimate-header language, each figure cross-referenced */
   const pmetaR = PROJ_META[wb.proj] || {};
