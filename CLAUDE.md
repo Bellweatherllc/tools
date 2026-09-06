@@ -31,6 +31,7 @@ Three SharePoint locations — don't confuse them:
 - **Use single-occurrence-assert string replacement for edits** — fail loudly rather than silently editing the wrong match.
 - **Verify the delivered bytes**, not a `VALID` result that may have checked an unmodified file.
 - After deploying, the browser still caches the Pages file. Bump `?v=N` on the URL to see the new build.
+- **Merge feature branches into `main` and push automatically once work is committed there — don't wait for an explicit "merge" or "deploy" instruction each time.**
 
 ---
 
