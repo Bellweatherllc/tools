@@ -69,6 +69,27 @@ body.admin-mode .admin-gear{color:#f87171;transform:rotate(30deg);}
 input[type=text],select{font-family:'TT Norms Pro',sans-serif;font-size:12px;padding:6px 9px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--text);min-width:260px;}
 input[type=text]:focus,select:focus{outline:none;border-color:var(--gold);}
 input.wide{flex:1;min-width:320px;}
+
+/* ---------- Project picker (custom trigger over a hidden native <select>) ----------
+   A flat 6px status dot in front of each project name, matching the plain CSS dots
+   used elsewhere in CORE (no emoji, no gradient) — small, muted, with real space
+   between the dot and the title since option text can't mix two colors. */
+.proj-picker{position:relative;min-width:260px;}
+.proj-native-select{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;}
+.proj-picker-btn{font-family:'TT Norms Pro',sans-serif;font-size:12px;display:flex;align-items:center;gap:8px;width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--text);cursor:pointer;text-align:left;}
+.proj-picker-btn:hover{border-color:var(--gold);}
+.proj-picker-btn.open{border-color:var(--gold);}
+.proj-picker-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.proj-picker-label.placeholder{color:var(--muted);}
+.proj-picker-caret{color:var(--muted);font-size:10px;}
+.proj-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--muted);}
+.proj-dot.ok{background:#6fa377;}
+.proj-dot.no{background:#b97575;}
+.proj-picker-panel{position:absolute;top:calc(100% + 3px);left:0;right:0;z-index:60;background:#fff;border:1px solid var(--border);border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,.1);max-height:280px;overflow-y:auto;}
+.proj-picker-row{display:flex;align-items:center;gap:8px;padding:6px 9px;font-size:12px;cursor:pointer;}
+.proj-picker-row:hover{background:var(--bg);}
+.proj-picker-row.active{background:var(--gold-light);}
+.proj-picker-row-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .btn{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--navy);color:#fff;border:1px solid var(--navy);border-radius:4px;padding:7px 18px;cursor:pointer;transition:opacity .12s;}
 .btn:hover{opacity:.88;}
 .btn:disabled{opacity:.4;cursor:default;}
@@ -275,7 +296,15 @@ tr.col-hdr td.fx{text-align:center;}
     <div class="wb-sticky">
       <div class="field-row" id="projectPickerRow" style="margin-bottom:6px;">
         <label>Project</label>
-        <select id="projectSelect"><option value="">Loading projects&hellip;</option></select>
+        <div class="proj-picker" id="projPickerWrap">
+          <select id="projectSelect" class="proj-native-select" tabindex="-1" aria-hidden="true"><option value="">Loading projects&hellip;</option></select>
+          <button type="button" class="proj-picker-btn" id="projPickerBtn" onclick="toggleProjPicker()" aria-haspopup="listbox">
+            <span class="proj-dot" id="projPickerDot" style="visibility:hidden;"></span>
+            <span class="proj-picker-label placeholder" id="projPickerLabel">Loading projects&hellip;</span>
+            <span class="proj-picker-caret">▾</span>
+          </button>
+          <div class="proj-picker-panel" id="projPickerPanel" role="listbox" hidden></div>
+        </div>
         <button class="wb-reimport hidden" id="btnReimport" onclick="startReimport()">← Back to Estimate &amp; Tab</button>
         <span class="status-line" id="importStatus" style="margin-top:0;flex:1;"></span>
       </div>
@@ -319,10 +348,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v38';
+const CORE_VERSION = 'v39';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v39', date:'2026-09-06', notes:'The emoji dots were garish and didn’t match anything else in CORE. Replaced the picker with a custom trigger + panel over a hidden native select: a small (6px), muted, flat CSS dot — the same plain-dot style used elsewhere — with real space before each project name, no gradient or glow.' },
   { v:'v38', date:'2026-09-06', notes:'The picker’s "Set up" / "Not set up" text was noisy — replaced with a green or red dot in front of each project name.' },
   { v:'v37', date:'2026-09-06', notes:'Toggling admin mode while a not-yet-set-up project is selected now immediately swaps the setup card and the plain heads-up message, instead of requiring you to reselect the project. The picker now marks every project · Set up or · Not set up, and dropped the DA/CA-signed stage label, which wasn’t worth the space.' },
   { v:'v36', date:'2026-09-06', notes:'Budget admins now browse every active project in the picker whether admin mode is on or off — admin mode only gates financials and Setup, not project scope. (Real PMs are still scoped to their own assigned projects either way.) So an admin can pick any project off admin mode and, if it has no budget yet, see the "hasn’t been set up" message instead of the picker being effectively empty.' },
@@ -565,7 +595,6 @@ async function loadBudgetConfigStatus(){
 }
 async function loadProjects(){
   const sel = document.getElementById('projectSelect');
-  sel.addEventListener('change', onProjectChanged);
   try{
     const [pd] = await Promise.all([
       graphGet(SP_LISTS + '/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500'),
@@ -591,6 +620,7 @@ async function loadProjects(){
     applyDeepLinkProject();
   }catch(e){
     sel.innerHTML = '<option value="">Could not load CORE_Projects</option>';
+    document.getElementById('projPickerLabel').textContent = 'Could not load projects';
     setStatus('importStatus', 'Project list failed to load: ' + e.message, 'err');
   }
 }
@@ -599,6 +629,12 @@ async function loadProjects(){
 // admin mode is toggled on — admin mode itself only gates the financials block and
 // the Setup button, not project scope. Everyone else only sees projects where
 // they're the assigned PM, matched the same fuzzy way Project Updates matches PM tabs.
+//
+// The picker itself is a custom trigger + panel drawn over a hidden native <select>:
+// the select stays the single source of truth for "what's selected" (existing code
+// reads/sets projectSelect.value throughout), while the visible UI is real DOM —
+// a flat CSS dot per row, not colored emoji text, matching the plain status dots
+// used elsewhere in CORE.
 function renderProjectOptions(){
   const sel = document.getElementById('projectSelect');
   const prevValue = sel.value;
@@ -607,19 +643,50 @@ function renderProjectOptions(){
     const pm = (p.pm || '').trim().toLowerCase();
     return !!pm && (pm === mine || pm.split(' ')[0] === mine.split(' ')[0]);
   });
-  // A colored dot beats text here — CSS color on <option> is unreliable across
-  // browsers, but an emoji glyph carries its own color no matter how the <select>
-  // renders, so green/red reads correctly everywhere with zero added text noise.
-  // (No hover tooltip on these — a data-tip popup can't paint over a native open
-  // dropdown anyway, and green/red is self-explanatory without one.)
   sel.innerHTML = '<option value="">— pick a project —</option>' + items.map(p =>
-    '<option value="' + escAttr(p.title) + '" data-id="' + p.spItemId + '">' +
-    (BUDGET_CONFIGURED.has(p.title) ? '\u{1F7E2}' : '\u{1F534}') + ' ' + escHtml(p.title) + '</option>').join('');
+    '<option value="' + escAttr(p.title) + '" data-id="' + p.spItemId + '">' + escHtml(p.title) + '</option>').join('');
+  const panel = document.getElementById('projPickerPanel');
+  panel.innerHTML = items.map(p =>
+    '<div class="proj-picker-row" role="option" data-value="' + escAttr(p.title) + '" onclick="pickProject(this.dataset.value)">' +
+    '<span class="proj-dot ' + (BUDGET_CONFIGURED.has(p.title) ? 'ok' : 'no') + '"></span>' +
+    '<span class="proj-picker-row-label">' + escHtml(p.title) + '</span></div>').join('');
   // Prefer keeping whatever project is actually loaded selected (e.g. an admin
   // toggling admin mode on should see their already-open project stay selected).
   const wantValue = (wb && wb.proj) || prevValue;
   if(wantValue && items.some(p => p.title === wantValue)) sel.value = wantValue;
+  updatePickerTrigger();
 }
+
+function updatePickerTrigger(){
+  const val = document.getElementById('projectSelect').value;
+  const label = document.getElementById('projPickerLabel');
+  const dot = document.getElementById('projPickerDot');
+  label.classList.toggle('placeholder', !val);
+  label.textContent = val || '— pick a project —';
+  dot.style.visibility = val ? 'visible' : 'hidden';
+  dot.className = 'proj-dot' + (val ? (BUDGET_CONFIGURED.has(val) ? ' ok' : ' no') : '');
+  document.querySelectorAll('.proj-picker-row').forEach(r => r.classList.toggle('active', r.dataset.value === val));
+}
+function pickProject(title){
+  document.getElementById('projectSelect').value = title;
+  closeProjPicker();
+  updatePickerTrigger();
+  onProjectChanged(title);
+}
+function toggleProjPicker(){
+  document.getElementById('projPickerPanel').hidden ? openProjPicker() : closeProjPicker();
+}
+function openProjPicker(){
+  document.getElementById('projPickerPanel').hidden = false;
+  document.getElementById('projPickerBtn').classList.add('open');
+}
+function closeProjPicker(){
+  document.getElementById('projPickerPanel').hidden = true;
+  document.getElementById('projPickerBtn').classList.remove('open');
+}
+document.addEventListener('click', e => {
+  if(!e.target.closest('#projPickerWrap')) closeProjPicker();
+});
 
 // Opened from a project's Budget Worksheet link (e.g. in Project Updates) — the URL
 // carries that project's CORE_Projects item id. Looked up against the full,
@@ -633,6 +700,7 @@ function applyDeepLinkProject(){
   onProjectChanged(match.title);
   const sel = document.getElementById('projectSelect');
   if([...sel.options].some(o => o.value === match.title)) sel.value = match.title;
+  updatePickerTrigger();
 }
 
 /* ---------- File fetch ---------- */
