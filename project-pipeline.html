@@ -3467,7 +3467,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1106';
+const CORE_VERSION = 'v1107';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -16194,6 +16194,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1107', date: '2026-09-06',
+    entries:['Weekly Brief: Pipeline Housekeeping now flags CA-signed projects with no Budget Workbook set up yet, same as the other missing-link checks.'],
+  },
+  {
     version: 'v1106', date: '2026-09-06',
     entries:['LC hammer icon nudged 2px right.'],
   },
@@ -18087,6 +18091,31 @@ function briefMissingAssignment(){
     !['archived','cancelled'].includes(p.status) && (!p.designer||!p.productionPM)
   );
 }
+// Budget Workbook setup gaps — CA-signed projects with no CORE_Budget_Config row yet.
+// Not part of the Pipeline's own data (PROJECTS carries no budget info), so this is a
+// small live fetch on its own, refreshed each time the brief opens rather than cached
+// at startup. Matched by Title, the same ProjectKey the Budget Workbook itself writes —
+// note PROJECTS.name falls back through ProjectName/ClientName, not raw Title, so this
+// re-fetches Title directly rather than trusting proj.name to match.
+let _budgetSetupGapIds=null;
+async function loadBudgetSetupGaps(){
+  try{
+    const caIds=new Set(PROJECTS.filter(p=>p.status==='ca-signed').map(p=>p._spItemId));
+    if(!caIds.size){ _budgetSetupGapIds=new Set(); return; }
+    const [pd,cd]=await Promise.all([
+      graphGet(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500'),
+      graphGet(BWC_SITE+'/CORE_Budget_Config/items?$expand=fields&$select=id,fields&$top=500')
+    ]);
+    const configuredTitles=new Set((cd.value||[]).map(it=>(it.fields&&it.fields.ProjectKey)||'').filter(Boolean));
+    const gaps=new Set();
+    (pd.value||[]).forEach(it=>{
+      if(!caIds.has(it.id)) return;
+      const title=(it.fields&&it.fields.Title)||'';
+      if(title&&!configuredTitles.has(title)) gaps.add(it.id);
+    });
+    _budgetSetupGapIds=gaps;
+  }catch(e){ console.warn('[budget setup gaps]',e.message); _budgetSetupGapIds=null; }
+}
 function briefDaNoCA(){
   return PROJECTS.filter(proj=>{
     if(proj.status!=='da-signed') return false;
@@ -18601,6 +18630,9 @@ function generateBriefHTML(){
       // flagging it at DA would fire on every project months before anyone could act.
       if(isCa&&!(proj.logisticsCoord1||'').trim()&&!(proj.logisticsCoord2||'').trim())
         _hkRow(id+'-hk-lc',name,'No Logistics Coordinator assigned — assign in the Production lens.',proj);
+      // CA-signed with no CORE_Budget_Config row — same construction-only scope as LC above.
+      if(isCa&&_budgetSetupGapIds&&_budgetSetupGapIds.has(proj._spItemId))
+        _hkRow(id+'-hk-budget',name,'Budget Workbook hasn’t been set up.',proj);
       const _trelloAck=id+'-trello-board';
       if(BRIEF_ACKS[_trelloAck]==='archived'){
         const restoreBtn=`<button class="brief-ack-btn brief-ack-mark" data-hk-restore="${_trelloAck}">Restore</button>`;
@@ -18642,7 +18674,7 @@ function updateBriefBaselineLbl(){
     ?('Last resolved: '+briefFmtFull(new Date(WEEKLY_BASELINE.ts)))
     :'Baseline initializing';
 }
-function openBrief(){
+async function openBrief(){
   const panel=document.getElementById('briefPanel');
   const body=document.getElementById('briefBody');
   const meta=document.getElementById('briefGenMeta');
@@ -18653,6 +18685,10 @@ function openBrief(){
   updateBriefBaselineLbl();
   panel.classList.add('open');
   document.body.style.overflow='hidden';
+  // Budget Workbook setup gaps live in a list the Pipeline doesn't otherwise load —
+  // fetch fresh on each open and re-render in place once it resolves.
+  await loadBudgetSetupGaps();
+  if(panel.classList.contains('open')) body.innerHTML=generateBriefHTML();
 }
 function closeBrief(){
   const panel=document.getElementById('briefPanel');
