@@ -31,6 +31,12 @@
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smoothing:antialiased;color:var(--navy);}
+/* v69: shared floating-tooltip engine (ported from project-pipeline.html) — every
+   data-tip lives here now instead of native title=, per house convention. */
+#tt{position:fixed;z-index:9999;background:var(--navy);color:#fff;font-size:11px;line-height:1.5;padding:6px 11px;border-radius:6px;pointer-events:none;opacity:0;transition:opacity .1s;box-shadow:0 4px 12px rgba(0,0,0,.22);max-width:220px;}
+#tt.show{opacity:1;}
+#tt .tt-n{font-weight:700;color:var(--gl);}
+#tt .tt-d{font-size:10px;color:rgba(255,255,255,.55);}
 @keyframes bw-spin{to{transform:rotate(360deg);}}
 
 /* ── APP HEADER ── */
@@ -118,7 +124,13 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 /* v67: fixed height, same for every row (dots-only rows and hold/closed/unknown
    chip rows alike) — sized to comfortably hold a dot plus its label and clock text,
    the tallest a phase-track step gets, so nothing ever flexes row to row. */
-.app-row{display:flex;align-items:center;gap:14px;min-height:60px;padding:11px 16px;border-bottom:1px solid rgba(40,40,40,.16);}
+/* v69: a true fixed height, not a floor — min-height still let a row grow taller
+   whenever its content needed more room (the Permit Type sub-line, the phase-track
+   clock-text sub-line); both of those moved to hover tooltips (see phaseTrackHtml and
+   the trk-band markup in appRowHtml) specifically so nothing left in a row's content
+   ever needs more than this. Measured against the tallest recurring element (the
+   comment icon's glyph + "Trello" caption stack) — see rowtest.html measurement. */
+.app-row{display:flex;align-items:center;gap:14px;height:60px;padding:11px 16px;border-bottom:1px solid rgba(40,40,40,.16);overflow:hidden;}
 .app-row:last-child{border-bottom:none;}
 /* v63: redesigned per nine rounds of prototyping (see the "Tracker Noise Test" artifact).
    Zoning/Permit is no longer a loud full-bleed color band — it's text only, sharing the
@@ -131,7 +143,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .trk-band.track-zoning{color:#282828;}
 .trk-band.track-permit{color:#282828;} /* v64: black now, matches Zoning — the row's own warm tint still tells them apart */
 .trk-band.track-other{color:var(--navy);}
-.trk-band-sub{font-size:9.5px;font-weight:600;letter-spacing:.03em;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} /* v65: truncates instead of wrapping — was flexing row height for long Permit Type text */
+/* v69: trk-band-sub retired — Permit Type is a data-tip on .trk-band now (see appRowHtml) */
 .stat-band{margin:-11px -16px -11px 0;padding:6px 10px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
 /* v65: on track = green, complete = blue (swapped from the roll-ok/roll-done defaults).
    v68: solid colors now, not tinted rgba — a transparent tint blended with whichever
@@ -150,16 +162,18 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .badge.ez{background:rgba(216,182,79,.20);color:#8a6c14;border:1px solid rgba(216,182,79,.5);}
 .badge.hist{background:rgba(155,97,39,.12);color:#9b6127;border:1px solid rgba(155,97,39,.4);}
 /* v63: bare icon, no pill — bigger, thinner stroke, count sits inside the bubble body.
-   Tail points bottom-right (icon and its popup share that corner, see #cmtPop below). */
-.cmt-icon{position:relative;left:-5px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:#a3a4b1;cursor:pointer;transition:color .12s;}
+   Tail points bottom-right (icon and its popup share that corner, see #cmtPop below).
+   v68: both icons gained a "TRELLO" caption underneath to mark their origin, so each
+   is now a column (glyph + label) — the count badge anchors to the glyph span alone,
+   not the whole column, so it stays centered on the bubble instead of drifting down. */
+.cmt-icon,.ext-icon{position:relative;display:inline-flex;flex-direction:column;align-items:center;gap:1px;flex-shrink:0;color:#a3a4b1;cursor:pointer;transition:color .12s;}
+.cmt-icon{left:-5px;}
+.cmt-glyph,.ext-icon .icon-glyph{position:relative;display:inline-flex;}
 .cmt-icon svg{width:28px;height:28px;}
-.cmt-icon:hover{color:var(--navy);}
-.cmt-icon.none{visibility:hidden;cursor:default;} /* v38: placeholder holds the slot so the timeline never shifts */
-/* v68: opens the Trello card directly — same footprint as the comment icon, sits to its left of the track */
-.ext-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:#a3a4b1;cursor:pointer;transition:color .12s;}
 .ext-icon svg{width:20px;height:20px;}
-.ext-icon:hover{color:var(--navy);}
-.ext-icon.none{visibility:hidden;cursor:default;}
+.cmt-icon:hover,.ext-icon:hover{color:var(--navy);}
+.cmt-icon.none,.ext-icon.none{visibility:hidden;cursor:default;} /* v38: placeholder holds the slot so the timeline never shifts */
+.icon-lbl{font-size:7px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.55;line-height:1;}
 .cmt-count{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);color:inherit;font-size:9px;font-weight:600;line-height:1;pointer-events:none;} /* v65: moved back up 1.5px */
 
 /* Phase track */
@@ -179,11 +193,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .ph-step.active .ph-dot{border-color:var(--dc,var(--gold));background:#fff;box-shadow:0 0 0 3px var(--dg,rgba(216,182,79,.25));}
 .ph-lbl{font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--tm);margin-top:4px;white-space:nowrap;}
 .ph-step.done .ph-lbl,.ph-step.active .ph-lbl{color:var(--navy);}
-.ph-timer{font-size:9.5px;font-weight:700;margin-top:1px;white-space:nowrap;}
-.ph-timer.t-ok{color:var(--st-done);} /* v65: on track reads green, matches the swap above */
-.ph-timer.t-warn{color:var(--st-warn);}
-.ph-timer.t-over{color:var(--st-over);font-weight:800;} /* v35 */
-.ph-timer.t-age{color:var(--ts);}
+/* v69: ph-timer retired — clock text is a data-tip on the active .ph-step now (see phaseTrackHtml) */
 .state-chip{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:4px;padding:3px 8px;flex-shrink:0;}
 .state-hold{background:rgba(138,138,138,.14);color:var(--st-hold);border:1px solid rgba(138,138,138,.4);}
 .state-closed{background:rgba(40,40,40,.85);color:#fff;}
@@ -216,6 +226,8 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .qc-meta b{color:rgba(255,255,255,.82);}
 .qc-text{font-size:11.5px;line-height:1.5;color:rgba(255,255,255,.82);white-space:pre-wrap;}
 .qc-mention{color:rgba(255,255,255,.45);}
+.qc-reactions{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;} /* v68: best-effort — only renders when the Trello API actually hands back reaction data */
+.qc-reaction{font-size:12px;line-height:1;background:rgba(255,255,255,.10);border-radius:10px;padding:3px 7px;color:rgba(255,255,255,.8);}
 .qc-empty{color:rgba(255,255,255,.5);font-size:11.5px;text-align:center;padding:4px 0;}
 
 /* ── DETAIL DRAWER ── */
@@ -335,6 +347,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 </style>
 </head>
 <body>
+<div id="tt"></div>
 
 <div id="authOverlay">
   <div class="auth-card">
@@ -432,7 +445,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v68';
+const CORE_VERSION = 'v69';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -616,6 +629,37 @@ function fmtDate(d){ return d?d.toLocaleDateString('en-US',{month:'short',day:'n
 const MONTH_ABBR=['Jan.','Feb.','March','April','May','June','July','Aug.','Sept.','Oct.','Nov.','Dec.'];
 function fmtShortDate(d){ return d?MONTH_ABBR[d.getMonth()]+' '+d.getDate():''; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ── Shared floating tooltip (ported from project-pipeline.html) ── */
+const TT=document.getElementById('tt');
+function _tipHTML(el){
+  const n=el.getAttribute('data-tip')||'';
+  const d=el.getAttribute('data-tip-d')||'';
+  if(d) return '<div class="tt-n">'+esc(n)+'</div><div class="tt-d">'+esc(d)+'</div>';
+  return esc(n).replace(/\n/g,'<br>');
+}
+function showTTraw(html,e){ TT.innerHTML=html; TT.classList.add('show'); moveTT(e); }
+function moveTT(e){
+  const tw=TT.offsetWidth||140, th=TT.offsetHeight||60;
+  const vw=window.innerWidth, vh=window.innerHeight;
+  let top=e.clientY-th-10; if(top<4) top=Math.min(vh-th-4,e.clientY+18);
+  let left=e.clientX-tw-14; if(left<4) left=e.clientX+14;
+  left=Math.max(4,Math.min(left,vw-tw-4)); top=Math.max(4,Math.min(top,vh-th-4));
+  TT.style.left=left+'px'; TT.style.top=top+'px';
+}
+function hideTT(){ TT.classList.remove('show'); }
+document.addEventListener('mouseover',e=>{
+  const t=e.target&&e.target.closest?e.target.closest('[data-tip]'):null;
+  if(!t||!t.getAttribute('data-tip')) return;
+  showTTraw(_tipHTML(t),e);
+});
+document.addEventListener('mousemove',e=>{ if(TT.classList.contains('show')&&e.target.closest&&e.target.closest('[data-tip]')) moveTT(e); });
+document.addEventListener('mouseout',e=>{
+  const t=e.target&&e.target.closest?e.target.closest('[data-tip]'):null;
+  if(!t) return;
+  if(t.contains&&t.contains(e.relatedTarget)) return;
+  hideTT();
+});
 
 /* ═══ Save indicator ═══ */
 function setSave(state,txt){
@@ -825,6 +869,20 @@ function cfValue(card,defs,label){
   return '';
 }
 
+// v68: groups an action's raw reaction list into {glyph,count} — defensive, since the
+// exact shape (or presence) of inlined reactions on a board-scoped action fetch is
+// unverified against the live board; an empty/missing list just means no reactions show.
+function _summarizeReactions(list){
+  if(!list||!list.length) return [];
+  const counts={};
+  list.forEach(r=>{
+    const e=r&&r.emoji||{};
+    const glyph=e.native||e.shortName||e.name||'';
+    if(!glyph) return;
+    counts[glyph]=(counts[glyph]||0)+1;
+  });
+  return Object.keys(counts).map(g=>({glyph:g,count:counts[g]}));
+}
 async function loadTrello(){
   const b=_trelloCfg.boardId;
   const [boardInfo,lists,cards,defs,actions]=await Promise.all([
@@ -834,7 +892,8 @@ async function loadTrello(){
         customFieldItems:'true', checklists:'all', members:'true', member_fields:'fullName'}),
     tGet('boards/'+b+'/customFields',{}),
     tGet('boards/'+b+'/actions',{filter:'updateCard:idList,commentCard', limit:'200', // v47: recent moves only — older history lives in the mirror's StageHistory
-        fields:'data,type,date', memberCreator:'true', memberCreator_fields:'fullName'}) // v36: 'type' was missing — the comment filter had nothing to read
+        fields:'data,type,date', memberCreator:'true', memberCreator_fields:'fullName',
+        reactions:'true'}) // v68: best-effort — inline reaction summaries if the API returns them for this filter+scope; unverified against the live board, degrades to no reactions shown if the field comes back empty
   ]);
   const listName={}; lists.forEach(l=>listName[l.id]=l.name);
 
@@ -846,7 +905,7 @@ async function loadTrello(){
     const txt=a.data&&a.data.text;
     if(!cid||!txt) return;
     const arr=(commentsByCard[cid]=commentsByCard[cid]||[]);
-    if(arr.length<5) arr.push({text:txt, at:a.date, by:(a.memberCreator&&a.memberCreator.fullName)||''});
+    if(arr.length<5) arr.push({text:txt, at:a.date, by:(a.memberCreator&&a.memberCreator.fullName)||'', reactions:_summarizeReactions(a.reactions)});
   });
   // Per-card stage history from board actions (ascending)
   const histByCard={};
@@ -1116,9 +1175,12 @@ function phaseTrackHtml(a){
     let style='';
     if(done) style=' style="--dc:var(--st-done)"'; // v63: always green — that step is behind you
     else if(active&&STAGE_COLOR[a.state]) style=' style="--dc:'+STAGE_COLOR[a.state]+';--dg:'+STAGE_GLOW[a.state]+'"';
-    const timer=active&&a.clockText?('<div class="ph-timer '+(a.state==='over'?'t-over':a.state==='warn'?'t-warn':stageMeta(a.stage)&&stageMeta(a.stage).clock==='review'?'t-ok':'t-age')+'">'+esc(a.clockText)+'</div>'):'';
+    // v69: clock text moves to a hover tooltip on the active step instead of a third
+    // line under the dot — that line was the one thing still flexing row height (see
+    // .app-row's fixed height, below); the shared tooltip engine surfaces it on hover now.
+    const tip=active&&a.clockText?(' data-tip="'+esc(a.clockText)+'"'):'';
     const shortLbl=s.name==='Closed — Denied/Withdrawn'?'Closed':s.name==='With Arch/Eng'?'Arch/Eng':s.name==='Ready to Submit'?'Ready':s.name==='Revisions Needed'?'Revisions':s.name==='Completed'?'Complete':s.name;
-    return '<div class="ph-step '+(done?'done':'')+(active?' active':'')+'"'+style+'><div class="ph-dot"></div><div class="ph-lbl">'+esc(shortLbl)+'</div>'+timer+'</div>';
+    return '<div class="ph-step '+(done?'done':'')+(active?' active':'')+'"'+style+tip+'><div class="ph-dot"></div><div class="ph-lbl">'+esc(shortLbl)+'</div></div>';
   }).join('')+'</div>';
 }
 // v63: bare bubble icon, no pill — body is a rect from (2,3) to (14,11); the tail
@@ -1153,13 +1215,18 @@ function appRowHtml(a){
   }
   const _n=a.comments?a.comments.length:0; // v38: the slot always renders — invisible when empty — so rows align
   const cmt='<span class="cmt-icon'+(_n?'':' none')+'"'+(_n?' onclick="event.stopPropagation();openQuickComments(\''+esc(a.cardId)+'\',this)"':'')+'>'
-    +CMT_ICON_SVG+(_n?'<span class="cmt-count">'+_n+'</span>':'')+'</span>';
-  const ext='<span class="ext-icon'+(a.url?'':' none')+'"'+(a.url?' onclick="event.stopPropagation();window.open(\''+esc(a.url)+'\',\'_blank\',\'noopener\')" data-tip="Open Trello card" aria-label="Open Trello card"':'')+'>'+EXT_ICON_SVG+'</span>';
+    +'<span class="cmt-glyph">'+CMT_ICON_SVG+(_n?'<span class="cmt-count">'+_n+'</span>':'')+'</span>'
+    +'<span class="icon-lbl">Trello</span></span>';
+  const ext='<span class="ext-icon'+(a.url?'':' none')+'"'+(a.url?' onclick="event.stopPropagation();window.open(\''+esc(a.url)+'\',\'_blank\',\'noopener\')" data-tip="Open Trello card" aria-label="Open Trello card"':'')+'>'
+    +'<span class="icon-glyph">'+EXT_ICON_SVG+'</span><span class="icon-lbl">Trello</span></span>';
   // v63: type band is text on the row's own gauge-tinted background now (see
   // .app-row.track-zoning/.track-permit), not a separate loud color patch; the
   // Permit Type field (already read from Trello, never surfaced before) shows below it
   return '<div class="app-row '+trackChipCls(a.track)+'" data-card-id="'+esc(a.cardId)+'">'+
-    '<div class="trk-band '+trackChipCls(a.track)+'"><div>'+esc(a.track)+'</div>'+(a.ptype?'<div class="trk-band-sub">'+esc(a.ptype)+'</div>':'')+'</div>'+
+    // v69: Permit Type moves to a hover tooltip on the band instead of a second line —
+    // that line was the other thing flexing row height (Zoning cards have no ptype,
+    // Permit cards do, so the two tracks rendered at different heights).
+    '<div class="trk-band '+trackChipCls(a.track)+'"'+(a.ptype?' data-tip="Permit Type" data-tip-d="'+esc(a.ptype)+'"':'')+'><div>'+esc(a.track)+'</div></div>'+
     badges+ext+mid+cmt+statBand+'</div>'; // v67: jurisdiction dropped from the row — it's on the project header now, showing it twice was redundant
 }
 // v62: owner = CardOwner, the same per-card field the Absolutes table's "Owner"
@@ -1398,14 +1465,25 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeCardPop(); })
 let _qcOpenFor=null;
 // v67: @mentions read light gray — applied after esc() so the regex only ever sees
 // plain text, never markup, and can't be tricked by anything inside the comment
-function _qcMentions(s){ return esc(s).replace(/@[A-Za-z0-9_]+/g,m=>'<span class="qc-mention">'+m+'</span>'); }
+function _qcReactionsHtml(list){
+  if(!list||!list.length) return '';
+  return '<div class="qc-reactions">'+list.map(r=>'<span class="qc-reaction">'+esc(r.glyph)+(r.count>1?' '+r.count:'')+'</span>').join('')+'</div>';
+}
+function _qcMentions(s){
+  let out=esc(s).replace(/@[A-Za-z0-9_]+/g,m=>'<span class="qc-mention">'+m+'</span>');
+  // v68: a comment that opens with a run of @mentions (broadcasting to several people)
+  // gets a line break after that run, so the actual message starts on its own line
+  // instead of running on right after the last name.
+  out=out.replace(/^((?:<span class="qc-mention">@[A-Za-z0-9_]+<\/span>\s*)+)/,'$1<br>');
+  return out;
+}
 function openQuickComments(cardId,badge){
   const a=APPS.find(x=>x.cardId===cardId); if(!a) return;
   const pop=document.getElementById('cmtPop');
   if(_qcOpenFor===cardId&&pop.classList.contains('open')){ closeQuickComments(); return; }
   const inner=document.getElementById('cmtPopInner');
   inner.innerHTML=(a.comments&&a.comments.length)
-    ? a.comments.map(cm=>'<div class="qc-item"><div class="qc-meta"><b>'+esc(cm.by||'?')+'</b> &middot; '+fmtDate(new Date(cm.at))+'</div><div class="qc-text">'+_qcMentions(cm.text)+'</div></div>').join('')
+    ? a.comments.map(cm=>'<div class="qc-item"><div class="qc-meta"><b>'+esc(cm.by||'?')+'</b> &middot; '+fmtDate(new Date(cm.at))+'</div><div class="qc-text">'+_qcMentions(cm.text)+'</div>'+_qcReactionsHtml(cm.reactions)+'</div>').join('')
     : '<div class="qc-empty">No comments yet.</div>';
   pop.classList.add('open');
   _qcOpenFor=cardId;
