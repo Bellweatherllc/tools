@@ -439,7 +439,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 
   <div class="view" id="view-absolutes">
     <div class="abs-intro">Tracks permit and zoning progress to protect the CA signing date and production start.</div>
-    <div class="abs-intro" id="runwayAssumptions"></div>
+    <div class="abs-intro" id="leadAssumptions"></div>
     <div id="absContent"><div class="empty-note">Loading&hellip;</div></div>
   </div>
 </div>
@@ -463,7 +463,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v72';
+const CORE_VERSION = 'v73';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -493,21 +493,23 @@ const WARN_DAYS = 3; // business days remaining → "due soon"
 
 /* ═══ CA-protection clock (third clock) — v43, computation only ═══
    Forward-looking: given the current CA date (from the Pipeline via CORE_Projects)
-   and where the permit sits today, is there enough runway left before the permit
+   and where the permit sits today, is there enough lead time left before the permit
    threatens CA? Gate = Approved; nothing past Approved affects CA. On Hold suspends.
    Computed live, never stored. Resolution = weeks. See CORE_Permit_CAClock_Design.md.
 
-   RUNWAY_WEEKS — PLACEHOLDER estimates of how long a permit typically spends in
+   LEAD_WEEKS — PLACEHOLDER estimates of how long a permit typically spends in
    each Trello list. Deliberately rough v1 values, shown openly on the Absolutes
-   page; correct them here (and bump the version) once real numbers exist. */
-const RUNWAY_WEEKS = {
+   page; correct them here (and bump the version) once real numbers exist.
+   v73: renamed from RUNWAY_WEEKS — "lead time" is the term the designers actually
+   use; the Trello custom field is being renamed to match (see CF.leadTime below). */
+const LEAD_WEEKS = {
   'Incoming': 2, 'Prep': 2, 'With Arch/Eng': 4, 'Ready to Submit': 1,
   'Submitted': 1, 'In Review': 3, 'Revisions Needed': 3
 };
 /* Which lists still lie ahead of a card (inclusive of its current list) on the
    road to Approved. Explicit map — the journey isn't strictly linear (Revisions
-   loops back through review). weeksNeeded = sum of RUNWAY_WEEKS over this path. */
-const RUNWAY_PATH = {
+   loops back through review). weeksNeeded = sum of LEAD_WEEKS over this path. */
+const LEAD_PATH = {
   'Incoming':         ['Incoming','Prep','With Arch/Eng','Ready to Submit','Submitted','In Review'],
   'Prep':             ['Prep','With Arch/Eng','Ready to Submit','Submitted','In Review'],
   'With Arch/Eng':    ['With Arch/Eng','Ready to Submit','Submitted','In Review'],
@@ -516,7 +518,7 @@ const RUNWAY_PATH = {
   'In Review':        ['In Review'],
   'Revisions Needed': ['Revisions Needed','In Review']
 };
-const RUNWAY_YELLOW_SLACK = 2; // slack ≤ this → at-risk; slack ≤ 0 → critical
+const LEAD_YELLOW_SLACK = 2; // slack ≤ this → at-risk; slack ≤ 0 → critical
 
 /* Week-index → calendar date. MUST mirror the Pipeline's wkMon()/CAL_ABS_EARLIEST
    (project-pipeline.html) exactly — CA dates live in GanttData as integer weeks
@@ -530,7 +532,7 @@ function caWeekToDate(w){ return new Date(CA_EPOCH.getTime()+(w*7+_CA_MON_OFFSET
 const CF = {project:'project', track:'track type', ptype:'permit type', jur:'jurisdiction',
             submitted:'submitted date', reviewdays:'review days', permitnum:'permit number',
             owner:'card owner',   // v32: matches 'CardOwner'
-            runway:'runway weeks'}; // v43: per-card override — total weeks this permit still needs to reach Approved. normName strips case and spacing throughout.
+            leadTime:'lead time weeks'}; // v43: per-card override — total weeks this permit still needs to reach Approved. normName strips case and spacing throughout. v73: renamed from "Runway Weeks" — Byron is renaming the Trello custom field to match; if the actual field name lands differently, update this string.
 
 /* ── State ── */
 let _token=null;
@@ -784,13 +786,15 @@ async function loadProjectAddresses(){
   }catch(e){ console.warn('[address]',e); }
 }
 
-/* v43: the CA-protection runway verdict for one application card. Pure — reads the
-   card, CA_BY_PROJECT, and the clock; touches nothing. States:
+/* v43: the CA-protection lead-time verdict for one application card. Pure — reads
+   the card, CA_BY_PROJECT, and the clock; touches nothing. States:
    comfortable / at-risk / critical  — the live verdict (slack in weeks decides)
    paused    — On Hold suspends the clock
    quiet     — nothing left to protect (CA signed, permit ≥ Approved, or application dead)
-   no-data   — can't assess (no CA date, or unknown stage with no override) */
-function computeCARunway(a){
+   no-data   — can't assess (no CA date, or unknown stage with no override)
+   v73: renamed from computeCARunway/dumpCARunway — "runway" is being retired in
+   favor of "lead time" throughout (see LEAD_WEEKS above). */
+function computeCALead(a){
   const meta=stageMeta(a.stage);
   if(meta&&meta.terminal==='dead') return {state:'quiet', why:'application closed'};
   if(meta&&meta.hold) return {state:'paused', why:'On Hold'}; // before the rank check — On Hold sits below Approved in STAGES but is a parking lot, not a journey position
@@ -801,25 +805,25 @@ function computeCARunway(a){
   if(meta&&(meta.terminal==='done'||stageRank(a.stage)>=apRank))
     return {state:'quiet', why:'permit at/past Approved', weeksNeeded:0, caDate:ca.date};
   let weeksNeeded=null, src='defaults';
-  if(a.runwayWeeks!=null){ weeksNeeded=a.runwayWeeks; src='card override'; }
+  if(a.leadWeeks!=null){ weeksNeeded=a.leadWeeks; src='card override'; }
   else{
     // v44: live Trello lists are ALL CAPS — match case-insensitively like the rest
     // of the tracker (stageMeta/stageRank) instead of exact-key object lookup
-    const canon=Object.keys(RUNWAY_PATH).find(k=>k.toLowerCase()===String(a.stage).toLowerCase());
-    if(!canon) return {state:'no-data', why:'unknown stage "'+a.stage+'" — no runway estimate', caDate:ca.date};
-    weeksNeeded=RUNWAY_PATH[canon].reduce((t,st)=>t+(RUNWAY_WEEKS[st]||0),0);
+    const canon=Object.keys(LEAD_PATH).find(k=>k.toLowerCase()===String(a.stage).toLowerCase());
+    if(!canon) return {state:'no-data', why:'unknown stage "'+a.stage+'" — no lead-time estimate', caDate:ca.date};
+    weeksNeeded=LEAD_PATH[canon].reduce((t,st)=>t+(LEAD_WEEKS[st]||0),0);
   }
   const weeksAvailable=Math.floor((ca.date.getTime()-Date.now())/(7*24*3600*1000));
   const slack=weeksAvailable-weeksNeeded;
-  const state=slack<=0?'critical':(slack<=RUNWAY_YELLOW_SLACK?'at-risk':'comfortable');
+  const state=slack<=0?'critical':(slack<=LEAD_YELLOW_SLACK?'at-risk':'comfortable');
   return {state, weeksNeeded, weeksAvailable, slack, caDate:ca.date, src};
 }
 
-/* v43: verification surface — run window.dumpCARunway() in the console against the
+/* v43: verification surface — run window.dumpCALead() in the console against the
    live board and eyeball the math before any of this reaches the UI. */
-window.dumpCARunway=function(){
+window.dumpCALead=function(){
   const rows=APPS.map(a=>{
-    const r=computeCARunway(a);
+    const r=computeCALead(a);
     return {project:a.project, track:a.track, stage:a.stage,
       caDate:r.caDate?r.caDate.toISOString().slice(0,10):'—',
       needed:r.weeksNeeded!=null?r.weeksNeeded:'—',
@@ -829,7 +833,7 @@ window.dumpCARunway=function(){
   });
   console.table(rows);
   const missing=Object.keys(CA_BY_PROJECT).length;
-  console.log('[ca-clock] '+rows.length+' cards · '+missing+' projects with a CA milestone in CORE_Projects · runway defaults:',RUNWAY_WEEKS);
+  console.log('[ca-clock] '+rows.length+' cards · '+missing+' projects with a CA milestone in CORE_Projects · lead-time defaults:',LEAD_WEEKS);
   return rows;
 };
 async function saveCheckins(){ // v39
@@ -962,7 +966,7 @@ async function loadTrello(){
       reviewDays:(function(){ const v=cfValue(c,defs,CF.reviewdays); return v!==''?Number(v):null; })(),
       permitNum:String(cfValue(c,defs,CF.permitnum)||''),
       cardOwner:String(cfValue(c,defs,CF.owner)||'').trim(), // v32: the managing owner
-      runwayWeeks:(function(){ const v=cfValue(c,defs,CF.runway); return v!==''&&v!=null&&isFinite(Number(v))?Number(v):null; })(), // v43: override, null = use RUNWAY_WEEKS defaults
+      leadWeeks:(function(){ const v=cfValue(c,defs,CF.leadTime); return v!==''&&v!=null&&isFinite(Number(v))?Number(v):null; })(), // v43: override, null = use LEAD_WEEKS defaults
       engOwner:(String(cfValue(c,defs,'arch eng owner')||'')||String(cfValue(c,defs,'eng owner')||'')).trim(), // v34: who owns the engineering dependency (blank = CardOwner)
       labels:(c.labels||[]).map(l=>l.name).filter(Boolean),
       owners:(c.members||[]).map(m=>m.fullName).filter(Boolean),
@@ -1419,7 +1423,7 @@ function _popOrderedApps(){
 }
 function _popBuildBody(projectName){
   // v51: the window holds ONE project — every one of its applications in full detail
-  // (facts, runway, journey, checklists, comments, owners), scrolling as a set.
+  // (facts, lead time, journey, checklists, comments, owners), scrolling as a set.
   const body=document.getElementById('cardPopBody');
   const apps=APPS.filter(x=>x.project===projectName).sort((x,y)=>trackSortRank(x.track)-trackSortRank(y.track)||String(x.track).localeCompare(String(y.track)));
   body.innerHTML=apps.map(a=>'<div class="cp-sec" data-cp-card="'+esc(a.cardId)+'">'+appDetailHtml(a)+'</div>').join('')
@@ -1579,8 +1583,8 @@ function renderAbsolutes(){
     if(r==='hold') return '<span class="bin bin-na">HOLD</span>';
     return '<span class="bin bin-on">ON TRACK</span>';
   };
-  const _aeWks=RUNWAY_WEEKS['With Arch/Eng']||0; // v49: headers state the runway budget
-  const _fullWks=(RUNWAY_PATH['Prep']||[]).reduce((t,st)=>t+(RUNWAY_WEEKS[st]||0),0);
+  const _aeWks=LEAD_WEEKS['With Arch/Eng']||0; // v49: headers state the lead-time budget
+  const _fullWks=(LEAD_PATH['Prep']||[]).reduce((t,st)=>t+(LEAD_WEEKS[st]||0),0);
   wrap.innerHTML='<table class="abs-table"><thead><tr><th>Project</th><th>Owner</th><th>Arch/Eng ('+_aeWks+' wks)</th><th>Zoning ('+_fullWks+' wks)</th><th>Permit ('+_fullWks+' wks)</th><th>Overall</th><th>Check-in Notes</th></tr></thead><tbody>'+
     names.map(n=>{
       const apps=projects[n];
@@ -1709,7 +1713,7 @@ async function boot(){
   // kept above for possible reuse).
   // v46: the CA borrow is the heaviest read in CORE (GanttData for every project) —
   // it no longer blocks first paint. The board renders from Trello immediately; the
-  // CA-protection runway verdicts recompute and re-render the moment their data lands.
+  // CA-protection lead-time verdicts recompute and re-render the moment their data lands.
   loadProjectCAs().then(()=>{
     if(APPS.length){ computeClocks(); renderBoard(); renderAbsolutes(); }
   }).catch(e=>console.warn('[ca-clock]',e));
@@ -1731,11 +1735,11 @@ async function boot(){
 (function(){
   const vb=document.getElementById('versionBadge'); if(vb) vb.textContent=CORE_VERSION;
   const ab=document.getElementById('authVersionBadge'); if(ab) ab.textContent=CORE_VERSION;
-  // v43: state the runway assumptions on the page itself — visible, adjustable, never hidden
-  const ra=document.getElementById('runwayAssumptions');
-  if(ra) ra.textContent='Runway estimates (weeks a permit typically spends in each list — placeholder values, adjust in RUNWAY_WEEKS): '
-    +Object.keys(RUNWAY_WEEKS).map(k=>k+' '+RUNWAY_WEEKS[k]).join(' · ')
-    +'. A "Runway Weeks" custom field on a card overrides these with that card\u2019s own total.';
+  // v43: state the lead-time assumptions on the page itself — visible, adjustable, never hidden
+  const ra=document.getElementById('leadAssumptions');
+  if(ra) ra.textContent='Lead time estimates (weeks a permit typically spends in each list — placeholder values, adjust in LEAD_WEEKS): '
+    +Object.keys(LEAD_WEEKS).map(k=>k+' '+LEAD_WEEKS[k]).join(' · ')
+    +'. A "Lead Time Weeks" custom field on a card overrides these with that card\u2019s own total.';
 })();
 
 msalApp.handleRedirectPromise().then(resp=>{
