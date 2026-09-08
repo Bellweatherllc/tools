@@ -75,6 +75,26 @@ The pipeline and Gantt still run their own Navy `#1f2e3e` / Gold `#d8b64f` with 
 
 ---
 
+## Repo layout
+
+**Deployed tools stay at the repo root. Flat, on purpose.**
+
+The URL is the contract. `bellweatherllc.github.io/tools/<name>.html` is referenced by bookmarks, by cross-tool links, by `pipeline-manual.md`, and — critically — by the **MSAL redirect URI registered in the Azure app registration**. Moving or renaming a deployed file breaks all of them, and the Azure side can lock users out.
+
+**Never move or rename a file that already has a live URL.** Not to tidy up, not to match a newer convention. If a name is wrong, it stays wrong.
+
+**Folders that are safe**, because they aren't page URLs: `lib/`, `fonts/`, `logos/`, `azure-function-proxy/`.
+
+**Retired files go in `archive/`.** A tool that's been superseded, an experiment that didn't land, an old version kept for reference. Nothing links to these, so moving them breaks nothing — and it separates "live" from "was live once," which is the thing a flat root can't show. Never archive a file that something still links to; check first.
+
+**New tools may be born in a folder** (`permits/tracker.html` serves fine from Pages). The cost only exists for files that already have a URL in the wild.
+
+**Naming — new files only:** all lowercase, hyphens not underscores, domain prefix where it groups things (`permit-`, `project-`, `ca-`). The repo currently mixes both styles (`core_roadmap.html` beside `core-projects-manager.html`); that's historical and stays. Don't retrofit.
+
+**Keep the index current.** `bw-tool-index.html` and `versions.md` are what a flat repo has instead of a folder tree. Update them when a tool is added, renamed at birth, or archived.
+
+---
+
 ## The pipeline's deploy convention
 
 `project-pipeline-plus.html` is the testing copy. When it's ready, it's renamed to `project-pipeline.html` and becomes the live one.
