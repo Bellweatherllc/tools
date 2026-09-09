@@ -1,4 +1,4 @@
-# PM Updater &amp; Budget Workbook — Help Manual
+# PM Workbook &amp; Budget Workbook — Help Manual
 
 *How the two tools work, how they talk to each other, and what to do when something misbehaves — written for people, not programmers.*
 
