@@ -18,7 +18,9 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/project-updat
 
 Across the top, a row of tabs — one per Project Manager — lets you jump to any PM's projects. You'll normally live on your own tab, but nothing stops you from looking at someone else's if you need to.
 
-Below the tabs, **or jump directly to a project** is a second way in: a picker listing every project regardless of PM, each with its budget-status dot (see below). Pick one and it becomes the only card on screen, replacing whatever the PM tabs were showing — useful when you know the project you want but not who's PM on it. Click any PM tab, or the **✕ Show all** button that appears next to the picker, to drop back to the normal tab view.
+Below the tabs, **or jump directly to a project** is a second way in: a picker listing every project regardless of PM (plain text, no color-coding — that lives in the Budget Workbook's picker instead, see Part II). Pick one and it becomes the only card on screen, replacing whatever the PM tabs were showing — useful when you know the project you want but not who's PM on it. Click any PM tab, or the **✕ Show all** button that appears next to the picker, to drop back to the normal tab view.
+
+The header itself reads **PM Workbook** — the tool is still what this manual calls the PM Updater throughout; that's just the label in its header bar.
 
 ### Making an update
 
@@ -62,11 +64,11 @@ Admin mode does **not** control which projects you can pick — see the picker, 
 
 ### The project picker
 
-The dropdown at the top lists projects to choose from, each with a small flat-colored dot in front of its name — a plain CSS circle, not an emoji, matching the status dots used elsewhere in CORE:
+The dropdown at the top lists projects to choose from, each with a small flat-colored dot in front of its name — a plain CSS circle, not an emoji, matching the status dots used elsewhere in CORE. A legend right beside the picker spells out what the colors mean, so you never have to remember it:
 
-- **red** — none of the three key financial fields are filled in yet (see **Setting up a budget**, below, for which three).
-- **muted gold** — some are filled in, some aren't.
-- **green** — all three are filled in.
+- **red — Not set up** — none of the three key financial fields are filled in yet (see **Setting up a budget**, below, for which three).
+- **gold — Partial** — some are filled in, some aren't.
+- **green — Set up** — all three are filled in.
 
 The dot is about those three fields specifically, not about whether a budget config row exists at all. A project can have a config row — meaning picking it opens the real workbook grid, not the Setup card — and still show red, if nobody's filled in Selections, Unresolved Allowance, or DESIGN COGS yet.
 
