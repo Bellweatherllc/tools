@@ -102,6 +102,44 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .toast{background:var(--navy);color:#fff;padding:10px 16px;border-radius:7px;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;gap:9px;max-width:380px;}
 .toast.err{background:var(--over);}
 .tdot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0;}
+
+/* ── Stage badge, weak-match flag, override control ── */
+.stage-badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:8px;background:var(--bg);border:1px solid var(--border);color:var(--text-sec);}
+.stage-badge.ca{background:#e6efe8;border-color:#cfe3d3;color:var(--good);}
+.flag.weak{background:#fdeecb;color:#8a5a10;}
+.ovr-btn{border:none;background:none;color:var(--ok);cursor:pointer;font-size:11px;padding:0 0 0 6px;text-decoration:underline;font-family:inherit;}
+.ovr-btn:hover{color:var(--navy);}
+.ovr-note{display:block;font-size:10.5px;color:var(--text-sec);font-weight:400;text-align:left;margin-top:2px;}
+
+/* ── Lock banner ── */
+.lock-banner{background:#eef3f6;border:1px solid var(--border);border-left:4px solid var(--ok);border-radius:8px;padding:12px 18px;margin-bottom:14px;font-size:12.5px;line-height:1.6;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.lock-banner b{font-weight:600;}
+.lock-banner .actions{margin-left:auto;display:flex;gap:8px;}
+.lock-banner .actions button{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
+.lock-banner .actions button:hover{background:var(--bg);}
+
+/* ── Override modal ── */
+#ovrOverlay{position:fixed;inset:0;background:rgba(31,46,62,.55);z-index:800;display:none;align-items:center;justify-content:center;}
+#ovrOverlay.open{display:flex;}
+.ovr-panel{background:#fff;border-radius:10px;max-width:380px;width:92%;box-shadow:0 18px 50px rgba(0,0,0,.3);padding:20px 22px;}
+.ovr-panel h3{font-family:'Swear Text',serif;font-size:16px;font-weight:500;margin-bottom:4px;}
+.ovr-panel .sub{font-size:12px;color:var(--text-sec);margin-bottom:14px;}
+.ovr-panel label{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-sec);margin:12px 0 5px;}
+.ovr-panel input[type=number],.ovr-panel textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-family:inherit;font-size:13px;}
+.ovr-panel textarea{resize:vertical;min-height:52px;}
+.ovr-foot{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;}
+.ovr-foot button{border-radius:6px;padding:7px 16px;font-family:inherit;font-size:12.5px;cursor:pointer;border:1px solid var(--border);background:#fff;}
+.ovr-foot button.primary{background:var(--navy);color:#fff;border-color:var(--navy);}
+.ovr-foot button.clear{color:var(--over);border-color:#e0b8b4;margin-right:auto;}
+
+@media print{
+  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,#toasts,#tt{display:none!important;}
+  body{background:#fff;}
+  #printHeader{display:block!important;margin-bottom:16px;}
+  #printHeader h1{font-family:'Swear Text',serif;font-size:20px;margin-bottom:4px;}
+  #printHeader .sub{font-size:12px;color:var(--text-sec);}
+}
+#printHeader{display:none;}
 </style>
 </head>
 <body>
@@ -123,6 +161,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <span class="tb-ver" id="versionBadge"></span>
   <div class="tb-right">
     <button class="tb-btn" id="refreshBtn">Refresh</button>
+    <button class="tb-btn" id="lockBtn">Lock This Month</button>
     <a class="tb-btn" href="revenue-tracker.html">Revenue Tracker ↗</a>
     <span class="acct-chip" id="acctChip"></span>
     <a class="manual-btn" href="wip-tracker-manual.html" target="_blank" rel="noopener" data-tip="Help &amp; repair manual">?</a>
@@ -132,19 +171,37 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <div id="loadStatus">Loading…</div>
 
 <div class="main hidden" id="main">
+  <div id="printHeader"><h1></h1><div class="sub"></div></div>
+  <div id="lockBannerWrap"></div>
   <div class="src-panel" id="srcPanel">Loading invoicing export…</div>
 
-  <h2 class="sec">Portfolio <span class="note">signed construction contracts, live</span></h2>
+  <h2 class="sec">Portfolio <span class="note">every active job, any stage, live</span></h2>
   <div class="cards" id="cards"></div>
 
   <h2 class="sec">Projects
     <span class="note"
       data-tip="How earned revenue is calculated"
-      data-tip-d="20% of contract value is counted earned the moment a Construction Agreement is signed. The remaining 80% spreads evenly across the construction schedule as weeks pass.">(what's the formula?)</span>
+      data-tip-d="CA-Signed jobs: 20% of contract value at signing, plus the remaining 80% spread evenly across the construction schedule. Earlier stages have no formula — set a % complete by hand using the ✎ next to Earned.">(what's the formula?)</span>
   </h2>
   <div style="overflow-x:auto;"><table class="tbl" id="projTbl"></table></div>
 
   <div id="unmatchedWrap"></div>
+</div>
+
+<div id="ovrOverlay">
+  <div class="ovr-panel">
+    <h3 id="ovrTitle"></h3>
+    <div class="sub" id="ovrSub"></div>
+    <label for="ovrPct">Percent complete (overrides the formula)</label>
+    <input type="number" id="ovrPct" min="0" max="100" step="1">
+    <label for="ovrNote">Why (shows on hover)</label>
+    <textarea id="ovrNote" placeholder="e.g. Substantially complete but windows are on backorder — not yet earned."></textarea>
+    <div class="ovr-foot">
+      <button class="clear" id="ovrClearBtn">Clear override</button>
+      <button id="ovrCancelBtn">Cancel</button>
+      <button class="primary" id="ovrSaveBtn">Save</button>
+    </div>
+  </div>
 </div>
 
 <div id="tt"></div>
@@ -156,7 +213,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v3';
+const CORE_VERSION='v4';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -170,10 +227,16 @@ const SIGNING_SHARE=0.20;   // owned the moment a CA is signed
 const BUILD_SHARE=0.80;     // spread across the construction schedule
 const INV_FOLDER_LABEL='Operations → FINANCIAL → 1. WIP Reports & Job Costs → BT_InvoicingReports_forWIPTool';
 const INV_HOWTO='BuilderTrend → Financial → Invoice → All Jobs → Export';
+const EXCLUDED_STAGES=/^(lost|cancelled|archive)$/i;
+const PERIOD=(()=>{ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })();
+const PERIOD_LABEL=new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'});
 
 // ════════════════════════════════════ STATE
-let PROJECTS=[];   // {spId, name, clientName, contract, constr:{startWeek,durWeeks}|null}
+let PROJECTS=[];   // {spId, name, clientName, stage, contract, constr:{startWeek,durWeeks}|null}
 let INV=null;      // {byJob:Map, file, modified, exportedOn, folderUrl, error}
+let OVERRIDES={};  // spId -> {pct, note, setBy, setAt}
+let LOCK=null;     // existing lock record for the current period, or null
+let VIEW_LOCK=false;   // true while showing the locked snapshot instead of live numbers
 
 // ════════════════════════════════════ UTIL
 function parseMoney(s){ const n=parseFloat(String(s==null?'':s).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:n; }
@@ -239,7 +302,54 @@ document.getElementById('authSignInBtn').addEventListener('click',()=>{
   setAuthStatus('Signing in…');
   SherpaAuth.signIn().catch(e=>{ setAuthStatus('Sign-in failed: '+e.message,true); btn.disabled=false; });
 });
-document.getElementById('refreshBtn').addEventListener('click',()=>{ INV=null; boot(); });
+document.getElementById('refreshBtn').addEventListener('click',()=>{ INV=null; VIEW_LOCK=false; boot(); });
+
+// ── Override modal ──
+let _ovrSpId=null;
+function openOverrideModal(spId){
+  const row=(window._wipRows||[]).find(r=>r.p.spId===spId); if(!row) return;
+  _ovrSpId=spId;
+  document.getElementById('ovrTitle').textContent=row.p.name;
+  document.getElementById('ovrSub').textContent=row.calc.pct==null?'No automatic % yet — set one by hand.':'Currently calculated at '+fmtPct(row.calc.pct)+'.';
+  const existing=OVERRIDES[spId];
+  document.getElementById('ovrPct').value=existing?Math.round(existing.pct*100):(row.calc.pct!=null?Math.round(row.calc.pct*100):'');
+  document.getElementById('ovrNote').value=existing?existing.note:'';
+  document.getElementById('ovrOverlay').classList.add('open');
+}
+function closeOverrideModal(){ document.getElementById('ovrOverlay').classList.remove('open'); _ovrSpId=null; }
+document.getElementById('ovrCancelBtn').addEventListener('click',closeOverrideModal);
+document.getElementById('ovrOverlay').addEventListener('click',e=>{ if(e.target.id==='ovrOverlay') closeOverrideModal(); });
+document.getElementById('ovrSaveBtn').addEventListener('click',async()=>{
+  if(!_ovrSpId) return;
+  const raw=document.getElementById('ovrPct').value;
+  const pct=Math.max(0,Math.min(100,parseFloat(raw)))/100;
+  if(raw===''||isNaN(pct)){ toast('Enter a percent from 0–100','err'); return; }
+  const note=document.getElementById('ovrNote').value.trim();
+  const spId=_ovrSpId;
+  try{ await saveOverride(spId,pct,note); toast('Override saved','ok'); closeOverrideModal(); renderAll(); }
+  catch(e){ toast('Could not save override: '+(e.message||e),'err'); }
+});
+document.getElementById('ovrClearBtn').addEventListener('click',async()=>{
+  if(!_ovrSpId) return;
+  const spId=_ovrSpId;
+  try{ await clearOverride(spId); toast('Override cleared','ok'); closeOverrideModal(); renderAll(); }
+  catch(e){ toast('Could not clear override: '+(e.message||e),'err'); }
+});
+
+// ── Lock this month ──
+document.getElementById('lockBtn').addEventListener('click',async()=>{
+  const rows=window._wipRows||[];
+  if(!rows.length){ toast('Nothing to lock yet — let the page finish loading.','err'); return; }
+  const already=LOCK?' It will replace the existing lock from '+fmtDate(LOCK.lockedAt)+'.':'';
+  if(!confirm('Lock the WIP for '+PERIOD_LABEL+'?\n\nThis records today’s numbers — including any manual overrides — as the permanent figures for the month.'+already+'\n\nYou can still view live numbers afterward; the print dialog opens next so you can save a PDF.')) return;
+  try{
+    await writeLock(rows);
+    toast('Locked '+PERIOD_LABEL,'ok');
+    VIEW_LOCK=true;
+    renderAll();
+    setTimeout(()=>window.print(),300);
+  }catch(e){ toast('Could not lock: '+(e.message||e),'err'); }
+});
 
 async function graphGetAll(url){
   let out=[], next=url;
@@ -247,23 +357,31 @@ async function graphGetAll(url){
   return out;
 }
 
-// ════════════════════════════════════ LOAD — CORE_Projects (CA Signed only)
+// ════════════════════════════════════ LOAD — CORE_Projects
+// Scope: every real project regardless of stage — Lead, DA Signed, CA Signed,
+// Paused — excluding only Lost/Cancelled/Archive and open-slot placeholders.
+// If money's been collected for it, it belongs on this page; the stage only
+// changes how "earned" gets calculated (see computeRow).
 async function loadProjects(){
   const items=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,fields');
   PROJECTS=[];
   items.forEach(item=>{
     const f=item.fields||{};
-    if((f.PipelineStage||'')!=='CA Signed') return;
+    const stage=f.PipelineStage||'';
     const clientName=f.ClientName||f.Title||'Unnamed';
     const name=f.ProjectName||clientName;
     let gd=null;
     if(f.GanttData){ try{ gd=JSON.parse(f.GanttData); }catch(e){ /* bad blob — no schedule */ } }
+    const isSlot=(gd&&gd.isOpenSlot)||/^Slot\b/i.test(name);
+    const isScheduled=!!(gd&&gd.scheduled===true);
+    const isLead=!stage&&!isSlot&&!isScheduled;   // no stage yet = prospective, not a real job
+    if(isSlot||isLead||EXCLUDED_STAGES.test(stage)) return;
     let constr=null;
     if(gd&&gd.productionLane&&Array.isArray(gd.productionLane.phases)){
       const ph=gd.productionLane.phases.find(p=>/^construction$/i.test(String(p.name||'').trim()));
       if(ph&&ph.durWeeks>0) constr={startWeek:ph.startWeek,durWeeks:ph.durWeeks};
     }
-    PROJECTS.push({spId:String(item.id),name,clientName,contract:parseMoney(f.EstimatedProjectValue),constr});
+    PROJECTS.push({spId:String(item.id),name,clientName,stage,contract:parseMoney(f.EstimatedProjectValue),constr});
   });
 }
 
@@ -352,9 +470,77 @@ async function loadInvoicing(){
   }
 }
 
+// ════════════════════════════════════ CORE_Config — shared key/value store
+// Same list and {Title,Key,Value} shape the Pipeline already uses for its
+// OPS cash-flow scenarios and other shared, lightweight state. No new
+// SharePoint list or column needed for overrides or monthly locks.
+let _cfgCache=null, _cfgPromise=null;
+async function cfgAll(){
+  if(_cfgCache) return _cfgCache;
+  if(!_cfgPromise) _cfgPromise=graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').then(items=>{ _cfgCache=items; return items; });
+  return _cfgPromise;
+}
+async function cfgGet(key){
+  const items=await cfgAll();
+  const row=items.find(it=>(it.fields||{}).Key===key);
+  return row?{id:row.id,value:row.fields.Value}:null;
+}
+async function cfgSet(key,value){
+  const items=await cfgAll();
+  const row=items.find(it=>(it.fields||{}).Key===key);
+  if(row){
+    await SherpaAuth.graph(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{method:'PATCH',body:JSON.stringify({Value:value})});
+    row.fields.Value=value;
+  }else{
+    const created=await SherpaAuth.graph(BWC_SITE+'/CORE_Config/items',{method:'POST',body:JSON.stringify({fields:{Title:key,Key:key,Value:value}})});
+    items.push({id:created.id,fields:{Key:key,Value:value}});
+  }
+}
+
+// ── Manual % overrides — persist until changed or cleared, apply on every load ──
+async function loadOverrides(){
+  try{ const row=await cfgGet('wip_overrides'); OVERRIDES=row&&row.value?JSON.parse(row.value):{}; }
+  catch(e){ console.warn('[wip] overrides load failed:',e); OVERRIDES={}; }
+}
+async function saveOverride(spId,pct,note){
+  const acct=SherpaAuth.getAccount();
+  OVERRIDES[spId]={pct,note:note||'',setBy:(acct&&(acct.name||acct.username))||'Unknown',setAt:new Date().toISOString()};
+  await cfgSet('wip_overrides',JSON.stringify(OVERRIDES));
+}
+async function clearOverride(spId){
+  delete OVERRIDES[spId];
+  await cfgSet('wip_overrides',JSON.stringify(OVERRIDES));
+}
+
+// ── Monthly lock — a deliberate, human-triggered permanent record, one CORE_Config
+// row per period (wip_lock_YYYY-MM) so it never competes with the 64k text-column
+// ceiling other CORE_Config keys have hit before. Re-locking overwrites that row —
+// Byron's own described flow expects re-locking to be normal, not blocked. ──
+async function loadLock(){
+  try{ const row=await cfgGet('wip_lock_'+PERIOD); LOCK=row&&row.value?JSON.parse(row.value):null; }
+  catch(e){ console.warn('[wip] lock load failed:',e); LOCK=null; }
+}
+async function writeLock(rows){
+  const acct=SherpaAuth.getAccount();
+  const snap={
+    period:PERIOD, periodLabel:PERIOD_LABEL,
+    lockedAt:new Date().toISOString(),
+    lockedBy:(acct&&(acct.name||acct.username))||'Unknown',
+    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden}))
+  };
+  await cfgSet('wip_lock_'+PERIOD,JSON.stringify(snap));
+  LOCK=snap;
+  return snap;
+}
+
 // ════════════════════════════════════ MATCH + COMPUTE
+// Tokens (min 4 letters) back up the whole-string match: "Lee & Paulino" vs a
+// BT job code like "LEEPAULINOL" already matches whole-string, but something
+// like "Paulino & Lee" (surnames in the other order) wouldn't — a shared
+// token still finds it, flagged as a weaker match so it stays checkable.
+function tokens(s){ return String(s||'').toLowerCase().replace(/\(all\)/g,'').split(/[^a-z]+/).filter(t=>t.length>=4); }
 function matchInvoices(){
-  const matched=new Map();   // spId -> invoiced total
+  const matched=new Map();   // spId -> {total, weak}
   const unmatched=[];        // {job,invoiced}
   (INV.byJob||new Map()).forEach((invoiced,job)=>{
     const n=normName(job);
@@ -366,21 +552,46 @@ function matchInvoices(){
         if(d<bestD){ bestD=d; best=p; }
       });
     });
-    if(best&&bestD<=2){ matched.set(best.spId,(matched.get(best.spId)||0)+invoiced); }
-    else{ unmatched.push({job,invoiced}); }
+    let weak=false;
+    if(!best||bestD>2){
+      // Fallback: any single name token (surname, usually) shared with the job code.
+      let bestLen=0;
+      PROJECTS.forEach(p=>{
+        [...tokens(p.clientName),...tokens(p.name)].forEach(tok=>{
+          if((n.includes(tok)||tok.includes(n))&&tok.length>bestLen){ bestLen=tok.length; best=p; weak=true; }
+        });
+      });
+    }
+    if(best){
+      const cur=matched.get(best.spId)||{total:0,weak:false};
+      matched.set(best.spId,{total:cur.total+invoiced,weak:cur.weak||weak});
+    }else{ unmatched.push({job,invoiced}); }
   });
   return {matched,unmatched};
 }
 function weekNow(){ return Math.floor((Date.now()-EPOCH.getTime())/MS_WEEK); }
-function computeRow(p,invoiced){
+// A manual override always wins and sets earned = contract × override %, full stop —
+// no signing/schedule split, just "mark it X%" the way Ryan and Joey would say it.
+// Without one: CA-Signed jobs use the 20%-at-signing + schedule formula; every
+// earlier stage has no formula to fall back on, so earned stays unset until
+// someone sets it by hand — safer than guessing a number nobody signed off on.
+function computeRow(p,matchedEntry,override){
+  const invoiced = matchedEntry ? matchedEntry.total : null;
+  const weakMatch = matchedEntry ? matchedEntry.weak : false;
   let pct=null;
-  if(p.constr&&p.constr.durWeeks>0){
+  if(override){
+    pct=override.pct;
+  }else if(p.stage==='CA Signed'&&p.constr&&p.constr.durWeeks>0){
     const elapsed=weekNow()-p.constr.startWeek;
     pct=Math.max(0,Math.min(1,elapsed/p.constr.durWeeks));
   }
-  const earned = p.contract ? p.contract*(SIGNING_SHARE+BUILD_SHARE*(pct==null?0:pct)) : null;
-  const gap = (earned!=null && invoiced!=null) ? invoiced-earned : null;
-  return {pct,earned,invoiced,gap};
+  let earned=null;
+  if(p.contract){
+    if(override){ earned=p.contract*override.pct; }
+    else if(p.stage==='CA Signed'){ earned=p.contract*(SIGNING_SHARE+BUILD_SHARE*(pct==null?0:pct)); }
+  }
+  const gap=(earned!=null&&invoiced!=null)?invoiced-earned:null;
+  return {pct,earned,invoiced,weakMatch,gap,overridden:!!override,override:override||null};
 }
 
 // ════════════════════════════════════ RENDER
@@ -401,7 +612,7 @@ function renderSource(){
     (INV.exportedOn?' &middot; report says it was exported '+esc(INV.exportedOn):'')+
     '.<br>To refresh: <b>'+esc(INV_HOWTO)+'</b> &rarr; save as <code>Invoices_MM_DD_YYYY.xls</code> &rarr; drop it in the folder above.</div>';
 }
-function renderCards(rows){
+function renderCards(rows,fromLock){
   const withNums=rows.filter(r=>r.calc.earned!=null);
   const sum=k=>withNums.reduce((s,r)=>s+(r.calc[k]||0),0);
   const contractSum=rows.reduce((s,r)=>s+(r.p.contract||0),0);
@@ -410,8 +621,8 @@ function renderCards(rows){
   const earnedSum=sum('earned');
   const gap=invoicedRows.length?invoicedSum-earnedSum:null;
   const cards=[
-    {lbl:'Contract Value in WIP',val:fmt$(contractSum),sub:rows.length+' signed job'+(rows.length===1?'':'s'),cls:'navy-edge'},
-    {lbl:'Earned to Date',val:fmt$(earnedSum),sub:'20% at signing + schedule progress',cls:'gold-edge'},
+    {lbl:'Contract Value in WIP',val:fmt$(contractSum),sub:rows.length+' active job'+(rows.length===1?'':'s'),cls:'navy-edge'},
+    {lbl:'Earned to Date',val:fmt$(earnedSum),sub:withNums.length+' of '+rows.length+' have a % complete set',cls:'gold-edge'},
     {lbl:'Invoiced to Date',val:invoicedRows.length?fmt$(invoicedSum):'—',sub:invoicedRows.length+' of '+rows.length+' matched to BT',cls:''},
     {lbl:'Net Position',val:gap==null?'—':fmt$(Math.abs(gap))+(gap>=0?' over':' under'),sub:gap==null?'awaiting invoice match':(gap>=0?'billed ahead of earned work':'work earned, not yet billed'),cls:gap==null?'':(gap>=0?'pos':'neg')}
   ];
@@ -419,30 +630,38 @@ function renderCards(rows){
     '<div class="card '+c.cls+'"><div class="lbl">'+esc(c.lbl)+'</div><div class="val">'+c.val+'</div><div class="sub">'+esc(c.sub)+'</div></div>'
   ).join('');
 }
-function renderTable(rows){
-  let h='<tr><th>Project</th><th>Contract Value</th><th>Build Progress</th><th>Earned</th><th>Invoiced</th><th>Gap</th></tr>';
+function renderTable(rows,fromLock){
+  let h='<tr><th>Project</th><th>Stage</th><th>Contract Value</th><th>% Complete</th><th>Earned</th><th>Invoiced</th><th>Gap</th></tr>';
   rows.sort((a,b)=>Math.abs(b.calc.gap||0)-Math.abs(a.calc.gap||0));
   rows.forEach(r=>{
     const c=r.calc;
     const gapCls=c.gap==null?'dim':(c.gap>=0?'pos':'neg');
     const gapTxt=c.gap==null?'—':fmt$(Math.abs(c.gap))+(c.gap>=0?' over':' under');
+    const stageBadge='<span class="stage-badge'+(r.p.stage==='CA Signed'?' ca':'')+'">'+esc(r.p.stage||'—')+'</span>';
+    const ovrBtn=fromLock?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
     let progress;
     if(c.pct==null){
-      progress='<span class="dim">no schedule</span> <span class="flag bad" data-tip="No construction schedule" data-tip-d="This project has no construction phase in the Pipeline Gantt, so earned revenue is showing the 20%-at-signing baseline only.">!</span>';
+      const why=r.p.stage==='CA Signed'?'This project has no construction phase in the Pipeline Gantt, so earned revenue is showing the 20%-at-signing baseline only.':'This project hasn’t reached CA Signed, so there’s no formula to calculate it automatically — set a % complete by hand.';
+      progress='<span class="dim">'+(r.p.stage==='CA Signed'?'no schedule':'not set')+'</span> <span class="flag bad" data-tip="'+(r.p.stage==='CA Signed'?'No construction schedule':'No formula pre-CA')+'" data-tip-d="'+esc(why)+'">!</span>'+ovrBtn;
     }else{
-      progress='<span class="progress-mini"><span class="bar"><span style="width:'+Math.round(c.pct*100)+'%"></span></span>'+fmtPct(c.pct)+'</span>';
+      const note=c.override&&c.override.note?'<span class="ovr-note" data-tip="Manual override" data-tip-d="'+esc(c.override.note)+' — set by '+esc(c.override.setBy||'')+'">'+esc(c.override.note.length>28?c.override.note.slice(0,28)+'…':c.override.note)+'</span>':'';
+      progress='<span class="progress-mini"><span class="bar"><span style="width:'+Math.round(c.pct*100)+'%"></span></span>'+fmtPct(c.pct)+(c.overridden?' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual override, not the formula.">manual</span>':'')+ovrBtn+note+'</span>';
     }
-    const invTxt=c.invoiced==null?'<span class="dim">no BT match</span> <span class="flag bad" data-tip="Not matched to a BuilderTrend job" data-tip-d="No job in the latest BuilderTrend invoicing export matched this project by name. Check the export, or the project name in the Pipeline.">!</span>':fmt$(c.invoiced);
+    const weakBadge=c.weakMatch?' <span class="flag weak" data-tip="Weak name match" data-tip-d="Matched to BuilderTrend by a shared name fragment, not a close full-name match — worth a second look.">~</span>':'';
+    const invTxt=c.invoiced==null?'<span class="dim">no BT match</span> <span class="flag bad" data-tip="Not matched to a BuilderTrend job" data-tip-d="No job in the latest BuilderTrend invoicing export matched this project by name. Check the export, or the project name in the Pipeline.">!</span>':fmt$(c.invoiced)+weakBadge;
     const contractTxt=r.p.contract?fmt$(r.p.contract):'<span class="dim">—</span> <span class="flag bad" data-tip="No contract value" data-tip-d="EstimatedProjectValue is empty for this project in the Pipeline — earned revenue can’t be calculated until it’s set.">!</span>';
-    h+='<tr><td>'+esc(r.p.name)+'</td><td>'+contractTxt+'</td><td>'+progress+'</td><td>'+fmt$(c.earned)+'</td><td>'+invTxt+'</td><td class="'+gapCls+'">'+gapTxt+'</td></tr>';
+    h+='<tr><td>'+esc(r.p.name)+'</td><td>'+stageBadge+'</td><td>'+contractTxt+'</td><td>'+progress+'</td><td>'+fmt$(c.earned)+'</td><td>'+invTxt+'</td><td class="'+gapCls+'">'+gapTxt+'</td></tr>';
   });
   document.getElementById('projTbl').innerHTML=h;
+  if(!fromLock){
+    document.querySelectorAll('[data-ovr]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr'))));
+  }
 }
 function renderUnmatched(unmatched){
   const wrap=document.getElementById('unmatchedWrap');
   if(!unmatched.length){ wrap.innerHTML=''; return; }
   const total=unmatched.reduce((s,u)=>s+u.invoiced,0);
-  let h='<h2 class="sec">BuilderTrend jobs not matched to a signed project <span class="note">'+unmatched.length+' job'+(unmatched.length===1?'':'s')+', '+fmt$(total)+' invoiced</span></h2>';
+  let h='<h2 class="sec">BuilderTrend jobs not matched to any project <span class="note">'+unmatched.length+' job'+(unmatched.length===1?'':'s')+', '+fmt$(total)+' invoiced</span></h2>';
   h+='<div class="unmatched">';
   unmatched.sort((a,b)=>b.invoiced-a.invoiced).forEach(u=>{
     h+='<div class="row"><span>'+esc(u.job)+'</span><span>'+fmt$(u.invoiced)+'</span></div>';
@@ -450,13 +669,43 @@ function renderUnmatched(unmatched){
   h+='<div style="margin-top:8px;">Likely a completed/archived job still receiving invoices, or a name that drifted between BuilderTrend and the Pipeline.</div></div>';
   wrap.innerHTML=h;
 }
+function renderPrintHeader(fromLock){
+  const wrap=document.getElementById('printHeader');
+  const lbl=fromLock?LOCK.periodLabel:PERIOD_LABEL;
+  wrap.querySelector('h1').textContent='WIP — '+lbl+(fromLock?' (Locked)':' (Live)');
+  wrap.querySelector('.sub').textContent=fromLock
+    ? 'Locked by '+LOCK.lockedBy+' on '+fmtDate(LOCK.lockedAt)
+    : 'Live figures as of '+fmtDate(new Date().toISOString())+' — not yet locked for this month.';
+}
+function renderLockBanner(){
+  const wrap=document.getElementById('lockBannerWrap');
+  if(!LOCK){ wrap.innerHTML=''; return; }
+  wrap.innerHTML='<div class="lock-banner">🔒 <span><b>'+esc(LOCK.periodLabel)+' is locked</b> — by '+esc(LOCK.lockedBy)+', '+esc(fmtDate(LOCK.lockedAt))+'. Live numbers below keep moving; the lock is the permanent record.</span>'
+    +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div></div>';
+  const btn=document.getElementById('viewLockedBtn');
+  if(btn) btn.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
+}
 function renderAll(){
+  if(VIEW_LOCK&&LOCK){
+    const rows=LOCK.rows.map(r=>({p:r,calc:r}));
+    renderLockBanner();
+    renderPrintHeader(true);
+    renderCards(rows,true);
+    renderTable(rows,true);
+    const sp=document.getElementById('srcPanel'); sp.className='src-panel';
+    sp.innerHTML='<b>Showing the locked '+esc(LOCK.periodLabel)+' figures</b> — recorded '+esc(fmtDate(LOCK.lockedAt))+' by '+esc(LOCK.lockedBy)+'. These don’t change; use "Back to live" above to see current numbers.';
+    document.getElementById('unmatchedWrap').innerHTML='';
+    return;
+  }
   const {matched,unmatched}=matchInvoices();
-  const rows=PROJECTS.map(p=>({p,calc:computeRow(p, (INV.error||!matched.has(p.spId))?null:matched.get(p.spId))}));
+  const rows=PROJECTS.map(p=>({p,calc:computeRow(p, INV.error?null:(matched.get(p.spId)||null), OVERRIDES[p.spId]||null)}));
+  renderLockBanner();
+  renderPrintHeader(false);
   renderSource();
-  renderCards(rows);
-  renderTable(rows);
+  renderCards(rows,false);
+  renderTable(rows,false);
   renderUnmatched(INV.error?[]:unmatched);
+  window._wipRows=rows;   // last computed rows, for the Lock button
 }
 
 // ════════════════════════════════════ BOOT
@@ -464,8 +713,10 @@ async function boot(){
   document.getElementById('loadStatus').classList.remove('hidden');
   document.getElementById('main').classList.add('hidden');
   try{
-    await Promise.all([loadProjects(), loadInvoicing()]);
+    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadLock()]);
     renderAll();
+    const lockBtn=document.getElementById('lockBtn');
+    if(lockBtn) lockBtn.textContent=LOCK?'Re-lock This Month':'Lock This Month';
     document.getElementById('loadStatus').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
   }catch(e){
