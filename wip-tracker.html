@@ -175,7 +175,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <div id="lockBannerWrap"></div>
   <div class="src-panel" id="srcPanel">Loading invoicing export…</div>
 
-  <h2 class="sec">Portfolio <span class="note">every active job, any stage, live</span></h2>
+  <h2 class="sec">Portfolio <span class="note">DA Signed &amp; CA Signed jobs, live</span></h2>
   <div class="cards" id="cards"></div>
 
   <h2 class="sec">Projects
@@ -213,7 +213,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v4';
+const CORE_VERSION='v5';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -227,7 +227,7 @@ const SIGNING_SHARE=0.20;   // owned the moment a CA is signed
 const BUILD_SHARE=0.80;     // spread across the construction schedule
 const INV_FOLDER_LABEL='Operations → FINANCIAL → 1. WIP Reports & Job Costs → BT_InvoicingReports_forWIPTool';
 const INV_HOWTO='BuilderTrend → Financial → Invoice → All Jobs → Export';
-const EXCLUDED_STAGES=/^(lost|cancelled|archive)$/i;
+const INCLUDED_STAGES=/^(da signed|ca signed)$/i;
 const PERIOD=(()=>{ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })();
 const PERIOD_LABEL=new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'});
 
@@ -336,18 +336,47 @@ document.getElementById('ovrClearBtn').addEventListener('click',async()=>{
   catch(e){ toast('Could not clear override: '+(e.message||e),'err'); }
 });
 
-// ── Lock this month ──
+// ── Lock this month — two distinct sign-offs required before it's final ──
+function updateLockBtnLabel(){
+  const btn=document.getElementById('lockBtn'); if(!btn) return;
+  const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:null;
+  if(!cur||!cur.reviews.length){ btn.textContent='Lock This Month'; return; }
+  if(cur.finalized){ btn.textContent='Re-lock This Month'; return; }
+  const mine=cur.reviews.some(r=>r.byEmail===identity().email);
+  btn.textContent=mine?'Update My Lock':'Confirm Lock (2nd sign-off)';
+}
 document.getElementById('lockBtn').addEventListener('click',async()=>{
   const rows=window._wipRows||[];
   if(!rows.length){ toast('Nothing to lock yet — let the page finish loading.','err'); return; }
-  const already=LOCK?' It will replace the existing lock from '+fmtDate(LOCK.lockedAt)+'.':'';
-  if(!confirm('Lock the WIP for '+PERIOD_LABEL+'?\n\nThis records today’s numbers — including any manual overrides — as the permanent figures for the month.'+already+'\n\nYou can still view live numbers afterward; the print dialog opens next so you can save a PDF.')) return;
+  const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:null;
+  const who=identity();
+  const alreadyFinal=!!(cur&&cur.finalized);
+  const mine=cur&&cur.reviews.find(r=>r.byEmail===who.email);
+  let msg;
+  if(alreadyFinal){
+    msg=PERIOD_LABEL+' is already finalized — locked by '+cur.reviews.map(r=>r.by).join(' and ')+'. Locking again starts a fresh two-person confirmation; both reviewers need to lock again before a new PDF is produced.\n\nContinue?';
+  }else if(mine){
+    msg='You already locked your review of '+PERIOD_LABEL+'. This updates it with today’s figures — a second, different reviewer still needs to lock before it’s final.\n\nContinue?';
+  }else if(cur&&cur.reviews.length===1){
+    msg=cur.reviews[0].by+' already locked '+PERIOD_LABEL+'. Locking now as yourself finalizes the record and opens the print dialog to save a PDF.\n\nContinue?';
+  }else{
+    msg='Lock your review of the WIP for '+PERIOD_LABEL+'? A second, different reviewer will still need to lock before this is final.\n\nContinue?';
+  }
+  if(!confirm(msg)) return;
   try{
-    await writeLock(rows);
-    toast('Locked '+PERIOD_LABEL,'ok');
-    VIEW_LOCK=true;
-    renderAll();
-    setTimeout(()=>window.print(),300);
+    if(alreadyFinal) LOCK={period:PERIOD,periodLabel:PERIOD_LABEL,reviews:[],finalized:false,finalizedAt:null};
+    const wasFinal=!!(LOCK&&LOCK.finalized);
+    const result=await addReview(rows);
+    updateLockBtnLabel();
+    if(result.finalized&&!wasFinal){
+      toast('Finalized — '+PERIOD_LABEL+' is locked','ok');
+      VIEW_LOCK=true;
+      renderAll();
+      setTimeout(()=>window.print(),300);
+    }else{
+      toast('Your review is locked in — waiting on a second reviewer','ok');
+      renderAll();
+    }
   }catch(e){ toast('Could not lock: '+(e.message||e),'err'); }
 });
 
@@ -358,10 +387,8 @@ async function graphGetAll(url){
 }
 
 // ════════════════════════════════════ LOAD — CORE_Projects
-// Scope: every real project regardless of stage — Lead, DA Signed, CA Signed,
-// Paused — excluding only Lost/Cancelled/Archive and open-slot placeholders.
-// If money's been collected for it, it belongs on this page; the stage only
-// changes how "earned" gets calculated (see computeRow).
+// Scope: DA Signed and CA Signed only. Leads are excluded outright — nothing's
+// been collected yet on a project that isn't even in design under contract.
 async function loadProjects(){
   const items=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields&$select=id,fields');
   PROJECTS=[];
@@ -373,9 +400,7 @@ async function loadProjects(){
     let gd=null;
     if(f.GanttData){ try{ gd=JSON.parse(f.GanttData); }catch(e){ /* bad blob — no schedule */ } }
     const isSlot=(gd&&gd.isOpenSlot)||/^Slot\b/i.test(name);
-    const isScheduled=!!(gd&&gd.scheduled===true);
-    const isLead=!stage&&!isSlot&&!isScheduled;   // no stage yet = prospective, not a real job
-    if(isSlot||isLead||EXCLUDED_STAGES.test(stage)) return;
+    if(isSlot||!INCLUDED_STAGES.test(stage)) return;
     let constr=null;
     if(gd&&gd.productionLane&&Array.isArray(gd.productionLane.phases)){
       const ph=gd.productionLane.phases.find(p=>/^construction$/i.test(String(p.name||'').trim()));
@@ -512,25 +537,39 @@ async function clearOverride(spId){
   await cfgSet('wip_overrides',JSON.stringify(OVERRIDES));
 }
 
-// ── Monthly lock — a deliberate, human-triggered permanent record, one CORE_Config
-// row per period (wip_lock_YYYY-MM) so it never competes with the 64k text-column
-// ceiling other CORE_Config keys have hit before. Re-locking overwrites that row —
-// Byron's own described flow expects re-locking to be normal, not blocked. ──
+// ── Monthly lock — two-person sign-off. A deliberate, human-triggered
+// permanent record, one CORE_Config row per period (wip_lock_YYYY-MM) so it
+// never competes with the 64k text-column ceiling other CORE_Config keys
+// have hit before. Each of up to two DISTINCT signed-in identities gets one
+// review slot with its own snapshot; the record only "finalizes" — and only
+// then produces a PDF — once two different people have locked it. The same
+// person locking again just refreshes their own slot, never counts as the
+// second signature. Locking again after it's finalized starts a fresh
+// two-person cycle rather than silently amending a record that was already
+// called final. ──
 async function loadLock(){
   try{ const row=await cfgGet('wip_lock_'+PERIOD); LOCK=row&&row.value?JSON.parse(row.value):null; }
   catch(e){ console.warn('[wip] lock load failed:',e); LOCK=null; }
 }
-async function writeLock(rows){
+function identity(){
   const acct=SherpaAuth.getAccount();
-  const snap={
-    period:PERIOD, periodLabel:PERIOD_LABEL,
-    lockedAt:new Date().toISOString(),
-    lockedBy:(acct&&(acct.name||acct.username))||'Unknown',
+  return {name:(acct&&(acct.name||acct.username))||'Unknown', email:(acct&&acct.username)||''};
+}
+async function addReview(rows){
+  const who=identity();
+  const snapshot={
+    by:who.name, byEmail:who.email, at:new Date().toISOString(),
     rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden}))
   };
-  await cfgSet('wip_lock_'+PERIOD,JSON.stringify(snap));
-  LOCK=snap;
-  return snap;
+  const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:{period:PERIOD,periodLabel:PERIOD_LABEL,reviews:[],finalized:false,finalizedAt:null};
+  const mine=cur.reviews.findIndex(r=>r.byEmail&&r.byEmail===who.email);
+  if(mine>=0) cur.reviews[mine]=snapshot; else cur.reviews.push(snapshot);
+  const distinct=new Set(cur.reviews.map(r=>r.byEmail||r.by));
+  cur.finalized=distinct.size>=2;
+  cur.finalizedAt=cur.finalized?new Date().toISOString():null;
+  await cfgSet('wip_lock_'+PERIOD,JSON.stringify(cur));
+  LOCK=cur;
+  return cur;
 }
 
 // ════════════════════════════════════ MATCH + COMPUTE
@@ -672,28 +711,36 @@ function renderUnmatched(unmatched){
 function renderPrintHeader(fromLock){
   const wrap=document.getElementById('printHeader');
   const lbl=fromLock?LOCK.periodLabel:PERIOD_LABEL;
-  wrap.querySelector('h1').textContent='WIP — '+lbl+(fromLock?' (Locked)':' (Live)');
+  wrap.querySelector('h1').textContent='WIP — '+lbl+(fromLock?' (Finalized)':' (Live)');
   wrap.querySelector('.sub').textContent=fromLock
-    ? 'Locked by '+LOCK.lockedBy+' on '+fmtDate(LOCK.lockedAt)
+    ? 'Finalized by '+LOCK.reviews.map(r=>r.by).join(' and ')+' — '+fmtDate(LOCK.reviews[LOCK.reviews.length-1].at)
     : 'Live figures as of '+fmtDate(new Date().toISOString())+' — not yet locked for this month.';
 }
 function renderLockBanner(){
   const wrap=document.getElementById('lockBannerWrap');
-  if(!LOCK){ wrap.innerHTML=''; return; }
-  wrap.innerHTML='<div class="lock-banner">🔒 <span><b>'+esc(LOCK.periodLabel)+' is locked</b> — by '+esc(LOCK.lockedBy)+', '+esc(fmtDate(LOCK.lockedAt))+'. Live numbers below keep moving; the lock is the permanent record.</span>'
-    +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div></div>';
+  if(!LOCK||!LOCK.reviews||!LOCK.reviews.length){ wrap.innerHTML=''; return; }
+  let text;
+  if(LOCK.finalized){
+    text='<b>'+esc(LOCK.periodLabel)+' is finalized</b> — locked by '+LOCK.reviews.map(r=>esc(r.by)+' ('+esc(fmtDate(r.at))+')').join(' and ')+'. Live numbers below keep moving; the lock is the permanent record.';
+  }else{
+    text='<b>'+esc(LOCK.periodLabel)+' — one sign-off in:</b> '+esc(LOCK.reviews[0].by)+', '+esc(fmtDate(LOCK.reviews[0].at))+'. Waiting on a second, different reviewer to finalize and produce the PDF.';
+  }
+  wrap.innerHTML='<div class="lock-banner">🔒 <span>'+text+'</span>'
+    +(LOCK.finalized?'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div>':'')
+    +'</div>';
   const btn=document.getElementById('viewLockedBtn');
   if(btn) btn.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
 }
 function renderAll(){
-  if(VIEW_LOCK&&LOCK){
-    const rows=LOCK.rows.map(r=>({p:r,calc:r}));
+  if(VIEW_LOCK&&LOCK&&LOCK.finalized){
+    const snap=LOCK.reviews[LOCK.reviews.length-1];
+    const rows=snap.rows.map(r=>({p:r,calc:r}));
     renderLockBanner();
     renderPrintHeader(true);
     renderCards(rows,true);
     renderTable(rows,true);
     const sp=document.getElementById('srcPanel'); sp.className='src-panel';
-    sp.innerHTML='<b>Showing the locked '+esc(LOCK.periodLabel)+' figures</b> — recorded '+esc(fmtDate(LOCK.lockedAt))+' by '+esc(LOCK.lockedBy)+'. These don’t change; use "Back to live" above to see current numbers.';
+    sp.innerHTML='<b>Showing the finalized '+esc(LOCK.periodLabel)+' figures</b> — recorded '+esc(fmtDate(snap.at))+' by '+esc(snap.by)+'. These don’t change; use "Back to live" above to see current numbers.';
     document.getElementById('unmatchedWrap').innerHTML='';
     return;
   }
@@ -715,8 +762,7 @@ async function boot(){
   try{
     await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadLock()]);
     renderAll();
-    const lockBtn=document.getElementById('lockBtn');
-    if(lockBtn) lockBtn.textContent=LOCK?'Re-lock This Month':'Lock This Month';
+    updateLockBtnLabel();
     document.getElementById('loadStatus').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
   }catch(e){

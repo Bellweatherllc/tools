@@ -12,12 +12,12 @@ It replaces the old monthly spreadsheet review. There's no profit-margin math he
 
 It lives at [a web address](https://bellweatherllc.github.io/tools/wip-tracker.html), like every CORE tool. Sign in with your Bellweather Microsoft account and it loads.
 
-> **Scope:** every project in the Pipeline shows up here, regardless of stage — Lead-only prospects with no signed agreement are the one exception, since nothing's been collected yet. A job's stage doesn't gate whether it appears; it only changes how earned revenue gets calculated for it (below).
+> **Scope:** only **DA Signed** and **CA Signed** jobs show up here. Leads (no agreement signed yet) are excluded outright — nothing's been collected on a job that isn't under contract in some form.
 
 ### How earned revenue is calculated
 
 - **CA Signed jobs** use a formula: **20% is counted earned the moment the Construction Agreement is signed**, covering the design work that led up to it. **The remaining 80% spreads evenly across the construction schedule** already tracked in the Pipeline's Gantt — a 40-week build earns 2% of that 80% for every week that passes.
-- **Every earlier stage** (Lead-adjacent design work, DA Signed, and so on) has no schedule to hook a formula onto, so it starts with **no earned figure at all** until someone sets one — see *Manual % overrides*, below. This is deliberate: better an honest blank than a guessed number nobody signed off on.
+- **DA Signed jobs** have no schedule to hook a formula onto, so they start with **no earned figure at all** until someone sets one — see *Manual % overrides*, below. This is deliberate: better an honest blank than a guessed number nobody signed off on.
 - **A manual override, when set, always wins** — see below. It replaces whichever of the above would otherwise apply.
 
 Compare earned to what's actually been invoiced, and the difference is the number that matters:
@@ -36,18 +36,22 @@ An override replaces the formula entirely: earned becomes contract value × the 
 
 Overrides are stored in **`CORE_Config`** (key `wip_overrides`) — the same shared list the Pipeline already uses for things like its OPS cash-flow scenarios. No SharePoint schema change was needed to add this.
 
-## Locking the month
+## Locking the month — two sign-offs required
 
-Once the numbers for a month look right — Joey and Ryan have reviewed them, any overrides that needed setting are set — click **Lock This Month** in the top bar. That:
+Locking needs **two different people** to agree. One reviewer locking isn't enough on its own; only once a *second, distinct* signed-in person locks does the month become final and a PDF gets produced.
 
-1. Records the current figures (including whatever overrides are in effect) as a **permanent snapshot** for that calendar month.
-2. Opens the browser's print dialog, so you can **save it as a PDF** for the record.
+1. **First reviewer** (say, Ryan) clicks **Lock This Month**. A banner appears: *"[Month] — one sign-off in: Ryan, [time]. Waiting on a second, different reviewer."* Nothing is final yet.
+2. **Second reviewer** (Joey, signed in as himself) clicks the same button — now labeled **Confirm Lock (2nd sign-off)**. That finalizes the record and immediately opens the browser's print dialog so it can be **saved as a PDF**.
 
-The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the lock is untouched by that. A banner across the top shows when a month is locked, who locked it, and when; **View locked figures** switches the page to show exactly what was locked, and **Back to live** returns to the current numbers.
+Clicking your own lock again before a second person has signed just **refreshes your review** with today's figures — it does not count as the second signature. The page recognizes people by their signed-in Microsoft account, not by a name typed in, so there's no way to accidentally sign for someone else.
 
-Locking again later in the same month **replaces** the existing lock — that's expected, not an error. The button relabels itself **Re-lock This Month** once one exists. A new calendar month always starts fresh: no lock exists for it until someone creates one.
+The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the finalized lock is untouched by that. Once finalized, **View locked figures** switches the page to show exactly what was recorded, and **Back to live** returns to the current numbers.
 
-Locks are stored in `CORE_Config` too, one row per month (key `wip_lock_YYYY-MM`), so they don't compete for space with anything else and there's no limit on how many months of history accumulate.
+**Re-locking after it's already finalized** starts a brand-new two-person cycle — the button relabels to **Re-lock This Month**, and both reviewers need to lock again before a new PDF comes out. That's expected for revising a month after something changes, not an error.
+
+A new calendar month always starts with no lock at all — nothing carries over.
+
+Locks are stored in `CORE_Config`, one row per month (key `wip_lock_YYYY-MM`, holding both reviewers' snapshots), so they don't compete for space with anything else and there's no limit on how many months of history accumulate.
 
 ## Where the rest of this data lives
 
