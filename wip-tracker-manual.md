@@ -36,22 +36,24 @@ An override replaces the formula entirely: earned becomes contract value × the 
 
 Overrides are stored in **`CORE_Config`** (key `wip_overrides`) — the same shared list the Pipeline already uses for things like its OPS cash-flow scenarios. No SharePoint schema change was needed to add this.
 
-## Locking the month — two sign-offs required
+## Locking the month — Ryan's button, Joey's button
 
-Locking needs **two different people** to agree. One reviewer locking isn't enough on its own; only once a *second, distinct* signed-in person locks does the month become final and a PDF gets produced.
+There's no single generic "lock" button. Instead there are two named chips near the top of the page — **Ryan** and **Joey** — each with its own status and its own button. A chip's button only works for that person: it checks who's actually signed in, not a name anyone could type, so Ryan can't lock Joey's slot and vice versa. If you're signed in as neither, both buttons are visibly greyed out — hover one to see why.
 
-1. **First reviewer** (say, Ryan) clicks **Lock This Month**. A banner appears: *"[Month] — one sign-off in: Ryan, [time]. Waiting on a second, different reviewer."* Nothing is final yet.
-2. **Second reviewer** (Joey, signed in as himself) clicks the same button — now labeled **Confirm Lock (2nd sign-off)**. That finalizes the record and immediately opens the browser's print dialog so it can be **saved as a PDF**.
+1. **Ryan** clicks his own **Lock as Ryan** button. His chip shows a ✓ and a timestamp. Joey's still shows "not locked." Nothing is final yet.
+2. **Joey**, signed in as himself, clicks **Lock as Joey**. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF**.
 
-Clicking your own lock again before a second person has signed just **refreshes your review** with today's figures — it does not count as the second signature. The page recognizes people by their signed-in Microsoft account, not by a name typed in, so there's no way to accidentally sign for someone else.
+Order doesn't matter — whoever locks first, the record only finalizes once *both* slots are filled.
 
-The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the finalized lock is untouched by that. Once finalized, **View locked figures** switches the page to show exactly what was recorded, and **Back to live** returns to the current numbers.
+Clicking your own button again before the other person has locked just **updates your slot** with today's figures — it's still only one signature. The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the finalized lock is untouched by that. Once finalized, a banner appears with **View locked figures**, which switches the page to show exactly what was recorded, and **Back to live**, which returns to the current numbers.
 
-**Re-locking after it's already finalized** starts a brand-new two-person cycle — the button relabels to **Re-lock This Month**, and both reviewers need to lock again before a new PDF comes out. That's expected for revising a month after something changes, not an error.
+**Locking again after it's already finalized** starts a brand-new two-slot cycle — both chips reset to "not locked," and both Ryan and Joey need to lock again before a new PDF comes out. That's expected for revising a month after something changes, not an error.
 
-A new calendar month always starts with no lock at all — nothing carries over.
+A new calendar month always starts with both slots empty — nothing carries over.
 
-Locks are stored in `CORE_Config`, one row per month (key `wip_lock_YYYY-MM`, holding both reviewers' snapshots), so they don't compete for space with anything else and there's no limit on how many months of history accumulate.
+Locks are stored in `CORE_Config`, one row per month (key `wip_lock_YYYY-MM`, holding both reviewers' snapshots by name), so they don't compete for space with anything else and there's no limit on how many months of history accumulate.
+
+> Reviewer matching is by first name on the signed-in Microsoft account (Ryan, Joey) — if either of their accounts doesn't display that first name for some reason, their button would never enable. Worth confirming once, then it's a non-issue going forward.
 
 ## Where the rest of this data lives
 

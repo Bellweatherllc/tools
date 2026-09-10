@@ -112,6 +112,15 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-note{display:block;font-size:10.5px;color:var(--text-sec);font-weight:400;text-align:left;margin-top:2px;}
 
 /* ── Lock banner ── */
+.reviewer-panel{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.reviewer-chip{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12.5px;}
+.reviewer-chip.done{border-color:#bcd8c1;background:#f2f8f3;}
+.reviewer-chip .rc-name{font-weight:700;}
+.reviewer-chip .rc-state{color:var(--text-sec);}
+.reviewer-chip.done .rc-state{color:var(--good);}
+.reviewer-chip .rc-btn{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
+.reviewer-chip .rc-btn:hover:not(.locked-out){background:var(--bg);}
+.reviewer-chip .rc-btn.locked-out{opacity:.4;cursor:not-allowed;}
 .lock-banner{background:#eef3f6;border:1px solid var(--border);border-left:4px solid var(--ok);border-radius:8px;padding:12px 18px;margin-bottom:14px;font-size:12.5px;line-height:1.6;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
 .lock-banner b{font-weight:600;}
 .lock-banner .actions{margin-left:auto;display:flex;gap:8px;}
@@ -133,7 +142,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-foot button.clear{color:var(--over);border-color:#e0b8b4;margin-right:auto;}
 
 @media print{
-  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,#toasts,#tt{display:none!important;}
+  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,.reviewer-panel,#toasts,#tt{display:none!important;}
   body{background:#fff;}
   #printHeader{display:block!important;margin-bottom:16px;}
   #printHeader h1{font-family:'Swear Text',serif;font-size:20px;margin-bottom:4px;}
@@ -161,7 +170,6 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <span class="tb-ver" id="versionBadge"></span>
   <div class="tb-right">
     <button class="tb-btn" id="refreshBtn">Refresh</button>
-    <button class="tb-btn" id="lockBtn">Lock This Month</button>
     <a class="tb-btn" href="revenue-tracker.html">Revenue Tracker ↗</a>
     <span class="acct-chip" id="acctChip"></span>
     <a class="manual-btn" href="wip-tracker-manual.html" target="_blank" rel="noopener" data-tip="Help &amp; repair manual">?</a>
@@ -213,7 +221,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v5';
+const CORE_VERSION='v6';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -336,49 +344,43 @@ document.getElementById('ovrClearBtn').addEventListener('click',async()=>{
   catch(e){ toast('Could not clear override: '+(e.message||e),'err'); }
 });
 
-// ── Lock this month — two distinct sign-offs required before it's final ──
-function updateLockBtnLabel(){
-  const btn=document.getElementById('lockBtn'); if(!btn) return;
-  const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:null;
-  if(!cur||!cur.reviews.length){ btn.textContent='Lock This Month'; return; }
-  if(cur.finalized){ btn.textContent='Re-lock This Month'; return; }
-  const mine=cur.reviews.some(r=>r.byEmail===identity().email);
-  btn.textContent=mine?'Update My Lock':'Confirm Lock (2nd sign-off)';
-}
-document.getElementById('lockBtn').addEventListener('click',async()=>{
+// ── Lock this month — each reviewer's own button, only usable by them ──
+async function onReviewerLock(key){
   const rows=window._wipRows||[];
   if(!rows.length){ toast('Nothing to lock yet — let the page finish loading.','err'); return; }
+  if(myReviewerKey()!==key){ toast('Only '+REVIEWERS.find(r=>r.key===key).label+' can use this button.','err'); return; }
+  const reviewer=REVIEWERS.find(r=>r.key===key);
+  const other=REVIEWERS.find(r=>r.key!==key);
   const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:null;
-  const who=identity();
   const alreadyFinal=!!(cur&&cur.finalized);
-  const mine=cur&&cur.reviews.find(r=>r.byEmail===who.email);
+  const mine=cur&&cur.reviews&&cur.reviews[key];
+  const otherDone=cur&&cur.reviews&&cur.reviews[other.key];
   let msg;
   if(alreadyFinal){
-    msg=PERIOD_LABEL+' is already finalized — locked by '+cur.reviews.map(r=>r.by).join(' and ')+'. Locking again starts a fresh two-person confirmation; both reviewers need to lock again before a new PDF is produced.\n\nContinue?';
+    msg=PERIOD_LABEL+' is already finalized. Locking again as '+reviewer.label+' starts a fresh two-person confirmation — both '+reviewer.label+' and '+other.label+' need to lock again before a new PDF is produced.\n\nContinue?';
   }else if(mine){
-    msg='You already locked your review of '+PERIOD_LABEL+'. This updates it with today’s figures — a second, different reviewer still needs to lock before it’s final.\n\nContinue?';
-  }else if(cur&&cur.reviews.length===1){
-    msg=cur.reviews[0].by+' already locked '+PERIOD_LABEL+'. Locking now as yourself finalizes the record and opens the print dialog to save a PDF.\n\nContinue?';
+    msg='Update '+reviewer.label+'’s lock for '+PERIOD_LABEL+' with today’s figures?';
+  }else if(otherDone){
+    msg=other.label+' already locked '+PERIOD_LABEL+'. Locking now as '+reviewer.label+' finalizes the record and opens the print dialog to save a PDF.\n\nContinue?';
   }else{
-    msg='Lock your review of the WIP for '+PERIOD_LABEL+'? A second, different reviewer will still need to lock before this is final.\n\nContinue?';
+    msg='Lock '+PERIOD_LABEL+' as '+reviewer.label+'? '+other.label+' will still need to lock separately before this is final.\n\nContinue?';
   }
   if(!confirm(msg)) return;
   try{
-    if(alreadyFinal) LOCK={period:PERIOD,periodLabel:PERIOD_LABEL,reviews:[],finalized:false,finalizedAt:null};
+    if(alreadyFinal) LOCK={period:PERIOD,periodLabel:PERIOD_LABEL,reviews:{},finalized:false,finalizedAt:null};
     const wasFinal=!!(LOCK&&LOCK.finalized);
-    const result=await addReview(rows);
-    updateLockBtnLabel();
+    const result=await addReview(key,rows);
     if(result.finalized&&!wasFinal){
       toast('Finalized — '+PERIOD_LABEL+' is locked','ok');
       VIEW_LOCK=true;
       renderAll();
       setTimeout(()=>window.print(),300);
     }else{
-      toast('Your review is locked in — waiting on a second reviewer','ok');
+      toast(reviewer.label+'’s review is locked in','ok');
       renderAll();
     }
   }catch(e){ toast('Could not lock: '+(e.message||e),'err'); }
-});
+}
 
 async function graphGetAll(url){
   let out=[], next=url;
@@ -537,39 +539,53 @@ async function clearOverride(spId){
   await cfgSet('wip_overrides',JSON.stringify(OVERRIDES));
 }
 
-// ── Monthly lock — two-person sign-off. A deliberate, human-triggered
-// permanent record, one CORE_Config row per period (wip_lock_YYYY-MM) so it
-// never competes with the 64k text-column ceiling other CORE_Config keys
-// have hit before. Each of up to two DISTINCT signed-in identities gets one
-// review slot with its own snapshot; the record only "finalizes" — and only
-// then produces a PDF — once two different people have locked it. The same
-// person locking again just refreshes their own slot, never counts as the
-// second signature. Locking again after it's finalized starts a fresh
-// two-person cycle rather than silently amending a record that was already
+// ── Monthly lock — a named slot for each of the two reviewers, not a generic
+// "whoever's signed in" signature. A deliberate, human-triggered permanent
+// record, one CORE_Config row per period (wip_lock_YYYY-MM) so it never
+// competes with the 64k text-column ceiling other CORE_Config keys have hit
+// before. Each reviewer's button only works when THEY are the one signed
+// in — Ryan can't lock Joey's slot by clicking Joey's button while signed in
+// as himself. The record "finalizes" — and only then produces a PDF — once
+// both named slots are filled. Locking again after it's finalized starts a
+// fresh two-slot cycle rather than silently amending a record already
 // called final. ──
-async function loadLock(){
-  try{ const row=await cfgGet('wip_lock_'+PERIOD); LOCK=row&&row.value?JSON.parse(row.value):null; }
-  catch(e){ console.warn('[wip] lock load failed:',e); LOCK=null; }
-}
+const REVIEWERS=[
+  {key:'ryan', label:'Ryan', rx:/^ryan\b/i},
+  {key:'joey', label:'Joey', rx:/^joey\b/i}
+];
 function identity(){
   const acct=SherpaAuth.getAccount();
   return {name:(acct&&(acct.name||acct.username))||'Unknown', email:(acct&&acct.username)||''};
 }
-async function addReview(rows){
+function myReviewerKey(){
+  const who=identity();
+  const hit=REVIEWERS.find(r=>r.rx.test(who.name||''));
+  return hit?hit.key:null;
+}
+async function loadLock(){
+  try{ const row=await cfgGet('wip_lock_'+PERIOD); LOCK=row&&row.value?JSON.parse(row.value):null; }
+  catch(e){ console.warn('[wip] lock load failed:',e); LOCK=null; }
+}
+async function addReview(reviewerKey,rows){
   const who=identity();
   const snapshot={
     by:who.name, byEmail:who.email, at:new Date().toISOString(),
     rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden}))
   };
-  const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:{period:PERIOD,periodLabel:PERIOD_LABEL,reviews:[],finalized:false,finalizedAt:null};
-  const mine=cur.reviews.findIndex(r=>r.byEmail&&r.byEmail===who.email);
-  if(mine>=0) cur.reviews[mine]=snapshot; else cur.reviews.push(snapshot);
-  const distinct=new Set(cur.reviews.map(r=>r.byEmail||r.by));
-  cur.finalized=distinct.size>=2;
+  const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:{period:PERIOD,periodLabel:PERIOD_LABEL,reviews:{},finalized:false,finalizedAt:null};
+  cur.reviews[reviewerKey]=snapshot;
+  cur.finalized=!!(cur.reviews.ryan&&cur.reviews.joey);
   cur.finalizedAt=cur.finalized?new Date().toISOString():null;
   await cfgSet('wip_lock_'+PERIOD,JSON.stringify(cur));
   LOCK=cur;
   return cur;
+}
+// Whichever slot was filled more recently — the state of the world at the
+// moment the record actually became final, not whichever reviewer clicked first.
+function finalSnapshot(lock){
+  const a=lock.reviews.ryan, b=lock.reviews.joey;
+  if(!a) return b; if(!b) return a;
+  return a.at>b.at?a:b;
 }
 
 // ════════════════════════════════════ MATCH + COMPUTE
@@ -713,40 +729,45 @@ function renderPrintHeader(fromLock){
   const lbl=fromLock?LOCK.periodLabel:PERIOD_LABEL;
   wrap.querySelector('h1').textContent='WIP — '+lbl+(fromLock?' (Finalized)':' (Live)');
   wrap.querySelector('.sub').textContent=fromLock
-    ? 'Finalized by '+LOCK.reviews.map(r=>r.by).join(' and ')+' — '+fmtDate(LOCK.reviews[LOCK.reviews.length-1].at)
+    ? 'Finalized by Ryan and Joey — '+fmtDate(finalSnapshot(LOCK).at)
     : 'Live figures as of '+fmtDate(new Date().toISOString())+' — not yet locked for this month.';
 }
-function renderLockBanner(){
+function renderReviewerPanel(){
   const wrap=document.getElementById('lockBannerWrap');
-  if(!LOCK||!LOCK.reviews||!LOCK.reviews.length){ wrap.innerHTML=''; return; }
-  let text;
-  if(LOCK.finalized){
-    text='<b>'+esc(LOCK.periodLabel)+' is finalized</b> — locked by '+LOCK.reviews.map(r=>esc(r.by)+' ('+esc(fmtDate(r.at))+')').join(' and ')+'. Live numbers below keep moving; the lock is the permanent record.';
-  }else{
-    text='<b>'+esc(LOCK.periodLabel)+' — one sign-off in:</b> '+esc(LOCK.reviews[0].by)+', '+esc(fmtDate(LOCK.reviews[0].at))+'. Waiting on a second, different reviewer to finalize and produce the PDF.';
-  }
-  wrap.innerHTML='<div class="lock-banner">🔒 <span>'+text+'</span>'
-    +(LOCK.finalized?'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div>':'')
-    +'</div>';
-  const btn=document.getElementById('viewLockedBtn');
-  if(btn) btn.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
+  const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:null;
+  const myKey=myReviewerKey();
+  const chips=REVIEWERS.map(r=>{
+    const rev=cur&&cur.reviews&&cur.reviews[r.key];
+    const isMe=myKey===r.key;
+    const state=rev?('✓ '+esc(fmtDate(rev.at))):'not locked';
+    const label=rev?'Update '+esc(r.label)+'’s lock':'Lock as '+esc(r.label);
+    const tip=isMe?'':' data-tip="Only '+esc(r.label)+' can use this" data-tip-d="You’re signed in as '+esc(identity().name||'someone else')+'."';
+    return '<div class="reviewer-chip'+(rev?' done':'')+'"><span class="rc-name">'+esc(r.label)+'</span><span class="rc-state">'+state+'</span>'
+      +'<button class="rc-btn'+(isMe?'':' locked-out')+'" data-reviewer="'+r.key+'"'+tip+'>'+label+'</button></div>';
+  }).join('');
+  wrap.innerHTML='<div class="reviewer-panel">'+chips+'</div>'
+    +(cur&&cur.finalized?'<div class="lock-banner">🔒 <span><b>'+esc(cur.periodLabel)+' is finalized</b> — locked by Ryan and Joey. Live numbers below keep moving; the lock is the permanent record.</span>'
+      +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div></div>':'');
+  document.querySelectorAll('[data-reviewer]').forEach(btn=>btn.addEventListener('click',()=>onReviewerLock(btn.getAttribute('data-reviewer'))));
+  const vb=document.getElementById('viewLockedBtn');
+  if(vb) vb.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
 }
 function renderAll(){
   if(VIEW_LOCK&&LOCK&&LOCK.finalized){
-    const snap=LOCK.reviews[LOCK.reviews.length-1];
+    const snap=finalSnapshot(LOCK);
     const rows=snap.rows.map(r=>({p:r,calc:r}));
-    renderLockBanner();
+    renderReviewerPanel();
     renderPrintHeader(true);
     renderCards(rows,true);
     renderTable(rows,true);
     const sp=document.getElementById('srcPanel'); sp.className='src-panel';
-    sp.innerHTML='<b>Showing the finalized '+esc(LOCK.periodLabel)+' figures</b> — recorded '+esc(fmtDate(snap.at))+' by '+esc(snap.by)+'. These don’t change; use "Back to live" above to see current numbers.';
+    sp.innerHTML='<b>Showing the finalized '+esc(LOCK.periodLabel)+' figures</b> — recorded '+esc(fmtDate(snap.at))+'. These don’t change; use "Back to live" above to see current numbers.';
     document.getElementById('unmatchedWrap').innerHTML='';
     return;
   }
   const {matched,unmatched}=matchInvoices();
   const rows=PROJECTS.map(p=>({p,calc:computeRow(p, INV.error?null:(matched.get(p.spId)||null), OVERRIDES[p.spId]||null)}));
-  renderLockBanner();
+  renderReviewerPanel();
   renderPrintHeader(false);
   renderSource();
   renderCards(rows,false);
@@ -762,7 +783,6 @@ async function boot(){
   try{
     await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadLock()]);
     renderAll();
-    updateLockBtnLabel();
     document.getElementById('loadStatus').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
   }catch(e){
