@@ -221,7 +221,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v6';
+const CORE_VERSION='v7';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -455,6 +455,11 @@ function extractExportedOn(rows){
   }
   return null;
 }
+// Last moment of the current period's month — the cutoff for "invoiced by now."
+function periodEnd(){
+  const [y,m]=PERIOD.split('-').map(Number);
+  return new Date(y,m,0,23,59,59,999);   // day 0 of next month = last day of this one
+}
 function parseInvoiceTotals(rows){
   let hdr=null,hIdx=-1;
   for(let i=0;i<rows.length;i++){
@@ -464,15 +469,24 @@ function parseInvoiceTotals(rows){
   }
   if(!hdr) throw new Error('No header row found — expected columns including "Job" and "Status"');
   const col=k=>hdr.indexOf(k.toLowerCase());
-  const cJob=col('job'), cStatus=col('status'), cPrice=col('total price');
+  const cJob=col('job'), cStatus=col('status'), cPrice=col('total price'), cDeadline=col('deadline'), cDatePaid=col('date paid');
   if(cJob<0||cStatus<0||cPrice<0) throw new Error('Missing an expected column (Job / Status / Total Price) in the export');
   const num=v=>{ if(typeof v==='number') return v; const t=String(v==null?'':v).replace(/[$,\s]/g,''); const n=parseFloat(t); return isNaN(n)?0:n; };
+  // No true "invoice date" column exists in this export. "Deadline" stands in for it —
+  // checked against Date Paid across a real export, the median gap was 0 days, meaning
+  // these invoices are effectively due on receipt, not NET-30. If that billing pattern
+  // ever changes, this proxy needs revisiting.
+  const excelDate=v=>(typeof v==='number'&&v)?new Date((v-25569)*86400000):null;
+  const cutoff=periodEnd();
   const byJob=new Map();
   for(let i=hIdx+1;i<rows.length;i++){
     const r=rows[i]; if(!r||!r.length) continue;
     const job=String(r[cJob]||'').trim(); if(!job) continue;
     const status=String(r[cStatus]||'').trim();
-    if(!/^(paid|pending.sent)$/i.test(status)) continue;   // exclude Draft — not sent yet
+    if(/^draft$/i.test(status)) continue;   // not actually invoiced yet, whatever its date says
+    let d=cDeadline>=0?excelDate(r[cDeadline]):null;
+    if(!d&&cDatePaid>=0) d=excelDate(r[cDatePaid]);
+    if(d&&d>cutoff) continue;   // dated after this period — don't count it yet
     const cur=byJob.get(job)||0;
     byJob.set(job,cur+num(r[cPrice]));
   }
@@ -609,6 +623,12 @@ function matchInvoices(){
     });
     let weak=false;
     if(!best||bestD>2){
+      // A poor primary match (bestD>2) must not survive into the fallback — otherwise a
+      // job with no real match anywhere silently glues itself to whichever project
+      // happened to be *least* wrong, instead of correctly landing in "unmatched."
+      // This is exactly how Jackson's invoiced total inflated to $2.15M: short, common
+      // names are cheap to be the "closest" bad match for jobs that don't belong to them.
+      best=null; bestD=99;
       // Fallback: any single name token (surname, usually) shared with the job code.
       let bestLen=0;
       PROJECTS.forEach(p=>{

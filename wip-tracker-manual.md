@@ -72,7 +72,7 @@ This comes from a BuilderTrend export, dropped by hand into:
 
 > `Operations → FINANCIAL → 1. WIP Reports & Job Costs → BT_InvoicingReports_forWIPTool`
 
-The page always reads whichever file in that folder was **most recently saved**. It sums every invoice line marked `Paid` or `Pending/Sent` — invoices that have actually gone out — and ignores anything still marked `Draft`.
+The page always reads whichever file in that folder was **most recently saved**. It sums every invoice line that isn't still a `Draft` (a Draft hasn't actually gone out to the client, whatever date it carries) **and is dated on or before the end of the current month**. There's no dedicated "invoice date" column in this export, so `Deadline` stands in for it — checked against `Date Paid` across a real export, invoices here come due the same day they're paid more often than not, so `Deadline` tracks the real invoice date closely. (If a row has no `Deadline`, `Date Paid` is used instead; if neither exists, it's counted regardless of date rather than silently dropped.)
 
 ### Keeping the export current
 
@@ -89,7 +89,7 @@ The page always reads whichever file in that folder was **most recently saved**.
 | Contract Value | `EstimatedProjectValue` from the Pipeline. |
 | % Complete | The construction-schedule formula (CA-Signed only), or a manual override, or "not set." |
 | Earned | Contract Value × % Complete. Blank until a % exists. |
-| Invoiced | Sum of `Paid` + `Pending/Sent` invoices matched to this job. |
+| Invoiced | Sum of non-Draft invoices matched to this job, dated through the end of the current month. |
 | Gap | Invoiced − Earned. Red = billed ahead; green = work ahead of billing. |
 
 ### Reading the flags
@@ -111,7 +111,10 @@ The page looks for `1. WIP Reports & Job Costs`, then `BT_InvoicingReports_forWI
 **A BuilderTrend job total isn't showing up on a project.**
 First check the *BuilderTrend jobs not matched* list at the bottom of the page — the job may be sitting there under a name that didn't match closely enough. Matching tries a close full-name comparison first, then falls back to a shared name-fragment ("Lee" or "Paulino" matching even if the two systems order or format the names differently) flagged with **~**. If a job still isn't matching, the two systems' names for it have drifted further than either check can bridge — correct the name in one system to match the other, or note the mismatch to whoever maintains the BuilderTrend job codes.
 
-**Remember the invoiced figure only counts `Paid` and `Pending/Sent` rows** — `Draft` invoices are deliberately excluded because they haven't gone out to the client yet.
+**A project's invoiced total looks way too high.**
+Check whether it's absorbing a job that isn't really its. Matching only ever attaches a BuilderTrend job to the single closest project — it should never invent a match out of nothing, so if a job's real project isn't showing up (often because that project isn't `DA Signed`/`CA Signed` right now, or its name has drifted), that job's total belongs in the *unmatched* list, not silently parked on whichever open project happened to look closest. If a project's number seems inflated, it's worth cross-checking against the raw BuilderTrend export directly for that job's actual code.
+
+**Remember the invoiced figure excludes `Draft` rows** (not actually sent yet) **and anything dated after the end of the current month** — a milestone invoice pre-staged for next month doesn't count toward this month's total just because BuilderTrend already shows it as sent.
 
 ## What this page deliberately doesn't do
 
