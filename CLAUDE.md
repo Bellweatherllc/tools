@@ -61,6 +61,8 @@ Three SharePoint locations — don't confuse them:
 
 **All money arithmetic in integer cents.**
 
+**Team Members access stays manual — don't propose automating it.** `team-members.html` has no code path that grants SharePoint access; adding someone to the roster is separate from adding them to the `BWCore Members` group, and the add-member row links to BWCore's Site Permissions page for that manual step. Automating it would mean requesting the delegated `AllSites.FullControl` SharePoint scope (up from the `AllSites.Manage` the tool uses today) — a tenant-wide scope, not site-scoped, on a tool whose source sits in a public repo. Byron considered this and declined because the security tradeoffs weren't clear to him. Don't re-raise it unless he asks.
+
 ---
 
 ## Conventions
