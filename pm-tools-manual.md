@@ -98,7 +98,7 @@ Once a budget exists, it opens as a spreadsheet-style grid: gray division header
 - **FIXED checkbox** — a per-line marker a PM ticks once a figure is confirmed rather than still being worked. Ticked lines turn from red to black. It's just a visual "I'm done with this one," not a lock.
 - **Comments** — the speech-bubble icon on any line or division opens a comment thread. **Estimating** comments (amber) came from the original estimate file and are read-only here. **Budgeting** comments (blue) are written in the Planner itself, and a PM can edit or delete their own (an admin can delete anyone's).
 - **+Other** — the last line in most divisions; it adds a new row rather than a comment, which is why the comment icon is a speech bubble and not a "+" (a "+" right next to "Add Other" was too easy to misread).
-- **Other / E&O** — the one division with no cost code number. Its Estimate figure isn't read from a numbered line in the estimate; it comes from the estimate's own standalone **COMP ESTIMATE** total, multiplied by 0.68, whenever that total exists in the file. Nothing to set up — it's automatic on every sync.
+- **Other / E&O** — the one division with no cost code number. Its Estimate figure isn't read from a numbered line in the estimate; it comes from the estimate header's **Comp Escalation** figure, multiplied by 0.68, whenever that field has a value. Nothing to set up — it's automatic on every sync. Hover the division name to see the Comp Escalation figure it was derived from; if the estimator left a comment on that figure, it shows up in this division's own comment thread, same as any other Estimating comment.
 
 ### GPM (Estimate) and GPM (Budget)
 
