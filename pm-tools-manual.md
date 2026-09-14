@@ -98,12 +98,17 @@ Once a budget exists, it opens as a spreadsheet-style grid: gray division header
 - **FIXED checkbox** — a per-line marker a PM ticks once a figure is confirmed rather than still being worked. Ticked lines turn from red to black. It's just a visual "I'm done with this one," not a lock.
 - **Comments** — the speech-bubble icon on any line or division opens a comment thread. **Estimating** comments (amber) came from the original estimate file and are read-only here. **Budgeting** comments (blue) are written in the Planner itself, and a PM can edit or delete their own (an admin can delete anyone's).
 - **+Other** — the last line in most divisions; it adds a new row rather than a comment, which is why the comment icon is a speech bubble and not a "+" (a "+" right next to "Add Other" was too easy to misread).
+- **Other / E&O** — the one division with no cost code number. Its Estimate figure isn't read from a numbered line in the estimate; it comes from the estimate's own standalone **COMP ESTIMATE** total, multiplied by 0.68, whenever that total exists in the file. Nothing to set up — it's automatic on every sync.
 
 ### GPM (Estimate) and GPM (Budget)
 
 At the top of the financials, two stacked figures show gross profit margin two ways — once against the original estimate, once against the live budget — so the gap between the two is visible at a glance. Both use the same formula, Ryan's:
 
-> (Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll) ÷ Sale Price, using either the Estimate total or the Budget total as the denominator's cost base.
+> **GPM (Estimate):** (Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll + the Estimate total) ÷ Sale Price
+>
+> **GPM (Budget):** the same, with the live Budget total in place of the Estimate total — still ÷ Sale Price
+
+The Estimate/Budget total is added into the figure, not divided into it — Sale Price is the only denominator, for both.
 
 Sale Price itself always comes from the Pipeline — the Budget Planner only displays it, never edits it. To change a sale price, change it in the Pipeline.
 
