@@ -132,6 +132,7 @@ table.est tr.total td{font-weight:700;border-top:2px solid var(--border);border-
 .cmt-head .cmt-when{font-weight:400;color:var(--muted);margin-left:5px;}
 .cmt-text{display:inline;font-size:13px;font-style:italic;color:var(--err);white-space:pre-wrap;}
 .tag-est{display:inline;font-size:8px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--est);margin-right:5px;}
+.cmt-src{display:block;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--est);margin-bottom:2px;}
 .hidden{display:none;}
 .small-note{font-size:10px;color:var(--muted);line-height:1.5;margin-top:10px;}
 pre.spec{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:12px;font-size:10.5px;line-height:1.5;overflow-x:auto;white-space:pre;}
@@ -373,10 +374,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v49';
+const CORE_VERSION = 'v50';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v50', date:'2026-09-14', notes:'Fixed the Comp Escalation comment not routing to E&O: it was matched by exact cell "B9", but a comment on the label cell (or any other cell in that row) missed. Now matched by row, like everything else here. Bigger fix: any Estimating comment that lands in General estimate notes — because it isn’t tied to a division or cost code — now says which header field it’s on ("On: Comp Escalation", "On: Sale Price", etc.) instead of floating with no context. Comments already synced before this fix keep their original placement; only new syncs pick up the corrected routing.' },
   { v:'v49', date:'2026-09-14', notes:'Correction to v48: E&O is derived from the estimate header’s Comp Escalation figure (not a "COMP ESTIMATE" row — that was a mistake) × 0.68. Hovering the E&O division now shows that figure and the multiplier; a genuine estimator comment on Comp Escalation now flows into E&O’s own comment thread instead of the general estimate notes. Also fixed the division header still showing a literal "EO -" prefix — it now reads just "OTHER / E&O", no code at all.' },
   { v:'v48', date:'2026-09-14', notes:'E&O now auto-populates from the estimate’s standalone "COMP ESTIMATE" total × .68, instead of sitting blank under a fake cost code — the division is keyed EO now, not 5000 (existing 5000-tagged data still reads and self-heals on the next sync). GPM (Estimate) and GPM (Budget) changed: the Estimate/Budget total is now added into the other figures rather than being the divisor — both are now ÷ Sale Price. Hover text on both updated to match.' },
   { v:'v47', date:'2026-09-09', notes:'Renamed to PM Budget Planner — browser tab, sign-in screen, header, and every in-app mention. The file itself is unchanged (still pm-budget-workbook.html) so the Updater’s deep link and every bookmark keep working.' },
@@ -1428,9 +1430,11 @@ function flattenEstComments(model){
   const push = (n, ref) => { if(n.guid){
     const r = n.ref || ref || '';
     const rm = r.match(/[A-Z]+(\d+)/);
-    // Comp Escalation (cell B9) has no cost code of its own — any comment on it
-    // belongs to the E&O division, which is derived from that same figure.
-    const code = /^B9$/.test(r) ? 'EO' : (rm ? (rowCode[parseInt(rm[1],10)] || '') : '');
+    const row = rm ? parseInt(rm[1],10) : 0;
+    // Comp Escalation (row 9 — the label cell or the value cell, whichever the
+    // comment landed on) has no cost code of its own — any comment there belongs
+    // to the E&O division, which is derived from that same figure.
+    const code = row === 9 ? 'EO' : (rowCode[row] || '');
     flat.push({ ...n, ref: n.ref || ref, code });
   }};
   model.codes.forEach(c => (c.comments || []).forEach(th => { push(th, th.ref); (th.replies||[]).forEach(rp => push(rp, th.ref)); }));
@@ -1486,6 +1490,15 @@ const OVERHEAD_PCT = 0.0255, STAFF_PCT = 0.1784;
 // rows stamped CostCode='5000' — read them as 'EO' so existing PM entries keep showing
 // up under the (renamed) division instead of going orphaned. New writes always use 'EO'.
 const normCostCode = c => c === '5000' ? 'EO' : c;
+// Header fields by row (the label cell and the value cell share a row, and a comment
+// could sit on either) — used only to give a general-notes comment some context
+// ("On: Sale Price") since it isn't tied to any division's own thread.
+const HEADER_ROW_LABELS = { 1:'Updated', 2:'Job Name', 5:'Direct Cost', 6:'Indirect %',
+  7:'Payroll %', 8:'Markup %', 9:'Comp Escalation', 11:'GP %', 12:'Sale Price' };
+function headerLabelForCell(ref){
+  const rm = String(ref || '').match(/[A-Z]+(\d+)/);
+  return rm ? (HEADER_ROW_LABELS[parseInt(rm[1],10)] || '') : '';
+}
 
 let wb = null; // runtime state: { proj, cfg, estByCode, rows, comments, unmappedEst }
 const cents = v => Math.round((parseFloat(v) || 0) * 100);
@@ -1799,7 +1812,11 @@ function cmtHtml(cm){
     ((canEdit ? '<button class="cmt-act" onclick="editCmt(\'' + escAttr(cm.spItemId) + '\')">Edit</button>' : '') +
      (canEdit && canDel ? '<span class="cmt-sep">/</span>' : '') +
      (canDel ? '<button class="cmt-act" title="Delete" onclick="deleteCmt(\'' + escAttr(cm.spItemId) + '\')">' + TRASH_SVG + '</button>' : ''));
+  // A general-notes comment (Estimating, no division/cost-code of its own) is
+  // otherwise floating with no context — tag it with the header field it's on.
+  const srcLabel = (est && !cm.code) ? headerLabelForCell(cm.cell) : '';
   return '<div class="cmt-block' + (est ? '' : ' bud') + '">' +
+    (srcLabel ? '<span class="cmt-src">On: ' + escHtml(srcLabel) + '</span>' : '') +
     '<span class="cmt-text">' + escHtml(cm.body) + '</span>' +
     '<span class="cmt-head"> \u2014 ' + fmtDate(cm.when) + ' \u00B7 ' + escHtml(cm.author) +
     (est ? ' <span class="tag-est">Estimating Comment</span>' : ' <span class="tag-bud">Budgeting Comment</span>') +
