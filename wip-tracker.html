@@ -111,6 +111,16 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-btn:hover{color:var(--navy);}
 .ovr-note{display:block;font-size:10.5px;color:var(--text-sec);font-weight:400;text-align:left;margin-top:2px;}
 
+/* ── As-of control ── */
+.asof-bar{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:12.5px;flex-wrap:wrap;}
+.asof-bar .asof-lbl{font-weight:600;color:var(--text);}
+.asof-bar input[type=date]{border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-family:inherit;font-size:12.5px;background:#fff;color:var(--text);}
+.asof-bar button{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
+.asof-bar button:hover:not(:disabled){background:var(--bg);}
+.asof-bar button:disabled{opacity:.4;cursor:not-allowed;}
+.asof-bar .asof-note{color:var(--text-sec);flex-basis:100%;}
+.asof-bar.historical{background:#fdf7e6;border-left:4px solid var(--gold);}
+
 /* ── Lock banner ── */
 .reviewer-panel{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
 .reviewer-chip{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12.5px;}
@@ -142,7 +152,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-foot button.clear{color:var(--over);border-color:#e0b8b4;margin-right:auto;}
 
 @media print{
-  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,.reviewer-panel,#toasts,#tt{display:none!important;}
+  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,.reviewer-panel,.asof-bar,#toasts,#tt{display:none!important;}
   body{background:#fff;}
   #printHeader{display:block!important;margin-bottom:16px;}
   #printHeader h1{font-family:'Swear Text',serif;font-size:20px;margin-bottom:4px;}
@@ -180,10 +190,16 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 
 <div class="main hidden" id="main">
   <div id="printHeader"><h1></h1><div class="sub"></div></div>
+  <div class="asof-bar" id="asOfBar">
+    <span class="asof-lbl">Viewing as of</span>
+    <input type="date" id="asOfInput">
+    <button type="button" id="asOfTodayBtn">Today</button>
+    <span class="asof-note" id="asOfNote"></span>
+  </div>
   <div id="lockBannerWrap"></div>
   <div class="src-panel" id="srcPanel">Loading invoicing export…</div>
 
-  <h2 class="sec">Portfolio <span class="note">DA Signed &amp; CA Signed jobs, live</span></h2>
+  <h2 class="sec">Portfolio <span class="note" id="portfolioNote">DA Signed &amp; CA Signed jobs, live</span></h2>
   <div class="cards" id="cards"></div>
 
   <h2 class="sec">Projects
@@ -221,7 +237,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v7';
+const CORE_VERSION='v8';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -241,10 +257,19 @@ const PERIOD_LABEL=new Date().toLocaleDateString('en-US',{month:'long',year:'num
 
 // ════════════════════════════════════ STATE
 let PROJECTS=[];   // {spId, name, clientName, stage, contract, constr:{startWeek,durWeeks}|null}
-let INV=null;      // {byJob:Map, file, modified, exportedOn, folderUrl, error}
+let INV=null;      // {rows:[{job,price,date}], byJob:Map, file, modified, exportedOn, folderUrl, error}
 let OVERRIDES={};  // spId -> {pct, note, setBy, setAt}
 let LOCK=null;     // existing lock record for the current period, or null
 let VIEW_LOCK=false;   // true while showing the locked snapshot instead of live numbers
+function startOfToday(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+let AS_OF=startOfToday();   // the date the whole page recalculates against — defaults to today
+// End of the AS_OF day — the cutoff for "invoiced/complete as of that date." Everything
+// (schedule progress, invoice cutoff) is recomputed against this instead of the real
+// clock, so viewing a past date isn't just narrower, it's a genuinely different "now."
+function asOfEnd(){ return new Date(AS_OF.getFullYear(),AS_OF.getMonth(),AS_OF.getDate(),23,59,59,999); }
+function isToday(){ const t=startOfToday(); return AS_OF.getFullYear()===t.getFullYear()&&AS_OF.getMonth()===t.getMonth()&&AS_OF.getDate()===t.getDate(); }
+function asOfLabel(){ return AS_OF.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}); }
+function fmtInputDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 
 // ════════════════════════════════════ UTIL
 function parseMoney(s){ const n=parseFloat(String(s==null?'':s).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:n; }
@@ -312,9 +337,40 @@ document.getElementById('authSignInBtn').addEventListener('click',()=>{
 });
 document.getElementById('refreshBtn').addEventListener('click',()=>{ INV=null; VIEW_LOCK=false; boot(); });
 
+// ── As-of date control — recalculates schedule progress and the invoice cutoff against
+// a chosen date instead of the real clock. Initialized once; Refresh must not reset it. ──
+let _asOfInit=false;
+function initAsOfControl(){
+  if(_asOfInit) return; _asOfInit=true;
+  const input=document.getElementById('asOfInput');
+  input.min=fmtInputDate(EPOCH);
+  input.max=fmtInputDate(startOfToday());
+  input.value=fmtInputDate(AS_OF);
+  input.addEventListener('change',()=>{
+    const v=input.value; if(!v) return;
+    const [y,m,d]=v.split('-').map(Number);
+    let picked=new Date(y,m-1,d);
+    const today=startOfToday();
+    if(picked>today) picked=today;
+    if(picked<EPOCH) picked=new Date(EPOCH.getFullYear(),EPOCH.getMonth(),EPOCH.getDate());
+    AS_OF=picked;
+    input.value=fmtInputDate(AS_OF);
+    if(!isToday()) VIEW_LOCK=false;
+    recomputeInvoicedForAsOf();
+    renderAll();
+  });
+  document.getElementById('asOfTodayBtn').addEventListener('click',()=>{
+    AS_OF=startOfToday();
+    input.value=fmtInputDate(AS_OF);
+    recomputeInvoicedForAsOf();
+    renderAll();
+  });
+}
+
 // ── Override modal ──
 let _ovrSpId=null;
 function openOverrideModal(spId){
+  if(!isToday()) return;   // overrides aren't date-scoped — only meaningful while viewing today
   const row=(window._wipRows||[]).find(r=>r.p.spId===spId); if(!row) return;
   _ovrSpId=spId;
   document.getElementById('ovrTitle').textContent=row.p.name;
@@ -455,12 +511,10 @@ function extractExportedOn(rows){
   }
   return null;
 }
-// Last moment of the current period's month — the cutoff for "invoiced by now."
-function periodEnd(){
-  const [y,m]=PERIOD.split('-').map(Number);
-  return new Date(y,m,0,23,59,59,999);   // day 0 of next month = last day of this one
-}
-function parseInvoiceTotals(rows){
+// Parses every non-Draft invoice line into {job, price, date} — no cutoff applied here,
+// so the same parsed rows can be re-aggregated for any AS_OF date without re-fetching or
+// re-parsing the export.
+function parseInvoiceRows(rows){
   let hdr=null,hIdx=-1;
   for(let i=0;i<rows.length;i++){
     const r=rows[i]; if(!r) continue;
@@ -477,8 +531,7 @@ function parseInvoiceTotals(rows){
   // these invoices are effectively due on receipt, not NET-30. If that billing pattern
   // ever changes, this proxy needs revisiting.
   const excelDate=v=>(typeof v==='number'&&v)?new Date((v-25569)*86400000):null;
-  const cutoff=periodEnd();
-  const byJob=new Map();
+  const out=[];
   for(let i=hIdx+1;i<rows.length;i++){
     const r=rows[i]; if(!r||!r.length) continue;
     const job=String(r[cJob]||'').trim(); if(!job) continue;
@@ -486,10 +539,19 @@ function parseInvoiceTotals(rows){
     if(/^draft$/i.test(status)) continue;   // not actually invoiced yet, whatever its date says
     let d=cDeadline>=0?excelDate(r[cDeadline]):null;
     if(!d&&cDatePaid>=0) d=excelDate(r[cDatePaid]);
-    if(d&&d>cutoff) continue;   // dated after this period — don't count it yet
-    const cur=byJob.get(job)||0;
-    byJob.set(job,cur+num(r[cPrice]));
+    out.push({job,price:num(r[cPrice]),date:d});
   }
+  return out;
+}
+// Sums parsed invoice rows by job, keeping only those dated on or before the cutoff — a
+// row with no date at all (neither Deadline nor Date Paid present) counts regardless,
+// rather than being silently dropped for lack of a date.
+function aggregateByJob(invRows,cutoff){
+  const byJob=new Map();
+  invRows.forEach(r=>{
+    if(r.date&&r.date>cutoff) return;
+    byJob.set(r.job,(byJob.get(r.job)||0)+r.price);
+  });
   return byJob;
 }
 async function loadInvoicing(){
@@ -504,11 +566,16 @@ async function loadInvoicing(){
     const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
     const ws=wb.Sheets[wb.SheetNames.find(n=>/customer invoices/i.test(n))||wb.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
-    INV={byJob:parseInvoiceTotals(rows),file:f.name,modified:f.lastModifiedDateTime,exportedOn:extractExportedOn(rows),folderUrl,error:null};
+    const invRows=parseInvoiceRows(rows);
+    INV={rows:invRows,byJob:aggregateByJob(invRows,asOfEnd()),file:f.name,modified:f.lastModifiedDateTime,exportedOn:extractExportedOn(rows),folderUrl,error:null};
   }catch(e){
     console.warn('[wip] invoicing load failed:',e);
-    INV={byJob:new Map(),file:null,modified:null,exportedOn:null,folderUrl:null,error:e.message||String(e)};
+    INV={rows:[],byJob:new Map(),file:null,modified:null,exportedOn:null,folderUrl:null,error:e.message||String(e)};
   }
+}
+// Called whenever AS_OF changes — cheap, in-memory re-aggregation, no re-fetch.
+function recomputeInvoicedForAsOf(){
+  if(INV&&INV.rows) INV.byJob=aggregateByJob(INV.rows,asOfEnd());
 }
 
 // ════════════════════════════════════ CORE_Config — shared key/value store
@@ -644,7 +711,7 @@ function matchInvoices(){
   });
   return {matched,unmatched};
 }
-function weekNow(){ return Math.floor((Date.now()-EPOCH.getTime())/MS_WEEK); }
+function weekAsOf(){ return Math.floor((asOfEnd().getTime()-EPOCH.getTime())/MS_WEEK); }
 // A manual override always wins and sets earned = contract × override %, full stop —
 // no signing/schedule split, just "mark it X%" the way Ryan and Joey would say it.
 // Without one: CA-Signed jobs use the 20%-at-signing + schedule formula; every
@@ -657,7 +724,7 @@ function computeRow(p,matchedEntry,override){
   if(override){
     pct=override.pct;
   }else if(p.stage==='CA Signed'&&p.constr&&p.constr.durWeeks>0){
-    const elapsed=weekNow()-p.constr.startWeek;
+    const elapsed=weekAsOf()-p.constr.startWeek;
     pct=Math.max(0,Math.min(1,elapsed/p.constr.durWeeks));
   }
   let earned=null;
@@ -713,7 +780,7 @@ function renderTable(rows,fromLock){
     const gapCls=c.gap==null?'dim':(c.gap>=0?'pos':'neg');
     const gapTxt=c.gap==null?'—':fmt$(Math.abs(c.gap))+(c.gap>=0?' over':' under');
     const stageBadge='<span class="stage-badge'+(r.p.stage==='CA Signed'?' ca':'')+'">'+esc(r.p.stage||'—')+'</span>';
-    const ovrBtn=fromLock?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
+    const ovrBtn=(fromLock||!isToday())?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
     let progress;
     if(c.pct==null){
       const why=r.p.stage==='CA Signed'?'This project has no construction phase in the Pipeline Gantt, so earned revenue is showing the 20%-at-signing baseline only.':'This project hasn’t reached CA Signed, so there’s no formula to calculate it automatically — set a % complete by hand.';
@@ -746,14 +813,30 @@ function renderUnmatched(unmatched){
 }
 function renderPrintHeader(fromLock){
   const wrap=document.getElementById('printHeader');
-  const lbl=fromLock?LOCK.periodLabel:PERIOD_LABEL;
-  wrap.querySelector('h1').textContent='WIP — '+lbl+(fromLock?' (Finalized)':' (Live)');
-  wrap.querySelector('.sub').textContent=fromLock
-    ? 'Finalized by Ryan and Joey — '+fmtDate(finalSnapshot(LOCK).at)
-    : 'Live figures as of '+fmtDate(new Date().toISOString())+' — not yet locked for this month.';
+  if(fromLock){
+    wrap.querySelector('h1').textContent='WIP — '+LOCK.periodLabel+' (Finalized)';
+    wrap.querySelector('.sub').textContent='Finalized by Ryan and Joey — '+fmtDate(finalSnapshot(LOCK).at);
+    return;
+  }
+  wrap.querySelector('h1').textContent='WIP — as of '+asOfLabel()+(isToday()?' (Live)':' (Historical)');
+  wrap.querySelector('.sub').textContent=isToday()
+    ? 'Live figures as of '+fmtDate(new Date().toISOString())+' — not yet locked for this month.'
+    : 'Recalculated as of '+asOfLabel()+' using today’s project data and the latest BuilderTrend export — not a saved historical record.';
+}
+function renderAsOfBar(){
+  const bar=document.getElementById('asOfBar'), note=document.getElementById('asOfNote'), btn=document.getElementById('asOfTodayBtn');
+  bar.classList.toggle('historical',!isToday());
+  btn.disabled=isToday();
+  note.textContent=isToday()?'':'Historical view — recalculated with today’s project data and the latest BuilderTrend export, not a saved snapshot from that date. Locking and manual overrides are only available when viewing today.';
 }
 function renderReviewerPanel(){
   const wrap=document.getElementById('lockBannerWrap');
+  if(!isToday()){
+    // Locking is indexed by the real current month, not by AS_OF — showing sign-off
+    // controls while viewing a different date would invite locking the wrong period.
+    wrap.innerHTML='';
+    return;
+  }
   const cur=(LOCK&&LOCK.period===PERIOD)?LOCK:null;
   const myKey=myReviewerKey();
   const chips=REVIEWERS.map(r=>{
@@ -773,6 +856,8 @@ function renderReviewerPanel(){
   if(vb) vb.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
 }
 function renderAll(){
+  renderAsOfBar();
+  document.getElementById('portfolioNote').textContent=isToday()?'DA Signed & CA Signed jobs, live':'DA Signed & CA Signed jobs, as of '+asOfLabel();
   if(VIEW_LOCK&&LOCK&&LOCK.finalized){
     const snap=finalSnapshot(LOCK);
     const rows=snap.rows.map(r=>({p:r,calc:r}));
@@ -802,6 +887,7 @@ async function boot(){
   document.getElementById('main').classList.add('hidden');
   try{
     await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadLock()]);
+    initAsOfControl();
     renderAll();
     document.getElementById('loadStatus').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
