@@ -105,11 +105,11 @@ Once a budget exists, it opens as a spreadsheet-style grid: gray division header
 
 At the top of the financials, two stacked figures show gross profit margin two ways — once against the original estimate, once against the live budget — so the gap between the two is visible at a glance. Both use the same formula, Ryan's:
 
-> **GPM (Estimate):** (Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll + the Estimate total) ÷ Sale Price
+> **GPM (Estimate):** 1 − ((Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll + the Estimate total) ÷ Sale Price)
 >
-> **GPM (Budget):** the same, with the live Budget total in place of the Estimate total — still ÷ Sale Price
+> **GPM (Budget):** the same, with the live Budget total in place of the Estimate total — still ÷ Sale Price, then subtracted from 1
 
-The Estimate/Budget total is added into the figure, not divided into it — Sale Price is the only denominator, for both.
+The Estimate/Budget total is added into the cost side of the fraction, not divided into it — Sale Price is the only denominator. That fraction is a cost ratio, so the margin is 1 minus it.
 
 Sale Price itself always comes from the Pipeline — the Budget Planner only displays it, never edits it. To change a sale price, change it in the Pipeline.
 

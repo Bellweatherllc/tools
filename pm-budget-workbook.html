@@ -374,10 +374,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v51';
+const CORE_VERSION = 'v52';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v52', date:'2026-09-15', notes:'Fixed GPM (Estimate) and GPM (Budget): both were computing the cost ratio, not the margin. Now correctly 1 − (that ratio) for each.' },
   { v:'v51', date:'2026-09-14', notes:'Setup screen: the estimate-link status is now an actual clickable link ("open link") instead of just saying a link was found. Dropped "on the Pipeline" from both the found and not-found messages.' },
   { v:'v50', date:'2026-09-14', notes:'Fixed the Comp Escalation comment not routing to E&O: it was matched by exact cell "B9", but a comment on the label cell (or any other cell in that row) missed. Now matched by row, like everything else here. Bigger fix: any Estimating comment that lands in General estimate notes — because it isn’t tied to a division or cost code — now says which header field it’s on ("On: Comp Escalation", "On: Sale Price", etc.) instead of floating with no context. Comments already synced before this fix keep their original placement; only new syncs pick up the corrected routing.' },
   { v:'v49', date:'2026-09-14', notes:'Correction to v48: E&O is derived from the estimate header’s Comp Escalation figure (not a "COMP ESTIMATE" row — that was a mistake) × 0.68. Hovering the E&O division now shows that figure and the multiplier; a genuine estimator comment on Comp Escalation now flows into E&O’s own comment thread instead of the general estimate notes. Also fixed the division header still showing a literal "EO -" prefix — it now reads just "OTHER / E&O", no code at all.' },
@@ -1594,13 +1595,13 @@ function calcChain(){
   let budTotalC = 0;
   wb.scopeRows.forEach(r => budTotalC += r.budgetC);
   const ouBudC = availableC - budTotalC;
-  // Ryan's formula: (Selections + Unresolved Allowance + DESIGN COGS + Indirect +
-  // Payroll + the construction total) ÷ Sale Price — computed once adding in the
+  // Ryan's formula: 1 - ((Selections + Unresolved Allowance + DESIGN COGS + Indirect +
+  // Payroll + the construction total) ÷ Sale Price) — computed once adding in the
   // Estimate total and once adding in the live Budget total, so the gap between the
   // two is visible.
   const nonConstructionC = selC + allowC + ddC + overheadC + staffC;
-  const gpmEstimatePct = saleC ? (nonConstructionC + estTotalC) / saleC : 0;
-  const gpmBudgetPct = saleC ? (nonConstructionC + budTotalC) / saleC : 0;
+  const gpmEstimatePct = saleC ? 1 - (nonConstructionC + estTotalC) / saleC : 0;
+  const gpmBudgetPct = saleC ? 1 - (nonConstructionC + budTotalC) / saleC : 0;
   return { saleC, mk, selC, allowC, ddC, costBasisC, overheadC, staffC, availableC, indirectPct, payrollPct,
            estTotalC, budTotalC, ouEstC: availableC - estTotalC, ouBudC, nonConstructionC, gpmEstimatePct, gpmBudgetPct };
 }
@@ -1678,9 +1679,9 @@ function renderWorkbook(){
   ];
   const gpCell =
     '<div class="fin-cell">' +
-      '<div class="fin-gp-item" data-tip="(Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll + Estimate total) \u00F7 Sale Price">' +
+      '<div class="fin-gp-item" data-tip="1 \u2212 ((Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll + Estimate total) \u00F7 Sale Price)">' +
         '<label>GPM (Estimate)</label><div class="fin-ro" id="finGpmEst">' + fmtPct(k.gpmEstimatePct) + '</div></div>' +
-      '<div class="fin-gp-item" data-tip="Same figures, adding in the live Budget total instead of the Estimate total, still \u00F7 Sale Price \u2014 compare against GPM (Estimate) to see how far the two have drifted apart">' +
+      '<div class="fin-gp-item" data-tip="Same formula, adding in the live Budget total instead of the Estimate total \u2014 compare against GPM (Estimate) to see how far the two have drifted apart">' +
         '<label>GPM (Budget)</label><div class="fin-ro" id="finGpmBud">' + fmtPct(k.gpmBudgetPct) + '</div></div>' +
     '</div>';
   document.getElementById('wbFin').innerHTML =
