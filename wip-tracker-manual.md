@@ -36,7 +36,9 @@ This is a genuinely different calculation, not just a narrower live view — pic
 
 > **This is not a historical replay.** It recalculates using **today's** project data (contract values, schedules) and the **latest** BuilderTrend export, just with the clock turned back for the purposes of the math. If a project's schedule or contract value has changed since that date, the recalculation uses the current version, not what it looked like back then. For a true frozen record of a specific month, see *Locking the month*, below — that's the one figure this page actually preserves unchanged.
 
-**Locking and manual overrides are only available while viewing today.** Both controls disappear when viewing an earlier date — locking is tied to the real current month regardless of what date you're looking at, so allowing it while viewing the past risked locking the wrong period under a confusing label. Manual overrides aren't scoped to a date either; whatever override is currently set still applies to the calculation even when looking backward, which is worth keeping in mind — Fike's override, say, reflects today's understanding of the windows delay, not necessarily what was known as of the earlier date you're viewing.
+**Manual overrides are only available while viewing today** — the pencil disappears on any other date. Overrides aren't scoped to a date; whatever override is currently set still applies to the calculation even when looking backward, which is worth keeping in mind — Fike's override, say, reflects today's understanding of the windows delay, not necessarily what was known as of the earlier date you're viewing.
+
+**Locking follows the date you're viewing, not the real calendar.** See *Locking the month*, below, for how that actually works — the short version is that the Ryan/Joey chips stay visible everywhere, but only turn active for today or the last day of a month.
 
 Click **Today** to snap back to the live view.
 
@@ -53,20 +55,28 @@ Overrides are stored in **`CORE_Config`** (key `wip_overrides`) — the same sha
 
 ## Locking the month — Ryan's button, Joey's button
 
-There's no single generic "lock" button. Instead there are two named chips near the top of the page — **Ryan** and **Joey** — each with its own status and its own button. A chip's button only works for that person: it checks who's actually signed in, not a name anyone could type, so Ryan can't lock Joey's slot and vice versa. If you're signed in as neither, both buttons are visibly greyed out — hover one to see why.
+There's no single generic "lock" button. Instead there are two named chips near the top of the page — **Ryan** and **Joey** — each with its own status and its own button. A chip's button only works for that person: it checks who's actually signed in, not a name anyone could type, so Ryan can't lock Joey's slot and vice versa.
 
-1. **Ryan** clicks his own **Lock as Ryan** button. His chip shows a ✓ and a timestamp. Joey's still shows "not locked." Nothing is final yet.
+**The chips are always visible, but only active for today or the last day of a month.** Locking targets whatever month is currently being viewed (see *Viewing a different date*, above) — not a fixed "real now." That means:
+
+- **Viewing today** — both buttons work as usual, locking the current, in-progress month.
+- **Viewing the last day of a past month** (e.g. set *Viewing as of* to August 31st) — both buttons work too, letting Ryan and Joey retroactively approve a month that was never locked at the time, or re-approve one with corrected figures.
+- **Viewing any other day** (a mid-month date) — both buttons are greyed out, with a note explaining why and a suggestion to jump to that month's last day instead. This is deliberate: a mid-month figure was never meant to be "the" number for a month, so it's shown as unavailable rather than hidden — the feature hasn't gone anywhere, it's just not the right moment to use it.
+
+Whichever date it targets, the flow is the same:
+
+1. **Ryan** clicks his own **Lock as Ryan** button. His chip shows a ✓, a timestamp, and the date it was locked as of. Joey's still shows "not locked." Nothing is final yet.
 2. **Joey**, signed in as himself, clicks **Lock as Joey**. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF**.
 
-Order doesn't matter — whoever locks first, the record only finalizes once *both* slots are filled.
+Order doesn't matter — whoever locks first, the record only finalizes once *both* slots are filled. Ryan and Joey should agree beforehand on which date they're locking (typically the month's last day) — the tool doesn't force them to have picked the identical date before each clicks, so coordinate the same way you would for any other joint sign-off.
 
-Clicking your own button again before the other person has locked just **updates your slot** with today's figures — it's still only one signature. The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the finalized lock is untouched by that. Once finalized, a banner appears with **View locked figures**, which switches the page to show exactly what was recorded, and **Back to live**, which returns to the current numbers.
+Clicking your own button again before the other person has locked just **updates your slot** with the current figures — it's still only one signature. The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the finalized lock is untouched by that. Once finalized, a banner appears with **View locked figures**, which switches the page to show exactly what was recorded, and **Back to live**, which returns to the current numbers.
 
 **Locking again after it's already finalized** starts a brand-new two-slot cycle — both chips reset to "not locked," and both Ryan and Joey need to lock again before a new PDF comes out. That's expected for revising a month after something changes, not an error.
 
-A new calendar month always starts with both slots empty — nothing carries over.
+A month that's never been locked always starts with both slots empty — nothing carries over from month to month.
 
-Locks are stored in `CORE_Config`, one row per month (key `wip_lock_YYYY-MM`, holding both reviewers' snapshots by name), so they don't compete for space with anything else and there's no limit on how many months of history accumulate.
+Locks are stored in `CORE_Config`, one row per month (key `wip_lock_YYYY-MM`, holding both reviewers' snapshots by name and the date each was locked as of), so they don't compete for space with anything else and there's no limit on how many months of history accumulate.
 
 > Reviewer matching is by first name on the signed-in Microsoft account (Ryan, Joey) — if either of their accounts doesn't display that first name for some reason, their button would never enable. Worth confirming once, then it's a non-issue going forward.
 
@@ -126,8 +136,11 @@ The page looks for `1. WIP Reports & Job Costs`, then `BT_InvoicingReports_forWI
 **A BuilderTrend job total isn't showing up on a project.**
 First check the *BuilderTrend jobs not matched* list at the bottom of the page — the job may be sitting there under a name that didn't match closely enough. Matching tries a close full-name comparison first, then falls back to a shared name-fragment ("Lee" or "Paulino" matching even if the two systems order or format the names differently) flagged with **~**. If a job still isn't matching, the two systems' names for it have drifted further than either check can bridge — correct the name in one system to match the other, or note the mismatch to whoever maintains the BuilderTrend job codes.
 
-**The lock chips or the override pencil disappeared.**
-Check *Viewing as of* at the top — both are hidden while looking at a date other than today, by design. Click **Today** to bring them back.
+**The override pencil disappeared.**
+Check *Viewing as of* at the top — it's hidden while looking at a date other than today, by design. Click **Today** to bring it back.
+
+**The lock chips are greyed out.**
+That's by design too, but for a narrower reason than the override pencil: locking only works for today or the last day of a month. Check *Viewing as of* — if it's set to a mid-month date, jump to that month's last day (or click **Today**) to make the buttons active again.
 
 **A project's invoiced total looks way too high.**
 Check whether it's absorbing a job that isn't really its. Matching only ever attaches a BuilderTrend job to the single closest project — it should never invent a match out of nothing, so if a job's real project isn't showing up (often because that project isn't `DA Signed`/`CA Signed` right now, or its name has drifted), that job's total belongs in the *unmatched* list, not silently parked on whichever open project happened to look closest. If a project's number seems inflated, it's worth cross-checking against the raw BuilderTrend export directly for that job's actual code.
