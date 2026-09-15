@@ -3467,7 +3467,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1113';
+const CORE_VERSION = 'v1114';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -3656,14 +3656,15 @@ function _archivedRevAdd(rec){
   const i=ARCHIVED_REVENUE.findIndex(r=>r.spId===rec.spId);
   if(i>=0) ARCHIVED_REVENUE[i]=rec; else ARCHIVED_REVENUE.push(rec);
 }
-// Every {budget,cs,dur} the revenue row should spread: live board rows plus archived ones.
+// Every {name,budget,cs,dur} the revenue row (and its per-week detail popup) should
+// spread: live board rows plus archived ones.
 function _revenueSources(){
   const out=[];
   PROJECTS.forEach(proj=>{
     if(!isVisible(proj)) return;
     const budget=parseBudget(proj.estimatedValue||proj.projBudget); if(!budget) return;
     const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh||!(cPh.durWeeks>0)) return;
-    out.push({budget,cs:cPh.startWeek,dur:cPh.durWeeks});
+    out.push({name:proj.name||'Unnamed',budget,cs:cPh.startWeek,dur:cPh.durWeeks});
   });
   ARCHIVED_REVENUE.forEach(r=>{
     if(PROJECTS.some(p=>p._spItemId===r.spId)) return; // back on the board — the live row counts, not the record
@@ -7297,16 +7298,13 @@ function openRevDetail(w,cellEl){
   if(_revDetailWeek===w){ closeRevDetail(); return; }
   _revDetailWeek=w;
   const panel=document.getElementById('revDetailPanel'); if(!panel) return;
-  function parseBud(s){ return parseInt(String(s||'').replace(/[^0-9]/g,''))||0; }
   const fmtK=v=>v>=1000000?'$'+(v/1e6).toFixed(2).replace(/\.?0+$/,'')+'M':v>=1000?'$'+(v/1000).toFixed(1).replace(/\.0$/,'')+'k':'$'+Math.round(v);
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // v1011: includes archived-but-still-earning projects (_revenueSources) so an
+  // archived project's name and dollars keep showing here, matching the weekly cell total.
   const projs=[];
-  PROJECTS.forEach(proj=>{
-    if(!isVisible(proj)) return;
-    const budget=parseBud(proj.estimatedValue||proj.projBudget); if(!budget) return;
-    const cPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim())); if(!cPh) return;
-    const cs=cPh.startWeek, dur=cPh.durWeeks; if(dur<=0) return;
-    if(w>=cs&&w<cs+dur) projs.push({name:proj.name||'Unnamed',budget,dur,weekly:budget/dur});
+  _revenueSources().forEach(({name,budget,cs,dur})=>{
+    if(w>=cs&&w<cs+dur) projs.push({name:name||'Unnamed',budget,dur,weekly:budget/dur});
   });
   const total=projs.reduce((s,p)=>s+p.weekly,0);
   const avg=projs.length?total/projs.length:0;
@@ -7557,8 +7555,6 @@ function buildProdSection(){
       const fmtM=v=>v>=1000000?'$'+(v/1000000).toFixed(2).replace(/\.?0+$/,'')+'M':'$'+(v/1000).toFixed(0)+'k';
       const tw=todayWeek(); const rowH=63;
 
-      // Annual revenue = sum of all project budgets (one full construction cycle each)
-      const annualRevenue=PROJECTS.reduce((s,p)=>{ if(!isVisible(p)) return s; const b=parseBudget(p.projBudget); return s+b; },0);
       const revFc=el('div','prod-rev-fc prod-draggable'); revFc.style.cssText=`width:${C.fixedW}px;height:${rowH}px;display:flex;flex-direction:row;align-items:center;padding:0;border-right:none;`;
       const revEye=el('button','person-eye-btn'); revEye.dataset.revEye='1'; revEye.style.cssText='flex-shrink:0;margin:0 2px 0 0;'; revEye.innerHTML=eyeSvg(false); revEye.dataset.tip='Toggle revenue visibility';
       revFc.insertBefore(prodHdl('revenue'), revFc.firstChild);
@@ -7573,7 +7569,7 @@ function buildProdSection(){
       const revInner=el('div',''); revInner.style.cssText='flex:1;display:flex;flex-direction:column;justify-content:center;gap:3px;padding-right:10px;';
       const totRow=el('div',''); totRow.style.cssText='display:flex;align-items:baseline;justify-content:flex-end;gap:6px;';
       const totL=el('span','prod-rev-lbl'); totL.textContent='Total Rev'; totL.style.cssText='font-size:11px;color:rgba(255,215,60,.70);';
-      const totV=el('span','prod-rev-val total'); totV.style.cssText='font-size:11px;color:rgba(255,215,60,.92);'; totV.textContent=annualRevenue>0?fmtM(annualRevenue):'—';
+      const totV=el('span','prod-rev-val total'); totV.style.cssText='font-size:11px;color:rgba(255,215,60,.92);'; totV.textContent=totalRevenue>0?fmtM(totalRevenue):'—'; // v1011: includes archived-but-still-earning projects, via _src above
       totRow.appendChild(totL); totRow.appendChild(totV);
       const avgRow=el('div',''); avgRow.style.cssText='display:flex;align-items:baseline;justify-content:flex-end;gap:6px;';
       const avgL=el('span','prod-rev-lbl'); avgL.textContent='Avg Rev / Proj / Week'; avgL.style.cssText='font-size:11px;color:rgba(255,215,60,.60);';
@@ -16203,6 +16199,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1114', date: '2026-09-15',
+    entries:['Fixed: archiving a project could drop its revenue from the Production revenue row and its per-week breakdown popup. Two spots still built their own list straight from the visible board instead of using the shared archived-inclusive revenue source, so an archived project’s dollars (and its name, in the week popup) disappeared as soon as the board rebuilt — only reappearing after scrolling the timeline nudged a different, correct calculation into place. Both now read from the same source as the weekly cells, so an archived project’s revenue and name stay put everywhere on this row, while the project itself still drops out of the pipeline rows as expected.'],
+  },
   {
     version: 'v1113', date: '2026-09-14',
     entries:['Fixed: the Construction Start sort button on the Production screen sorted the PM section but left the LC (Logistics Coordinators) section in its original order. The LC section’s project list never ran through the shared sort function — it now does, matching the PM section.'],
