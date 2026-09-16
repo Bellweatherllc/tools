@@ -367,6 +367,21 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .tt-pz-b-title{font-size:10px;font-weight:700;color:#fff;letter-spacing:.04em;margin-bottom:4px;}
 .tt-pz-b-empty{font-size:9px;color:rgba(255,255,255,.5);line-height:1.5;}
 .tt-pz-b-open{font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(150,225,180,.85);margin-top:6px;}
+
+/* v1117: Arch/Eng Fees circle — sits left of the Permit & Zoning zone, same
+   hover-bubble mechanics (bubble positions off the card, same as tt-pz-bubble). */
+.tt-ae-zone{width:26px;height:26px;flex-shrink:0;align-self:center;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;background:rgba(216,182,79,.10);border:1px solid rgba(216,182,79,.28);transition:background .12s,border-color .12s;}
+.tt-ae-zone:hover{background:rgba(216,182,79,.20);border-color:rgba(216,182,79,.50);}
+.tt-ae-lbl{font-size:7.5px;font-weight:800;letter-spacing:.02em;color:rgba(216,182,79,.92);}
+.tt-ae-bubble{display:none;position:absolute;left:calc(100% + 7px);top:50%;transform:translateY(-50%);width:220px;background:var(--navy);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:9px 11px;box-shadow:0 6px 20px rgba(0,0,0,.45);cursor:default;}
+.tt-ae-zone:hover .tt-ae-bubble{display:block;}
+.tt-ae-bubble::before{content:'';position:absolute;left:-6px;top:calc(50% + var(--ae-arr-dy,0px));margin-top:-5px;width:10px;height:10px;background:var(--navy);border-left:1px solid rgba(255,255,255,.14);border-bottom:1px solid rgba(255,255,255,.14);transform:rotate(45deg);}
+.tt-ae-b-title{font-size:10px;font-weight:700;color:#fff;letter-spacing:.03em;margin-bottom:4px;}
+.tt-ae-b-empty{font-size:9px;color:rgba(255,255,255,.5);line-height:1.5;}
+.tt-ae-b-amt{font-family:'Swear Text',serif;font-size:16px;font-weight:700;color:rgba(150,225,180,.95);margin:2px 0 4px;}
+.tt-ae-b-comments{margin-top:2px;padding-top:5px;border-top:1px solid rgba(255,255,255,.10);}
+.tt-ae-b-comment{font-size:9px;color:rgba(255,255,255,.65);line-height:1.5;margin-bottom:3px;}
+.tt-ae-b-open{font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(150,225,180,.85);margin-top:6px;}
 /* v888: gantt date bubble — dates surface on click, same speech-bubble language as the cascade */
 #ganttDateBubble{display:none;position:fixed;z-index:12500;background:var(--navy);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:8px 12px;box-shadow:0 6px 20px rgba(0,0,0,.45);min-width:130px;max-width:270px;font-family:'TT Norms Pro',sans-serif;}
 #ganttDateBubble.show{display:block;}
@@ -3467,7 +3482,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1116';
+const CORE_VERSION = 'v1117';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5491,6 +5506,10 @@ function buildFcMsRow(proj, capacitySection){
     ppl.appendChild(pr);
     { const pplWrap=el('div','tt-ppl-wrap');
       pplWrap.appendChild(ppl);
+      // v1117: Arch/Eng Fees — reads the 5040 line from the linked Estimate's FINAL tab
+      const ae=el('div','tt-ae-zone'); ae.dataset.aeProjId=proj.id;
+      ae.innerHTML='<span class="tt-ae-lbl">A/E</span><div class="tt-ae-bubble"></div>';
+      pplWrap.appendChild(ae);
       // v882: Permit & Zoning zone rides beside the team — hover fills the side bubble, click deep-links the tracker
       const pz=el('div','tt-pz-zone'); pz.dataset.pzProject=proj.name||'';
       pz.innerHTML='<span class="tt-pz-lbl">Permit &amp; Zoning</span><span class="tt-pz-dots"></span><div class="tt-pz-bubble"></div>';
@@ -13585,6 +13604,109 @@ document.addEventListener('pointerdown',e=>{
   if(z){ e.stopPropagation();
     window.open(PZ_TRACKER_URL+'?project='+encodeURIComponent(z.dataset.pzProject||''),'_blank','noopener'); }
 },true);
+
+// ══ v1117: Arch/Eng Fees zone — reads the "5040 Architect & Engineering Fees" line
+// from the COMP AVERAGES column of the linked Estimate's FINAL tab, plus any cell
+// comments on that figure. Same lazy-on-hover pattern as the Permit & Zoning zone
+// above; click opens the Estimate itself. Downloads and parses the workbook client-side
+// (SheetJS, same approach as the QuickBooks reader) rather than the Graph Workbook API,
+// since this is a one-shot read, not a live-edited session. ══
+const _aeCache={}; // projId -> {status:'no-link'|'no-final'|'no-row'|'error'|'ok', ...}
+let _aeOpenZone=null;
+async function _aeLoadFees(proj){
+  if(_aeCache[proj.id]) return _aeCache[proj.id];
+  const href=proj.docUrls&&proj.docUrls.est;
+  if(!href) return (_aeCache[proj.id]={status:'no-link'});
+  try{
+    let itemId=proj.docLinkMeta&&proj.docLinkMeta.links&&proj.docLinkMeta.links.est&&proj.docLinkMeta.links.est.id;
+    if(!itemId){ const it=await dlResolveHref(href); itemId=it.id; }
+    const drive=await dlCustomersDriveId();
+    const meta=await graphGet('https://graph.microsoft.com/v1.0/drives/'+drive+'/items/'+itemId);
+    const dlUrl=meta['@microsoft.graph.downloadUrl']; if(!dlUrl) throw new Error('No download URL');
+    const buf=await (await fetch(dlUrl)).arrayBuffer();
+    if(typeof XLSX==='undefined'){
+      await new Promise((res,rej)=>{ const sc=document.createElement('script');
+        sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        sc.onload=res; sc.onerror=()=>rej(new Error('SheetJS failed to load')); document.head.appendChild(sc); });
+    }
+    const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+    const shName=wb.SheetNames.find(n=>/^final$/i.test(n.trim()))||wb.SheetNames.find(n=>/final/i.test(n));
+    if(!shName) return (_aeCache[proj.id]={status:'no-final',fileName:meta.name});
+    const ws=wb.Sheets[shName];
+    const ref=ws['!ref'];
+    if(!ref) return (_aeCache[proj.id]={status:'no-final',fileName:meta.name});
+    const range=XLSX.utils.decode_range(ref);
+    let compCol=-1, feeRow=-1;
+    for(let r=range.s.r;r<=range.e.r;r++){
+      const rowTexts=[];
+      for(let c=range.s.c;c<=range.e.c;c++){
+        const cell=ws[XLSX.utils.encode_cell({r,c})];
+        const t=(cell&&cell.v!=null)?String(cell.v):'';
+        rowTexts.push(t);
+        if(compCol===-1&&/comp\s*averages/i.test(t)) compCol=c;
+      }
+      if(feeRow===-1){
+        const joined=rowTexts.join(' ');
+        if(/5040/.test(joined)&&/architect/i.test(joined)) feeRow=r;
+      }
+    }
+    if(compCol===-1||feeRow===-1) return (_aeCache[proj.id]={status:'no-row',fileName:meta.name});
+    const cell=ws[XLSX.utils.encode_cell({r:feeRow,c:compCol})];
+    const amount=cell?(cell.w!=null?cell.w:(cell.v!=null?'$'+Number(cell.v).toLocaleString('en-US',{maximumFractionDigits:0}):null)):null;
+    const comments=(cell&&Array.isArray(cell.c))?cell.c.map(c=>({author:c.a||'',text:String(c.t||'').trim()})).filter(c=>c.text):[];
+    return (_aeCache[proj.id]={status:'ok',amount,comments,fileName:meta.name});
+  }catch(e){
+    console.warn('[ae-fees]',proj.name,e);
+    return (_aeCache[proj.id]={status:'error',message:e.message||String(e)});
+  }
+}
+function _renderAeBubble(zone,res){
+  const bubble=zone.querySelector('.tt-ae-bubble'); if(!bubble) return;
+  const title='<div class="tt-ae-b-title">Arch/Eng Fees (5040)</div>';
+  const openHint='<div class="tt-ae-b-open">Click to open the Estimate</div>';
+  if(res.status==='loading'){ bubble.innerHTML=title+'<div class="tt-ae-b-empty">Reading estimate…</div>'; return; }
+  if(res.status==='no-link'){ bubble.innerHTML=title+'<div class="tt-ae-b-empty">No Estimate linked yet.</div>'; return; }
+  if(res.status==='no-final'){ bubble.innerHTML=title+'<div class="tt-ae-b-empty">No FINAL tab found in '+escH(res.fileName||'the Estimate')+'.</div>'+openHint; return; }
+  if(res.status==='no-row'){ bubble.innerHTML=title+'<div class="tt-ae-b-empty">Couldn’t find the 5040 Architect &amp; Engineering Fees line or the COMP AVERAGES column in '+escH(res.fileName||'the Estimate')+'.</div>'+openHint; return; }
+  if(res.status==='error'){ bubble.innerHTML=title+'<div class="tt-ae-b-empty">Couldn’t read the Estimate — '+escH(res.message||'see console')+'.</div>'+openHint; return; }
+  const amtHtml='<div class="tt-ae-b-amt">'+escH(res.amount!=null?String(res.amount):'—')+'</div>';
+  const commentsHtml=(res.comments&&res.comments.length)
+    ?'<div class="tt-ae-b-comments">'+res.comments.map(c=>'<div class="tt-ae-b-comment">'+(c.author?'<b>'+escH(c.author)+':</b> ':'')+escH(c.text)+'</div>').join('')+'</div>'
+    :'';
+  bubble.innerHTML=title+amtHtml+commentsHtml+openHint;
+}
+function _fillAeZone(zone){
+  _aeOpenZone=zone;
+  const proj=PROJECTS.find(p=>p.id===zone.dataset.aeProjId); if(!proj) return;
+  const bubble=zone.querySelector('.tt-ae-bubble');
+  const _card=zone.closest('.fc-proj-tooltip'); // v1117: arrow offset, same trick as the PZ bubble
+  if(bubble&&_card){
+    const zr=zone.getBoundingClientRect(), cr=_card.getBoundingClientRect();
+    bubble.style.setProperty('--ae-arr-dy',((zr.top+zr.height/2)-(cr.top+cr.height/2))+'px');
+  }
+  const cached=_aeCache[proj.id];
+  if(cached){ _renderAeBubble(zone,cached); return; }
+  _renderAeBubble(zone,{status:proj.docUrls&&proj.docUrls.est?'loading':'no-link'});
+  if(!(proj.docUrls&&proj.docUrls.est)) return;
+  _aeLoadFees(proj).then(res=>{ if(_aeOpenZone===zone&&zone.offsetParent!==null) _renderAeBubble(zone,res); });
+}
+document.addEventListener('pointerover',e=>{
+  const z=e.target.closest&&e.target.closest('.tt-ae-zone');
+  if(z) _fillAeZone(z);
+});
+document.addEventListener('pointerout',e=>{
+  const z=e.target.closest&&e.target.closest('.tt-ae-zone');
+  if(z&&_aeOpenZone===z){ const to=e.relatedTarget; if(!(to&&to.closest&&to.closest('.tt-ae-zone'))) _aeOpenZone=null; }
+});
+document.addEventListener('pointerdown',e=>{
+  const z=e.target.closest&&e.target.closest('.tt-ae-zone');
+  if(z){ e.stopPropagation();
+    const proj=PROJECTS.find(p=>p.id===z.dataset.aeProjId);
+    const href=proj&&proj.docUrls&&proj.docUrls.est;
+    if(href) window.open(href,'_blank','noopener');
+  }
+},true);
+
 // v876: every pill explains itself on hover, whether or not it has a link behind it.
 // The footer line is the only difference — a live link says so, a dead one says why.
 // v906 — click-opened pickers pin the popover: hover-out must not close what a
@@ -16204,6 +16326,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1117', date: '2026-09-16',
+    entries:['New "A/E" circle button added to the project hover card, just left of the Permit & Zoning button. Hovering it reads the "5040 Architect & Engineering Fees" line from the COMP AVERAGES column of the linked Estimate’s FINAL tab, plus any comments on that cell, and shows them in a popup. Click opens the Estimate itself. Shares its tooltip code with Production, so it shows there too.'],
+  },
   {
     version: 'v1116', date: '2026-09-16',
     entries:['Presentation scheduling: added "Virtual" as a fourth room option alongside Conf Rooms 1–3. It’s a label only — no real mailbox behind it, so it never books a room, and pushing a Virtual presentation to Outlook creates the event on the designer’s own calendar without inviting a room.'],
