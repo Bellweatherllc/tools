@@ -212,21 +212,23 @@
   .summary-pie-row{display:flex;flex-wrap:wrap;gap:20px;}
   .summary-pie-item{display:flex;flex-direction:column;align-items:center;width:96px;text-align:center;}
   .summary-pie-label{font-size:11px;color:var(--steel);margin-top:8px;line-height:1.3;}
+  .summary-project-title{font-family:'Fraunces',serif;font-size:20px;font-weight:600;color:var(--navy);margin-bottom:6px;}
+  .summary-project-desc{font-size:13px;color:var(--steel);line-height:1.6;margin-bottom:14px;}
+  .summary-project-meta{display:flex;gap:28px;flex-wrap:wrap;}
+  .summary-project-meta .meta-label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel);margin-bottom:2px;}
+  .summary-project-meta .meta-value{font-size:13px;color:var(--navy);font-weight:500;}
   .implication-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
-  .implication-card{border:1.5px solid var(--cloud);border-left:4px solid;border-radius:var(--radius);padding:14px 16px;background:var(--white);}
-  .implication-card-cat{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+  .implication-card{border:1.5px solid var(--cloud);border-radius:var(--radius);background:var(--white);overflow:hidden;transition:opacity 0.15s;}
+  .implication-card.is-discussed{opacity:0.55;}
+  .implication-band{padding:3px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;line-height:1.4;}
+  .implication-card-body{padding:12px 16px 14px;}
   .implication-card-label{font-weight:600;font-size:13px;margin-bottom:4px;color:var(--navy);}
   .implication-card-text{font-size:12px;line-height:1.5;color:var(--steel);}
-  .cat-high{border-left-color:var(--red);}
-  .cat-high .implication-card-cat{color:var(--red);}
-  .cat-variance{border-left-color:var(--amber);}
-  .cat-variance .implication-card-cat{color:#b97a00;}
-  .cat-constraint{border-left-color:var(--navy);}
-  .cat-constraint .implication-card-cat{color:var(--navy);}
+  .implication-check{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;font-weight:600;color:var(--steel);cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;}
+  .implication-check input{cursor:pointer;}
   .timeline-row{display:flex;gap:14px;flex-wrap:wrap;}
   .timeline-card{flex:1;min-width:180px;border:1.5px solid var(--cloud);border-radius:var(--radius);padding:16px;background:var(--white);position:relative;}
   .timeline-card.is-recommended{border-color:transparent;box-shadow:var(--shadow-lg);}
-  .timeline-rec-tag{position:absolute;top:-10px;left:14px;background:var(--navy);color:#fff;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:3px 8px;border-radius:10px;}
   .timeline-card-label{font-family:'Fraunces',serif;font-size:15px;font-weight:600;margin-bottom:6px;}
   .timeline-card-desc{font-size:12px;line-height:1.5;opacity:0.9;}
   .summary-notes-list{margin:0;padding-left:20px;font-size:13px;line-height:1.8;color:var(--navy);}
@@ -309,7 +311,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v24</span>
+      <span class="header-version">v25</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -382,6 +384,11 @@
   <!-- SUMMARY -->
   <div id="tab-summary" style="display:none">
     <div class="notice">Mockup using sample data — no live assessment is wired in yet.</div>
+    <div class="card">
+      <div class="summary-project-title" id="summary-project-title"></div>
+      <div class="summary-project-desc" id="summary-project-desc"></div>
+      <div class="summary-project-meta" id="summary-project-meta"></div>
+    </div>
     <div class="card">
       <div class="card-header"><div class="card-title">Levels of Development</div></div>
       <div class="summary-pie-row" id="summary-lod-pies"></div>
@@ -1279,6 +1286,18 @@ async function doDelete(id){
 
 // ══════════════════════════════════════════════════ SUMMARY (mockup) ══
 // Sample data only — stands in for real submitted assessments until this tab is wired up.
+const SUMMARY_PROJECT = {
+  name: 'The Hartwell Residence',
+  desc: '2,400 SF renovation and rear addition — kitchen, primary suite, and outdoor living reconfiguration.',
+  location: 'Charlotte, NC',
+  priceRange: '$850K – $1.1M',
+  respondents: [
+    {name:'Alex Rivera', dept:'Design'},
+    {name:'Sam Chen',    dept:'PM'},
+    {name:'Jordan Blake',dept:'Estimating'},
+    {name:'Priya Nair',  dept:'Structural Eng.'},
+  ]
+};
 const SUMMARY_SAMPLE = {
   lod: {
     drawings:         ['high','high','med'],
@@ -1366,27 +1385,42 @@ function computeImplications(){
     const block=getBlocks().find(b=>b.id===blockId); if(!block) return;
     block.dims.forEach(d=>{
       const scores=data[d.id]; if(!scores||!scores.length) return;
+      const id=blockId+'-'+d.id;
       const hasHigh=scores.includes('high');
       const vals=scores.map(v=>rMap[v]);
       const span=Math.max(...vals)-Math.min(...vals);
       const hasVariance=span>=2*0.66;
-      if(hasHigh) discuss.push({level:'high', label:d.label, text:'Rated HIGH by at least one respondent — surfaces for discussion before DA signing.'});
-      else if(hasVariance) discuss.push({level:'variance', label:d.label, text:'Assessors diverge here — worth a direct conversation before proceeding.'});
+      if(hasHigh) discuss.push({id, tier:'high', label:d.label, text:'Rated HIGH by at least one respondent — surfaces for discussion before DA signing.'});
+      else if(hasVariance) discuss.push({id, tier:'med', label:d.label, text:'Assessors diverge here — worth a direct conversation before proceeding.'});
 
       const allLow = scores.every(v=>v==='low');
-      if(allLow && blockId==='lod' && LOD_CONSTRAINTS[d.id]) constraints.push({label:d.label, text:LOD_CONSTRAINTS[d.id]});
+      if(allLow && blockId==='lod' && LOD_CONSTRAINTS[d.id]) constraints.push({id, tier:'low', label:d.label, text:LOD_CONSTRAINTS[d.id]});
     });
   });
   return {discuss, constraints};
 }
 
-function renderImplicationCards(items, cardClassFn, catLabelFn){
+// In-memory only — mockup has no persistence layer for Summary yet.
+const discussedSet = new Set();
+function toggleDiscussed(id){
+  if(discussedSet.has(id)) discussedSet.delete(id); else discussedSet.add(id);
+  renderSummaryTab();
+}
+
+function renderImplicationCards(items, catLabelFn, checkable){
   if(!items.length) return `<div class="empty-state" style="padding:24px"><p>None surfaced from the sample data.</p></div>`;
-  return items.map(it=>`<div class="implication-card ${cardClassFn(it)}">
-    <div class="implication-card-cat">${catLabelFn(it)}</div>
-    <div class="implication-card-label">${it.label}</div>
-    <div class="implication-card-text">${it.text}</div>
-  </div>`).join('');
+  return items.map(it=>{
+    const isDiscussed = checkable && discussedSet.has(it.id);
+    const checkbox = checkable ? `<label class="implication-check"><input type="checkbox" ${isDiscussed?'checked':''} onchange="toggleDiscussed('${it.id}')">Discussed</label>` : '';
+    return `<div class="implication-card${isDiscussed?' is-discussed':''}">
+      <div class="implication-band" style="background:${tierColor(it.tier)};color:${tierInk(it.tier)}">${catLabelFn(it)}</div>
+      <div class="implication-card-body">
+        <div class="implication-card-label">${it.label}</div>
+        <div class="implication-card-text">${it.text}</div>
+        ${checkbox}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function computeCompositeTier(){
@@ -1405,24 +1439,35 @@ function renderTimelineOptions(options, currentTier){
     const isCurrent = o.tier===currentTier;
     const style = isCurrent ? `background:${tierColor(o.tier)};color:${tierInk(o.tier)};` : '';
     return `<div class="timeline-card${isCurrent?' is-recommended':''}" style="${style}">
-      ${isCurrent?'<div class="timeline-rec-tag">This Project</div>':''}
       <div class="timeline-card-label">${o.label}</div>
       <div class="timeline-card-desc">${o.desc}</div>
     </div>`;
   }).join('')}</div>`;
 }
 
+function renderSummaryHeader(){
+  const p = SUMMARY_PROJECT;
+  document.getElementById('summary-project-title').textContent = p.name;
+  document.getElementById('summary-project-desc').textContent = p.desc;
+  const respondentsStr = p.respondents.map(r=>r.name+(r.dept?' ('+r.dept+')':'')).join(', ');
+  document.getElementById('summary-project-meta').innerHTML =
+    `<div><span class="meta-label">Location</span><span class="meta-value">${p.location}</span></div>
+     <div><span class="meta-label">Est. Range</span><span class="meta-value">${p.priceRange}</span></div>
+     <div><span class="meta-label">Respondents</span><span class="meta-value">${respondentsStr}</span></div>`;
+}
+
 function renderSummaryTab(){
+  renderSummaryHeader();
   document.getElementById('summary-lod-pies').innerHTML  = renderPieRow(SUMMARY_SAMPLE.lod,'lod')   || '<div class="empty-state" style="padding:16px">No sample data</div>';
   document.getElementById('summary-risk-pies').innerHTML = renderPieRow(SUMMARY_SAMPLE.risk,'risk') || '<div class="empty-state" style="padding:16px">No sample data</div>';
 
   const {discuss, constraints} = computeImplications();
   document.getElementById('summary-discuss').innerHTML = renderImplicationCards(discuss,
-    it => it.level==='high' ? 'cat-high' : 'cat-variance',
-    it => it.level==='high' ? '⚑ Discuss — flagged high' : '⚠ Discuss — variance');
+    it => it.tier==='high' ? '⚑ Discuss — flagged high' : '⚠ Discuss — variance',
+    true);
   document.getElementById('summary-constraints').innerHTML = renderImplicationCards(constraints,
-    () => 'cat-constraint',
-    () => '🚧 Constraint');
+    () => '🚧 Constraint',
+    false);
 
   const tier = computeCompositeTier();
   document.getElementById('summary-design-timeline').innerHTML = renderTimelineOptions(DESIGN_TIMELINE, tier);
