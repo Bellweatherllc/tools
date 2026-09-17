@@ -142,7 +142,6 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .reviewer-chip .rc-btn:hover:not(.locked-out){background:var(--bg);}
 .reviewer-chip .rc-btn.locked-out{opacity:.4;cursor:not-allowed;}
 .reviewer-panel.disabled .reviewer-chip:not(.pdf-chip){opacity:.5;}
-.reviewer-chip.pdf-chip:not(.done){opacity:.55;}
 .asof-lock-note{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 14px;margin:-2px 0 10px;font-size:12px;color:var(--text-sec);}
 .lock-banner{background:#eef3f6;border:1px solid var(--border);border-left:4px solid var(--ok);border-radius:8px;padding:12px 18px;margin-bottom:14px;font-size:12.5px;line-height:1.6;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
 .lock-banner b{font-weight:600;}
@@ -260,11 +259,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v18';
-// TEMP — lets Byron test the "Save PDF to SharePoint" button without a real
-// two-person lock. Flip back to false (and revert the reportFilename/
-// buildReportNode " (TEST)" markers below) once he's confirmed it works.
-const TESTING_PDF_BUTTON=true;
+const CORE_VERSION='v19';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -605,43 +600,50 @@ async function wipReportsFolder(){
   return _wipReportsFolder;
 }
 // Matches the existing files in that folder: "BWC WIP Report MM-DD-YY.pdf", dated
-// to the month-end the reviewers locked as of (not today, not the finalize date).
-function reportFilename(asOfStr,isTest){
+// to whichever date the report is actually for — the locked-as-of date for a
+// finalized month, or the "Viewing as of" date for a live snapshot.
+function reportFilename(asOfStr){
   const d=new Date(asOfStr+'T00:00:00');
   const p2=n=>String(n).padStart(2,'0');
-  return 'BWC WIP Report '+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'-'+String(d.getFullYear()).slice(-2)+(isTest?' TEST':'')+'.pdf';
+  return 'BWC WIP Report '+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'-'+String(d.getFullYear()).slice(-2)+'.pdf';
 }
-// Builds a standalone, offscreen copy of the finalized report (reusing the same
-// cardsHtml/tableHtml the live page renders with) for html2pdf to capture — not the
-// live DOM itself, so it renders correctly regardless of what's open on screen.
-function buildReportNode(cur,isTest){
+// Builds a standalone copy of the report (reusing the same cardsHtml/tableHtml
+// the live page renders with) for html2pdf to capture — not the live DOM
+// itself, so it renders correctly regardless of what's open on screen. Held
+// inside a zero-size, overflow:hidden ancestor rather than positioned off-screen
+// or behind with z-index — html2canvas clones the DOM to do the capture, so
+// clipping here doesn't affect what it sees, but it does guarantee the person
+// at the keyboard never sees the unstyled flash those other approaches left
+// visible for a moment.
+function buildReportNode(cur){
   const snap=finalSnapshot(cur);
   const rows=snap.rows.map(r=>({p:r,calc:r}));
+  const isFinalized=!!cur.finalized;
+  const clip=document.createElement('div');
+  clip.style.cssText='position:fixed;top:0;left:0;width:0;height:0;overflow:hidden;';
   const wrap=document.createElement('div');
-  // Sitting far off-screen (e.g. left:-10000px) makes html2canvas try to size its
-  // capture canvas around the whole document's bounds instead of just this node —
-  // on a page this size that canvas allocation can hang or crash the tab, leaving
-  // it blank. Keeping it at (0,0), behind the page's own opaque background via a
-  // negative z-index, hides it just as effectively without blowing up the canvas.
-  wrap.style.cssText='position:absolute;top:0;left:0;width:960px;background:#fff;padding:28px;z-index:-9999;';
+  wrap.style.cssText='width:960px;background:#fff;padding:28px;';
   wrap.innerHTML=
     '<div style="margin-bottom:16px;">'+
-      '<h1 style="font-family:\'Swear Text\',serif;font-size:20px;font-weight:500;margin:0 0 4px;">WIP — '+esc(cur.periodLabel)+(isTest?' (TEST — not a real lock)':' (Finalized)')+'</h1>'+
-      '<div style="font-size:12px;color:var(--text-sec);">'+(isTest?'Test export — generated to verify the PDF/SharePoint pipeline, not an approved record.':'Finalized by Ryan and Joey — '+esc(fmtDate(snap.at)))+(snap.asOf?' · figures as of '+esc(snap.asOf):'')+'</div>'+
+      '<h1 style="font-family:\'Swear Text\',serif;font-size:20px;font-weight:500;margin:0 0 4px;">WIP — '+esc(cur.periodLabel)+(isFinalized?' (Finalized)':' (Live snapshot)')+'</h1>'+
+      '<div style="font-size:12px;color:var(--text-sec);">'+(isFinalized?'Finalized by Ryan and Joey — '+esc(fmtDate(snap.at)):'Live figures — not a locked, approved record.')+(snap.asOf?' · figures as of '+esc(snap.asOf):'')+'</div>'+
     '</div>'+
     '<div class="cards">'+cardsHtml(rows,true,snap.netPosition||null)+'</div>'+
     '<table class="tbl">'+tableHtml(rows,true)+'</table>';
-  document.body.appendChild(wrap);
-  return wrap;
+  clip.appendChild(wrap);
+  document.body.appendChild(clip);
+  return {clip,wrap};
 }
-async function saveApprovedPdfToSharePoint(cur,isTest){
-  let node=null;
+async function saveApprovedPdfToSharePoint(cur){
+  let clipNode=null;
   try{
-    node=buildReportNode(cur,isTest);
+    const built=buildReportNode(cur);
+    clipNode=built.clip;
+    const wrap=built.wrap;
     // Pin the capture to exactly this node's own box — without this, html2canvas
     // falls back to measuring the whole document/viewport, which is what produces
     // the oversized-canvas hang/crash the offscreen positioning above avoids.
-    const w=node.offsetWidth, h=node.offsetHeight;
+    const w=wrap.offsetWidth, h=wrap.offsetHeight;
     // A custom jsPDF page format sized to exactly match the content (in px units,
     // so no unit conversion) gives a single page with everything on it — no
     // slicing, no manual scale math — and comes out portrait since this report
@@ -653,8 +655,8 @@ async function saveApprovedPdfToSharePoint(cur,isTest){
       filename:'report.pdf',
       html2canvas:{scale:2,backgroundColor:'#ffffff',width:w,height:h,windowWidth:w,windowHeight:h,x:0,y:0,scrollX:0,scrollY:0},
       jsPDF:{unit:'px',format:[w,h],orientation:'portrait'}
-    }).from(node).outputPdf('blob');
-    const filename=reportFilename(finalSnapshot(cur).asOf,isTest);
+    }).from(wrap).outputPdf('blob');
+    const filename=reportFilename(finalSnapshot(cur).asOf);
     const folder=await wipReportsFolder();
     const buf=await blob.arrayBuffer();
     await SherpaAuth.graph(GRAPH+'/drives/'+folder.drive+'/items/'+folder.id+':/'+encodeURIComponent(filename)+':/content',
@@ -664,7 +666,7 @@ async function saveApprovedPdfToSharePoint(cur,isTest){
     console.error('[wip] PDF save failed:',e);
     toast('Couldn’t save the PDF: '+(e.message||e),'err');
   }finally{
-    if(node) node.remove();
+    if(clipNode) clipNode.remove();
   }
 }
 function extractExportedOn(rows){
@@ -867,10 +869,13 @@ function finalSnapshot(lock){
   if(!a) return b; if(!b) return a;
   return a.at>b.at?a:b;
 }
-// TEMP — builds an in-memory, never-saved "cur" from today's live rows, in the
-// same shape addReview would produce, so the PDF button can be test-driven
-// without a real two-person lock in place. Remove alongside TESTING_PDF_BUTTON.
-function buildTestCur(){
+// Builds an in-memory, never-saved "cur" from the currently viewed rows, in the
+// same shape addReview would produce — used whenever the PDF button is clicked
+// for a month that hasn't actually been locked yet, so saving a PDF never
+// requires waiting on Ryan and Joey. finalized stays false so the PDF itself is
+// labeled "Live snapshot," not "Finalized" — it's a real save, just not an
+// approved record.
+function buildLiveCur(){
   const rows=window._wipRows||[];
   const who=identity();
   const snapshot={
@@ -878,7 +883,7 @@ function buildTestCur(){
     rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,phase:r.calc.phase,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden,invoicedOverridden:r.calc.invoicedOverridden})),
     netPosition:computeNetPosition(rows)
   };
-  return {period:viewPeriod(),periodLabel:viewPeriodLabel(),reviews:{ryan:snapshot,joey:snapshot},finalized:true,finalizedAt:snapshot.at};
+  return {period:viewPeriod(),periodLabel:viewPeriodLabel(),reviews:{ryan:snapshot,joey:snapshot},finalized:false,finalizedAt:null};
 }
 
 // ════════════════════════════════════ MATCH + COMPUTE
@@ -1177,18 +1182,18 @@ function renderReviewerPanel(){
       +'<button class="rc-btn'+(canClick?'':' locked-out')+'" data-reviewer="'+r.key+'"'+tip+'>'+label+'</button></div>';
   }).join('');
   const note=eligible?'':'<div class="asof-lock-note">Locking is only available for today or the last day of a month — '+esc(viewPeriodLabel())+' isn’t either right now, so both buttons above are inactive. Pick the last day of the month to approve it retroactively, or switch to Today.</div>';
-  // Always visible, like the Ryan/Joey chips — grayed out until the month is
-  // actually finalized, so the feature reads as "not available yet," not missing.
+  // Always active — a PDF is a real, useful record of a moment in time whether
+  // or not the month has been formally locked yet. Finalized months save their
+  // locked snapshot; anything else saves the live figures as of the date being
+  // viewed, clearly labeled "Live snapshot" (not "Finalized") in the PDF itself.
   const realFinalized=!!(cur&&cur.finalized);
-  const pdfDone=realFinalized||TESTING_PDF_BUTTON;
+  const pdfAsOf=realFinalized?finalSnapshot(cur).asOf:fmtInputDate(AS_OF);
   const pdfTip=realFinalized
-    ? ' data-tip="Save to SharePoint" data-tip-d="Generates the finalized report as a PDF and saves it as &#8216;'+esc(reportFilename(finalSnapshot(cur).asOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."'
-    : TESTING_PDF_BUTTON
-      ? ' data-tip="Test mode (temporary)" data-tip-d="Not actually finalized — this is temporarily enabled so Byron can test the SharePoint save. Uses today’s live figures and saves with a TEST marker in the filename."'
-      : ' data-tip="Not available yet" data-tip-d="This unlocks once both Ryan and Joey have locked '+esc(viewPeriodLabel())+'."';
-  const pdfChip='<div class="reviewer-chip pdf-chip'+(pdfDone?' done':'')+'"><span class="rc-name">PDF</span>'
-    +'<span class="rc-state">'+(realFinalized?'ready to save':TESTING_PDF_BUTTON?'test mode':'not finalized yet')+'</span>'
-    +'<button class="rc-btn'+(pdfDone?'':' locked-out')+'" id="savePdfBtn"'+pdfTip+'>Save PDF to SharePoint</button></div>';
+    ? ' data-tip="Save to SharePoint" data-tip-d="Generates the finalized report as a PDF and saves it as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."'
+    : ' data-tip="Save to SharePoint" data-tip-d="'+esc(viewPeriodLabel())+' isn’t finalized yet, so this saves the live figures as of '+esc(asOfLabel())+', labeled a Live snapshot (not Finalized) in the PDF — saved as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."';
+  const pdfChip='<div class="reviewer-chip pdf-chip'+(realFinalized?' done':'')+'"><span class="rc-name">PDF</span>'
+    +'<span class="rc-state">'+(realFinalized?'finalized':'live snapshot')+'</span>'
+    +'<button class="rc-btn" id="savePdfBtn"'+pdfTip+'>Save PDF to SharePoint</button></div>';
   wrap.innerHTML='<div class="reviewer-panel'+(eligible?'':' disabled')+'">'+chips+pdfChip+'</div>'+note
     +(cur&&cur.finalized?'<div class="lock-banner">🔒 <span><b>'+esc(cur.periodLabel)+' is finalized</b> — locked by Ryan and Joey'+(finalSnapshot(cur).asOf?' (figures as of '+esc(finalSnapshot(cur).asOf)+')':'')+'. Live numbers below keep moving; the lock is the permanent record.</span>'
       +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div></div>':'');
@@ -1197,14 +1202,10 @@ function renderReviewerPanel(){
   if(vb) vb.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
   const pb=document.getElementById('savePdfBtn');
   if(pb) pb.addEventListener('click',async()=>{
-    let target=cur, isTest=false;
-    if(!target||!target.finalized){
-      if(!TESTING_PDF_BUTTON){ toast('This unlocks once both Ryan and Joey have locked '+viewPeriodLabel()+'.','err'); return; }
-      target=buildTestCur(); isTest=true;
-    }
     if(pb.classList.contains('saving')) return;
+    const target=(cur&&cur.finalized)?cur:buildLiveCur();
     pb.classList.add('saving'); const label=pb.textContent; pb.textContent='Saving…';
-    await saveApprovedPdfToSharePoint(target,isTest);
+    await saveApprovedPdfToSharePoint(target);
     pb.classList.remove('saving'); pb.textContent=label;
   });
 }
