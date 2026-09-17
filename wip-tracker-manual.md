@@ -53,6 +53,28 @@ An override replaces the formula entirely: earned becomes contract value × the 
 
 Overrides are stored in **`CORE_Config`** (key `wip_overrides`) — the same shared list the Pipeline already uses for things like its OPS cash-flow scenarios. No SharePoint schema change was needed to add this.
 
+## Sorting the table
+
+Click any column header — **Project, Stage, Contract Value, % Complete, Earned, Invoiced, Gap** — to sort the table by that column. Click it again to flip between ascending and descending; an arrow (▲/▼) on the header shows which one is active.
+
+Before you click anything, the table opens in its original order: worst gap first, regardless of over or under. That's still the most useful default for a quick scan, so it's not a "sort," it's just how the page starts — there's no arrow on any header until you pick one.
+
+Sorting is view-only. It doesn't change what's calculated, what's saved, or what a lock records — it just changes the order rows are listed in on your screen.
+
+## Overriding the Net Position figure
+
+The **Net Position** card at the top — the one dollar figure that says how far the portfolio as a whole is billed ahead of or behind its work — is normally calculated from every row in the table below it. Occasionally that's not the number you want to report: a known adjustment hasn't hit the underlying rows yet, or you want to publish a reconciled figure while the details get sorted out.
+
+Check **Manual entry** under the card to reveal an amount field and an **over/under** dropdown. Enter the figure, pick over or under, and click **Save** — the card immediately shows your number instead of the calculated one, marked **manual**. Click **Use calculated** (or uncheck the box) to drop the override and go back to the live calculation.
+
+Like project overrides, this is stored in **`CORE_Config`** (key `wip_netpos_override`) and persists until changed or cleared — it doesn't reset itself month to month.
+
+**A manual Net Position figure doesn't hide the math underneath.** The individual project rows, and the Contract Value / Earned / Invoiced cards next to it, keep showing the real calculated numbers regardless — only the Net Position card itself reflects the override.
+
+**Locking freezes whichever figure was showing at the time.** If Net Position was on manual entry when Ryan or Joey locked the month, that manual figure — not a live recalculation — is what's baked into the permanent record and the PDF. A later change to the override (or clearing it) doesn't touch an already-finalized month.
+
+**Available any time you're on the live view** — unlike project % overrides, this isn't restricted to today's date, since it's a reporting adjustment rather than a schedule-dependent calculation. It's not shown at all while viewing a finalized locked snapshot, since that view is already frozen.
+
 ## Locking the month — Ryan's button, Joey's button
 
 There's no single generic "lock" button. Instead there are two named chips near the top of the page — **Ryan** and **Joey** — each with its own status and its own button. A chip's button only works for that person: it checks who's actually signed in, not a name anyone could type, so Ryan can't lock Joey's slot and vice versa.
@@ -116,6 +138,8 @@ The page always reads whichever file in that folder was **most recently saved**.
 | Earned | Contract Value × % Complete. Blank until a % exists. |
 | Invoiced | Sum of non-Draft invoices matched to this job, dated on or before the date being viewed. |
 | Gap | Invoiced − Earned. Red = billed ahead; green = work ahead of billing. |
+
+Click any column header to sort by it — see *Sorting the table*, above.
 
 ### Reading the flags
 

@@ -57,6 +57,14 @@ body{font-family:'TT Norms Pro',-apple-system,sans-serif;background:var(--bg);co
 .card.navy-edge{border-top:3px solid var(--navy);}
 .card.pos .val{color:var(--over);}
 .card.neg .val{color:var(--good);}
+.netpos-toggle{display:block;margin-top:9px;font-size:11px;color:var(--text-sec);cursor:pointer;user-select:none;}
+.netpos-toggle input{margin-right:5px;vertical-align:middle;}
+.netpos-manual{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:9px;}
+.netpos-manual input[type=number]{width:110px;border:1px solid var(--border);border-radius:6px;padding:6px 9px;font-family:inherit;font-size:12.5px;}
+.netpos-manual select{border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:inherit;font-size:12.5px;background:#fff;}
+.netpos-manual button{border-radius:6px;padding:6px 12px;font-family:inherit;font-size:12px;cursor:pointer;border:1px solid var(--border);background:#fff;}
+.netpos-manual button:hover{background:var(--bg);}
+.netpos-manual button.secondary{color:var(--text-sec);}
 
 h2.sec{font-family:'Swear Text',serif;font-size:17px;font-weight:500;margin:26px 0 12px;display:flex;align-items:center;gap:10px;}
 h2.sec .note{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:400;color:var(--text-sec);}
@@ -72,6 +80,8 @@ h2.sec .note{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:40
 table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
 .tbl th{background:var(--navy);color:rgba(255,255,255,.85);font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:9px 12px;text-align:right;white-space:nowrap;}
 .tbl th:first-child{text-align:left;}
+.tbl th.sortable{cursor:pointer;user-select:none;}
+.tbl th.sortable:hover{background:#324a7a;}
 .tbl td{padding:9px 12px;border-top:1px solid #efe9da;font-size:13px;text-align:right;font-variant-numeric:tabular-nums;}
 .tbl td:first-child{text-align:left;font-weight:500;}
 .tbl tr.total td{font-weight:700;background:#faf8f2;border-top:2px solid var(--border);}
@@ -154,7 +164,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-foot button.clear{color:var(--over);border-color:#e0b8b4;margin-right:auto;}
 
 @media print{
-  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,.reviewer-panel,.asof-bar,#toasts,#tt{display:none!important;}
+  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,.reviewer-panel,.asof-bar,.netpos-toggle,.netpos-manual,#toasts,#tt{display:none!important;}
   body{background:#fff;}
   #printHeader{display:block!important;margin-bottom:16px;}
   #printHeader h1{font-family:'Swear Text',serif;font-size:20px;margin-bottom:4px;}
@@ -239,7 +249,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v9';
+const CORE_VERSION='v10';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -259,6 +269,8 @@ const INCLUDED_STAGES=/^(da signed|ca signed)$/i;
 let PROJECTS=[];   // {spId, name, clientName, stage, contract, constr:{startWeek,durWeeks}|null}
 let INV=null;      // {rows:[{job,price,date}], byJob:Map, file, modified, exportedOn, folderUrl, error}
 let OVERRIDES={};  // spId -> {pct, note, setBy, setAt}
+let NETPOS_OVERRIDE=null;  // {value, setBy, setAt} — value is signed dollars, same sign convention as gap (>=0 = over)
+let NETPOS_FORM_OPEN=false;  // whether the manual-entry form is expanded, independent of whether it's actually saved
 let LOCK=null;     // existing lock record for the current period, or null
 let VIEW_LOCK=false;   // true while showing the locked snapshot instead of live numbers
 function startOfToday(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
@@ -634,6 +646,35 @@ async function clearOverride(spId){
   await cfgSet('wip_overrides',JSON.stringify(OVERRIDES));
 }
 
+// ── Net Position manual override — the same "a human overrides the math" pattern as
+// per-project % overrides, but for the single portfolio-level total dollar figure.
+// Stored value carries the same sign convention as computed gap (>=0 = over). ──
+async function loadNetPosOverride(){
+  try{ const row=await cfgGet('wip_netpos_override'); NETPOS_OVERRIDE=row&&row.value?JSON.parse(row.value):null; }
+  catch(e){ console.warn('[wip] net position override load failed:',e); NETPOS_OVERRIDE=null; }
+  NETPOS_FORM_OPEN=!!NETPOS_OVERRIDE;
+}
+async function saveNetPosOverride(amount,sign){
+  const acct=SherpaAuth.getAccount();
+  const value=sign==='under'?-Math.abs(amount):Math.abs(amount);
+  NETPOS_OVERRIDE={value,setBy:(acct&&(acct.name||acct.username))||'Unknown',setAt:new Date().toISOString()};
+  await cfgSet('wip_netpos_override',JSON.stringify(NETPOS_OVERRIDE));
+}
+async function clearNetPosOverride(){
+  NETPOS_OVERRIDE=null;
+  await cfgSet('wip_netpos_override',JSON.stringify(null));
+}
+// {computed, manual, value, override} — value is whichever of computed/override is active.
+function computeNetPosition(rows){
+  const withNums=rows.filter(r=>r.calc.earned!=null);
+  const invoicedRows=rows.filter(r=>r.calc.invoiced!=null);
+  const invoicedSum=invoicedRows.reduce((s,r)=>s+r.calc.invoiced,0);
+  const earnedSum=withNums.reduce((s,r)=>s+(r.calc.earned||0),0);
+  const computed=invoicedRows.length?invoicedSum-earnedSum:null;
+  const manual=!!NETPOS_OVERRIDE;
+  return {computed,manual,value:manual?NETPOS_OVERRIDE.value:computed,override:NETPOS_OVERRIDE};
+}
+
 // ── Monthly lock — a named slot for each of the two reviewers, not a generic
 // "whoever's signed in" signature. A deliberate, human-triggered permanent
 // record, one CORE_Config row per period (wip_lock_YYYY-MM) so it never
@@ -667,7 +708,8 @@ async function addReview(reviewerKey,rows){
   const who=identity();
   const snapshot={
     by:who.name, byEmail:who.email, at:new Date().toISOString(), asOf:fmtInputDate(AS_OF),
-    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden}))
+    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden})),
+    netPosition:computeNetPosition(rows)
   };
   const cur=(LOCK&&LOCK.period===viewPeriod())?LOCK:{period:viewPeriod(),periodLabel:viewPeriodLabel(),reviews:{},finalized:false,finalizedAt:null};
   cur.reviews[reviewerKey]=snapshot;
@@ -770,27 +812,105 @@ function renderSource(){
     (INV.exportedOn?' &middot; report says it was exported '+esc(INV.exportedOn):'')+
     '.<br>To refresh: <b>'+esc(INV_HOWTO)+'</b> &rarr; save as <code>Invoices_MM_DD_YYYY.xls</code> &rarr; drop it in the folder above.</div>';
 }
-function renderCards(rows,fromLock){
+function renderNetPosCardHtml(np,fromLock){
+  const gap=np.value;
+  const cls=gap==null?'':(gap>=0?'pos':'neg');
+  const val=gap==null?'—':fmt$(Math.abs(gap))+(gap>=0?' over':' under');
+  const manualFlag=np.manual?' <span class="flag" data-tip="Manually set" data-tip-d="This figure was entered by hand instead of calculated from the rows above — set by '+esc((np.override&&np.override.setBy)||'')+'.">manual</span>':'';
+  const sub=gap==null?'awaiting invoice match':(np.manual?'manually entered':(gap>=0?'billed ahead of earned work':'work earned, not yet billed'));
+  const open=!fromLock&&NETPOS_FORM_OPEN;
+  const toggle=fromLock?'':'<label class="netpos-toggle" data-tip="Manual entry" data-tip-d="Override the calculated figure with an amount entered by hand.">'+
+    '<input type="checkbox" id="netposManualChk"'+(open?' checked':'')+'> Manual entry</label>';
+  const manualForm=open?
+    '<div class="netpos-manual" id="netposManualForm">'+
+      '<input type="number" min="0" step="1" id="netposAmount" placeholder="Amount" value="'+(np.override?Math.round(Math.abs(np.override.value)):'')+'">'+
+      '<select id="netposSign"><option value="over"'+(np.override&&np.override.value>=0?' selected':'')+'>over</option>'+
+      '<option value="under"'+(np.override&&np.override.value<0?' selected':'')+'>under</option></select>'+
+      '<button id="netposSaveBtn">Save</button>'+
+      '<button id="netposClearBtn" class="secondary">Use calculated</button>'+
+    '</div>':'';
+  return '<div class="card netpos-card '+cls+'"><div class="lbl">Net Position'+manualFlag+'</div><div class="val">'+val+'</div><div class="sub">'+esc(sub)+'</div>'+toggle+manualForm+'</div>';
+}
+function wireNetPosCard(rows){
+  const chk=document.getElementById('netposManualChk');
+  if(chk) chk.addEventListener('change',async()=>{
+    NETPOS_FORM_OPEN=chk.checked;
+    if(!chk.checked&&NETPOS_OVERRIDE) await clearNetPosOverride();
+    renderAll();
+  });
+  const saveBtn=document.getElementById('netposSaveBtn');
+  if(saveBtn) saveBtn.addEventListener('click',async()=>{
+    const amt=parseFloat(document.getElementById('netposAmount').value);
+    if(!isFinite(amt)||amt<0){ toast('Enter a valid amount','err'); return; }
+    const sign=document.getElementById('netposSign').value;
+    await saveNetPosOverride(amt,sign);
+    renderAll();
+  });
+  const clearBtn=document.getElementById('netposClearBtn');
+  if(clearBtn) clearBtn.addEventListener('click',async()=>{
+    NETPOS_FORM_OPEN=false;
+    if(NETPOS_OVERRIDE) await clearNetPosOverride();
+    renderAll();
+  });
+}
+function renderCards(rows,fromLock,lockedNetPos){
   const withNums=rows.filter(r=>r.calc.earned!=null);
   const sum=k=>withNums.reduce((s,r)=>s+(r.calc[k]||0),0);
   const contractSum=rows.reduce((s,r)=>s+(r.p.contract||0),0);
   const invoicedRows=rows.filter(r=>r.calc.invoiced!=null);
   const invoicedSum=invoicedRows.reduce((s,r)=>s+r.calc.invoiced,0);
   const earnedSum=sum('earned');
-  const gap=invoicedRows.length?invoicedSum-earnedSum:null;
+  const np=fromLock?(lockedNetPos||{computed:null,manual:false,value:null,override:null}):computeNetPosition(rows);
   const cards=[
     {lbl:'Contract Value in WIP',val:fmt$(contractSum),sub:rows.length+' active job'+(rows.length===1?'':'s'),cls:'navy-edge'},
     {lbl:'Earned to Date',val:fmt$(earnedSum),sub:withNums.length+' of '+rows.length+' have a % complete set',cls:'gold-edge'},
-    {lbl:'Invoiced to Date',val:invoicedRows.length?fmt$(invoicedSum):'—',sub:invoicedRows.length+' of '+rows.length+' matched to BT',cls:''},
-    {lbl:'Net Position',val:gap==null?'—':fmt$(Math.abs(gap))+(gap>=0?' over':' under'),sub:gap==null?'awaiting invoice match':(gap>=0?'billed ahead of earned work':'work earned, not yet billed'),cls:gap==null?'':(gap>=0?'pos':'neg')}
+    {lbl:'Invoiced to Date',val:invoicedRows.length?fmt$(invoicedSum):'—',sub:invoicedRows.length+' of '+rows.length+' matched to BT',cls:''}
   ];
   document.getElementById('cards').innerHTML=cards.map(c=>
     '<div class="card '+c.cls+'"><div class="lbl">'+esc(c.lbl)+'</div><div class="val">'+c.val+'</div><div class="sub">'+esc(c.sub)+'</div></div>'
-  ).join('');
+  ).join('')+renderNetPosCardHtml(np,fromLock);
+  if(!fromLock) wireNetPosCard(rows);
+}
+// ── Column sort — click a header to sort by it, click again to flip direction.
+// Unclicked default stays the original "worst gap first" ordering. ──
+const SORT_COLUMNS=[
+  {key:'name',label:'Project',type:'str'},
+  {key:'stage',label:'Stage',type:'str'},
+  {key:'contract',label:'Contract Value',type:'num'},
+  {key:'pct',label:'% Complete',type:'num'},
+  {key:'earned',label:'Earned',type:'num'},
+  {key:'invoiced',label:'Invoiced',type:'num'},
+  {key:'gap',label:'Gap',type:'num'}
+];
+let SORT={key:null,dir:'desc'};   // key===null → default: |gap| descending
+function sortKeyValue(r,key){
+  switch(key){
+    case 'name': return (r.p.name||'').toLowerCase();
+    case 'stage': return (r.p.stage||'').toLowerCase();
+    case 'contract': return r.p.contract||0;
+    case 'pct': return r.calc.pct==null?-1:r.calc.pct;
+    case 'earned': return r.calc.earned==null?-Infinity:r.calc.earned;
+    case 'invoiced': return r.calc.invoiced==null?-Infinity:r.calc.invoiced;
+    case 'gap': return r.calc.gap==null?-Infinity:r.calc.gap;
+    default: return 0;
+  }
+}
+function sortRows(rows){
+  if(!SORT.key){ rows.sort((a,b)=>Math.abs(b.calc.gap||0)-Math.abs(a.calc.gap||0)); return; }
+  const dir=SORT.dir==='asc'?1:-1;
+  rows.sort((a,b)=>{
+    const av=sortKeyValue(a,SORT.key), bv=sortKeyValue(b,SORT.key);
+    if(typeof av==='string') return dir*av.localeCompare(bv);
+    return dir*(av-bv);
+  });
 }
 function renderTable(rows,fromLock){
-  let h='<tr><th>Project</th><th>Stage</th><th>Contract Value</th><th>% Complete</th><th>Earned</th><th>Invoiced</th><th>Gap</th></tr>';
-  rows.sort((a,b)=>Math.abs(b.calc.gap||0)-Math.abs(a.calc.gap||0));
+  let h='<tr>'+SORT_COLUMNS.map(c=>{
+    const active=SORT.key===c.key;
+    const arrow=active?(SORT.dir==='asc'?' ▲':' ▼'):'';
+    return '<th class="sortable" data-sortkey="'+c.key+'">'+esc(c.label)+arrow+'</th>';
+  }).join('')+'</tr>';
+  sortRows(rows);
   rows.forEach(r=>{
     const c=r.calc;
     const gapCls=c.gap==null?'dim':(c.gap>=0?'pos':'neg');
@@ -814,6 +934,12 @@ function renderTable(rows,fromLock){
   if(!fromLock){
     document.querySelectorAll('[data-ovr]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr'))));
   }
+  document.querySelectorAll('#projTbl th.sortable').forEach(th=>th.addEventListener('click',()=>{
+    const key=th.getAttribute('data-sortkey');
+    if(SORT.key===key) SORT.dir=(SORT.dir==='asc'?'desc':'asc');
+    else { SORT.key=key; SORT.dir=(key==='name'||key==='stage')?'asc':'desc'; }
+    renderTable(rows,fromLock);
+  }));
 }
 function renderUnmatched(unmatched){
   const wrap=document.getElementById('unmatchedWrap');
@@ -879,7 +1005,7 @@ function renderAll(){
     const rows=snap.rows.map(r=>({p:r,calc:r}));
     renderReviewerPanel();
     renderPrintHeader(true);
-    renderCards(rows,true);
+    renderCards(rows,true,snap.netPosition||null);
     renderTable(rows,true);
     const sp=document.getElementById('srcPanel'); sp.className='src-panel';
     sp.innerHTML='<b>Showing the finalized '+esc(LOCK.periodLabel)+' figures</b> — recorded '+esc(fmtDate(snap.at))+'. These don’t change; use "Back to live" above to see current numbers.';
@@ -902,7 +1028,7 @@ async function boot(){
   document.getElementById('loadStatus').classList.remove('hidden');
   document.getElementById('main').classList.add('hidden');
   try{
-    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadLock()]);
+    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadNetPosOverride(), loadLock()]);
     initAsOfControl();
     renderAll();
     document.getElementById('loadStatus').classList.add('hidden');
