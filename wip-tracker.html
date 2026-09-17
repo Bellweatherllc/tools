@@ -57,14 +57,6 @@ body{font-family:'TT Norms Pro',-apple-system,sans-serif;background:var(--bg);co
 .card.navy-edge{border-top:3px solid var(--navy);}
 .card.pos .val{color:var(--over);}
 .card.neg .val{color:var(--good);}
-.netpos-toggle{display:block;margin-top:9px;font-size:11px;color:var(--text-sec);cursor:pointer;user-select:none;}
-.netpos-toggle input{margin-right:5px;vertical-align:middle;}
-.netpos-manual{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:9px;}
-.netpos-manual input[type=number]{width:110px;border:1px solid var(--border);border-radius:6px;padding:6px 9px;font-family:inherit;font-size:12.5px;}
-.netpos-manual select{border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:inherit;font-size:12.5px;background:#fff;}
-.netpos-manual button{border-radius:6px;padding:6px 12px;font-family:inherit;font-size:12px;cursor:pointer;border:1px solid var(--border);background:#fff;}
-.netpos-manual button:hover{background:var(--bg);}
-.netpos-manual button.secondary{color:var(--text-sec);}
 
 h2.sec{font-family:'Swear Text',serif;font-size:17px;font-weight:500;margin:26px 0 12px;display:flex;align-items:center;gap:10px;}
 h2.sec .note{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:400;color:var(--text-sec);}
@@ -149,14 +141,15 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .reviewer-chip .rc-btn{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
 .reviewer-chip .rc-btn:hover:not(.locked-out){background:var(--bg);}
 .reviewer-chip .rc-btn.locked-out{opacity:.4;cursor:not-allowed;}
-.reviewer-panel.disabled .reviewer-chip{opacity:.5;}
+.reviewer-panel.disabled .reviewer-chip:not(.pdf-chip){opacity:.5;}
+.reviewer-chip.pdf-chip:not(.done){opacity:.55;}
 .asof-lock-note{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 14px;margin:-2px 0 10px;font-size:12px;color:var(--text-sec);}
 .lock-banner{background:#eef3f6;border:1px solid var(--border);border-left:4px solid var(--ok);border-radius:8px;padding:12px 18px;margin-bottom:14px;font-size:12.5px;line-height:1.6;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
 .lock-banner b{font-weight:600;}
 .lock-banner .actions{margin-left:auto;display:flex;gap:8px;}
 .lock-banner .actions button{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
 .lock-banner .actions button:hover{background:var(--bg);}
-.lock-banner .actions button:disabled{opacity:.6;cursor:wait;}
+.reviewer-chip .rc-btn.saving{opacity:.6;cursor:wait;}
 
 /* ── Override modal ── */
 #ovrOverlay{position:fixed;inset:0;background:rgba(31,46,62,.55);z-index:800;display:none;align-items:center;justify-content:center;}
@@ -173,7 +166,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-foot button.clear{color:var(--over);border-color:#e0b8b4;margin-right:auto;}
 
 @media print{
-  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,.reviewer-panel,.asof-bar,.netpos-toggle,.netpos-manual,.formula-ref,#toasts,#tt{display:none!important;}
+  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.inv-ovr-btn,.lock-banner .actions,.reviewer-panel,.asof-bar,.formula-ref,#toasts,#tt{display:none!important;}
   body{background:#fff;}
   #printHeader{display:block!important;margin-bottom:16px;}
   #printHeader h1{font-family:'Swear Text',serif;font-size:20px;margin-bottom:4px;}
@@ -245,7 +238,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <div class="ovr-panel">
     <h3 id="ovrTitle"></h3>
     <div class="sub" id="ovrSub"></div>
-    <label for="ovrPct">Percent complete (overrides the formula)</label>
+    <label for="ovrPct" id="ovrFieldLabel">Percent complete (overrides the formula)</label>
     <input type="number" id="ovrPct" min="0" max="100" step="1">
     <label for="ovrNote">Why (shows on hover)</label>
     <textarea id="ovrNote" placeholder="e.g. Substantially complete but windows are on backorder — not yet earned."></textarea>
@@ -267,7 +260,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v13';
+const CORE_VERSION='v14';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -296,8 +289,6 @@ const INCLUDED_STAGES=/^(da signed|ca signed)$/i;
 let PROJECTS=[];   // {spId, name, clientName, stage, contract, constr:{startWeek,durWeeks}|null}
 let INV=null;      // {rows:[{job,price,date}], byJob:Map, file, modified, exportedOn, folderUrl, error}
 let OVERRIDES={};  // spId -> {pct, note, setBy, setAt}
-let NETPOS_OVERRIDE=null;  // {value, setBy, setAt} — value is signed dollars, same sign convention as gap (>=0 = over)
-let NETPOS_FORM_OPEN=false;  // whether the manual-entry form is expanded, independent of whether it's actually saved
 let LOCK=null;     // existing lock record for the current period, or null
 let VIEW_LOCK=false;   // true while showing the locked snapshot instead of live numbers
 function startOfToday(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
@@ -419,15 +410,33 @@ function initAsOfControl(){
 
 // ── Override modal ──
 let _ovrSpId=null;
-function openOverrideModal(spId){
+// One modal, two kinds: 'pct' (the existing % Complete override) and 'invoiced'
+// (a manual invoiced amount, for when a bad BuilderTrend match inflates a
+// project's total — see the invoiced-vs-contract error check in computeRow).
+let _ovrKind='pct';
+function openOverrideModal(spId,kind){
   if(!isToday()) return;   // overrides aren't date-scoped — only meaningful while viewing today
   const row=(window._wipRows||[]).find(r=>r.p.spId===spId); if(!row) return;
-  _ovrSpId=spId;
+  _ovrSpId=spId; _ovrKind=kind||'pct';
   document.getElementById('ovrTitle').textContent=row.p.name;
-  document.getElementById('ovrSub').textContent=row.calc.pct==null?'No automatic % yet — set one by hand.':'Currently calculated at '+fmtPct(row.calc.pct)+'.';
-  const existing=OVERRIDES[spId];
-  document.getElementById('ovrPct').value=existing?Math.round(existing.pct*100):(row.calc.pct!=null?Math.round(row.calc.pct*100):'');
-  document.getElementById('ovrNote').value=existing?existing.note:'';
+  const label=document.getElementById('ovrFieldLabel'), input=document.getElementById('ovrPct');
+  if(_ovrKind==='invoiced'){
+    document.getElementById('ovrSub').textContent=row.calc.invoiced==null?'No BuilderTrend match yet.':'Currently matched at '+fmt$(row.calc.invoiced)+'.';
+    label.textContent='Invoiced amount (overrides the BuilderTrend match)';
+    input.removeAttribute('max'); input.step='1';
+    const existing=INV_OVERRIDES[spId];
+    input.value=existing?Math.round(existing.amount):(row.calc.invoiced!=null?Math.round(row.calc.invoiced):'');
+    document.getElementById('ovrNote').value=existing?existing.note:'';
+    document.getElementById('ovrNote').placeholder='e.g. BT match pulled in an unrelated job — corrected to the real invoiced total.';
+  }else{
+    document.getElementById('ovrSub').textContent=row.calc.pct==null?'No automatic % yet — set one by hand.':'Currently calculated at '+fmtPct(row.calc.pct)+'.';
+    label.textContent='Percent complete (overrides the formula)';
+    input.max='100'; input.step='1';
+    const existing=OVERRIDES[spId];
+    input.value=existing?Math.round(existing.pct*100):(row.calc.pct!=null?Math.round(row.calc.pct*100):'');
+    document.getElementById('ovrNote').value=existing?existing.note:'';
+    document.getElementById('ovrNote').placeholder='e.g. Substantially complete but windows are on backorder — not yet earned.';
+  }
   document.getElementById('ovrOverlay').classList.add('open');
 }
 function closeOverrideModal(){ document.getElementById('ovrOverlay').classList.remove('open'); _ovrSpId=null; }
@@ -435,19 +444,29 @@ document.getElementById('ovrCancelBtn').addEventListener('click',closeOverrideMo
 document.getElementById('ovrOverlay').addEventListener('click',e=>{ if(e.target.id==='ovrOverlay') closeOverrideModal(); });
 document.getElementById('ovrSaveBtn').addEventListener('click',async()=>{
   if(!_ovrSpId) return;
-  const raw=document.getElementById('ovrPct').value;
-  const pct=Math.max(0,Math.min(100,parseFloat(raw)))/100;
-  if(raw===''||isNaN(pct)){ toast('Enter a percent from 0–100','err'); return; }
+  const spId=_ovrSpId, raw=document.getElementById('ovrPct').value;
   const note=document.getElementById('ovrNote').value.trim();
-  const spId=_ovrSpId;
-  try{ await saveOverride(spId,pct,note); toast('Override saved','ok'); closeOverrideModal(); renderAll(); }
-  catch(e){ toast('Could not save override: '+(e.message||e),'err'); }
+  try{
+    if(_ovrKind==='invoiced'){
+      const amt=parseFloat(raw);
+      if(raw===''||isNaN(amt)||amt<0){ toast('Enter a valid invoiced amount','err'); return; }
+      await saveInvOverride(spId,amt,note); toast('Invoiced amount saved','ok');
+    }else{
+      const pct=Math.max(0,Math.min(100,parseFloat(raw)))/100;
+      if(raw===''||isNaN(pct)){ toast('Enter a percent from 0–100','err'); return; }
+      await saveOverride(spId,pct,note); toast('Override saved','ok');
+    }
+    closeOverrideModal(); renderAll();
+  }catch(e){ toast('Could not save: '+(e.message||e),'err'); }
 });
 document.getElementById('ovrClearBtn').addEventListener('click',async()=>{
   if(!_ovrSpId) return;
   const spId=_ovrSpId;
-  try{ await clearOverride(spId); toast('Override cleared','ok'); closeOverrideModal(); renderAll(); }
-  catch(e){ toast('Could not clear override: '+(e.message||e),'err'); }
+  try{
+    if(_ovrKind==='invoiced'){ await clearInvOverride(spId); toast('Invoiced override cleared','ok'); }
+    else{ await clearOverride(spId); toast('Override cleared','ok'); }
+    closeOverrideModal(); renderAll();
+  }catch(e){ toast('Could not clear: '+(e.message||e),'err'); }
 });
 
 // ── Lock the viewed month — each reviewer's own button, only usable by them, and only
@@ -745,34 +764,37 @@ async function clearOverride(spId){
   await cfgSet('wip_overrides',JSON.stringify(OVERRIDES));
 }
 
-// ── Net Position manual override — the same "a human overrides the math" pattern as
-// per-project % overrides, but for the single portfolio-level total dollar figure.
-// Stored value carries the same sign convention as computed gap (>=0 = over). ──
-async function loadNetPosOverride(){
-  try{ const row=await cfgGet('wip_netpos_override'); NETPOS_OVERRIDE=row&&row.value?JSON.parse(row.value):null; }
-  catch(e){ console.warn('[wip] net position override load failed:',e); NETPOS_OVERRIDE=null; }
-  NETPOS_FORM_OPEN=!!NETPOS_OVERRIDE;
+// ── Per-project invoiced overrides — same shape as the % overrides above, but for
+// the Invoiced figure itself. This is the fix side of the invoiced-vs-contract
+// error check below: when a bad BuilderTrend match inflates a project's invoiced
+// total, this replaces it rather than fudging the portfolio-level Net Position. ──
+let INV_OVERRIDES={};  // spId -> {amount, note, setBy, setAt}
+async function loadInvOverrides(){
+  try{ const row=await cfgGet('wip_invoiced_overrides'); INV_OVERRIDES=row&&row.value?JSON.parse(row.value):{}; }
+  catch(e){ console.warn('[wip] invoiced overrides load failed:',e); INV_OVERRIDES={}; }
 }
-async function saveNetPosOverride(amount,sign){
+async function saveInvOverride(spId,amount,note){
   const acct=SherpaAuth.getAccount();
-  const value=sign==='under'?-Math.abs(amount):Math.abs(amount);
-  NETPOS_OVERRIDE={value,setBy:(acct&&(acct.name||acct.username))||'Unknown',setAt:new Date().toISOString()};
-  await cfgSet('wip_netpos_override',JSON.stringify(NETPOS_OVERRIDE));
+  INV_OVERRIDES[spId]={amount,note:note||'',setBy:(acct&&(acct.name||acct.username))||'Unknown',setAt:new Date().toISOString()};
+  await cfgSet('wip_invoiced_overrides',JSON.stringify(INV_OVERRIDES));
 }
-async function clearNetPosOverride(){
-  NETPOS_OVERRIDE=null;
-  await cfgSet('wip_netpos_override',JSON.stringify(null));
+async function clearInvOverride(spId){
+  delete INV_OVERRIDES[spId];
+  await cfgSet('wip_invoiced_overrides',JSON.stringify(INV_OVERRIDES));
 }
-// {computed, manual, value, override} — value is whichever of computed/override is active.
+// Sum of invoiced minus sum of earned across the given rows — null if nothing's
+// matched to BuilderTrend yet. Rows already reflect any per-project invoiced
+// overrides, so this needs no override logic of its own.
 function computeNetPosition(rows){
-  const withNums=rows.filter(r=>r.calc.earned!=null);
   const invoicedRows=rows.filter(r=>r.calc.invoiced!=null);
   const invoicedSum=invoicedRows.reduce((s,r)=>s+r.calc.invoiced,0);
-  const earnedSum=withNums.reduce((s,r)=>s+(r.calc.earned||0),0);
-  const computed=invoicedRows.length?invoicedSum-earnedSum:null;
-  const manual=!!NETPOS_OVERRIDE;
-  return {computed,manual,value:manual?NETPOS_OVERRIDE.value:computed,override:NETPOS_OVERRIDE};
+  const earnedSum=rows.filter(r=>r.calc.earned!=null).reduce((s,r)=>s+(r.calc.earned||0),0);
+  return invoicedRows.length?invoicedSum-earnedSum:null;
 }
+// A finalized snapshot saved while Net Position briefly had its own manual
+// override (v10–v13) stored an {computed,manual,value,override} object instead
+// of a plain number — unwrap it so old locked months still render.
+function netPosValueOf(np){ return (np&&typeof np==='object')?np.value:np; }
 
 // ── Monthly lock — a named slot for each of the two reviewers, not a generic
 // "whoever's signed in" signature. A deliberate, human-triggered permanent
@@ -807,7 +829,7 @@ async function addReview(reviewerKey,rows){
   const who=identity();
   const snapshot={
     by:who.name, byEmail:who.email, at:new Date().toISOString(), asOf:fmtInputDate(AS_OF),
-    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,phase:r.calc.phase,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden})),
+    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,phase:r.calc.phase,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden,invoicedOverridden:r.calc.invoicedOverridden})),
     netPosition:computeNetPosition(rows)
   };
   const cur=(LOCK&&LOCK.period===viewPeriod())?LOCK:{period:viewPeriod(),periodLabel:viewPeriodLabel(),reviews:{},finalized:false,finalizedAt:null};
@@ -896,9 +918,13 @@ function projectPhase(p,atWeek){
 //                  progress (elapsed weeks ÷ construction duration).
 // A schedule-less Construction phase (Pre-Con ended, but no Construction phase
 // found in the Gantt) earns the deposit only — same "no schedule" flag as before.
-function computeRow(p,matchedEntry,override){
-  const invoiced = matchedEntry ? matchedEntry.total : null;
+// A separate invoiced override (invOverride) replaces the BuilderTrend-matched
+// total outright, before any of the above runs — for a bad match inflating a
+// project's number, not for the earned-income formula itself.
+function computeRow(p,matchedEntry,override,invOverride){
+  let invoiced = matchedEntry ? matchedEntry.total : null;
   const weakMatch = matchedEntry ? matchedEntry.weak : false;
+  if(invOverride) invoiced = invOverride.amount;
   const phase=projectPhase(p,weekAsOf());
   let pct=null,earned=null,noSchedule=false;
   if(override){
@@ -919,7 +945,9 @@ function computeRow(p,matchedEntry,override){
     if(p.contract) earned=p.contract*(DEPOSIT_SHARE+REMAINING_SHARE*pct);
   }
   const gap=(earned!=null&&invoiced!=null)?invoiced-earned:null;
-  return {pct,earned,invoiced,weakMatch,gap,overridden:!!override,override:override||null,phase,noSchedule};
+  const overInvoiced=!!(invoiced!=null&&p.contract&&invoiced>p.contract);
+  return {pct,earned,invoiced,weakMatch,gap,overridden:!!override,override:override||null,phase,noSchedule,
+    invoicedOverridden:!!invOverride,invOverride:invOverride||null,overInvoiced};
 }
 
 // ════════════════════════════════════ RENDER
@@ -940,49 +968,11 @@ function renderSource(){
     (INV.exportedOn?' &middot; report says it was exported '+esc(INV.exportedOn):'')+
     '.<br>To refresh: <b>'+esc(INV_HOWTO)+'</b> &rarr; save as <code>Invoices_MM_DD_YYYY.xls</code> &rarr; drop it in the folder above.</div>';
 }
-function renderNetPosCardHtml(np,fromLock){
-  const gap=np.value;
-  const cls=gap==null?'':(gap>=0?'pos':'neg');
-  const val=gap==null?'—':fmt$(Math.abs(gap))+(gap>=0?' over':' under');
-  const manualFlag=np.manual?' <span class="flag" data-tip="Manually set" data-tip-d="This figure was entered by hand instead of calculated from the rows above — set by '+esc((np.override&&np.override.setBy)||'')+'.">manual</span>':'';
-  const sub=gap==null?'awaiting invoice match':(np.manual?'manually entered':(gap>=0?'billed ahead of earned work':'work earned, not yet billed'));
-  const open=!fromLock&&NETPOS_FORM_OPEN;
-  const toggle=fromLock?'':'<label class="netpos-toggle" data-tip="Manual entry" data-tip-d="Override the calculated figure with an amount entered by hand.">'+
-    '<input type="checkbox" id="netposManualChk"'+(open?' checked':'')+'> Manual entry</label>';
-  const manualForm=open?
-    '<div class="netpos-manual" id="netposManualForm">'+
-      '<input type="number" min="0" step="1" id="netposAmount" placeholder="Amount" value="'+(np.override?Math.round(Math.abs(np.override.value)):'')+'">'+
-      '<select id="netposSign"><option value="over"'+(np.override&&np.override.value>=0?' selected':'')+'>over</option>'+
-      '<option value="under"'+(np.override&&np.override.value<0?' selected':'')+'>under</option></select>'+
-      '<button id="netposSaveBtn">Save</button>'+
-      '<button id="netposClearBtn" class="secondary">Use calculated</button>'+
-    '</div>':'';
-  return '<div class="card netpos-card '+cls+'"><div class="lbl">Net Position'+manualFlag+'</div><div class="val">'+val+'</div><div class="sub">'+esc(sub)+'</div>'+toggle+manualForm+'</div>';
-}
-function wireNetPosCard(rows){
-  const chk=document.getElementById('netposManualChk');
-  if(chk) chk.addEventListener('change',async()=>{
-    NETPOS_FORM_OPEN=chk.checked;
-    if(!chk.checked&&NETPOS_OVERRIDE) await clearNetPosOverride();
-    renderAll();
-  });
-  const saveBtn=document.getElementById('netposSaveBtn');
-  if(saveBtn) saveBtn.addEventListener('click',async()=>{
-    const amt=parseFloat(document.getElementById('netposAmount').value);
-    if(!isFinite(amt)||amt<0){ toast('Enter a valid amount','err'); return; }
-    const sign=document.getElementById('netposSign').value;
-    await saveNetPosOverride(amt,sign);
-    renderAll();
-  });
-  const clearBtn=document.getElementById('netposClearBtn');
-  if(clearBtn) clearBtn.addEventListener('click',async()=>{
-    NETPOS_FORM_OPEN=false;
-    if(NETPOS_OVERRIDE) await clearNetPosOverride();
-    renderAll();
-  });
-}
 // Pure — builds the cards markup without touching the DOM, so it can be reused
 // both for the live page and for the offscreen node the PDF export renders from.
+// lockedNetPos, when given (the locked-snapshot view), is the number captured at
+// lock time rather than recomputed live — see netPosValueOf for the legacy shape
+// a month locked under v10–v13's short-lived Net Position override might carry.
 function cardsHtml(rows,fromLock,lockedNetPos){
   const withNums=rows.filter(r=>r.calc.earned!=null);
   const sum=k=>withNums.reduce((s,r)=>s+(r.calc[k]||0),0);
@@ -990,19 +980,19 @@ function cardsHtml(rows,fromLock,lockedNetPos){
   const invoicedRows=rows.filter(r=>r.calc.invoiced!=null);
   const invoicedSum=invoicedRows.reduce((s,r)=>s+r.calc.invoiced,0);
   const earnedSum=sum('earned');
-  const np=fromLock?(lockedNetPos||{computed:null,manual:false,value:null,override:null}):computeNetPosition(rows);
+  const gap=fromLock?netPosValueOf(lockedNetPos):computeNetPosition(rows);
   const cards=[
     {lbl:'Contract Value in WIP',val:fmt$(contractSum),sub:rows.length+' active job'+(rows.length===1?'':'s'),cls:'navy-edge'},
     {lbl:'Earned to Date',val:fmt$(earnedSum),sub:withNums.length+' of '+rows.length+' have a % complete set',cls:'gold-edge'},
-    {lbl:'Invoiced to Date',val:invoicedRows.length?fmt$(invoicedSum):'—',sub:invoicedRows.length+' of '+rows.length+' matched to BT',cls:''}
+    {lbl:'Invoiced to Date',val:invoicedRows.length?fmt$(invoicedSum):'—',sub:invoicedRows.length+' of '+rows.length+' matched to BT',cls:''},
+    {lbl:'Net Position',val:gap==null?'—':fmt$(Math.abs(gap))+(gap>=0?' over':' under'),sub:gap==null?'awaiting invoice match':(gap>=0?'billed ahead of earned work':'work earned, not yet billed'),cls:gap==null?'':(gap>=0?'pos':'neg')}
   ];
   return cards.map(c=>
     '<div class="card '+c.cls+'"><div class="lbl">'+esc(c.lbl)+'</div><div class="val">'+c.val+'</div><div class="sub">'+esc(c.sub)+'</div></div>'
-  ).join('')+renderNetPosCardHtml(np,fromLock);
+  ).join('');
 }
 function renderCards(rows,fromLock,lockedNetPos){
   document.getElementById('cards').innerHTML=cardsHtml(rows,fromLock,lockedNetPos);
-  if(!fromLock) wireNetPosCard(rows);
 }
 // ── Column sort — click a header to sort by it, click again to flip direction.
 // Unclicked default stays the original "worst gap first" ordering. ──
@@ -1074,7 +1064,13 @@ function tableHtml(rows,fromLock){
       progress=progressBar(c.pct);
     }
     const weakBadge=c.weakMatch?' <span class="flag weak" data-tip="Weak name match" data-tip-d="Matched to BuilderTrend by a shared name fragment, not a close full-name match — worth a second look.">~</span>':'';
-    const invTxt=c.invoiced==null?'<span class="dim">no BT match</span> <span class="flag bad" data-tip="Not matched to a BuilderTrend job" data-tip-d="No job in the latest BuilderTrend invoicing export matched this project by name. Check the export, or the project name in the Pipeline.">!</span>':fmt$(c.invoiced)+weakBadge;
+    const overInvBadge=c.overInvoiced?' <span class="flag bad" data-tip="Invoiced exceeds contract value" data-tip-d="Invoiced is higher than the contract value — usually a bad BuilderTrend match pulling in another job’s invoices. Check the match, or set a manual invoiced amount using the ✎ next to this figure.">!</span>':'';
+    const invOvrBtn=(fromLock||!isToday())?'':' <button class="ovr-btn inv-ovr-btn" data-ovr-inv="'+esc(r.p.spId)+'">✎</button>';
+    const invManualFlag=c.invoicedOverridden?' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual invoiced amount, not the BuilderTrend match.">manual</span>':'';
+    const invNote=c.invOverride&&c.invOverride.note?'<span class="ovr-note" data-tip="Manual invoiced amount" data-tip-d="'+esc(c.invOverride.note)+' — set by '+esc(c.invOverride.setBy||'')+'">'+esc(c.invOverride.note.length>28?c.invOverride.note.slice(0,28)+'…':c.invOverride.note)+'</span>':'';
+    const invTxt=c.invoiced==null
+      ?'<span class="dim">no BT match</span> <span class="flag bad" data-tip="Not matched to a BuilderTrend job" data-tip-d="No job in the latest BuilderTrend invoicing export matched this project by name. Check the export, or the project name in the Pipeline.">!</span>'+invOvrBtn
+      :fmt$(c.invoiced)+weakBadge+invManualFlag+overInvBadge+invOvrBtn+invNote;
     const contractTxt=r.p.contract?fmt$(r.p.contract):'<span class="dim">—</span> <span class="flag bad" data-tip="No contract value" data-tip-d="EstimatedProjectValue is empty for this project in the Pipeline — earned revenue can’t be calculated until it’s set.">!</span>';
     h+='<tr><td>'+esc(r.p.name)+'</td><td>'+stageBadge+'</td><td>'+contractTxt+'</td><td>'+progress+'</td><td>'+fmt$(c.earned)+'</td><td>'+invTxt+'</td><td class="'+gapCls+'">'+gapTxt+'</td></tr>';
   });
@@ -1083,7 +1079,8 @@ function tableHtml(rows,fromLock){
 function renderTable(rows,fromLock){
   document.getElementById('projTbl').innerHTML=tableHtml(rows,fromLock);
   if(!fromLock){
-    document.querySelectorAll('[data-ovr]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr'))));
+    document.querySelectorAll('[data-ovr]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr'),'pct')));
+    document.querySelectorAll('[data-ovr-inv]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr-inv'),'invoiced')));
   }
   document.querySelectorAll('#projTbl th.sortable').forEach(th=>th.addEventListener('click',()=>{
     const key=th.getAttribute('data-sortkey');
@@ -1141,19 +1138,28 @@ function renderReviewerPanel(){
       +'<button class="rc-btn'+(canClick?'':' locked-out')+'" data-reviewer="'+r.key+'"'+tip+'>'+label+'</button></div>';
   }).join('');
   const note=eligible?'':'<div class="asof-lock-note">Locking is only available for today or the last day of a month — '+esc(viewPeriodLabel())+' isn’t either right now, so both buttons above are inactive. Pick the last day of the month to approve it retroactively, or switch to Today.</div>';
-  wrap.innerHTML='<div class="reviewer-panel'+(eligible?'':' disabled')+'">'+chips+'</div>'+note
+  // Always visible, like the Ryan/Joey chips — grayed out until the month is
+  // actually finalized, so the feature reads as "not available yet," not missing.
+  const pdfDone=!!(cur&&cur.finalized);
+  const pdfTip=pdfDone
+    ? ' data-tip="Save to SharePoint" data-tip-d="Generates the finalized report as a PDF and saves it as &#8216;'+esc(reportFilename(finalSnapshot(cur).asOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."'
+    : ' data-tip="Not available yet" data-tip-d="This unlocks once both Ryan and Joey have locked '+esc(viewPeriodLabel())+'."';
+  const pdfChip='<div class="reviewer-chip pdf-chip'+(pdfDone?' done':'')+'"><span class="rc-name">PDF</span>'
+    +'<span class="rc-state">'+(pdfDone?'ready to save':'not finalized yet')+'</span>'
+    +'<button class="rc-btn'+(pdfDone?'':' locked-out')+'" id="savePdfBtn"'+pdfTip+'>Save PDF to SharePoint</button></div>';
+  wrap.innerHTML='<div class="reviewer-panel'+(eligible?'':' disabled')+'">'+chips+pdfChip+'</div>'+note
     +(cur&&cur.finalized?'<div class="lock-banner">🔒 <span><b>'+esc(cur.periodLabel)+' is finalized</b> — locked by Ryan and Joey'+(finalSnapshot(cur).asOf?' (figures as of '+esc(finalSnapshot(cur).asOf)+')':'')+'. Live numbers below keep moving; the lock is the permanent record.</span>'
-      +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button>'
-      +'<button id="savePdfBtn" data-tip="Save to SharePoint" data-tip-d="Generates the finalized report as a PDF and saves it as &#8216;'+esc(reportFilename(finalSnapshot(cur).asOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'.">Save PDF to SharePoint</button></div></div>':'');
+      +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div></div>':'');
   document.querySelectorAll('[data-reviewer]').forEach(btn=>btn.addEventListener('click',()=>onReviewerLock(btn.getAttribute('data-reviewer'))));
   const vb=document.getElementById('viewLockedBtn');
   if(vb) vb.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
   const pb=document.getElementById('savePdfBtn');
   if(pb) pb.addEventListener('click',async()=>{
-    if(pb.disabled) return;
-    pb.disabled=true; const label=pb.textContent; pb.textContent='Saving…';
+    if(!cur||!cur.finalized){ toast('This unlocks once both Ryan and Joey have locked '+viewPeriodLabel()+'.','err'); return; }
+    if(pb.classList.contains('saving')) return;
+    pb.classList.add('saving'); const label=pb.textContent; pb.textContent='Saving…';
     await saveApprovedPdfToSharePoint(cur);
-    pb.disabled=false; pb.textContent=label;
+    pb.classList.remove('saving'); pb.textContent=label;
   });
 }
 function renderAll(){
@@ -1172,7 +1178,7 @@ function renderAll(){
     return;
   }
   const {matched,unmatched}=matchInvoices();
-  const rows=PROJECTS.map(p=>({p,calc:computeRow(p, INV.error?null:(matched.get(p.spId)||null), OVERRIDES[p.spId]||null)}));
+  const rows=PROJECTS.map(p=>({p,calc:computeRow(p, INV.error?null:(matched.get(p.spId)||null), OVERRIDES[p.spId]||null, INV_OVERRIDES[p.spId]||null)}));
   renderReviewerPanel();
   renderPrintHeader(false);
   renderSource();
@@ -1187,7 +1193,7 @@ async function boot(){
   document.getElementById('loadStatus').classList.remove('hidden');
   document.getElementById('main').classList.add('hidden');
   try{
-    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadNetPosOverride(), loadLock()]);
+    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadInvOverrides(), loadLock()]);
     initAsOfControl();
     renderAll();
     document.getElementById('loadStatus').classList.add('hidden');
