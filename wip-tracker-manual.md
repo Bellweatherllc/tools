@@ -141,6 +141,7 @@ Both come from the **`CORE_Projects`** list on the BWCore SharePoint site — th
 
 - **Contract value** is the `EstimatedProjectValue` field.
 - **Construction schedule** is the `Construction` phase inside `GanttData` — its start week and duration, exactly as drawn on the Pipeline's Gantt. Only used for CA-Signed jobs without an override.
+- **Matching to BuilderTrend** uses the `JobCode` and `ProjectName` fields — never `ClientName`. See *A BuilderTrend job total isn't showing up on a project*, below.
 
 ### Invoiced to date
 
@@ -176,9 +177,9 @@ Click any column header to sort by it — see *Sorting the table*, above.
 - **"No invoicing yet"** (Design-phase jobs) — Design-phase earned comes from actual invoicing, and nothing's posted for this job yet. Earned stays blank until something does, or until a manual override is set.
 - **"Pre-con"** — not a problem flag, just a label confirming the 0%/deposit-only stage: construction hasn't started, so earned reflects the deposit only until it does.
 - **"No construction schedule"** (Construction-phase jobs) — no `Construction` phase in the Gantt, so earned is showing the 30% deposit only, without the schedule-driven remainder. Fix: add the construction phase in the Pipeline, or set a manual override.
-- **"~" (weak match)** next to an invoiced figure — this job matched a BuilderTrend job code by a shared name fragment rather than a close full-name match. Worth a second look; it's shown, not hidden, so it stays checkable rather than silently guessed.
-- **"No BT match"** — nothing in the latest export matched this project by name at all. Check the *BuilderTrend jobs not matched* list further down the page.
-- **"Invoiced exceeds contract value"** — the invoiced total is higher than the project's contract value, which shouldn't happen and almost always means a bad BuilderTrend match pulled in another job's invoices (see *A project's invoiced total looks way too high*, below). Check the match against the raw export, then set a manual invoiced amount with the ✎ next to the figure to correct it — the flag clears once the number is fixed.
+- **"~" (weak match)** next to an invoiced figure — this job matched a BuilderTrend job code by a shared name fragment against Job Code or Project Name, rather than a close match on either. Worth a second look, but often just means the project's Job Code is blank or doesn't follow BuilderTrend's naming convention — it's shown, not hidden, so it stays checkable rather than silently guessed.
+- **"No BT match"** — nothing in the latest export matched this project's Job Code or Project Name at all. Check the *BuilderTrend jobs not matched* list further down the page.
+- **"Invoiced exceeds contract value"** — the invoiced total is higher than the project's contract value. This can mean a bad BuilderTrend match pulled in another job's invoices (see *A project's invoiced total looks way too high*, below), but just as often it means the contract value itself is stale — change orders are common after CA signing, and if `EstimatedProjectValue` was never updated to include them, real invoicing can legitimately outpace it. Check both before assuming the match is wrong; set a manual invoiced amount with the ✎ next to the figure only if the match itself is actually broken.
 - **"No contract value"** — `EstimatedProjectValue` is empty in the Pipeline.
 
 ## When something looks wrong
@@ -190,7 +191,7 @@ Usually a sign-in or permissions issue. Reload and sign in again. If it keeps ha
 The page looks for `1. WIP Reports & Job Costs`, then `BT_InvoicingReports_forWIPTool`, inside FINANCIAL on the Operations SharePoint site. If either's been renamed or moved, check the error message's folder path against what's actually there.
 
 **A BuilderTrend job total isn't showing up on a project.**
-First check the *BuilderTrend jobs not matched* list at the bottom of the page — the job may be sitting there under a name that didn't match closely enough. Matching tries a close full-name comparison first, then falls back to a shared name-fragment ("Lee" or "Paulino" matching even if the two systems order or format the names differently) flagged with **~**. If a job still isn't matching, the two systems' names for it have drifted further than either check can bridge — correct the name in one system to match the other, or note the mismatch to whoever maintains the BuilderTrend job codes.
+First check the *BuilderTrend jobs not matched* list at the bottom of the page — the job may be sitting there under a name that didn't match closely enough. Matching compares against a project's **Job Code** and **Project Name** in the Pipeline — never Client Name, which often carries both clients' full names ("Zoe Odenwalder & Evan Skalski") and reliably defeats a close match even when the job is obvious to a person. It tries a close comparison first, then falls back to a shared name-fragment ("Odenwalder" matching even if the rest of the text around it differs) flagged with **~**. If a job still isn't matching, check that the project's **Job Code** is actually filled in and matches BuilderTrend's own naming convention (surname plus the client's first initial, e.g. `ODENWALDERZ`) — that field exists specifically to keep this reliable, and a blank or mistyped one is the most common cause of a job landing in *unmatched* or matching only weakly.
 
 **The override pencil disappeared.**
 Check *Viewing as of* at the top — it's hidden while looking at a date other than today, by design. Click **Today** to bring it back.

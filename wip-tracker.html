@@ -260,7 +260,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v17';
+const CORE_VERSION='v18';
 // TEMP — lets Byron test the "Save PDF to SharePoint" button without a real
 // two-person lock. Flip back to false (and revert the reportFilename/
 // buildReportNode " (TEST)" markers below) once he's confirmed it works.
@@ -290,7 +290,7 @@ const INV_HOWTO='BuilderTrend → Financial → Invoice → All Jobs → Export'
 const INCLUDED_STAGES=/^(da signed|ca signed)$/i;
 
 // ════════════════════════════════════ STATE
-let PROJECTS=[];   // {spId, name, clientName, stage, contract, constr:{startWeek,durWeeks}|null}
+let PROJECTS=[];   // {spId, name, clientName, jobCode, stage, contract, constr:{startWeek,durWeeks}|null}
 let INV=null;      // {rows:[{job,price,date}], byJob:Map, file, modified, exportedOn, folderUrl, error}
 let OVERRIDES={};  // spId -> {pct, note, setBy, setAt}
 let LOCK=null;     // existing lock record for the current period, or null
@@ -531,6 +531,7 @@ async function loadProjects(){
     const stage=f.PipelineStage||'';
     const clientName=f.ClientName||f.Title||'Unnamed';
     const name=f.ProjectName||clientName;
+    const jobCode=f.JobCode||'';
     let gd=null;
     if(f.GanttData){ try{ gd=JSON.parse(f.GanttData); }catch(e){ /* bad blob — no schedule */ } }
     const isSlot=(gd&&gd.isOpenSlot)||/^Slot\b/i.test(name);
@@ -546,7 +547,7 @@ async function loadProjects(){
     const caMs=gd&&Array.isArray(gd.milestones)?gd.milestones.find(m=>m.name==='CA'):null;
     const daWeek=daMs&&daMs.week!=null?daMs.week:null;
     const caWeek=caMs&&caMs.week!=null?caMs.week:null;
-    PROJECTS.push({spId:String(item.id),name,clientName,stage,contract:parseMoney(f.EstimatedProjectValue),constr,preCon,daWeek,caWeek});
+    PROJECTS.push({spId:String(item.id),name,clientName,jobCode,stage,contract:parseMoney(f.EstimatedProjectValue),constr,preCon,daWeek,caWeek});
   });
 }
 
@@ -641,17 +642,18 @@ async function saveApprovedPdfToSharePoint(cur,isTest){
     // falls back to measuring the whole document/viewport, which is what produces
     // the oversized-canvas hang/crash the offscreen positioning above avoids.
     const w=node.offsetWidth, h=node.offsetHeight;
-    const canvas=await html2canvas(node,{scale:2,backgroundColor:'#ffffff',width:w,height:h,windowWidth:w,windowHeight:h,x:0,y:0,scrollX:0,scrollY:0});
-    // Drive jsPDF directly instead of html2pdf's auto-paginating .from().save() —
-    // that flows content across multiple pages at fixed size; a single portrait
-    // page scaled to fit is what's wanted here, so the fit math is done by hand.
-    const pdf=new window.jspdf.jsPDF({unit:'pt',format:'letter',orientation:'portrait'});
-    const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
-    const margin=24, availW=pageW-margin*2, availH=pageH-margin*2;
-    const fitScale=Math.min(availW/canvas.width,availH/canvas.height);
-    const imgW=canvas.width*fitScale, imgH=canvas.height*fitScale;
-    pdf.addImage(canvas.toDataURL('image/png'),'PNG',(pageW-imgW)/2,margin,imgW,imgH);
-    const blob=pdf.output('blob');
+    // A custom jsPDF page format sized to exactly match the content (in px units,
+    // so no unit conversion) gives a single page with everything on it — no
+    // slicing, no manual scale math — and comes out portrait since this report
+    // is always taller than it is wide. Goes through html2pdf's own top-level
+    // API rather than the html2canvas/jsPDF globals directly, which this bundle
+    // doesn't expose on window.
+    const blob=await html2pdf().set({
+      margin:0,
+      filename:'report.pdf',
+      html2canvas:{scale:2,backgroundColor:'#ffffff',width:w,height:h,windowWidth:w,windowHeight:h,x:0,y:0,scrollX:0,scrollY:0},
+      jsPDF:{unit:'px',format:[w,h],orientation:'portrait'}
+    }).from(node).outputPdf('blob');
     const filename=reportFilename(finalSnapshot(cur).asOf,isTest);
     const folder=await wipReportsFolder();
     const buf=await blob.arrayBuffer();
@@ -880,10 +882,16 @@ function buildTestCur(){
 }
 
 // ════════════════════════════════════ MATCH + COMPUTE
-// Tokens (min 4 letters) back up the whole-string match: "Lee & Paulino" vs a
-// BT job code like "LEEPAULINOL" already matches whole-string, but something
-// like "Paulino & Lee" (surnames in the other order) wouldn't — a shared
-// token still finds it, flagged as a weaker match so it stays checkable.
+// Matches on Job Code and Project Name — never Client Name. Client Name often
+// carries both clients' full names ("Zoe Odenwalder & Evan Skalski"), which
+// reliably defeats the whole-string comparison even for an obvious match, and
+// falls back to the weak token check for no reason: Job Code is a required
+// field maintained specifically to mirror BuilderTrend's own SURNAME+INITIAL
+// convention ("ODENWALDERZ"), so it's the most reliable signal by design.
+// Tokens (min 4 letters) back up the whole-string match: "Lee Paulino" as a
+// Project Name vs a BT job code like "LEEPAULINOL" already matches whole-string,
+// but something oddly ordered or with an extra description tacked on wouldn't —
+// a shared token still finds it, flagged as a weaker match so it stays checkable.
 function tokens(s){ return String(s||'').toLowerCase().replace(/\(all\)/g,'').split(/[^a-z]+/).filter(t=>t.length>=4); }
 function matchInvoices(){
   const matched=new Map();   // spId -> {total, weak}
@@ -892,7 +900,7 @@ function matchInvoices(){
     const n=normName(job);
     let best=null,bestD=99;
     PROJECTS.forEach(p=>{
-      [normName(p.clientName),normName(p.name)].forEach(cn=>{
+      [normName(p.jobCode),normName(p.name)].forEach(cn=>{
         if(!cn) return;
         const d=(cn===n)?0:(cn.startsWith(n)||n.startsWith(cn))?1:lev(cn,n);
         if(d<bestD){ bestD=d; best=p; }
@@ -909,7 +917,7 @@ function matchInvoices(){
       // Fallback: any single name token (surname, usually) shared with the job code.
       let bestLen=0;
       PROJECTS.forEach(p=>{
-        [...tokens(p.clientName),...tokens(p.name)].forEach(tok=>{
+        [...tokens(p.jobCode),...tokens(p.name)].forEach(tok=>{
           if((n.includes(tok)||tok.includes(n))&&tok.length>bestLen){ bestLen=tok.length; best=p; weak=true; }
         });
       });
