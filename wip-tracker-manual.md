@@ -16,13 +16,17 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/wip-tracker.h
 
 ### How earned revenue is calculated
 
-- **CA Signed jobs** use a formula: **20% is counted earned the moment the Construction Agreement is signed**, covering the design work that led up to it. **The remaining 80% spreads evenly across the construction schedule** already tracked in the Pipeline's Gantt — a 40-week build earns 2% of that 80% for every week that passes.
-- **DA Signed jobs** have no schedule to hook a formula onto, so they start with **no earned figure at all** until someone sets one — see *Manual % overrides*, below. This is deliberate: better an honest blank than a guessed number nobody signed off on.
-- **A manual override, when set, always wins** — see below. It replaces whichever of the above would otherwise apply.
+The formula depends on which of the three phases a project is in — see *Reading the Stage column*, just below, for exactly how those phases are defined. The same walkthrough is also built into the page itself: click **How earned income is calculated — reference & sanity check** just above the Projects table to expand it without leaving the page.
+
+- **Design** (DA signed, before CA signing) — earned is **50% of whatever's actually been invoiced so far**. Design-phase billing runs roughly 25% of the *projected* construction amount (the estimate set at DA signing) over the course of Design, paid in installments; only half of each of those payments is booked as earned, the other half is collected ahead of the work. This is new as of this revision — Design-phase jobs used to have no formula at all and needed a manual % just to show anything.
+- **Pre-Con** (CA signed, before construction starts) — earned is a flat **30% of the current contract value**: the deposit paid at CA signing. Once the *exact* construction amount is known at signing — which commonly comes in higher than the Design-phase estimate — the deposit is sized so cumulative billing reaches 30% of that final number. Progress stays at 0% for the whole Pre-Con stretch; it doesn't move until construction's first week.
+- **Construction** (the Pipeline's construction phase, start to last week) — earned is the **30% deposit (already earned) plus 70% of contract value × schedule progress**, where schedule progress is elapsed weeks ÷ construction duration, exactly the week-by-week pacing the old formula used, just against 70% of the contract instead of 80%.
+- **A manual override, when set, always wins** — see *Manual % overrides*, below. It replaces whichever of the above would otherwise apply, and works the same in every phase: earned = contract value × the percentage set by hand.
+- **Missing schedule data** (no DA/CA signing week yet, or a Construction phase that hasn't been built into the Gantt) leaves a project blank — better an honest gap than a guessed number nobody signed off on. See *Reading the flags*, below.
 
 Compare earned to what's actually been invoiced, and the difference is the number that matters:
 
-- **Invoiced more than earned** (red, "over") — the client's been billed ahead of the work.
+- **Invoiced more than earned** (red, "over") — the client's been billed ahead of the work. This is *expected* during Design, by design — half of every design payment is deliberately booked ahead of the work, so Design-phase jobs will almost always show "over."
 - **Invoiced less than earned** (green, "under") — the work is ahead of the billing.
 
 ### Reading the Stage column
@@ -60,8 +64,9 @@ Click **Today** to snap back to the live view.
 
 Click the **✎** next to any project's % Complete to set it by hand. This is for exactly the cases the formula can't handle:
 
-- **A pre-CA job** — there's no formula yet, so this is the only way to give it an earned figure.
-- **A CA-Signed job where the schedule says something the work doesn't.** Fike is the standing example: the Pipeline's construction phase reads 100% complete, but a large chunk of the work (windows) is still on backorder. Rather than drag the project's end date out to today — which would throw off its $/week average by inflating the apparent project length — set the override to what's actually true, say 90%, with a note explaining why.
+- **A project with no phase data yet** — no DA/CA signing week in the Gantt, so there's no way to place it in Design, Pre-Con, or Construction, let alone calculate a formula for it.
+- **A Design-phase job with no invoicing yet** — the 50%-of-invoiced formula has nothing to work from until something posts.
+- **A Construction-phase job where the schedule says something the work doesn't.** Fike is the standing example: the Pipeline's construction phase reads 100% complete, but a large chunk of the work (windows) is still on backorder. Rather than drag the project's end date out to today — which would throw off its $/week average by inflating the apparent project length — set the override to what's actually true, say 90%, with a note explaining why.
 
 An override replaces the formula entirely: earned becomes contract value × the percentage you set, full stop. It's marked **manual** in the table so it's never confused with a calculated figure, and its note (visible on hover) is the record of why a human overrode the math. Overrides persist until changed or cleared — they carry forward month to month rather than resetting, so update Fike's number as the real picture changes rather than re-entering it from scratch.
 
@@ -158,8 +163,8 @@ The page always reads whichever file in that folder was **most recently saved**.
 |---|---|
 | Stage | The project's current phase — Design, Pre-Con, or Construction. See *Reading the Stage column*, below. |
 | Contract Value | `EstimatedProjectValue` from the Pipeline. |
-| % Complete | The construction-schedule formula (CA-Signed only), or a manual override, or "not set." |
-| Earned | Contract Value × % Complete. Blank until a % exists. |
+| % Complete | Construction schedule progress — blank during Design (no physical schedule yet), 0% through Pre-Con, ramping during Construction — or a manual override. |
+| Earned | The phase formula's result (see *How earned revenue is calculated*, above), or a manual override. Blank if the phase can't be determined or its formula is missing an input. |
 | Invoiced | Sum of non-Draft invoices matched to this job, dated on or before the date being viewed. |
 | Gap | Invoiced − Earned. Red = billed ahead; green = work ahead of billing. |
 
@@ -167,8 +172,10 @@ Click any column header to sort by it — see *Sorting the table*, above.
 
 ### Reading the flags
 
-- **"No schedule"** (CA-Signed jobs) — no `Construction` phase in the Gantt, so earned is showing the 20%-at-signing figure only. Fix: add the construction phase in the Pipeline, or set a manual override.
-- **"Not set"** (earlier-stage jobs) — no formula applies yet and no override has been set. Click **✎** to give it one.
+- **"Not set"** — the project has no DA/CA signing week in the Gantt yet, so it can't be placed in Design, Pre-Con, or Construction at all. Fix in the Pipeline, or set a manual override.
+- **"No invoicing yet"** (Design-phase jobs) — Design-phase earned comes from actual invoicing, and nothing's posted for this job yet. Earned stays blank until something does, or until a manual override is set.
+- **"Pre-con"** — not a problem flag, just a label confirming the 0%/deposit-only stage: construction hasn't started, so earned reflects the deposit only until it does.
+- **"No construction schedule"** (Construction-phase jobs) — no `Construction` phase in the Gantt, so earned is showing the 30% deposit only, without the schedule-driven remainder. Fix: add the construction phase in the Pipeline, or set a manual override.
 - **"~" (weak match)** next to an invoiced figure — this job matched a BuilderTrend job code by a shared name fragment rather than a close full-name match. Worth a second look; it's shown, not hidden, so it stays checkable rather than silently guessed.
 - **"No BT match"** — nothing in the latest export matched this project by name at all. Check the *BuilderTrend jobs not matched* list further down the page.
 - **"No contract value"** — `EstimatedProjectValue` is empty in the Pipeline.
@@ -199,6 +206,6 @@ Check whether it's absorbing a job that isn't really its. Matching only ever att
 
 - **No profit margin or GPM.** This is a billing-pace tool, not a profitability one.
 - **No liability recognition.** It doesn't model what's owed on a job beyond the invoiced-vs-earned gap.
-- **No automatic formula before CA Signed.** See *How earned revenue is calculated*, above — that's what manual overrides are for.
+- **No formula for a project with no phase data.** See *How earned revenue is calculated*, above — that's what manual overrides are for.
 
 These are deliberate simplifications, not gaps waiting to be filled in.
