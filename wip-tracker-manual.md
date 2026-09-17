@@ -115,15 +115,18 @@ Clicking your own button again before the other person has locked just **updates
 
 A month that's never been locked always starts with both slots empty — nothing carries over from month to month.
 
-### Saving the finalized PDF to SharePoint
+### Saving a PDF to SharePoint
 
-A third chip — **PDF** — sits next to Ryan's and Joey's, always visible, the same way theirs are. It reads **"not finalized yet"** and stays grayed out until both of them have locked the month; that's deliberate, so the feature reads as "not available right now," not as something missing. Once the month is finalized, its state changes to **"ready to save"** and its button lights up.
+A third chip — **PDF** — sits next to Ryan's and Joey's, always active. There's no need to wait on a lock: a dated snapshot is useful whether or not the month has been formally approved yet, so the button always works.
 
-Click **Save PDF to SharePoint** and the page builds the finalized report as a PDF — the same figures as the locked snapshot — and saves it directly into:
+- **Month is finalized** — the chip reads **"finalized"** and clicking **Save PDF to SharePoint** saves the locked snapshot — the same figures Ryan and Joey approved.
+- **Month isn't finalized** — the chip reads **"live snapshot"** and clicking it saves the current live figures as of whatever date **Viewing as of** is set to. The PDF itself is labeled **"Live snapshot"** in its header (not "Finalized"), so anyone who opens it later can tell at a glance it wasn't an approved record — just a saved moment in time.
+
+Either way it saves to:
 
 > `Operations → FINANCIAL → 1. WIP Reports & Job Costs → WIP Reports`
 
-It's named to match the files already sitting in that folder: **`BWC WIP Report MM-DD-YY.pdf`**, dated to the month-end the reviewers locked as of (not today's date, and not the date it happened to be finalized). Saving again for the same month overwrites that same filename rather than creating a duplicate.
+Named to match the files already sitting in that folder: **`BWC WIP Report MM-DD-YY.pdf`**, dated to whichever date the PDF is actually for — the locked-as-of date for a finalized month, or the **Viewing as of** date for a live snapshot. Saving again for the same date overwrites that same filename rather than creating a duplicate — so if you want a record of a specific day, that's the date to set **Viewing as of** to before saving.
 
 This replaces printing to PDF by hand — there's no print dialog involved, and nothing is generated until you click the button. A toast confirms the save, or explains what went wrong (usually the same causes as the invoicing-export folder errors below: the folder's been renamed or moved, or the folder path under FINANCIAL doesn't match what the page expects).
 
