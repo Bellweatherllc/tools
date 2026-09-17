@@ -148,6 +148,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .lock-banner .actions{margin-left:auto;display:flex;gap:8px;}
 .lock-banner .actions button{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
 .lock-banner .actions button:hover{background:var(--bg);}
+.lock-banner .actions button:disabled{opacity:.6;cursor:wait;}
 
 /* ── Override modal ── */
 #ovrOverlay{position:fixed;inset:0;background:rgba(31,46,62,.55);z-index:800;display:none;align-items:center;justify-content:center;}
@@ -246,10 +247,11 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="lib/sherpa-auth.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v10';
+const CORE_VERSION='v11';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -528,6 +530,72 @@ async function invFindNewest(){
   if(!files.length) throw new Error('No .xls/.xlsx export found in '+INV_FOLDER_LABEL);
   files.sort((a,b)=>(b.lastModifiedDateTime||'').localeCompare(a.lastModifiedDateTime||''));
   return {file:files[0],drive,folderUrl:invFolder.webUrl};
+}
+// ── Saving the finalized PDF — same "WIP Reports" folder Ryan and Joey already
+// drop these into by hand, named to match the files already sitting there
+// (BWC WIP Report MM-DD-YY.pdf, dated to the month-end being approved). ──
+const WIP_REPORTS_FOLDER_LABEL='Operations → FINANCIAL → 1. WIP Reports & Job Costs → WIP Reports';
+let _wipReportsFolder=null;
+async function wipReportsFolder(){
+  if(_wipReportsFolder) return _wipReportsFolder;
+  const drive=await invDriveId();
+  const root=await SherpaAuth.graph(GRAPH+'/drives/'+drive+'/root?$select=id');
+  const kids1=await invChildren(drive,root.id);
+  const wipParent=kids1.find(k=>k.folder&&/^1\.\s*wip reports/i.test((k.name||'').trim()));
+  if(!wipParent) throw new Error('Folder not found under '+WIP_REPORTS_FOLDER_LABEL);
+  const kids2=await invChildren(drive,wipParent.id);
+  const reportsFolder=kids2.find(k=>k.folder&&/^wip reports$/i.test((k.name||'').trim()));
+  if(!reportsFolder) throw new Error('"WIP Reports" folder not found under '+WIP_REPORTS_FOLDER_LABEL);
+  _wipReportsFolder={id:reportsFolder.id,drive,webUrl:reportsFolder.webUrl};
+  return _wipReportsFolder;
+}
+// Matches the existing files in that folder: "BWC WIP Report MM-DD-YY.pdf", dated
+// to the month-end the reviewers locked as of (not today, not the finalize date).
+function reportFilename(asOfStr){
+  const d=new Date(asOfStr+'T00:00:00');
+  const p2=n=>String(n).padStart(2,'0');
+  return 'BWC WIP Report '+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'-'+String(d.getFullYear()).slice(-2)+'.pdf';
+}
+// Builds a standalone, offscreen copy of the finalized report (reusing the same
+// cardsHtml/tableHtml the live page renders with) for html2pdf to capture — not the
+// live DOM itself, so it renders correctly regardless of what's open on screen.
+function buildReportNode(cur){
+  const snap=finalSnapshot(cur);
+  const rows=snap.rows.map(r=>({p:r,calc:r}));
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;left:-10000px;top:0;width:960px;background:#fff;padding:28px;';
+  wrap.innerHTML=
+    '<div style="margin-bottom:16px;">'+
+      '<h1 style="font-family:\'Swear Text\',serif;font-size:20px;font-weight:500;margin:0 0 4px;">WIP — '+esc(cur.periodLabel)+' (Finalized)</h1>'+
+      '<div style="font-size:12px;color:var(--text-sec);">Finalized by Ryan and Joey — '+esc(fmtDate(snap.at))+(snap.asOf?' · figures as of '+esc(snap.asOf):'')+'</div>'+
+    '</div>'+
+    '<div class="cards">'+cardsHtml(rows,true,snap.netPosition||null)+'</div>'+
+    '<table class="tbl">'+tableHtml(rows,true)+'</table>';
+  document.body.appendChild(wrap);
+  return wrap;
+}
+async function saveApprovedPdfToSharePoint(cur){
+  let node=null;
+  try{
+    node=buildReportNode(cur);
+    const blob=await html2pdf().set({
+      margin:10,
+      filename:'report.pdf',
+      html2canvas:{scale:2,backgroundColor:'#ffffff'},
+      jsPDF:{unit:'pt',format:'letter',orientation:'landscape'}
+    }).from(node).outputPdf('blob');
+    const filename=reportFilename(finalSnapshot(cur).asOf);
+    const folder=await wipReportsFolder();
+    const buf=await blob.arrayBuffer();
+    await SherpaAuth.graph(GRAPH+'/drives/'+folder.drive+'/items/'+folder.id+':/'+encodeURIComponent(filename)+':/content',
+      {method:'PUT',headers:{'Content-Type':'application/pdf'},body:buf});
+    toast('Saved "'+filename+'" to '+WIP_REPORTS_FOLDER_LABEL,'ok');
+  }catch(e){
+    console.error('[wip] PDF save failed:',e);
+    toast('Couldn’t save the PDF: '+(e.message||e),'err');
+  }finally{
+    if(node) node.remove();
+  }
 }
 function extractExportedOn(rows){
   for(let i=0;i<Math.min(rows.length,3);i++){
@@ -853,7 +921,9 @@ function wireNetPosCard(rows){
     renderAll();
   });
 }
-function renderCards(rows,fromLock,lockedNetPos){
+// Pure — builds the cards markup without touching the DOM, so it can be reused
+// both for the live page and for the offscreen node the PDF export renders from.
+function cardsHtml(rows,fromLock,lockedNetPos){
   const withNums=rows.filter(r=>r.calc.earned!=null);
   const sum=k=>withNums.reduce((s,r)=>s+(r.calc[k]||0),0);
   const contractSum=rows.reduce((s,r)=>s+(r.p.contract||0),0);
@@ -866,9 +936,12 @@ function renderCards(rows,fromLock,lockedNetPos){
     {lbl:'Earned to Date',val:fmt$(earnedSum),sub:withNums.length+' of '+rows.length+' have a % complete set',cls:'gold-edge'},
     {lbl:'Invoiced to Date',val:invoicedRows.length?fmt$(invoicedSum):'—',sub:invoicedRows.length+' of '+rows.length+' matched to BT',cls:''}
   ];
-  document.getElementById('cards').innerHTML=cards.map(c=>
+  return cards.map(c=>
     '<div class="card '+c.cls+'"><div class="lbl">'+esc(c.lbl)+'</div><div class="val">'+c.val+'</div><div class="sub">'+esc(c.sub)+'</div></div>'
   ).join('')+renderNetPosCardHtml(np,fromLock);
+}
+function renderCards(rows,fromLock,lockedNetPos){
+  document.getElementById('cards').innerHTML=cardsHtml(rows,fromLock,lockedNetPos);
   if(!fromLock) wireNetPosCard(rows);
 }
 // ── Column sort — click a header to sort by it, click again to flip direction.
@@ -904,7 +977,9 @@ function sortRows(rows){
     return dir*(av-bv);
   });
 }
-function renderTable(rows,fromLock){
+// Pure — builds the header + row markup without touching the DOM, so it can be
+// reused both for the live page and for the offscreen node the PDF export renders from.
+function tableHtml(rows,fromLock){
   let h='<tr>'+SORT_COLUMNS.map(c=>{
     const active=SORT.key===c.key;
     const arrow=active?(SORT.dir==='asc'?' ▲':' ▼'):'';
@@ -930,7 +1005,10 @@ function renderTable(rows,fromLock){
     const contractTxt=r.p.contract?fmt$(r.p.contract):'<span class="dim">—</span> <span class="flag bad" data-tip="No contract value" data-tip-d="EstimatedProjectValue is empty for this project in the Pipeline — earned revenue can’t be calculated until it’s set.">!</span>';
     h+='<tr><td>'+esc(r.p.name)+'</td><td>'+stageBadge+'</td><td>'+contractTxt+'</td><td>'+progress+'</td><td>'+fmt$(c.earned)+'</td><td>'+invTxt+'</td><td class="'+gapCls+'">'+gapTxt+'</td></tr>';
   });
-  document.getElementById('projTbl').innerHTML=h;
+  return h;
+}
+function renderTable(rows,fromLock){
+  document.getElementById('projTbl').innerHTML=tableHtml(rows,fromLock);
   if(!fromLock){
     document.querySelectorAll('[data-ovr]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr'))));
   }
@@ -992,10 +1070,18 @@ function renderReviewerPanel(){
   const note=eligible?'':'<div class="asof-lock-note">Locking is only available for today or the last day of a month — '+esc(viewPeriodLabel())+' isn’t either right now, so both buttons above are inactive. Pick the last day of the month to approve it retroactively, or switch to Today.</div>';
   wrap.innerHTML='<div class="reviewer-panel'+(eligible?'':' disabled')+'">'+chips+'</div>'+note
     +(cur&&cur.finalized?'<div class="lock-banner">🔒 <span><b>'+esc(cur.periodLabel)+' is finalized</b> — locked by Ryan and Joey'+(finalSnapshot(cur).asOf?' (figures as of '+esc(finalSnapshot(cur).asOf)+')':'')+'. Live numbers below keep moving; the lock is the permanent record.</span>'
-      +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div></div>':'');
+      +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button>'
+      +'<button id="savePdfBtn" data-tip="Save to SharePoint" data-tip-d="Generates the finalized report as a PDF and saves it as &#8216;'+esc(reportFilename(finalSnapshot(cur).asOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'.">Save PDF to SharePoint</button></div></div>':'');
   document.querySelectorAll('[data-reviewer]').forEach(btn=>btn.addEventListener('click',()=>onReviewerLock(btn.getAttribute('data-reviewer'))));
   const vb=document.getElementById('viewLockedBtn');
   if(vb) vb.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
+  const pb=document.getElementById('savePdfBtn');
+  if(pb) pb.addEventListener('click',async()=>{
+    if(pb.disabled) return;
+    pb.disabled=true; const label=pb.textContent; pb.textContent='Saving…';
+    await saveApprovedPdfToSharePoint(cur);
+    pb.disabled=false; pb.textContent=label;
+  });
 }
 function renderAll(){
   renderAsOfBar();
