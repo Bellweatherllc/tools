@@ -260,7 +260,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v16';
+const CORE_VERSION='v17';
 // TEMP — lets Byron test the "Save PDF to SharePoint" button without a real
 // two-person lock. Flip back to false (and revert the reportFilename/
 // buildReportNode " (TEST)" markers below) once he's confirmed it works.
@@ -641,12 +641,17 @@ async function saveApprovedPdfToSharePoint(cur,isTest){
     // falls back to measuring the whole document/viewport, which is what produces
     // the oversized-canvas hang/crash the offscreen positioning above avoids.
     const w=node.offsetWidth, h=node.offsetHeight;
-    const blob=await html2pdf().set({
-      margin:10,
-      filename:'report.pdf',
-      html2canvas:{scale:2,backgroundColor:'#ffffff',width:w,height:h,windowWidth:w,windowHeight:h,x:0,y:0,scrollX:0,scrollY:0},
-      jsPDF:{unit:'pt',format:'letter',orientation:'landscape'}
-    }).from(node).outputPdf('blob');
+    const canvas=await html2canvas(node,{scale:2,backgroundColor:'#ffffff',width:w,height:h,windowWidth:w,windowHeight:h,x:0,y:0,scrollX:0,scrollY:0});
+    // Drive jsPDF directly instead of html2pdf's auto-paginating .from().save() —
+    // that flows content across multiple pages at fixed size; a single portrait
+    // page scaled to fit is what's wanted here, so the fit math is done by hand.
+    const pdf=new window.jspdf.jsPDF({unit:'pt',format:'letter',orientation:'portrait'});
+    const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
+    const margin=24, availW=pageW-margin*2, availH=pageH-margin*2;
+    const fitScale=Math.min(availW/canvas.width,availH/canvas.height);
+    const imgW=canvas.width*fitScale, imgH=canvas.height*fitScale;
+    pdf.addImage(canvas.toDataURL('image/png'),'PNG',(pageW-imgW)/2,margin,imgW,imgH);
+    const blob=pdf.output('blob');
     const filename=reportFilename(finalSnapshot(cur).asOf,isTest);
     const folder=await wipReportsFolder();
     const buf=await blob.arrayBuffer();
