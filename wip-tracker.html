@@ -260,7 +260,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v15';
+const CORE_VERSION='v16';
 // TEMP — lets Byron test the "Save PDF to SharePoint" button without a real
 // two-person lock. Flip back to false (and revert the reportFilename/
 // buildReportNode " (TEST)" markers below) once he's confirmed it works.
@@ -617,7 +617,12 @@ function buildReportNode(cur,isTest){
   const snap=finalSnapshot(cur);
   const rows=snap.rows.map(r=>({p:r,calc:r}));
   const wrap=document.createElement('div');
-  wrap.style.cssText='position:fixed;left:-10000px;top:0;width:960px;background:#fff;padding:28px;';
+  // Sitting far off-screen (e.g. left:-10000px) makes html2canvas try to size its
+  // capture canvas around the whole document's bounds instead of just this node —
+  // on a page this size that canvas allocation can hang or crash the tab, leaving
+  // it blank. Keeping it at (0,0), behind the page's own opaque background via a
+  // negative z-index, hides it just as effectively without blowing up the canvas.
+  wrap.style.cssText='position:absolute;top:0;left:0;width:960px;background:#fff;padding:28px;z-index:-9999;';
   wrap.innerHTML=
     '<div style="margin-bottom:16px;">'+
       '<h1 style="font-family:\'Swear Text\',serif;font-size:20px;font-weight:500;margin:0 0 4px;">WIP — '+esc(cur.periodLabel)+(isTest?' (TEST — not a real lock)':' (Finalized)')+'</h1>'+
@@ -632,10 +637,14 @@ async function saveApprovedPdfToSharePoint(cur,isTest){
   let node=null;
   try{
     node=buildReportNode(cur,isTest);
+    // Pin the capture to exactly this node's own box — without this, html2canvas
+    // falls back to measuring the whole document/viewport, which is what produces
+    // the oversized-canvas hang/crash the offscreen positioning above avoids.
+    const w=node.offsetWidth, h=node.offsetHeight;
     const blob=await html2pdf().set({
       margin:10,
       filename:'report.pdf',
-      html2canvas:{scale:2,backgroundColor:'#ffffff'},
+      html2canvas:{scale:2,backgroundColor:'#ffffff',width:w,height:h,windowWidth:w,windowHeight:h,x:0,y:0,scrollX:0,scrollY:0},
       jsPDF:{unit:'pt',format:'letter',orientation:'landscape'}
     }).from(node).outputPdf('blob');
     const filename=reportFilename(finalSnapshot(cur).asOf,isTest);
