@@ -98,6 +98,16 @@ Clicking your own button again before the other person has locked just **updates
 
 A month that's never been locked always starts with both slots empty — nothing carries over from month to month.
 
+### Saving the finalized PDF to SharePoint
+
+Once a month is finalized, a **Save PDF to SharePoint** button appears next to **View locked figures** in the finalized banner. Click it and the page builds the finalized report as a PDF — the same figures as the locked snapshot — and saves it directly into:
+
+> `Operations → FINANCIAL → 1. WIP Reports & Job Costs → WIP Reports`
+
+It's named to match the files already sitting in that folder: **`BWC WIP Report MM-DD-YY.pdf`**, dated to the month-end the reviewers locked as of (not today's date, and not the date it happened to be finalized). Saving again for the same month overwrites that same filename rather than creating a duplicate.
+
+This replaces printing to PDF by hand — there's no print dialog involved, and nothing is generated until you click the button. A toast confirms the save, or explains what went wrong (usually the same causes as the invoicing-export folder errors below: the folder's been renamed or moved, or the folder path under FINANCIAL doesn't match what the page expects).
+
 Locks are stored in `CORE_Config`, one row per month (key `wip_lock_YYYY-MM`, holding both reviewers' snapshots by name and the date each was locked as of), so they don't compete for space with anything else and there's no limit on how many months of history accumulate.
 
 > Reviewer matching is by first name on the signed-in Microsoft account (Ryan, Joey) — if either of their accounts doesn't display that first name for some reason, their button would never enable. Worth confirming once, then it's a non-issue going forward.
