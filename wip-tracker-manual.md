@@ -60,7 +60,11 @@ This is a genuinely different calculation, not just a narrower live view — pic
 
 Click **Today** to snap back to the live view.
 
-## Manual % overrides
+## Manual overrides
+
+Two different **✎** buttons let a human override the math — one for % Complete (and therefore Earned), one for Invoiced. They're separate because they fix separate problems: the % Complete override is for when the *formula* doesn't apply or doesn't match reality; the Invoiced override is for when the *BuilderTrend match* is wrong. Overriding one never touches the other.
+
+### % Complete
 
 Click the **✎** next to any project's % Complete to set it by hand. This is for exactly the cases the formula can't handle:
 
@@ -72,6 +76,14 @@ An override replaces the formula entirely: earned becomes contract value × the 
 
 Overrides are stored in **`CORE_Config`** (key `wip_overrides`) — the same shared list the Pipeline already uses for things like its OPS cash-flow scenarios. No SharePoint schema change was needed to add this.
 
+### Invoiced amount
+
+Click the **✎** next to any project's Invoiced figure to replace it with a number you enter by hand. This is the fix for a bad BuilderTrend match — most often the exact problem the **invoiced-exceeds-contract** flag catches (see *Reading the flags*, below): a short or common job name absorbs another project's invoices and inflates the total. Rather than let a wrong number sit in the portfolio total, correct it at the project where it's actually wrong.
+
+A manual invoiced amount is marked **manual** in the table, replaces the BuilderTrend-matched total everywhere that figure is used (Gap, and — during Design — the 50%-of-invoiced earned calculation), and flows straight into the **Net Position** card, which is just the sum of every row's Invoiced minus Earned. There's no separate override for Net Position itself; fixing the project-level number is what fixes the portfolio total.
+
+Like % Complete overrides, this persists until changed or cleared and is stored in **`CORE_Config`** (key `wip_invoiced_overrides`).
+
 ## Sorting the table
 
 Click any column header — **Project, Stage, Contract Value, % Complete, Earned, Invoiced, Gap** — to sort the table by that column. Click it again to flip between ascending and descending; an arrow (▲/▼) on the header shows which one is active.
@@ -79,20 +91,6 @@ Click any column header — **Project, Stage, Contract Value, % Complete, Earned
 Before you click anything, the table opens in its original order: worst gap first, regardless of over or under. That's still the most useful default for a quick scan, so it's not a "sort," it's just how the page starts — there's no arrow on any header until you pick one.
 
 Sorting is view-only. It doesn't change what's calculated, what's saved, or what a lock records — it just changes the order rows are listed in on your screen.
-
-## Overriding the Net Position figure
-
-The **Net Position** card at the top — the one dollar figure that says how far the portfolio as a whole is billed ahead of or behind its work — is normally calculated from every row in the table below it. Occasionally that's not the number you want to report: a known adjustment hasn't hit the underlying rows yet, or you want to publish a reconciled figure while the details get sorted out.
-
-Check **Manual entry** under the card to reveal an amount field and an **over/under** dropdown. Enter the figure, pick over or under, and click **Save** — the card immediately shows your number instead of the calculated one, marked **manual**. Click **Use calculated** (or uncheck the box) to drop the override and go back to the live calculation.
-
-Like project overrides, this is stored in **`CORE_Config`** (key `wip_netpos_override`) and persists until changed or cleared — it doesn't reset itself month to month.
-
-**A manual Net Position figure doesn't hide the math underneath.** The individual project rows, and the Contract Value / Earned / Invoiced cards next to it, keep showing the real calculated numbers regardless — only the Net Position card itself reflects the override.
-
-**Locking freezes whichever figure was showing at the time.** If Net Position was on manual entry when Ryan or Joey locked the month, that manual figure — not a live recalculation — is what's baked into the permanent record and the PDF. A later change to the override (or clearing it) doesn't touch an already-finalized month.
-
-**Available any time you're on the live view** — unlike project % overrides, this isn't restricted to today's date, since it's a reporting adjustment rather than a schedule-dependent calculation. It's not shown at all while viewing a finalized locked snapshot, since that view is already frozen.
 
 ## Locking the month — Ryan's button, Joey's button
 
@@ -119,7 +117,9 @@ A month that's never been locked always starts with both slots empty — nothing
 
 ### Saving the finalized PDF to SharePoint
 
-Once a month is finalized, a **Save PDF to SharePoint** button appears next to **View locked figures** in the finalized banner. Click it and the page builds the finalized report as a PDF — the same figures as the locked snapshot — and saves it directly into:
+A third chip — **PDF** — sits next to Ryan's and Joey's, always visible, the same way theirs are. It reads **"not finalized yet"** and stays grayed out until both of them have locked the month; that's deliberate, so the feature reads as "not available right now," not as something missing. Once the month is finalized, its state changes to **"ready to save"** and its button lights up.
+
+Click **Save PDF to SharePoint** and the page builds the finalized report as a PDF — the same figures as the locked snapshot — and saves it directly into:
 
 > `Operations → FINANCIAL → 1. WIP Reports & Job Costs → WIP Reports`
 
@@ -178,6 +178,7 @@ Click any column header to sort by it — see *Sorting the table*, above.
 - **"No construction schedule"** (Construction-phase jobs) — no `Construction` phase in the Gantt, so earned is showing the 30% deposit only, without the schedule-driven remainder. Fix: add the construction phase in the Pipeline, or set a manual override.
 - **"~" (weak match)** next to an invoiced figure — this job matched a BuilderTrend job code by a shared name fragment rather than a close full-name match. Worth a second look; it's shown, not hidden, so it stays checkable rather than silently guessed.
 - **"No BT match"** — nothing in the latest export matched this project by name at all. Check the *BuilderTrend jobs not matched* list further down the page.
+- **"Invoiced exceeds contract value"** — the invoiced total is higher than the project's contract value, which shouldn't happen and almost always means a bad BuilderTrend match pulled in another job's invoices (see *A project's invoiced total looks way too high*, below). Check the match against the raw export, then set a manual invoiced amount with the ✎ next to the figure to correct it — the flag clears once the number is fixed.
 - **"No contract value"** — `EstimatedProjectValue` is empty in the Pipeline.
 
 ## When something looks wrong
@@ -198,7 +199,7 @@ Check *Viewing as of* at the top — it's hidden while looking at a date other t
 That's by design too, but for a narrower reason than the override pencil: locking only works for today or the last day of a month. Check *Viewing as of* — if it's set to a mid-month date, jump to that month's last day (or click **Today**) to make the buttons active again.
 
 **A project's invoiced total looks way too high.**
-Check whether it's absorbing a job that isn't really its. Matching only ever attaches a BuilderTrend job to the single closest project — it should never invent a match out of nothing, so if a job's real project isn't showing up (often because that project isn't `DA Signed`/`CA Signed` right now, or its name has drifted), that job's total belongs in the *unmatched* list, not silently parked on whichever open project happened to look closest. If a project's number seems inflated, it's worth cross-checking against the raw BuilderTrend export directly for that job's actual code.
+Check whether it's absorbing a job that isn't really its. Matching only ever attaches a BuilderTrend job to the single closest project — it should never invent a match out of nothing, so if a job's real project isn't showing up (often because that project isn't `DA Signed`/`CA Signed` right now, or its name has drifted), that job's total belongs in the *unmatched* list, not silently parked on whichever open project happened to look closest. If a project's number seems inflated, it's worth cross-checking against the raw BuilderTrend export directly for that job's actual code. If invoiced has actually gone past the contract value, the page will already be flagging it with **"Invoiced exceeds contract value"** — once you've confirmed the real number from the export, correct it with the ✎ next to the Invoiced figure rather than leaving the bad match in place.
 
 **Remember the invoiced figure excludes `Draft` rows** (not actually sent yet) **and anything dated after the date being viewed** — a milestone invoice pre-staged for later this month doesn't count yet just because BuilderTrend already shows it as sent.
 
