@@ -185,6 +185,9 @@ tr.subtotal td{font-weight:700;background:var(--bg);border-top:1px solid var(--b
 .cmt-inrow input:focus{outline:none;border-color:var(--gold);}
 .cmt-post{font-size:8.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-sec);padding:4px 10px;cursor:pointer;}
 .cmt-post:hover{border-color:var(--navy);color:var(--navy);}
+.cmt-cancel{font-size:8.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-sec);padding:4px 10px;cursor:pointer;}
+.cmt-cancel:hover{border-color:var(--err);color:var(--err);}
+.cmt-gate-notice{font-size:10.5px;font-weight:600;color:var(--err);margin:4px 0;max-width:560px;}
 .cmt-block.bud .cmt-head{color:#4a6a8a;}
 
 .tag-bud{display:inline;font-size:8px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--bud);margin-right:5px;}
@@ -374,10 +377,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v52';
+const CORE_VERSION = 'v53';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v53', date:'2026-09-17', notes:'Going over budget on a line now requires a note. If saving a line’s Budget amount would push its division’s total over that division’s Estimate, the save is held and that line’s comment box opens with an explanation of the overage — the amount only saves once a Budgeting comment is posted (or the edit is cancelled, which reverts it). A line that already has a Budgeting comment isn’t re-gated on later edits.' },
   { v:'v52', date:'2026-09-15', notes:'Fixed GPM (Estimate) and GPM (Budget): both were computing the cost ratio, not the margin. Now correctly 1 − (that ratio) for each.' },
   { v:'v51', date:'2026-09-14', notes:'Setup screen: the estimate-link status is now an actual clickable link ("open link") instead of just saying a link was found. Dropped "on the Pipeline" from both the found and not-found messages.' },
   { v:'v50', date:'2026-09-14', notes:'Fixed the Comp Escalation comment not routing to E&O: it was matched by exact cell "B9", but a comment on the label cell (or any other cell in that row) missed. Now matched by row, like everything else here. Bigger fix: any Estimating comment that lands in General estimate notes — because it isn’t tied to a division or cost code — now says which header field it’s on ("On: Comp Escalation", "On: Sale Price", etc.) instead of floating with no context. Comments already synced before this fix keep their original placement; only new syncs pick up the corrected routing.' },
@@ -1611,6 +1615,10 @@ function divBudC(d){
   let t = 0; wb.scopeRows.forEach(r => { if(r.divKey === d.key) t += r.budgetC; }); return t;
 }
 function estForDiv(d){ return (d.estCodes||[]).reduce((t,c) => t + (wb.estByCode[c] ? wb.estByCode[c].amountC : 0), 0); }
+function divByKey(key){
+  for(const g of TEMPLATE){ for(const d of g.divisions){ if(d.key === key) return d; } }
+  return null;
+}
 function deltaChip(estC, budC){
   if(!estC && !budC) return '';
   const d = estC - budC;
@@ -1744,9 +1752,12 @@ function renderWorkbook(){
           ' data-line="' + escAttr(rid) + '" data-div="' + escAttr(d.key) + '" data-label="' + escAttr(r.label) + '"' +
           ' data-src="' + (r.template ? 'Template' : 'PM') + '" onchange="toggleFixed(this)"></td></tr>';
         const addingL = wb.addingCmt === 'L:' + tk;
+        const gateNotice = (addingL && r._pendingBudgetC !== undefined)
+          ? 'This edit puts ' + divName + ' over its ' + fmtC(dEstC) + ' estimate by ' + fmtC(dBudC - dEstC) + '. Add a note to save it.'
+          : null;
         if(lc.length || addingL){
           html += '<tr class="cmt-panel"><td colspan="2">' + lc.map(cmtHtml).join('') +
-            (addingL ? cmtInputHtml('L', String(refIdx)) : '') + '</td><td class="amt"></td><td class="fx"></td></tr>';
+            (addingL ? cmtInputHtml('L', String(refIdx), { notice: gateNotice, cancelable: !!gateNotice }) : '') + '</td><td class="amt"></td><td class="fx"></td></tr>';
         }
       });
       html += '<tr class="addline"><td colspan="4">' +
@@ -1860,11 +1871,15 @@ function divCmtRows(d){
   return '<tr class="cmt-panel"><td colspan="2">' + list.map(cmtHtml).join('') +
     (adding ? cmtInputHtml('D', d.key) : '') + '</td><td class="amt"></td><td class="fx"></td></tr>';
 }
-function cmtInputHtml(kind, key){
-  return '<div class="cmt-inrow"><input type="text" id="cin-' + kind + '-' + escAttr(key) + '"' +
-    ' placeholder="Add comment \u2014 Enter to post, Esc to cancel"' +
+function cmtInputHtml(kind, key, opts){
+  opts = opts || {};
+  return (opts.notice ? '<div class="cmt-gate-notice">' + escHtml(opts.notice) + '</div>' : '') +
+    '<div class="cmt-inrow"><input type="text" id="cin-' + kind + '-' + escAttr(key) + '"' +
+    ' placeholder="' + escAttr(opts.notice ? 'Explain the overage \u2014 Enter to post & save, Esc to cancel' : 'Add comment \u2014 Enter to post, Esc to cancel') + '"' +
     ' onkeydown="cmtKey(event,\'' + kind + '\',\'' + escAttr(key) + '\')">' +
-    '<button class="cmt-post" onclick="submitCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Post</button></div>';
+    '<button class="cmt-post" onclick="submitCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Post</button>' +
+    (opts.cancelable ? '<button class="cmt-cancel" onclick="cancelCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Cancel</button>' : '') +
+    '</div>';
 }
 function startCmt(kind, key){
   wb.addingCmt = kind + ':' + key;
@@ -1872,14 +1887,32 @@ function startCmt(kind, key){
   const inp = document.querySelector('.cmt-inrow input');
   if(inp) inp.focus();
 }
+// Finds the canonical wb.scopeRows row a line ref points at, whether or not it's persisted yet.
+function rowForLineRef(ref){
+  if(!ref) return null;
+  return ref.spItemId ? wb.scopeRows.find(r => r.spItemId === ref.spItemId)
+                       : wb.scopeRows.find(r => !r.spItemId && r.divKey === ref.divKey && normName(r.label) === normName(ref.label));
+}
+function cancelCmt(kind, key){
+  if(kind === 'L'){
+    const row = rowForLineRef(wb._lineRefs[parseInt(key, 10)]);
+    if(row && row._pendingBudgetC !== undefined){
+      row.budgetC = row._pendingPrevBudgetC;
+      delete row._pendingBudgetC;
+      delete row._pendingPrevBudgetC;
+    }
+  }
+  wb.addingCmt = null;
+  renderWorkbook();
+}
 function cmtKey(e, kind, key){
   if(e.key === 'Enter'){ e.preventDefault(); submitCmt(kind, key); }
-  else if(e.key === 'Escape'){ wb.addingCmt = null; renderWorkbook(); }
+  else if(e.key === 'Escape'){ cancelCmt(kind, key); }
 }
 function submitCmt(kind, key){
   const inp = document.getElementById('cin-' + kind + '-' + key);
   const body = (inp && inp.value.trim()) || '';
-  if(!body){ wb.addingCmt = null; renderWorkbook(); return; }
+  if(!body){ cancelCmt(kind, key); return; }
   if(kind === 'D') postDivComment(key, body);
   else postLineComment(parseInt(key, 10), body);
 }
@@ -1894,7 +1927,7 @@ async function postLineComment(refIdx, body){
         Title: ref.label, ProjectKey: wb.proj, CostCode: ref.divKey, LineType:'ScopeLine',
         BudgetAmount: 0, EstimateAmount: 0, SortOrder: 500, Source: ref.src, Active: true }});
       ref.spItemId = made.id;
-      const row = wb.scopeRows.find(r => !r.spItemId && r.divKey === ref.divKey && normName(r.label) === normName(ref.label));
+      const row = rowForLineRef({ spItemId: null, divKey: ref.divKey, label: ref.label });
       if(row) row.spItemId = made.id;
       else wb.scopeRows.push({ spItemId: made.id, divKey: ref.divKey, label: ref.label, budgetC: 0, source: ref.src, sortOrder: 500 });
     }
@@ -1904,6 +1937,13 @@ async function postLineComment(refIdx, body){
       CommentDate: nowIso, Body: body, SourceGuid:'', SourceCell:'', SourceTab:'', ParentGuid:'' }});
     wb.comments.push({ spItemId: made.id, type:'Budgeting', code: ref.divKey, lineId: String(ref.spItemId),
       author: currentUser, authorEmail: currentUserEmail, when: nowIso, body, cell:'', sourceGuid:'' });
+    // A note satisfies the over-budget gate — release the amount it was holding back.
+    const row = wb.scopeRows.find(r => r.spItemId === ref.spItemId);
+    if(row && row._pendingBudgetC !== undefined){
+      delete row._pendingBudgetC;
+      delete row._pendingPrevBudgetC;
+      persistLineBudget(row);
+    }
     wb.addingCmt = null;
     renderWorkbook();
   }catch(e){ setStatus('wbStatus','Comment failed: ' + e.message,'err'); }
@@ -1935,14 +1975,9 @@ function lineInput(inp){
   const row = stateRowFor(inp);
   if(row){ row.budgetC = cents(num); renderTotals(); }
 }
-function saveLineAmount(inp){
-  if(!wb) return;
-  const num = parseAmt(inp.value);
-  if(num === null){ setStatus('wbStatus','Not a number: ' + inp.value,'err'); return; }
-  const row = stateRowFor(inp);
-  if(!row) return;
-  row.budgetC = cents(num);
-  renderTotals();
+// Writes a scope line's BudgetAmount to SharePoint. Split out of saveLineAmount so the
+// over-budget note gate (below) can defer this same write until a note lands.
+function persistLineBudget(row, inp){
   const proj = wb.proj;
   enqueueSave(async () => {
     if(row.spItemId){
@@ -1958,11 +1993,35 @@ function saveLineAmount(inp){
           BudgetAmount: fromCents(row.budgetC), EstimateAmount: 0, SortOrder: row.sortOrder,
           Source: row.source, Active: true }});
         row.spItemId = made.id;
-        inp.dataset.line = made.id;
+        if(inp) inp.dataset.line = made.id;
       }finally{ row._persisting = false; }
     }
     setStatus('wbStatus','');
   });
+}
+function saveLineAmount(inp){
+  if(!wb) return;
+  const num = parseAmt(inp.value);
+  if(num === null){ setStatus('wbStatus','Not a number: ' + inp.value,'err'); return; }
+  const row = stateRowFor(inp);
+  if(!row) return;
+  // Preserve the true last-saved value across repeated edits while a note is still pending.
+  const prevBudgetC = row._pendingBudgetC === undefined ? row.budgetC : row._pendingPrevBudgetC;
+  row.budgetC = cents(num);
+  renderTotals();
+  const d = divByKey(row.divKey);
+  const estC = d ? estForDiv(d) : 0;
+  const overBudget = estC > 0 && divBudC(d) > estC;
+  const alreadyNoted = row.spItemId ? lineComments(row.spItemId).length > 0 : false;
+  if(overBudget && !alreadyNoted){
+    row._pendingBudgetC = row.budgetC;
+    row._pendingPrevBudgetC = prevBudgetC;
+    startCmt('L', row.divKey + '||' + normName(row.label));
+    return;
+  }
+  delete row._pendingBudgetC;
+  delete row._pendingPrevBudgetC;
+  persistLineBudget(row, inp);
 }
 function toggleFixed(inp){
   if(!wb) return;
