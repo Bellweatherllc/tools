@@ -3467,7 +3467,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1121';
+const CORE_VERSION = 'v1122';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -8231,7 +8231,7 @@ function initDrag(){
       const _prodScopedMs=!!(_msProj&&_msProj.grouped!==false&&msEl.dataset.msN==='CA'&&msEl.closest('.section[data-s-type="production"]'));
       const _msGrouped=(!_msProj||_msProj.grouped!==false)&&!_prodScopedMs;
       const _msSel=_msGrouped?SELECTED_PROJ_ID===_msProjId:SELECTED_ELEM_ID===_msId;
-      if(!_msSel&&!e.altKey) selectElem(_msProjId,_msId); // select on first touch; fall through to arm drag
+      if(!_msSel&&!e.altKey) selectElem(_msProjId,_msId,_prodScopedMs?[_msId]:undefined); // select on first touch; fall through to arm drag
       e.preventDefault();
       const id=msEl.dataset.msId, projId=msEl.dataset.projId;
       const proj=PROJECTS.find(p=>p.id===projId), ms=msById(id);
@@ -8351,11 +8351,14 @@ function initDrag(){
       const _dpPh=phaseById(bar.dataset.phaseId);
       // Grouped isDesignProd falls through to projMove; ungrouped can phaseMove freely
       // (syncDesignProdPhase skips ungrouped projects, so position won't be reset during drag)
-      const _barProjId=bar.dataset.projId, _barPhId=bar.dataset.phaseId;
+      const _barProjId=bar.dataset.projId, _barPhId=bar.dataset.phaseId, _barLaneId=bar.dataset.lane;
       const _barProj=PROJECTS.find(p=>p.id===_barProjId);
+      // v1122: linked + Production lane — Pre-con/Construction highlight only themselves,
+      // matching the scoped drag (v1121). Design keeps the full-project glow.
+      const _barProdScoped=!!(_barProj&&_barProj.grouped!==false&&_barLaneId==='production');
       const _barGrouped=!_barProj||_barProj.grouped!==false;
-      const _barSel=_barGrouped?SELECTED_PROJ_ID===_barProjId:SELECTED_ELEM_ID===_barPhId;
-      if(!_barSel&&!e.altKey) selectElem(_barProjId,_barPhId); // select on first touch; fall through to arm drag
+      const _barSel=_barProdScoped?SELECTED_ELEM_ID===_barPhId:(_barGrouped?SELECTED_PROJ_ID===_barProjId:SELECTED_ELEM_ID===_barPhId);
+      if(!_barSel&&!e.altKey) selectElem(_barProjId,_barPhId,_barProdScoped?_barProj.productionLane.phases.map(p=>p.id):undefined); // select on first touch; fall through to arm drag
       e.preventDefault();
       const laneId=bar.dataset.lane, projId=bar.dataset.projId;
       const proj=PROJECTS.find(p=>p.id===projId);
@@ -10493,7 +10496,7 @@ function patchSaveHooks(){
       _dragMoved=false;
       triggerSave();
       // Re-apply glow in case drag refreshed DOM elements
-      if(SELECTED_PROJ_ID) requestAnimationFrame(()=>selectElem(SELECTED_PROJ_ID,SELECTED_ELEM_ID));
+      if(SELECTED_PROJ_ID) requestAnimationFrame(()=>selectElem(SELECTED_PROJ_ID,SELECTED_ELEM_ID,SELECTED_SCOPE_IDS));
     }
   };
   document.removeEventListener('pointerup',onUp);
@@ -13017,7 +13020,7 @@ msalApp.handleRedirectPromise().then(resp=>{
 });
 
 // ════════════════════════════════════════════════  SELECTION
-let SELECTED_PROJ_ID=null, SELECTED_ELEM_ID=null, _altHintShown=false, _justSelected=false, _dragMoved=false;
+let SELECTED_PROJ_ID=null, SELECTED_ELEM_ID=null, SELECTED_SCOPE_IDS=null, _altHintShown=false, _justSelected=false, _dragMoved=false;
 // v1103: the group-toggle button's content — two mini Phase I/II bars. Same
 // markup regardless of linked/ungrouped state; the state shows entirely
 // through the .is-grouped/.is-ungrouped classes toggleGrouped() applies to
@@ -13026,25 +13029,30 @@ function _linkToggleInnerHTML(){
   return '<div class="lt-bar lt-bar-1"><span class="lt-grip lt-grip-l"></span><span class="lt-label">I</span></div>'
        + '<div class="lt-bar lt-bar-2"><span class="lt-label">II</span><span class="lt-grip lt-grip-r"></span></div>';
 }
-function selectElem(projId, elemId){
+function selectElem(projId, elemId, scopeIds){
   clearSelection();
   _justSelected=true;
   requestAnimationFrame(()=>{ _justSelected=false; });
   const proj=PROJECTS.find(p=>p.id===projId);
-  SELECTED_PROJ_ID=projId; SELECTED_ELEM_ID=elemId;
-  const grouped=!proj||proj.grouped!==false;
+  SELECTED_PROJ_ID=projId; SELECTED_ELEM_ID=elemId; SELECTED_SCOPE_IDS=scopeIds||null;
+  const grouped=!scopeIds&&(!proj||proj.grouped!==false);
   if(grouped){
     // Grouped: glow all phase bars and milestones
     document.querySelectorAll(`[data-proj-id="${projId}"].phase-bar,[data-proj-id="${projId}"].ms-tall`).forEach(el=>el.classList.add('sel-glow'));
     // Subtle glow on the group toggle button
     document.querySelectorAll(`[data-toggle-grouped="${projId}"]`).forEach(btn=>btn.classList.add('sel-glow-toggle'));
+  } else if(scopeIds){
+    // v1122: linked-but-scoped elements (Production's Pre-con+Construction, or a lone CA
+    // drag) highlight only themselves — the project as a whole is still "linked" for
+    // toggleGrouped's sake, but this particular drag no longer touches the rest of it.
+    scopeIds.forEach(id=>{ document.querySelectorAll(`[data-phase-id="${id}"],[data-ms-id="${id}"]`).forEach(el=>el.classList.add('sel-glow')); });
   } else {
     document.querySelectorAll(`[data-phase-id="${elemId}"],[data-ms-id="${elemId}"]`).forEach(el=>el.classList.add('sel-glow'));
   }
   _showAltHint();
 }
 function clearSelection(){
-  SELECTED_PROJ_ID=null; SELECTED_ELEM_ID=null;
+  SELECTED_PROJ_ID=null; SELECTED_ELEM_ID=null; SELECTED_SCOPE_IDS=null;
   document.querySelectorAll('.sel-glow').forEach(el=>el.classList.remove('sel-glow'));
   document.querySelectorAll('.sel-glow-toggle').forEach(el=>el.classList.remove('sel-glow-toggle'));
 }
@@ -16221,6 +16229,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1122', date: '2026-09-17',
+    entries:['Refinement to v1121: since CA and the Pre-con/Construction bars no longer move together in Production, clicking one no longer glows the whole gantt either. Clicking CA there highlights only CA; clicking Pre-con or Construction highlights just those two bars. The highlight now also survives the drag correctly instead of snapping back to a full-project glow the moment you release. Design is unchanged — clicking anything on a linked project there still glows the whole thing.'],
+  },
   {
     version: 'v1121', date: '2026-09-17',
     entries:['Production screen: dragging a linked project’s Pre-con or Construction bar now moves only those two phases together — it no longer drags the DA/CA signing dates, design phases, or T1/T2/T3 along with it. Dragging the CA dot in Production (the only milestone shown there) now moves CA alone too, leaving Pre-con and Construction where they are. Design still moves everything together on a linked project, unchanged.'],
