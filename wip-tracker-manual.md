@@ -25,6 +25,20 @@ Compare earned to what's actually been invoiced, and the difference is the numbe
 - **Invoiced more than earned** (red, "over") — the client's been billed ahead of the work.
 - **Invoiced less than earned** (green, "under") — the work is ahead of the billing.
 
+### Reading the Stage column
+
+The Stage column shows one of three lifecycle phases — plain text, not a badge, but still the label — and it's separate from a project's DA Signed/CA Signed contract status underneath:
+
+| Phase | Runs from | Runs through |
+|---|---|---|
+| **Design** | The week the DA is signed | The week before the CA is signed |
+| **Pre-Con** | The week the CA is signed | The last week of the Pipeline's Pre-Con phase |
+| **Construction** | The first week of the Pipeline's Construction phase | Its last week |
+
+This moves with **Viewing as of** the same way earned and invoiced do — pick an earlier date and the Stage column shows whichever phase the project was in as of that date, not necessarily where it sits today.
+
+A blank (**—**) means the Pipeline doesn't have enough schedule data yet — no DA/CA signing week, or no Pre-Con/Construction phase — to place the project in one of the three.
+
 ## Viewing a different date
 
 **Viewing as of**, near the top of the page, defaults to today. Pick an earlier date and the whole page recalculates as if that date *were* today:
@@ -142,7 +156,7 @@ The page always reads whichever file in that folder was **most recently saved**.
 
 | Column | What it means |
 |---|---|
-| Stage | The project's current Pipeline stage. Gold badge = CA Signed. |
+| Stage | The project's current phase — Design, Pre-Con, or Construction. See *Reading the Stage column*, below. |
 | Contract Value | `EstimatedProjectValue` from the Pipeline. |
 | % Complete | The construction-schedule formula (CA-Signed only), or a manual override, or "not set." |
 | Earned | Contract Value × % Complete. Blank until a % exists. |

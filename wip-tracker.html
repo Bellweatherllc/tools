@@ -114,8 +114,10 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .tdot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0;}
 
 /* ── Stage badge, weak-match flag, override control ── */
-.stage-badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:8px;background:var(--bg);border:1px solid var(--border);color:var(--text-sec);}
-.stage-badge.ca{background:#e6efe8;border-color:#cfe3d3;color:var(--good);}
+.stage-label{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-sec);}
+.stage-label.design{color:var(--navy);}
+.stage-label.precon{color:var(--warn);}
+.stage-label.construction{color:var(--good);}
 .flag.weak{background:#fdeecb;color:#8a5a10;}
 .ovr-btn{border:none;background:none;color:var(--ok);cursor:pointer;font-size:11px;padding:0 0 0 6px;text-decoration:underline;font-family:inherit;}
 .ovr-btn:hover{color:var(--navy);}
@@ -251,7 +253,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v11';
+const CORE_VERSION='v12';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -487,12 +489,18 @@ async function loadProjects(){
     if(f.GanttData){ try{ gd=JSON.parse(f.GanttData); }catch(e){ /* bad blob — no schedule */ } }
     const isSlot=(gd&&gd.isOpenSlot)||/^Slot\b/i.test(name);
     if(isSlot||!INCLUDED_STAGES.test(stage)) return;
-    let constr=null;
+    let constr=null,preCon=null;
     if(gd&&gd.productionLane&&Array.isArray(gd.productionLane.phases)){
       const ph=gd.productionLane.phases.find(p=>/^construction$/i.test(String(p.name||'').trim()));
       if(ph&&ph.durWeeks>0) constr={startWeek:ph.startWeek,durWeeks:ph.durWeeks};
+      const pc=gd.productionLane.phases.find(p=>/pre.?con/i.test(String(p.name||'').trim()));
+      if(pc&&pc.durWeeks>0) preCon={startWeek:pc.startWeek,durWeeks:pc.durWeeks};
     }
-    PROJECTS.push({spId:String(item.id),name,clientName,stage,contract:parseMoney(f.EstimatedProjectValue),constr});
+    const daMs=gd&&Array.isArray(gd.milestones)?gd.milestones.find(m=>m.name==='DA'):null;
+    const caMs=gd&&Array.isArray(gd.milestones)?gd.milestones.find(m=>m.name==='CA'):null;
+    const daWeek=daMs&&daMs.week!=null?daMs.week:null;
+    const caWeek=caMs&&caMs.week!=null?caMs.week:null;
+    PROJECTS.push({spId:String(item.id),name,clientName,stage,contract:parseMoney(f.EstimatedProjectValue),constr,preCon,daWeek,caWeek});
   });
 }
 
@@ -776,7 +784,7 @@ async function addReview(reviewerKey,rows){
   const who=identity();
   const snapshot={
     by:who.name, byEmail:who.email, at:new Date().toISOString(), asOf:fmtInputDate(AS_OF),
-    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden})),
+    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,phase:r.calc.phase,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden})),
     netPosition:computeNetPosition(rows)
   };
   const cur=(LOCK&&LOCK.period===viewPeriod())?LOCK:{period:viewPeriod(),periodLabel:viewPeriodLabel(),reviews:{},finalized:false,finalizedAt:null};
@@ -838,6 +846,19 @@ function matchInvoices(){
   return {matched,unmatched};
 }
 function weekAsOf(){ return Math.floor((asOfEnd().getTime()-EPOCH.getTime())/MS_WEEK); }
+// Three lifecycle phases, independent of the raw DA Signed/CA Signed SharePoint
+// stage — Design runs DA-signing through the week before CA signing; Pre-Con runs
+// CA-signing through the last week of the Pipeline's Pre-Con phase; Construction
+// runs the Pipeline's construction phase start through its last week. Evaluated at
+// the given week so it moves with "Viewing as of" the same way earned/invoiced do.
+function projectPhase(p,atWeek){
+  if(p.daWeek==null||atWeek<p.daWeek) return null;
+  if(p.caWeek==null||atWeek<p.caWeek) return 'DESIGN';
+  const preConEnd=(p.preCon&&p.preCon.startWeek!=null)?p.preCon.startWeek+p.preCon.durWeeks:null;
+  if(preConEnd!=null&&atWeek<preConEnd) return 'PRE-CON';
+  if(p.constr&&p.constr.startWeek!=null&&atWeek>=p.constr.startWeek) return 'CONSTRUCTION';
+  return preConEnd!=null?'CONSTRUCTION':'PRE-CON';
+}
 // A manual override always wins and sets earned = contract × override %, full stop —
 // no signing/schedule split, just "mark it X%" the way Ryan and Joey would say it.
 // Without one: CA-Signed jobs use the 20%-at-signing + schedule formula; every
@@ -859,7 +880,8 @@ function computeRow(p,matchedEntry,override){
     else if(p.stage==='CA Signed'){ earned=p.contract*(SIGNING_SHARE+BUILD_SHARE*(pct==null?0:pct)); }
   }
   const gap=(earned!=null&&invoiced!=null)?invoiced-earned:null;
-  return {pct,earned,invoiced,weakMatch,gap,overridden:!!override,override:override||null};
+  const phase=projectPhase(p,weekAsOf());
+  return {pct,earned,invoiced,weakMatch,gap,overridden:!!override,override:override||null,phase};
 }
 
 // ════════════════════════════════════ RENDER
@@ -948,7 +970,7 @@ function renderCards(rows,fromLock,lockedNetPos){
 // Unclicked default stays the original "worst gap first" ordering. ──
 const SORT_COLUMNS=[
   {key:'name',label:'Project',type:'str'},
-  {key:'stage',label:'Stage',type:'str'},
+  {key:'stage',label:'Stage',type:'num'},
   {key:'contract',label:'Contract Value',type:'num'},
   {key:'pct',label:'% Complete',type:'num'},
   {key:'earned',label:'Earned',type:'num'},
@@ -959,7 +981,7 @@ let SORT={key:null,dir:'desc'};   // key===null → default: |gap| descending
 function sortKeyValue(r,key){
   switch(key){
     case 'name': return (r.p.name||'').toLowerCase();
-    case 'stage': return (r.p.stage||'').toLowerCase();
+    case 'stage': { const order={DESIGN:0,'PRE-CON':1,CONSTRUCTION:2}; return r.calc.phase!=null?order[r.calc.phase]:-1; }
     case 'contract': return r.p.contract||0;
     case 'pct': return r.calc.pct==null?-1:r.calc.pct;
     case 'earned': return r.calc.earned==null?-Infinity:r.calc.earned;
@@ -990,7 +1012,8 @@ function tableHtml(rows,fromLock){
     const c=r.calc;
     const gapCls=c.gap==null?'dim':(c.gap>=0?'pos':'neg');
     const gapTxt=c.gap==null?'—':fmt$(Math.abs(c.gap))+(c.gap>=0?' over':' under');
-    const stageBadge='<span class="stage-badge'+(r.p.stage==='CA Signed'?' ca':'')+'">'+esc(r.p.stage||'—')+'</span>';
+    const phaseCls=c.phase==='DESIGN'?'design':c.phase==='PRE-CON'?'precon':c.phase==='CONSTRUCTION'?'construction':'';
+    const stageBadge='<span class="stage-label'+(phaseCls?' '+phaseCls:'')+'">'+esc(c.phase||'—')+'</span>';
     const ovrBtn=(fromLock||!isToday())?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
     let progress;
     if(c.pct==null){
