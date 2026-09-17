@@ -543,7 +543,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v88';
+const CORE_VERSION = 'v89';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -1329,8 +1329,8 @@ const STATE_RANK={over:0,warn:1,unknown:2,hold:3,ok:4,done:5,closed:6};
    (the Absolutes table AND the two project-sort call sites). A card can be
    comfortably "3d left" on its own review clock and still be the thing about
    to blow the CA date or the Construction-start buffer — that risk has to win.
-   See projectAbsoluteWhy below for the human-readable reason, used by the
-   Absolutes table's tooltip. */
+   See projectOffTrackDetail below for the why/how-much/impact explanation,
+   used by the Absolutes table's tooltip. */
 function projectAbsoluteState(apps){
   let worst=null;
   apps.forEach(a=>{
@@ -1341,15 +1341,47 @@ function projectAbsoluteState(apps){
   });
   return worst;
 }
-function projectAbsoluteWhy(apps){
-  let worst=null, why='';
+/* v89: replaces the old one-line projectAbsoluteWhy — an OFF TRACK (or DUE SOON)
+   bin needs to say WHY, HOW MUCH, and what the PROJECT IMPACT is, not just name
+   a cause. Returns {tip, tipD} for data-tip/data-tip-d (tip = the headline, tipD
+   = the number + what it means), or null when nothing explains an elevated bin
+   (shouldn't happen, but bin() falls back to no tooltip rather than a broken one).
+   Priority mirrors projectAbsoluteState above: any critical absolute wins over
+   an at-risk one, which wins over a plain overdue review clock — same ordering,
+   just keeping the numbers this time instead of collapsing to a state name. */
+function projectOffTrackDetail(apps){
+  let best=null;
+  const consider=(rank,tip,tipD)=>{ if(!best||rank<best.rank) best={rank,tip,tipD}; };
   apps.forEach(a=>{
-    [['CA signing date',computeCALead(a)], ['Construction start',computeConstructionLead(a)]].forEach(([label,r])=>{
-      if(r.state==='critical'&&worst!=='over'){ worst='over'; why=label+' — critical'; }
-      else if(r.state==='at-risk'&&worst!=='over'){ worst='warn'; why=label+' — at risk'; }
-    });
+    const ca=computeCALead(a);
+    if(ca.state==='critical'){
+      const n=Math.abs(ca.slack);
+      consider(0, 'CA signing date at risk ('+a.project+')',
+        n+' week'+(n===1?'':'s')+' short at the current pace — the CA date itself would need to move to hold, unless this speeds up.');
+    }else if(ca.state==='at-risk'){
+      consider(2, 'CA signing date getting tight ('+a.project+')',
+        'Only '+ca.slack+' week'+(ca.slack===1?'':'s')+' of slack left before it tips into risking the CA date.');
+    }
+    const cs=computeConstructionLead(a);
+    if(cs.state==='critical'){
+      const n=Math.abs(cs.slackDays);
+      consider(1, 'Construction-start buffer blown ('+a.project+')',
+        n+' day'+(n===1?'':'s')+' short of the 3-week buffer before Construction start — Construction would need to slip to hold, unless this speeds up.');
+    }else if(cs.state==='at-risk'){
+      consider(3, 'Construction-start buffer getting tight ('+a.project+')',
+        cs.slackDays+' day'+(cs.slackDays===1?'':'s')+' of slack left before the 3-week buffer before Construction start is gone.');
+    }
   });
-  return why;
+  if(best) return {tip:best.tip, tipD:best.tipD};
+  // No absolute is in play — an OFF TRACK bin at this point is a plain overdue
+  // review clock (Submitted → In Review) on some card. Name the worst one.
+  const overdue=apps.filter(a=>a.state==='over').sort((a,b)=>(a.daysLeft||0)-(b.daysLeft||0))[0];
+  if(overdue) return {tip:overdue.project+' — '+overdue.stage+' is past its own deadline',
+    tipD:(overdue.clockText||'overdue')+' on the jurisdiction review clock — every day it sits here pushes every stage after it back by the same amount.'};
+  const unknown=apps.find(a=>a.state==='unknown');
+  if(unknown) return {tip:unknown.project+' — unrecognized stage "'+(unknown.stage||'—')+'"',
+    tipD:'This card sits in a Trello list the tracker doesn\'t recognize, so it can\'t be projected until it\'s moved to a known stage.'};
+  return null;
 }
 function projectRollup(apps){
   const active=apps.filter(a=>a.state!=='done'&&a.state!=='closed');
@@ -1848,16 +1880,19 @@ function renderAbsolutes(){
   const bin=apps=>{
     if(!apps.length) return '<span class="bin bin-na">—</span>';
     const r=projectRollup(apps);
-    // v88: when an absolute (CA date / Construction-start buffer) is what's actually
-    // driving the bin, say so on hover — otherwise "OFF TRACK" or "DUE SOON" gives
-    // no clue which of two very different real dates is the one at risk.
-    const why=projectAbsoluteWhy(apps.filter(a=>a.state!=='done'&&a.state!=='closed'));
-    const tip=why?' data-tip="'+esc(why)+'"':'';
+    // v89: OFF TRACK / DUE SOON need to explain themselves on hover — why, how
+    // much, and what it means for the project — not just carry the label. ON
+    // TRACK/DONE/HOLD don't get a tooltip; there's nothing to explain.
+    let tip='';
+    if(r==='over'||r==='unknown'||r==='warn'){
+      const d=projectOffTrackDetail(apps.filter(a=>a.state!=='done'&&a.state!=='closed'));
+      if(d) tip=' data-tip="'+esc(d.tip)+'" data-tip-d="'+esc(d.tipD)+'"';
+    }
     if(r==='done') return '<span class="bin bin-on">DONE</span>';
     if(r==='over'||r==='unknown') return '<span class="bin bin-off"'+tip+'>OFF TRACK</span>';
     if(r==='warn') return '<span class="bin bin-warn"'+tip+'>DUE SOON</span>';
     if(r==='hold') return '<span class="bin bin-na">HOLD</span>';
-    return '<span class="bin bin-on"'+tip+'>ON TRACK</span>';
+    return '<span class="bin bin-on">ON TRACK</span>';
   };
   const _aeWks=LEAD_WEEKS['With Arch/Eng']||0; // v49: headers state the lead-time budget
   const _fullWks=(LEAD_PATH['Prep']||[]).reduce((t,st)=>t+(LEAD_WEEKS[st]||0),0);
