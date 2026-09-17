@@ -114,6 +114,12 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .tdot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex-shrink:0;}
 
 /* ── Stage badge, weak-match flag, override control ── */
+.formula-ref{background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:14px;font-size:12.5px;}
+.formula-ref summary{cursor:pointer;padding:10px 14px;font-weight:600;color:var(--navy);}
+.formula-ref-body{padding:2px 14px 14px;line-height:1.6;}
+.formula-ref-body p{margin:0 0 10px;}
+.formula-ref-body p:last-child{margin-bottom:0;}
+.formula-ref-body .dim{color:var(--text-sec);font-size:11.5px;}
 .stage-label{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-sec);}
 .stage-label.design{color:var(--navy);}
 .stage-label.precon{color:var(--warn);}
@@ -167,7 +173,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-foot button.clear{color:var(--over);border-color:#e0b8b4;margin-right:auto;}
 
 @media print{
-  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,.reviewer-panel,.asof-bar,.netpos-toggle,.netpos-manual,#toasts,#tt{display:none!important;}
+  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.lock-banner .actions,.reviewer-panel,.asof-bar,.netpos-toggle,.netpos-manual,.formula-ref,#toasts,#tt{display:none!important;}
   body{background:#fff;}
   #printHeader{display:block!important;margin-bottom:16px;}
   #printHeader h1{font-family:'Swear Text',serif;font-size:20px;margin-bottom:4px;}
@@ -217,11 +223,19 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   <h2 class="sec">Portfolio <span class="note" id="portfolioNote">DA Signed &amp; CA Signed jobs, live</span></h2>
   <div class="cards" id="cards"></div>
 
-  <h2 class="sec">Projects
-    <span class="note"
-      data-tip="How earned revenue is calculated"
-      data-tip-d="CA-Signed jobs: 20% of contract value at signing, plus the remaining 80% spread evenly across the construction schedule. Earlier stages have no formula — set a % complete by hand using the ✎ next to Earned.">(what's the formula?)</span>
-  </h2>
+  <h2 class="sec">Projects</h2>
+  <details class="formula-ref">
+    <summary>How earned income is calculated — reference &amp; sanity check</summary>
+    <div class="formula-ref-body">
+      <p><b>Design</b> <span class="dim">— DA signed, before CA signing</span><br>
+        Earned = <b>50%</b> of whatever's actually been invoiced so far. Design payments run about 25% of the projected construction amount over the phase; only half of each payment is booked as earned, the rest is collected ahead of the work.</p>
+      <p><b>Pre-Con</b> <span class="dim">— CA signed, before construction starts</span><br>
+        Earned = <b>30%</b> of the (current) contract value — the deposit, paid at CA signing to bring cumulative billing up to 30% of whatever the exact construction amount turned out to be. Flat through Pre-Con: progress stays at 0% until construction's first week.</p>
+      <p><b>Construction</b> <span class="dim">— the Pipeline's construction phase, start to last week</span><br>
+        Earned = 30% of contract (already earned at signing) + <b>70%</b> of contract × schedule progress (elapsed weeks ÷ construction duration).</p>
+      <p class="dim">A manual override (✎ next to any project's % Complete) always replaces this — it's for the cases the formula can't reach, like a job whose schedule doesn't match reality.</p>
+    </div>
+  </details>
   <div style="overflow-x:auto;"><table class="tbl" id="projTbl"></table></div>
 
   <div id="unmatchedWrap"></div>
@@ -253,7 +267,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v12';
+const CORE_VERSION='v13';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -263,8 +277,17 @@ const BWC_SITE=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
 const OPS_SITE_DRIVES=GRAPH+'/sites/bellweather.sharepoint.com:/sites/Operations:/drives';
 const EPOCH=new Date('2025-01-05T00:00:00');   // Pipeline C.startDate — immutable, shared across CORE tools
 const MS_WEEK=7*24*3600*1000;
-const SIGNING_SHARE=0.20;   // owned the moment a CA is signed
-const BUILD_SHARE=0.80;     // spread across the construction schedule
+// Earned-income model — see the "How earned income is calculated" panel on the
+// page itself (and the manual) for the full walkthrough Byron specified:
+//   Design:       50% of whatever's actually been invoiced so far is earned —
+//                 the other 50% of each design payment is collected ahead of the work.
+//   Pre-Con:      a deposit equal to DEPOSIT_SHARE of the contract value is earned
+//                 at CA signing and stays flat through Pre-Con — 0% progress yet.
+//   Construction: the DEPOSIT_SHARE is already earned; the remaining REMAINING_SHARE
+//                 earns out weekly across the construction schedule.
+const DESIGN_EARNED_FRACTION=0.50;  // of amount invoiced so far during Design
+const DEPOSIT_SHARE=0.30;           // of the (current) contract value, earned at CA signing
+const REMAINING_SHARE=0.70;         // spread across the construction schedule
 const INV_FOLDER_LABEL='Operations → FINANCIAL → 1. WIP Reports & Job Costs → BT_InvoicingReports_forWIPTool';
 const INV_HOWTO='BuilderTrend → Financial → Invoice → All Jobs → Export';
 const INCLUDED_STAGES=/^(da signed|ca signed)$/i;
@@ -860,28 +883,43 @@ function projectPhase(p,atWeek){
   return preConEnd!=null?'CONSTRUCTION':'PRE-CON';
 }
 // A manual override always wins and sets earned = contract × override %, full stop —
-// no signing/schedule split, just "mark it X%" the way Ryan and Joey would say it.
-// Without one: CA-Signed jobs use the 20%-at-signing + schedule formula; every
-// earlier stage has no formula to fall back on, so earned stays unset until
-// someone sets it by hand — safer than guessing a number nobody signed off on.
+// no phase math at all, just "mark it X%" the way Ryan and Joey would say it.
+// Without one, the formula depends on which of the three phases the project is
+// in (see projectPhase, above, and the "How earned income is calculated" panel
+// on the page — this mirrors it exactly):
+//   Design       — earned = DESIGN_EARNED_FRACTION × amount invoiced so far.
+//                  No physical schedule yet, so % Complete stays blank.
+//   Pre-Con      — earned = DEPOSIT_SHARE × contract value, flat. % Complete is
+//                  literally 0 — construction hasn't started, so no progress yet.
+//   Construction — earned = DEPOSIT_SHARE × contract, plus REMAINING_SHARE ×
+//                  contract × schedule progress. % Complete is that schedule
+//                  progress (elapsed weeks ÷ construction duration).
+// A schedule-less Construction phase (Pre-Con ended, but no Construction phase
+// found in the Gantt) earns the deposit only — same "no schedule" flag as before.
 function computeRow(p,matchedEntry,override){
   const invoiced = matchedEntry ? matchedEntry.total : null;
   const weakMatch = matchedEntry ? matchedEntry.weak : false;
-  let pct=null;
+  const phase=projectPhase(p,weekAsOf());
+  let pct=null,earned=null,noSchedule=false;
   if(override){
     pct=override.pct;
-  }else if(p.stage==='CA Signed'&&p.constr&&p.constr.durWeeks>0){
-    const elapsed=weekAsOf()-p.constr.startWeek;
-    pct=Math.max(0,Math.min(1,elapsed/p.constr.durWeeks));
-  }
-  let earned=null;
-  if(p.contract){
-    if(override){ earned=p.contract*override.pct; }
-    else if(p.stage==='CA Signed'){ earned=p.contract*(SIGNING_SHARE+BUILD_SHARE*(pct==null?0:pct)); }
+    earned=p.contract?p.contract*override.pct:null;
+  }else if(phase==='DESIGN'){
+    if(invoiced!=null) earned=DESIGN_EARNED_FRACTION*invoiced;
+  }else if(phase==='PRE-CON'){
+    pct=0;
+    if(p.contract) earned=DEPOSIT_SHARE*p.contract;
+  }else if(phase==='CONSTRUCTION'){
+    if(p.constr&&p.constr.durWeeks>0){
+      const elapsed=weekAsOf()-p.constr.startWeek;
+      pct=Math.max(0,Math.min(1,elapsed/p.constr.durWeeks));
+    }else{
+      pct=0; noSchedule=true;
+    }
+    if(p.contract) earned=p.contract*(DEPOSIT_SHARE+REMAINING_SHARE*pct);
   }
   const gap=(earned!=null&&invoiced!=null)?invoiced-earned:null;
-  const phase=projectPhase(p,weekAsOf());
-  return {pct,earned,invoiced,weakMatch,gap,overridden:!!override,override:override||null,phase};
+  return {pct,earned,invoiced,weakMatch,gap,overridden:!!override,override:override||null,phase,noSchedule};
 }
 
 // ════════════════════════════════════ RENDER
@@ -1016,12 +1054,24 @@ function tableHtml(rows,fromLock){
     const stageBadge='<span class="stage-label'+(phaseCls?' '+phaseCls:'')+'">'+esc(c.phase||'—')+'</span>';
     const ovrBtn=(fromLock||!isToday())?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
     let progress;
-    if(c.pct==null){
-      const why=r.p.stage==='CA Signed'?'This project has no construction phase in the Pipeline Gantt, so earned revenue is showing the 20%-at-signing baseline only.':'This project hasn’t reached CA Signed, so there’s no formula to calculate it automatically — set a % complete by hand.';
-      progress='<span class="dim">'+(r.p.stage==='CA Signed'?'no schedule':'not set')+'</span> <span class="flag bad" data-tip="'+(r.p.stage==='CA Signed'?'No construction schedule':'No formula pre-CA')+'" data-tip-d="'+esc(why)+'">!</span>'+ovrBtn;
+    const note=c.override&&c.override.note?'<span class="ovr-note" data-tip="Manual override" data-tip-d="'+esc(c.override.note)+' — set by '+esc(c.override.setBy||'')+'">'+esc(c.override.note.length>28?c.override.note.slice(0,28)+'…':c.override.note)+'</span>':'';
+    const progressBar=(pct,flag)=>'<span class="progress-mini"><span class="bar"><span style="width:'+Math.round(pct*100)+'%"></span></span>'+fmtPct(pct)+(flag||'')+ovrBtn+note+'</span>';
+    if(c.overridden){
+      progress=progressBar(c.pct,' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual override, not the formula.">manual</span>');
+    }else if(c.phase==null){
+      progress='<span class="dim">not set</span> <span class="flag bad" data-tip="No phase yet" data-tip-d="This project doesn’t have DA/CA signing weeks in the Pipeline Gantt yet, so there isn’t enough schedule data to place it in Design, Pre-Con, or Construction.">!</span>'+ovrBtn;
+    }else if(c.phase==='DESIGN'){
+      if(c.earned==null){
+        progress='<span class="dim">no invoicing yet</span> <span class="flag bad" data-tip="Nothing invoiced yet" data-tip-d="Design-phase earned income is 50% of whatever’s been invoiced so far — nothing has posted for this job yet.">!</span>'+ovrBtn;
+      }else{
+        progress='<span class="dim" data-tip="In Design" data-tip-d="No physical schedule yet — earned income is 50% of the amount invoiced so far instead. See the Earned column.">design</span>'+ovrBtn+note;
+      }
+    }else if(c.phase==='PRE-CON'){
+      progress=progressBar(0,' <span class="flag" data-tip="Pre-construction" data-tip-d="Construction hasn’t started — progress stays at 0% until its first week. Earned already reflects the deposit.">pre-con</span>');
+    }else if(c.noSchedule){
+      progress=progressBar(0,' <span class="flag bad" data-tip="No construction schedule" data-tip-d="This project has no construction phase in the Pipeline Gantt, so earned revenue is showing the deposit only.">!</span>');
     }else{
-      const note=c.override&&c.override.note?'<span class="ovr-note" data-tip="Manual override" data-tip-d="'+esc(c.override.note)+' — set by '+esc(c.override.setBy||'')+'">'+esc(c.override.note.length>28?c.override.note.slice(0,28)+'…':c.override.note)+'</span>':'';
-      progress='<span class="progress-mini"><span class="bar"><span style="width:'+Math.round(c.pct*100)+'%"></span></span>'+fmtPct(c.pct)+(c.overridden?' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual override, not the formula.">manual</span>':'')+ovrBtn+note+'</span>';
+      progress=progressBar(c.pct);
     }
     const weakBadge=c.weakMatch?' <span class="flag weak" data-tip="Weak name match" data-tip-d="Matched to BuilderTrend by a shared name fragment, not a close full-name match — worth a second look.">~</span>':'';
     const invTxt=c.invoiced==null?'<span class="dim">no BT match</span> <span class="flag bad" data-tip="Not matched to a BuilderTrend job" data-tip-d="No job in the latest BuilderTrend invoicing export matched this project by name. Check the export, or the project name in the Pipeline.">!</span>':fmt$(c.invoiced)+weakBadge;
