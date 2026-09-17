@@ -3467,7 +3467,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1120';
+const CORE_VERSION = 'v1121';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -8224,7 +8224,12 @@ function initDrag(){
       const _msProj=PROJECTS.find(p=>p.id===_msProjId);
       // Collapsed mode: no editing at all
       if(_msProj&&_msProj.collapsed) return;
-      const _msGrouped=!_msProj||_msProj.grouped!==false;
+      // v1121: in Production, a linked project's CA dot moves only CA — Pre-con and
+      // Construction stay put, same scoping as the phase-bar drag below. DA never
+      // renders in Production, so this only ever matches CA; Design keeps the full
+      // linked cascade (DA, design phases, tiers, etc. all move together there).
+      const _prodScopedMs=!!(_msProj&&_msProj.grouped!==false&&msEl.dataset.msN==='CA'&&msEl.closest('.section[data-s-type="production"]'));
+      const _msGrouped=(!_msProj||_msProj.grouped!==false)&&!_prodScopedMs;
       const _msSel=_msGrouped?SELECTED_PROJ_ID===_msProjId:SELECTED_ELEM_ID===_msId;
       if(!_msSel&&!e.altKey) selectElem(_msProjId,_msId); // select on first touch; fall through to arm drag
       e.preventDefault();
@@ -8258,7 +8263,7 @@ function initDrag(){
         const conPh=proj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim()));
         const caTouches=preConPh&&(ms.week+1===preConPh.startWeek);
         const chainTouches=preConPh&&conPh&&(preConPh.startWeek+preConPh.durWeeks===conPh.startWeek);
-        const willCascade=caTouches&&chainTouches;
+        const willCascade=!_prodScopedMs&&caTouches&&chainTouches; // v1121: never push Pre-con/Construction from Production
         minWeek=sibling?sibling.week+1:0;
         maxWeek=(!willCascade&&preConPh)?preConPh.startWeek-1:C.numWeeks-1;
         // rebuild cascade (same logic as before)
@@ -8390,6 +8395,17 @@ function initDrag(){
       }
       // Ungrouped: single phase only, no cascades
       if(proj&&proj.grouped===false){ cascadeLeft=null; designCascadeRight=null; designCascadeLeft=null; }
+      // v1121: Grouped (linked) + Production lane — Pre-con and Construction move together
+      // as their own unit, but linked no longer means the whole project. DA/CA signing
+      // dates, other milestones, design phases, and permitting all stay put; only these
+      // two production phases shift. (Phase III's duration still auto-syncs to the new
+      // production end via syncDesignProdPhase, same as it always has for this lane.)
+      if(proj&&proj.grouped!==false&&laneId==='production'){
+        const prodPhs=proj.productionLane.phases;
+        const prodOrigStarts=prodPhs.map(p=>p.startWeek);
+        DRAG={type:'phaseMove',laneId,projId,bar,startX:e.clientX,chain:prodPhs,origStarts:prodOrigStarts,allPhs:prodPhs,chainStart:0,chainEnd:prodPhs.length-1,cascadeLeft:null,designCascadeRight:null,designCascadeLeft:null};
+        bar.classList.add('dragging'); capture(bar,e.pointerId); return;
+      }
       // Grouped: use projMove so all phases + milestones move as a unit
       if(proj&&proj.grouped!==false){
         const allPhs=[...proj.designLane.phases,...proj.productionLane.phases,...(proj.permitting?[proj.permitting]:[])];
@@ -16205,6 +16221,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1121', date: '2026-09-17',
+    entries:['Production screen: dragging a linked project’s Pre-con or Construction bar now moves only those two phases together — it no longer drags the DA/CA signing dates, design phases, or T1/T2/T3 along with it. Dragging the CA dot in Production (the only milestone shown there) now moves CA alone too, leaving Pre-con and Construction where they are. Design still moves everything together on a linked project, unchanged.'],
+  },
   {
     version: 'v1120', date: '2026-09-16',
     entries:['Removed the Arch/Eng Fees hover button for now (pulled while the Estimate-reading rules get sorted out). The Permit & Zoning button is back to being the leftmost button in that row.'],
