@@ -159,6 +159,9 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-panel label{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-sec);margin:12px 0 5px;}
 .ovr-panel input[type=number],.ovr-panel textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-family:inherit;font-size:13px;}
 .ovr-panel textarea{resize:vertical;min-height:52px;}
+.ovr-amt-row{display:flex;gap:8px;}
+.ovr-amt-row input[type=number]{width:auto;flex:1;}
+.ovr-amt-row select{flex:0 0 auto;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-family:inherit;font-size:13px;background:#fff;}
 .ovr-foot{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;}
 .ovr-foot button{border-radius:6px;padding:7px 16px;font-family:inherit;font-size:12.5px;cursor:pointer;border:1px solid var(--border);background:#fff;}
 .ovr-foot button.primary{background:var(--navy);color:#fff;border-color:var(--navy);}
@@ -238,7 +241,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
     <h3 id="ovrTitle"></h3>
     <div class="sub" id="ovrSub"></div>
     <label for="ovrPct" id="ovrFieldLabel">Percent complete (overrides the formula)</label>
-    <input type="number" id="ovrPct" min="0" max="100" step="1">
+    <div class="ovr-amt-row"><input type="number" id="ovrPct" min="0" max="100" step="1"><select id="ovrSign" style="display:none;"><option value="over">over</option><option value="under">under</option></select></div>
     <label for="ovrNote">Why (shows on hover)</label>
     <textarea id="ovrNote" placeholder="e.g. Substantially complete but windows are on backorder — not yet earned."></textarea>
     <div class="ovr-foot">
@@ -259,7 +262,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v19';
+const CORE_VERSION='v20';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -409,17 +412,20 @@ function initAsOfControl(){
 
 // ── Override modal ──
 let _ovrSpId=null;
-// One modal, two kinds: 'pct' (the existing % Complete override) and 'invoiced'
-// (a manual invoiced amount, for when a bad BuilderTrend match inflates a
-// project's total — see the invoiced-vs-contract error check in computeRow).
+// One modal, three kinds: 'pct' (the % Complete override), 'invoiced' (a manual
+// invoiced amount, for when a bad BuilderTrend match inflates a project's total
+// — see the invoiced-vs-contract error check in computeRow), and 'gap' (a manual
+// over/under, for adjusting the displayed Gap directly without touching Invoiced
+// or Earned). None of these are scoped to "Viewing as of" — they apply, and can
+// be set or changed, from any date, not just today.
 let _ovrKind='pct';
 function openOverrideModal(spId,kind){
-  if(!isToday()) return;   // overrides aren't date-scoped — only meaningful while viewing today
   const row=(window._wipRows||[]).find(r=>r.p.spId===spId); if(!row) return;
   _ovrSpId=spId; _ovrKind=kind||'pct';
   document.getElementById('ovrTitle').textContent=row.p.name;
-  const label=document.getElementById('ovrFieldLabel'), input=document.getElementById('ovrPct');
+  const label=document.getElementById('ovrFieldLabel'), input=document.getElementById('ovrPct'), sign=document.getElementById('ovrSign');
   if(_ovrKind==='invoiced'){
+    sign.style.display='none';
     document.getElementById('ovrSub').textContent=row.calc.invoiced==null?'No BuilderTrend match yet.':'Currently matched at '+fmt$(row.calc.invoiced)+'.';
     label.textContent='Invoiced amount (overrides the BuilderTrend match)';
     input.removeAttribute('max'); input.step='1';
@@ -427,10 +433,21 @@ function openOverrideModal(spId,kind){
     input.value=existing?Math.round(existing.amount):(row.calc.invoiced!=null?Math.round(row.calc.invoiced):'');
     document.getElementById('ovrNote').value=existing?existing.note:'';
     document.getElementById('ovrNote').placeholder='e.g. BT match pulled in an unrelated job — corrected to the real invoiced total.';
+  }else if(_ovrKind==='gap'){
+    sign.style.display='';
+    document.getElementById('ovrSub').textContent=row.calc.gap==null?'No gap calculated yet.':'Currently calculated at '+fmt$(Math.abs(row.calc.gap))+(row.calc.gap>=0?' over':' under')+'.';
+    label.textContent='Over/under amount (overrides the Gap column)';
+    input.removeAttribute('max'); input.min='0'; input.step='1';
+    const existing=GAP_OVERRIDES[spId];
+    input.value=existing?Math.round(Math.abs(existing.value)):(row.calc.gap!=null?Math.round(Math.abs(row.calc.gap)):'');
+    sign.value=existing?(existing.value>=0?'over':'under'):(row.calc.gap!=null&&row.calc.gap<0?'under':'over');
+    document.getElementById('ovrNote').value=existing?existing.note:'';
+    document.getElementById('ovrNote').placeholder='e.g. Reconciled against the BT statement directly — Invoiced/Earned above haven’t caught up yet.';
   }else{
+    sign.style.display='none';
     document.getElementById('ovrSub').textContent=row.calc.pct==null?'No automatic % yet — set one by hand.':'Currently calculated at '+fmtPct(row.calc.pct)+'.';
     label.textContent='Percent complete (overrides the formula)';
-    input.max='100'; input.step='1';
+    input.max='100'; input.min='0'; input.step='1';
     const existing=OVERRIDES[spId];
     input.value=existing?Math.round(existing.pct*100):(row.calc.pct!=null?Math.round(row.calc.pct*100):'');
     document.getElementById('ovrNote').value=existing?existing.note:'';
@@ -450,6 +467,11 @@ document.getElementById('ovrSaveBtn').addEventListener('click',async()=>{
       const amt=parseFloat(raw);
       if(raw===''||isNaN(amt)||amt<0){ toast('Enter a valid invoiced amount','err'); return; }
       await saveInvOverride(spId,amt,note); toast('Invoiced amount saved','ok');
+    }else if(_ovrKind==='gap'){
+      const amt=parseFloat(raw);
+      if(raw===''||isNaN(amt)||amt<0){ toast('Enter a valid amount','err'); return; }
+      const sign=document.getElementById('ovrSign').value;
+      await saveGapOverride(spId,amt,sign,note); toast('Over/under saved','ok');
     }else{
       const pct=Math.max(0,Math.min(100,parseFloat(raw)))/100;
       if(raw===''||isNaN(pct)){ toast('Enter a percent from 0–100','err'); return; }
@@ -463,6 +485,7 @@ document.getElementById('ovrClearBtn').addEventListener('click',async()=>{
   const spId=_ovrSpId;
   try{
     if(_ovrKind==='invoiced'){ await clearInvOverride(spId); toast('Invoiced override cleared','ok'); }
+    else if(_ovrKind==='gap'){ await clearGapOverride(spId); toast('Over/under override cleared','ok'); }
     else{ await clearOverride(spId); toast('Override cleared','ok'); }
     closeOverrideModal(); renderAll();
   }catch(e){ toast('Could not clear: '+(e.message||e),'err'); }
@@ -804,6 +827,27 @@ async function clearInvOverride(spId){
   delete INV_OVERRIDES[spId];
   await cfgSet('wip_invoiced_overrides',JSON.stringify(INV_OVERRIDES));
 }
+
+// ── Per-project Gap overrides — replaces the displayed over/under figure itself,
+// leaving Invoiced and Earned showing their own (real or invoiced-overridden)
+// values. Not scoped to "Viewing as of" — like the other overrides, it applies
+// regardless of which date is being viewed, and can be set or changed from any
+// date, not just today. Value is signed the same way gap already is (>=0 = over).
+let GAP_OVERRIDES={};  // spId -> {value, note, setBy, setAt}
+async function loadGapOverrides(){
+  try{ const row=await cfgGet('wip_gap_overrides'); GAP_OVERRIDES=row&&row.value?JSON.parse(row.value):{}; }
+  catch(e){ console.warn('[wip] gap overrides load failed:',e); GAP_OVERRIDES={}; }
+}
+async function saveGapOverride(spId,amount,sign,note){
+  const acct=SherpaAuth.getAccount();
+  const value=sign==='under'?-Math.abs(amount):Math.abs(amount);
+  GAP_OVERRIDES[spId]={value,note:note||'',setBy:(acct&&(acct.name||acct.username))||'Unknown',setAt:new Date().toISOString()};
+  await cfgSet('wip_gap_overrides',JSON.stringify(GAP_OVERRIDES));
+}
+async function clearGapOverride(spId){
+  delete GAP_OVERRIDES[spId];
+  await cfgSet('wip_gap_overrides',JSON.stringify(GAP_OVERRIDES));
+}
 // Sum of invoiced minus sum of earned across the given rows — null if nothing's
 // matched to BuilderTrend yet. Rows already reflect any per-project invoiced
 // overrides, so this needs no override logic of its own.
@@ -964,8 +1008,10 @@ function projectPhase(p,atWeek){
 // found in the Gantt) earns the deposit only — same "no schedule" flag as before.
 // A separate invoiced override (invOverride) replaces the BuilderTrend-matched
 // total outright, before any of the above runs — for a bad match inflating a
-// project's number, not for the earned-income formula itself.
-function computeRow(p,matchedEntry,override,invOverride){
+// project's number, not for the earned-income formula itself. A gap override
+// replaces only the displayed over/under figure, applied last — Invoiced and
+// Earned still show their own (possibly invoiced-overridden) values underneath.
+function computeRow(p,matchedEntry,override,invOverride,gapOverride){
   let invoiced = matchedEntry ? matchedEntry.total : null;
   const weakMatch = matchedEntry ? matchedEntry.weak : false;
   if(invOverride) invoiced = invOverride.amount;
@@ -988,10 +1034,12 @@ function computeRow(p,matchedEntry,override,invOverride){
     }
     if(p.contract) earned=p.contract*(DEPOSIT_SHARE+REMAINING_SHARE*pct);
   }
-  const gap=(earned!=null&&invoiced!=null)?invoiced-earned:null;
+  const computedGap=(earned!=null&&invoiced!=null)?invoiced-earned:null;
+  const gap=gapOverride?gapOverride.value:computedGap;
   const overInvoiced=!!(invoiced!=null&&p.contract&&invoiced>p.contract);
   return {pct,earned,invoiced,weakMatch,gap,overridden:!!override,override:override||null,phase,noSchedule,
-    invoicedOverridden:!!invOverride,invOverride:invOverride||null,overInvoiced};
+    invoicedOverridden:!!invOverride,invOverride:invOverride||null,overInvoiced,
+    gapOverridden:!!gapOverride,gapOverride:gapOverride||null};
 }
 
 // ════════════════════════════════════ RENDER
@@ -1086,7 +1134,7 @@ function tableHtml(rows,fromLock){
     const gapTxt=c.gap==null?'—':fmt$(Math.abs(c.gap))+(c.gap>=0?' over':' under');
     const phaseCls=c.phase==='DESIGN'?'design':c.phase==='PRE-CON'?'precon':c.phase==='CONSTRUCTION'?'construction':'';
     const stageBadge='<span class="stage-label'+(phaseCls?' '+phaseCls:'')+'">'+esc(c.phase||'—')+'</span>';
-    const ovrBtn=(fromLock||!isToday())?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
+    const ovrBtn=fromLock?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
     let progress;
     const note=c.override&&c.override.note?'<span class="ovr-note" data-tip="Manual override" data-tip-d="'+esc(c.override.note)+' — set by '+esc(c.override.setBy||'')+'">'+esc(c.override.note.length>28?c.override.note.slice(0,28)+'…':c.override.note)+'</span>':'';
     const progressBar=(pct,flag)=>'<span class="progress-mini"><span class="bar"><span style="width:'+Math.round(pct*100)+'%"></span></span>'+fmtPct(pct)+(flag||'')+ovrBtn+note+'</span>';
@@ -1109,14 +1157,17 @@ function tableHtml(rows,fromLock){
     }
     const weakBadge=c.weakMatch?' <span class="flag weak" data-tip="Weak name match" data-tip-d="Matched to BuilderTrend by a shared name fragment, not a close full-name match — worth a second look.">~</span>':'';
     const overInvBadge=c.overInvoiced?' <span class="flag bad" data-tip="Invoiced exceeds contract value" data-tip-d="Invoiced is higher than the contract value — usually a bad BuilderTrend match pulling in another job’s invoices. Check the match, or set a manual invoiced amount using the ✎ next to this figure.">!</span>':'';
-    const invOvrBtn=(fromLock||!isToday())?'':' <button class="ovr-btn inv-ovr-btn" data-ovr-inv="'+esc(r.p.spId)+'">✎</button>';
+    const invOvrBtn=fromLock?'':' <button class="ovr-btn inv-ovr-btn" data-ovr-inv="'+esc(r.p.spId)+'">✎</button>';
     const invManualFlag=c.invoicedOverridden?' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual invoiced amount, not the BuilderTrend match.">manual</span>':'';
     const invNote=c.invOverride&&c.invOverride.note?'<span class="ovr-note" data-tip="Manual invoiced amount" data-tip-d="'+esc(c.invOverride.note)+' — set by '+esc(c.invOverride.setBy||'')+'">'+esc(c.invOverride.note.length>28?c.invOverride.note.slice(0,28)+'…':c.invOverride.note)+'</span>':'';
     const invTxt=c.invoiced==null
       ?'<span class="dim">no BT match</span> <span class="flag bad" data-tip="Not matched to a BuilderTrend job" data-tip-d="No job in the latest BuilderTrend invoicing export matched this project by name. Check the export, or the project name in the Pipeline.">!</span>'+invOvrBtn
       :fmt$(c.invoiced)+weakBadge+invManualFlag+overInvBadge+invOvrBtn+invNote;
     const contractTxt=r.p.contract?fmt$(r.p.contract):'<span class="dim">—</span> <span class="flag bad" data-tip="No contract value" data-tip-d="EstimatedProjectValue is empty for this project in the Pipeline — earned revenue can’t be calculated until it’s set.">!</span>';
-    h+='<tr><td>'+esc(r.p.name)+'</td><td>'+stageBadge+'</td><td>'+contractTxt+'</td><td>'+progress+'</td><td>'+fmt$(c.earned)+'</td><td>'+invTxt+'</td><td class="'+gapCls+'">'+gapTxt+'</td></tr>';
+    const gapOvrBtn=fromLock?'':' <button class="ovr-btn gap-ovr-btn" data-ovr-gap="'+esc(r.p.spId)+'">✎</button>';
+    const gapManualFlag=c.gapOverridden?' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual over/under amount, not calculated from Invoiced minus Earned.">manual</span>':'';
+    const gapNote=c.gapOverride&&c.gapOverride.note?'<span class="ovr-note" data-tip="Manual over/under" data-tip-d="'+esc(c.gapOverride.note)+' — set by '+esc(c.gapOverride.setBy||'')+'">'+esc(c.gapOverride.note.length>28?c.gapOverride.note.slice(0,28)+'…':c.gapOverride.note)+'</span>':'';
+    h+='<tr><td>'+esc(r.p.name)+'</td><td>'+stageBadge+'</td><td>'+contractTxt+'</td><td>'+progress+'</td><td>'+fmt$(c.earned)+'</td><td>'+invTxt+'</td><td class="'+gapCls+'">'+gapTxt+gapManualFlag+gapOvrBtn+gapNote+'</td></tr>';
   });
   return h;
 }
@@ -1125,6 +1176,7 @@ function renderTable(rows,fromLock){
   if(!fromLock){
     document.querySelectorAll('[data-ovr]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr'),'pct')));
     document.querySelectorAll('[data-ovr-inv]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr-inv'),'invoiced')));
+    document.querySelectorAll('[data-ovr-gap]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr-gap'),'gap')));
   }
   document.querySelectorAll('#projTbl th.sortable').forEach(th=>th.addEventListener('click',()=>{
     const key=th.getAttribute('data-sortkey');
@@ -1225,7 +1277,7 @@ function renderAll(){
     return;
   }
   const {matched,unmatched}=matchInvoices();
-  const rows=PROJECTS.map(p=>({p,calc:computeRow(p, INV.error?null:(matched.get(p.spId)||null), OVERRIDES[p.spId]||null, INV_OVERRIDES[p.spId]||null)}));
+  const rows=PROJECTS.map(p=>({p,calc:computeRow(p, INV.error?null:(matched.get(p.spId)||null), OVERRIDES[p.spId]||null, INV_OVERRIDES[p.spId]||null, GAP_OVERRIDES[p.spId]||null)}));
   renderReviewerPanel();
   renderPrintHeader(false);
   renderSource();
@@ -1240,7 +1292,7 @@ async function boot(){
   document.getElementById('loadStatus').classList.remove('hidden');
   document.getElementById('main').classList.add('hidden');
   try{
-    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadInvOverrides(), loadLock()]);
+    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadInvOverrides(), loadGapOverrides(), loadLock()]);
     initAsOfControl();
     renderAll();
     document.getElementById('loadStatus').classList.add('hidden');
