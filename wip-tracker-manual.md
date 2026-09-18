@@ -54,7 +54,7 @@ This is a genuinely different calculation, not just a narrower live view — pic
 
 > **This is not a historical replay.** It recalculates using **today's** project data (contract values, schedules) and the **latest** BuilderTrend export, just with the clock turned back for the purposes of the math. If a project's schedule or contract value has changed since that date, the recalculation uses the current version, not what it looked like back then. For a true frozen record of a specific month, see *Locking the month*, below — that's the one figure this page actually preserves unchanged.
 
-**Manual overrides are only available while viewing today** — the pencil disappears on any other date. Overrides aren't scoped to a date; whatever override is currently set still applies to the calculation even when looking backward, which is worth keeping in mind — Fike's override, say, reflects today's understanding of the windows delay, not necessarily what was known as of the earlier date you're viewing.
+**Manual overrides work from any date, including a historical one** — the ✎ pencils stay available no matter what **Viewing as of** is set to. Overrides aren't scoped to a date either way: whatever's currently set applies to the calculation regardless of which date you're looking at, which is worth keeping in mind — Fike's override, say, reflects today's understanding of the windows delay, not necessarily what was known as of the earlier date you're viewing.
 
 **Locking follows the date you're viewing, not the real calendar.** See *Locking the month*, below, for how that actually works — the short version is that the Ryan/Joey chips stay visible everywhere, but only turn active for today or the last day of a month.
 
@@ -62,7 +62,9 @@ Click **Today** to snap back to the live view.
 
 ## Manual overrides
 
-Two different **✎** buttons let a human override the math — one for % Complete (and therefore Earned), one for Invoiced. They're separate because they fix separate problems: the % Complete override is for when the *formula* doesn't apply or doesn't match reality; the Invoiced override is for when the *BuilderTrend match* is wrong. Overriding one never touches the other.
+Three different **✎** buttons let a human override the math — one for % Complete (and therefore Earned), one for Invoiced, one for the Gap ("over/under") column itself. They're separate because they fix separate problems: % Complete is for when the *formula* doesn't apply or doesn't match reality; Invoiced is for when the *BuilderTrend match* is wrong; Gap is for adjusting the bottom-line over/under figure directly, without implying anything about Invoiced or Earned individually. Overriding one never touches the others.
+
+**None of the three are scoped to "Viewing as of."** They can be set, changed, or cleared no matter which date is currently being viewed, and once set they apply to every date the same way — a manual figure isn't "as of" anything, it's just the number until someone changes it.
 
 ### % Complete
 
@@ -83,6 +85,12 @@ Click the **✎** next to any project's Invoiced figure to replace it with a num
 A manual invoiced amount is marked **manual** in the table, replaces the BuilderTrend-matched total everywhere that figure is used (Gap, and — during Design — the 50%-of-invoiced earned calculation), and flows straight into the **Net Position** card, which is just the sum of every row's Invoiced minus Earned. There's no separate override for Net Position itself; fixing the project-level number is what fixes the portfolio total.
 
 Like % Complete overrides, this persists until changed or cleared and is stored in **`CORE_Config`** (key `wip_invoiced_overrides`).
+
+### Over/under (Gap)
+
+Click the **✎** next to any project's Gap figure to set the over/under amount directly, with an **over**/**under** choice next to it. This is for when you want the bottom-line figure to say something specific — reconciled against a statement, agreed with the client, whatever the reason — without changing what Invoiced or Earned show above it. Both of those keep displaying their own real (or separately overridden) values; only the Gap cell itself reflects the manual figure.
+
+A manual Gap is marked **manual** in the table, with its note visible on hover. Like the other two overrides, it persists until changed or cleared and applies regardless of which date is being viewed — stored in **`CORE_Config`** (key `wip_gap_overrides`).
 
 ## Sorting the table
 
@@ -170,7 +178,7 @@ The page always reads whichever file in that folder was **most recently saved**.
 | % Complete | Construction schedule progress — blank during Design (no physical schedule yet), 0% through Pre-Con, ramping during Construction — or a manual override. |
 | Earned | The phase formula's result (see *How earned revenue is calculated*, above), or a manual override. Blank if the phase can't be determined or its formula is missing an input. |
 | Invoiced | Sum of non-Draft invoices matched to this job, dated on or before the date being viewed. |
-| Gap | Invoiced − Earned. Red = billed ahead; green = work ahead of billing. |
+| Gap | Invoiced − Earned, or a manual override. Red = billed ahead; green = work ahead of billing. |
 
 Click any column header to sort by it — see *Sorting the table*, above.
 
@@ -195,9 +203,6 @@ The page looks for `1. WIP Reports & Job Costs`, then `BT_InvoicingReports_forWI
 
 **A BuilderTrend job total isn't showing up on a project.**
 First check the *BuilderTrend jobs not matched* list at the bottom of the page — the job may be sitting there under a name that didn't match closely enough. Matching compares against a project's **Job Code** and **Project Name** in the Pipeline — never Client Name, which often carries both clients' full names ("Zoe Odenwalder & Evan Skalski") and reliably defeats a close match even when the job is obvious to a person. It tries a close comparison first, then falls back to a shared name-fragment ("Odenwalder" matching even if the rest of the text around it differs) flagged with **~**. If a job still isn't matching, check that the project's **Job Code** is actually filled in and matches BuilderTrend's own naming convention (surname plus the client's first initial, e.g. `ODENWALDERZ`) — that field exists specifically to keep this reliable, and a blank or mistyped one is the most common cause of a job landing in *unmatched* or matching only weakly.
-
-**The override pencil disappeared.**
-Check *Viewing as of* at the top — it's hidden while looking at a date other than today, by design. Click **Today** to bring it back.
 
 **The lock chips are greyed out.**
 That's by design too, but for a narrower reason than the override pencil: locking only works for today or the last day of a month. Check *Viewing as of* — if it's set to a mid-month date, jump to that month's last day (or click **Today**) to make the buttons active again.
