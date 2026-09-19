@@ -16,6 +16,8 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/wip-tracker.h
 
 From top to bottom: **Data sources and calculations**, then the **Viewing as of** strip (the date picker and the Ryan/Joey/PDF chips together, separated by thin vertical rules), then **Portfolio**, then **Projects**. Only **Portfolio** and the **Projects** heading stay pinned at the top of the window as you scroll the table below them, the way a spreadsheet's frozen header row would — the data-sources panel and the as-of/lock strip scroll away normally, since they're reference material and controls rather than numbers you need visible while scanning rows. The Portfolio totals themselves are laid out like a small spreadsheet — one row of labels, one row of figures, one row of context — rather than a row of separate cards.
 
+Neither **Data sources and calculations** nor the **Viewing as of** strip sit inside a boxed panel — collapsed, "Data sources and calculations" is just its title with a small light-blue chevron underneath, taking up two short lines rather than a card's worth of space; click it (or the chevron) to expand the reference text below. The date picker and chips are likewise plain text, inputs, and buttons directly on the page, not wrapped in a bordered box.
+
 ### How earned revenue is calculated
 
 The formula depends on which of the three phases a project is in — see *Reading the Stage column*, just below, for exactly how those phases are defined. The same walkthrough is also built into the page itself: click **Data sources and calculations** near the top of the page to expand it without leaving the page.
