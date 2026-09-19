@@ -136,9 +136,10 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .asof-bar button:disabled{opacity:.4;cursor:not-allowed;}
 .asof-bar .asof-note{color:var(--text-sec);flex-basis:100%;}
 .asof-bar.historical{background:#fdf7e6;border-left:4px solid var(--gold);}
+.chips-inline{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 
 /* ── Lock banner ── */
-.reviewer-panel{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.reviewer-panel{display:flex;gap:10px;flex-wrap:wrap;}
 .reviewer-chip{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12.5px;}
 .reviewer-chip.done{border-color:#bcd8c1;background:#f2f8f3;}
 .reviewer-chip .rc-name{font-weight:700;}
@@ -147,7 +148,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .reviewer-chip .rc-btn{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
 .reviewer-chip .rc-btn:hover:not(.locked-out){background:var(--bg);}
 .reviewer-chip .rc-btn.locked-out{opacity:.4;cursor:not-allowed;}
-.reviewer-panel.disabled .reviewer-chip:not(.pdf-chip){opacity:.5;}
+.reviewer-panel.disabled .reviewer-chip{opacity:.5;}
 .asof-lock-note{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 14px;margin:-2px 0 10px;font-size:12px;color:var(--text-sec);}
 .lock-banner{background:#eef3f6;border:1px solid var(--border);border-left:4px solid var(--ok);border-radius:8px;padding:12px 18px;margin-bottom:14px;font-size:12.5px;line-height:1.6;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
 .lock-banner b{font-weight:600;}
@@ -217,12 +218,10 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
       <span class="asof-lbl">Viewing as of</span>
       <input type="date" id="asOfInput">
       <button type="button" id="asOfTodayBtn">Today</button>
+      <div id="reviewerChipsWrap" class="chips-inline"></div>
       <span class="asof-note" id="asOfNote"></span>
     </div>
     <div id="lockBannerWrap"></div>
-
-    <h2 class="sec">Portfolio <span class="note" id="portfolioNote">DA Signed &amp; CA Signed jobs, live</span></h2>
-    <div id="cards"></div>
 
     <details class="formula-ref" id="dataSourcesRef">
       <summary>Data sources and calculations</summary>
@@ -237,6 +236,9 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
         <p class="dim">A manual override (✎ next to any project's % Complete) always replaces this — it's for the cases the formula can't reach, like a job whose schedule doesn't match reality.</p>
       </div>
     </details>
+
+    <h2 class="sec">Portfolio <span class="note" id="portfolioNote">DA Signed &amp; CA Signed jobs, live</span></h2>
+    <div id="cards"></div>
 
     <h2 class="sec">Projects</h2>
   </div>
@@ -271,7 +273,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v21';
+const CORE_VERSION='v22';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -1155,7 +1157,7 @@ function tableHtml(rows,fromLock){
     const ovrBtn=fromLock?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
     let progress;
     const note=c.override&&c.override.note?'<span class="ovr-note" data-tip="Manual override" data-tip-d="'+esc(c.override.note)+' — set by '+esc(c.override.setBy||'')+'">'+esc(c.override.note.length>28?c.override.note.slice(0,28)+'…':c.override.note)+'</span>':'';
-    const progressBar=(pct,flag)=>'<span class="progress-mini"><span class="bar"><span style="width:'+Math.round(pct*100)+'%"></span></span>'+fmtPct(pct)+(flag||'')+ovrBtn+note+'</span>';
+    const progressBar=(pct,flag,tip)=>'<span class="progress-mini"'+(tip||'')+'><span class="bar"><span style="width:'+Math.round(pct*100)+'%"></span></span>'+fmtPct(pct)+(flag||'')+ovrBtn+note+'</span>';
     if(c.overridden){
       progress=progressBar(c.pct,' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual override, not the formula.">manual</span>');
     }else if(c.phase==null){
@@ -1167,7 +1169,7 @@ function tableHtml(rows,fromLock){
         progress='<span class="dim" data-tip="In Design" data-tip-d="No physical schedule yet — earned income is 50% of the amount invoiced so far instead. See the Earned column.">design</span>'+ovrBtn+note;
       }
     }else if(c.phase==='PRE-CON'){
-      progress=progressBar(0,' <span class="flag" data-tip="Pre-construction" data-tip-d="Construction hasn’t started — progress stays at 0% until its first week. Earned already reflects the deposit.">pre-con</span>');
+      progress=progressBar(0,'',' data-tip="Pre-construction" data-tip-d="Construction hasn’t started — progress stays at 0% until its first week. Earned already reflects the deposit."');
     }else if(c.noSchedule){
       progress=progressBar(0,' <span class="flag bad" data-tip="No construction schedule" data-tip-d="This project has no construction phase in the Pipeline Gantt, so earned revenue is showing the deposit only.">!</span>');
     }else{
@@ -1235,6 +1237,7 @@ function renderAsOfBar(){
   note.textContent=isToday()?'':'Historical view — recalculated with today’s project data and the latest BuilderTrend export, not a saved snapshot from that date. Manual overrides are only available when viewing today.';
 }
 function renderReviewerPanel(){
+  const chipsWrap=document.getElementById('reviewerChipsWrap');
   const wrap=document.getElementById('lockBannerWrap');
   const eligible=canLockAsOf();
   const cur=(LOCK&&LOCK.period===viewPeriod())?LOCK:null;
@@ -1244,7 +1247,7 @@ function renderReviewerPanel(){
     const isMe=myKey===r.key;
     const canClick=eligible&&isMe;
     const state=rev?('✓ '+esc(fmtDate(rev.at))+(rev.asOf?' · as of '+esc(rev.asOf):'')):'not locked';
-    const label=rev?'Update '+esc(r.label)+'’s lock':'Lock as '+esc(r.label);
+    const label=rev?'Update':'Lock';
     let tip='';
     if(!eligible) tip=' data-tip="Not available for this date" data-tip-d="Locking only works for today or the last day of a month. Pick the last day of '+esc(viewPeriodLabel())+', or switch to Today."';
     else if(!isMe) tip=' data-tip="Only '+esc(r.label)+' can use this" data-tip-d="You’re signed in as '+esc(identity().name||'someone else')+'."';
@@ -1263,8 +1266,9 @@ function renderReviewerPanel(){
     : ' data-tip="Save to SharePoint" data-tip-d="'+esc(viewPeriodLabel())+' isn’t finalized yet, so this saves the live figures as of '+esc(asOfLabel())+', labeled a Live snapshot (not Finalized) in the PDF — saved as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."';
   const pdfChip='<div class="reviewer-chip pdf-chip'+(realFinalized?' done':'')+'"><span class="rc-name">PDF</span>'
     +'<span class="rc-state">'+(realFinalized?'finalized':'live snapshot')+'</span>'
-    +'<button class="rc-btn" id="savePdfBtn"'+pdfTip+'>Save PDF to SharePoint</button></div>';
-  wrap.innerHTML='<div class="reviewer-panel'+(eligible?'':' disabled')+'">'+chips+pdfChip+'</div>'+note
+    +'<button class="rc-btn" id="savePdfBtn"'+pdfTip+'>Save to SharePoint</button></div>';
+  chipsWrap.innerHTML='<div class="reviewer-panel'+(eligible?'':' disabled')+'">'+chips+'</div>'+pdfChip;
+  wrap.innerHTML=note
     +(cur&&cur.finalized?'<div class="lock-banner">🔒 <span><b>'+esc(cur.periodLabel)+' is finalized</b> — locked by Ryan and Joey'+(finalSnapshot(cur).asOf?' (figures as of '+esc(finalSnapshot(cur).asOf)+')':'')+'. Live numbers below keep moving; the lock is the permanent record.</span>'
       +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div></div>':'');
   document.querySelectorAll('[data-reviewer]').forEach(btn=>btn.addEventListener('click',()=>onReviewerLock(btn.getAttribute('data-reviewer'))));
