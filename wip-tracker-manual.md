@@ -14,7 +14,7 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/wip-tracker.h
 
 > **Scope:** only **DA Signed** and **CA Signed** jobs show up here. Leads (no agreement signed yet) are excluded outright — nothing's been collected on a job that isn't under contract in some form.
 
-Everything from **Viewing as of** through the **Projects** heading — the date picker, the lock/PDF chips, the Portfolio totals, and **Data sources and calculations** — stays pinned at the top of the window as you scroll the Projects table below it, the way a spreadsheet's frozen header row would. The Portfolio totals themselves are laid out the same way: one row of labels, one row of figures, one row of context, like a small spreadsheet rather than a row of separate cards.
+Everything from **Viewing as of** through the **Projects** heading — the date picker and lock/PDF chips (one strip), **Data sources and calculations**, and the Portfolio totals — stays pinned at the top of the window as you scroll the Projects table below it, the way a spreadsheet's frozen header row would. The Ryan/Joey/PDF chips sit right in the date-picker strip rather than a separate row below it. The Portfolio totals themselves are laid out the same way: one row of labels, one row of figures, one row of context, like a small spreadsheet rather than a row of separate cards.
 
 ### How earned revenue is calculated
 
@@ -114,8 +114,8 @@ There's no single generic "lock" button. Instead there are two named chips near 
 
 Whichever date it targets, the flow is the same:
 
-1. **Ryan** clicks his own **Lock as Ryan** button. His chip shows a ✓, a timestamp, and the date it was locked as of. Joey's still shows "not locked." Nothing is final yet.
-2. **Joey**, signed in as himself, clicks **Lock as Joey**. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF**.
+1. **Ryan** clicks the **Lock** button on his own chip. His chip shows a ✓, a timestamp, and the date it was locked as of. Joey's still shows "not locked." Nothing is final yet.
+2. **Joey**, signed in as himself, clicks **Lock** on his own chip. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF** — separate from, and in addition to, the PDF chip's own **Save to SharePoint** (see *Saving a PDF to SharePoint*, below).
 
 Order doesn't matter — whoever locks first, the record only finalizes once *both* slots are filled. Ryan and Joey should agree beforehand on which date they're locking (typically the month's last day) — the tool doesn't force them to have picked the identical date before each clicks, so coordinate the same way you would for any other joint sign-off.
 
@@ -129,7 +129,7 @@ A month that's never been locked always starts with both slots empty — nothing
 
 A third chip — **PDF** — sits next to Ryan's and Joey's, always active. There's no need to wait on a lock: a dated snapshot is useful whether or not the month has been formally approved yet, so the button always works.
 
-- **Month is finalized** — the chip reads **"finalized"** and clicking **Save PDF to SharePoint** saves the locked snapshot — the same figures Ryan and Joey approved.
+- **Month is finalized** — the chip reads **"finalized"** and clicking **Save to SharePoint** saves the locked snapshot — the same figures Ryan and Joey approved.
 - **Month isn't finalized** — the chip reads **"live snapshot"** and clicking it saves the current live figures as of whatever date **Viewing as of** is set to. The PDF itself is labeled **"Live snapshot"** in its header (not "Finalized"), so anyone who opens it later can tell at a glance it wasn't an approved record — just a saved moment in time.
 
 Either way it saves to:
@@ -188,7 +188,7 @@ Click any column header to sort by it — see *Sorting the table*, above.
 
 - **"Not set"** — the project has no DA/CA signing week in the Gantt yet, so it can't be placed in Design, Pre-Con, or Construction at all. Fix in the Pipeline, or set a manual override.
 - **"No invoicing yet"** (Design-phase jobs) — Design-phase earned comes from actual invoicing, and nothing's posted for this job yet. Earned stays blank until something does, or until a manual override is set.
-- **"Pre-con"** — not a problem flag, just a label confirming the 0%/deposit-only stage: construction hasn't started, so earned reflects the deposit only until it does.
+- **A Pre-Con job's % Complete shows 0% with no flag** — that's expected, not an error: construction hasn't started, so earned reflects the signing share only until it does. The Stage column already says Pre-Con, so there's no separate flag for it — hover the 0% for the same explanation.
 - **"No construction schedule"** (Construction-phase jobs) — no `Construction` phase in the Gantt, so earned is showing the 20% signing share only, without the schedule-driven remainder. Fix: add the construction phase in the Pipeline, or set a manual override.
 - **"~" (weak match)** next to an invoiced figure — this job matched a BuilderTrend job code by a shared name fragment against Job Code or Project Name, rather than a close match on either. Worth a second look, but often just means the project's Job Code is blank or doesn't follow BuilderTrend's naming convention — it's shown, not hidden, so it stays checkable rather than silently guessed.
 - **"No BT match"** — nothing in the latest export matched this project's Job Code or Project Name at all. Check the *BuilderTrend jobs not matched* list further down the page.
