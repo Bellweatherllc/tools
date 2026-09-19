@@ -14,7 +14,7 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/wip-tracker.h
 
 > **Scope:** only **DA Signed** and **CA Signed** jobs show up here. Leads (no agreement signed yet) are excluded outright — nothing's been collected on a job that isn't under contract in some form.
 
-Everything from **Viewing as of** through the **Projects** heading — the date picker and lock/PDF chips (one strip), **Data sources and calculations**, and the Portfolio totals — stays pinned at the top of the window as you scroll the Projects table below it, the way a spreadsheet's frozen header row would. The Ryan/Joey/PDF chips sit right in the date-picker strip rather than a separate row below it. The Portfolio totals themselves are laid out the same way: one row of labels, one row of figures, one row of context, like a small spreadsheet rather than a row of separate cards.
+From top to bottom: **Data sources and calculations**, then the **Viewing as of** strip (the date picker and the Ryan/Joey/PDF chips together, separated by thin vertical rules), then **Portfolio**, then **Projects**. Only **Portfolio** and the **Projects** heading stay pinned at the top of the window as you scroll the table below them, the way a spreadsheet's frozen header row would — the data-sources panel and the as-of/lock strip scroll away normally, since they're reference material and controls rather than numbers you need visible while scanning rows. The Portfolio totals themselves are laid out like a small spreadsheet — one row of labels, one row of figures, one row of context — rather than a row of separate cards.
 
 ### How earned revenue is calculated
 
@@ -115,7 +115,7 @@ There's no single generic "lock" button. Instead there are two named chips in th
 Whichever date it targets, the flow is the same:
 
 1. **Ryan** clicks **Ryan: lock**. His chip turns green (hover it to see the timestamp and the date it was locked as of) and its label changes to **Ryan: update**. Joey's chip still says **Joey: lock** — nothing is final yet.
-2. **Joey**, signed in as himself, clicks **Joey: lock**. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF** — separate from, and in addition to, the PDF chip's own **Save to SharePoint** (see *Saving a PDF to SharePoint*, below).
+2. **Joey**, signed in as himself, clicks **Joey: lock**. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF** — separate from, and in addition to, the **PDF to SharePoint** chip (see *Saving a PDF to SharePoint*, below).
 
 Order doesn't matter — whoever locks first, the record only finalizes once *both* slots are filled. Ryan and Joey should agree beforehand on which date they're locking (typically the month's last day) — the tool doesn't force them to have picked the identical date before each clicks, so coordinate the same way you would for any other joint sign-off.
 
@@ -127,7 +127,7 @@ A month that's never been locked always starts with both slots empty — nothing
 
 ### Saving a PDF to SharePoint
 
-A third chip — **PDF snapshot to SharePoint** — sits next to Ryan's and Joey's, always active. There's no need to wait on a lock: a dated snapshot is useful whether or not the month has been formally approved yet, so the button always works. Hover it to see whether it's about to save a finalized record or a live one, and the exact filename it'll use.
+A third chip — **PDF to SharePoint** — sits next to Ryan's and Joey's (separated from them, and from the date picker, by thin vertical rules), always active. There's no need to wait on a lock: a dated snapshot is useful whether or not the month has been formally approved yet, so the button always works. Hover it to see whether it's about to save a finalized record or a live one, and the exact filename it'll use.
 
 - **Month is finalized** — the chip turns green and clicking it saves the locked snapshot — the same figures Ryan and Joey approved.
 - **Month isn't finalized** — clicking it saves the current live figures as of whatever date **Viewing as of** is set to. The PDF itself is labeled **"Live snapshot"** in its header (not "Finalized"), so anyone who opens it later can tell at a glance it wasn't an approved record — just a saved moment in time.
@@ -137,6 +137,8 @@ Either way it saves to:
 > `Operations → FINANCIAL → 1. WIP Reports & Job Costs → WIP Reports`
 
 Named to match the files already sitting in that folder: **`BWC WIP Report MM-DD-YY.pdf`**, dated to whichever date the PDF is actually for — the locked-as-of date for a finalized month, or the **Viewing as of** date for a live snapshot. Saving again for the same date overwrites that same filename rather than creating a duplicate — so if you want a record of a specific day, that's the date to set **Viewing as of** to before saving.
+
+Right next to that chip, a plain **open folder** link takes you straight to that SharePoint folder in a new tab — useful for checking what's already been saved, or grabbing a report to send someone, without digging through Operations by hand. It's resolved once when the page loads; if it doesn't appear, the page couldn't reach that folder (see *The source panel says it couldn't read the invoicing export*, below, for the same kind of fix).
 
 This replaces printing to PDF by hand — there's no print dialog involved, and nothing is generated until you click the button. A toast confirms the save, or explains what went wrong (usually the same causes as the invoicing-export folder errors below: the folder's been renamed or moved, or the folder path under FINANCIAL doesn't match what the page expects).
 
