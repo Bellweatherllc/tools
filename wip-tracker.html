@@ -140,14 +140,14 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 
 /* ── Lock banner ── */
 .reviewer-panel{display:flex;gap:10px;flex-wrap:wrap;}
-.reviewer-chip{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12.5px;}
-.reviewer-chip.done{border-color:#bcd8c1;background:#f2f8f3;}
-.reviewer-chip .rc-name{font-weight:700;}
-.reviewer-chip .rc-state{color:var(--text-sec);}
-.reviewer-chip.done .rc-state{color:var(--good);}
-.reviewer-chip .rc-btn{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
-.reviewer-chip .rc-btn:hover:not(.locked-out){background:var(--bg);}
-.reviewer-chip .rc-btn.locked-out{opacity:.4;cursor:not-allowed;}
+/* Each chip is a single <button> — the whole thing is the control, not a
+   name + state + nested button. State detail lives in the tooltip instead. */
+.reviewer-chip{display:inline-flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600;font-family:inherit;color:var(--text);cursor:pointer;}
+.reviewer-chip:hover:not(.locked-out){background:var(--bg);}
+.reviewer-chip.done{border-color:#bcd8c1;background:#f2f8f3;color:var(--good);}
+.reviewer-chip.done:hover{background:#e7f3e9;}
+.reviewer-chip.locked-out{opacity:.4;cursor:not-allowed;}
+.reviewer-chip.saving{opacity:.6;cursor:wait;}
 .reviewer-panel.disabled .reviewer-chip{opacity:.5;}
 .asof-lock-note{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 14px;margin:-2px 0 10px;font-size:12px;color:var(--text-sec);}
 .lock-banner{background:#eef3f6;border:1px solid var(--border);border-left:4px solid var(--ok);border-radius:8px;padding:12px 18px;margin-bottom:14px;font-size:12.5px;line-height:1.6;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
@@ -155,7 +155,6 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .lock-banner .actions{margin-left:auto;display:flex;gap:8px;}
 .lock-banner .actions button{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
 .lock-banner .actions button:hover{background:var(--bg);}
-.reviewer-chip .rc-btn.saving{opacity:.6;cursor:wait;}
 
 /* ── Override modal ── */
 #ovrOverlay{position:fixed;inset:0;background:rgba(31,46,62,.55);z-index:800;display:none;align-items:center;justify-content:center;}
@@ -273,7 +272,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v22';
+const CORE_VERSION='v23';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -1242,17 +1241,20 @@ function renderReviewerPanel(){
   const eligible=canLockAsOf();
   const cur=(LOCK&&LOCK.period===viewPeriod())?LOCK:null;
   const myKey=myReviewerKey();
+  // Each chip is now one clickable element — its own label ("Ryan: lock") is the
+  // whole button, not a name + state + separate button glued together. The state
+  // detail (locked when, as of what date) moves into the hover tooltip instead
+  // of sitting in the button as visible text.
   const chips=REVIEWERS.map(r=>{
     const rev=cur&&cur.reviews&&cur.reviews[r.key];
     const isMe=myKey===r.key;
     const canClick=eligible&&isMe;
-    const state=rev?('✓ '+esc(fmtDate(rev.at))+(rev.asOf?' · as of '+esc(rev.asOf):'')):'not locked';
-    const label=rev?'Update':'Lock';
-    let tip='';
+    const label=r.label+': '+(rev?'update':'lock');
+    const stateDesc=rev?('Locked '+esc(fmtDate(rev.at))+(rev.asOf?' · as of '+esc(rev.asOf):'')+'.'):'Not locked yet.';
+    let tip=' data-tip="'+(rev?'Locked':'Not locked')+'" data-tip-d="'+stateDesc+'"';
     if(!eligible) tip=' data-tip="Not available for this date" data-tip-d="Locking only works for today or the last day of a month. Pick the last day of '+esc(viewPeriodLabel())+', or switch to Today."';
     else if(!isMe) tip=' data-tip="Only '+esc(r.label)+' can use this" data-tip-d="You’re signed in as '+esc(identity().name||'someone else')+'."';
-    return '<div class="reviewer-chip'+(rev?' done':'')+'"><span class="rc-name">'+esc(r.label)+'</span><span class="rc-state">'+state+'</span>'
-      +'<button class="rc-btn'+(canClick?'':' locked-out')+'" data-reviewer="'+r.key+'"'+tip+'>'+label+'</button></div>';
+    return '<button class="reviewer-chip'+(rev?' done':'')+(canClick?'':' locked-out')+'" data-reviewer="'+r.key+'"'+tip+'>'+esc(label)+'</button>';
   }).join('');
   const note=eligible?'':'<div class="asof-lock-note">Locking is only available for today or the last day of a month — '+esc(viewPeriodLabel())+' isn’t either right now, so both buttons above are inactive. Pick the last day of the month to approve it retroactively, or switch to Today.</div>';
   // Always active — a PDF is a real, useful record of a moment in time whether
@@ -1262,11 +1264,9 @@ function renderReviewerPanel(){
   const realFinalized=!!(cur&&cur.finalized);
   const pdfAsOf=realFinalized?finalSnapshot(cur).asOf:fmtInputDate(AS_OF);
   const pdfTip=realFinalized
-    ? ' data-tip="Save to SharePoint" data-tip-d="Generates the finalized report as a PDF and saves it as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."'
-    : ' data-tip="Save to SharePoint" data-tip-d="'+esc(viewPeriodLabel())+' isn’t finalized yet, so this saves the live figures as of '+esc(asOfLabel())+', labeled a Live snapshot (not Finalized) in the PDF — saved as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."';
-  const pdfChip='<div class="reviewer-chip pdf-chip'+(realFinalized?' done':'')+'"><span class="rc-name">PDF</span>'
-    +'<span class="rc-state">'+(realFinalized?'finalized':'live snapshot')+'</span>'
-    +'<button class="rc-btn" id="savePdfBtn"'+pdfTip+'>Save to SharePoint</button></div>';
+    ? ' data-tip="Finalized" data-tip-d="Generates the finalized report as a PDF and saves it as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."'
+    : ' data-tip="Live snapshot" data-tip-d="'+esc(viewPeriodLabel())+' isn’t finalized yet, so this saves the live figures as of '+esc(asOfLabel())+', labeled a Live snapshot (not Finalized) in the PDF — saved as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."';
+  const pdfChip='<button class="reviewer-chip pdf-chip'+(realFinalized?' done':'')+'" id="savePdfBtn"'+pdfTip+'>PDF snapshot to SharePoint</button>';
   chipsWrap.innerHTML='<div class="reviewer-panel'+(eligible?'':' disabled')+'">'+chips+'</div>'+pdfChip;
   wrap.innerHTML=note
     +(cur&&cur.finalized?'<div class="lock-banner">🔒 <span><b>'+esc(cur.periodLabel)+' is finalized</b> — locked by Ryan and Joey'+(finalSnapshot(cur).asOf?' (figures as of '+esc(finalSnapshot(cur).asOf)+')':'')+'. Live numbers below keep moving; the lock is the permanent record.</span>'

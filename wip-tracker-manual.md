@@ -102,35 +102,35 @@ Before you click anything, the table opens in its original order: worst gap firs
 
 Sorting is view-only. It doesn't change what's calculated, what's saved, or what a lock records — it just changes the order rows are listed in on your screen.
 
-## Locking the month — Ryan's button, Joey's button
+## Locking the month — Ryan's chip, Joey's chip
 
-There's no single generic "lock" button. Instead there are two named chips near the top of the page — **Ryan** and **Joey** — each with its own status and its own button. A chip's button only works for that person: it checks who's actually signed in, not a name anyone could type, so Ryan can't lock Joey's slot and vice versa.
+There's no single generic "lock" button. Instead there are two named chips in the same strip as **Viewing as of** — **Ryan: lock** and **Joey: lock** — each one a single button that only works for that person: it checks who's actually signed in, not a name anyone could type, so Ryan can't lock Joey's slot and vice versa. Hover a chip for its current status (locked or not, and when); the button label itself just says who it's for and what clicking it does.
 
 **The chips are always visible, but only active for today or the last day of a month.** Locking targets whatever month is currently being viewed (see *Viewing a different date*, above) — not a fixed "real now." That means:
 
-- **Viewing today** — both buttons work as usual, locking the current, in-progress month.
-- **Viewing the last day of a past month** (e.g. set *Viewing as of* to August 31st) — both buttons work too, letting Ryan and Joey retroactively approve a month that was never locked at the time, or re-approve one with corrected figures.
-- **Viewing any other day** (a mid-month date) — both buttons are greyed out, with a note explaining why and a suggestion to jump to that month's last day instead. This is deliberate: a mid-month figure was never meant to be "the" number for a month, so it's shown as unavailable rather than hidden — the feature hasn't gone anywhere, it's just not the right moment to use it.
+- **Viewing today** — both chips work as usual, locking the current, in-progress month.
+- **Viewing the last day of a past month** (e.g. set *Viewing as of* to August 31st) — both chips work too, letting Ryan and Joey retroactively approve a month that was never locked at the time, or re-approve one with corrected figures.
+- **Viewing any other day** (a mid-month date) — both chips are greyed out, with a note explaining why and a suggestion to jump to that month's last day instead. This is deliberate: a mid-month figure was never meant to be "the" number for a month, so it's shown as unavailable rather than hidden — the feature hasn't gone anywhere, it's just not the right moment to use it.
 
 Whichever date it targets, the flow is the same:
 
-1. **Ryan** clicks the **Lock** button on his own chip. His chip shows a ✓, a timestamp, and the date it was locked as of. Joey's still shows "not locked." Nothing is final yet.
-2. **Joey**, signed in as himself, clicks **Lock** on his own chip. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF** — separate from, and in addition to, the PDF chip's own **Save to SharePoint** (see *Saving a PDF to SharePoint*, below).
+1. **Ryan** clicks **Ryan: lock**. His chip turns green (hover it to see the timestamp and the date it was locked as of) and its label changes to **Ryan: update**. Joey's chip still says **Joey: lock** — nothing is final yet.
+2. **Joey**, signed in as himself, clicks **Joey: lock**. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF** — separate from, and in addition to, the PDF chip's own **Save to SharePoint** (see *Saving a PDF to SharePoint*, below).
 
 Order doesn't matter — whoever locks first, the record only finalizes once *both* slots are filled. Ryan and Joey should agree beforehand on which date they're locking (typically the month's last day) — the tool doesn't force them to have picked the identical date before each clicks, so coordinate the same way you would for any other joint sign-off.
 
-Clicking your own button again before the other person has locked just **updates your slot** with the current figures — it's still only one signature. The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the finalized lock is untouched by that. Once finalized, a banner appears with **View locked figures**, which switches the page to show exactly what was recorded, and **Back to live**, which returns to the current numbers.
+Clicking your own chip again before the other person has locked just **updates your slot** with the current figures — it's still only one signature; the label already said **update** rather than **lock** once you'd locked once. The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the finalized lock is untouched by that. Once finalized, a banner appears with **View locked figures**, which switches the page to show exactly what was recorded, and **Back to live**, which returns to the current numbers.
 
-**Locking again after it's already finalized** starts a brand-new two-slot cycle — both chips reset to "not locked," and both Ryan and Joey need to lock again before a new PDF comes out. That's expected for revising a month after something changes, not an error.
+**Locking again after it's already finalized** starts a brand-new two-slot cycle — both chips reset to **Ryan: lock** / **Joey: lock**, and both Ryan and Joey need to lock again before a new PDF comes out. That's expected for revising a month after something changes, not an error.
 
 A month that's never been locked always starts with both slots empty — nothing carries over from month to month.
 
 ### Saving a PDF to SharePoint
 
-A third chip — **PDF** — sits next to Ryan's and Joey's, always active. There's no need to wait on a lock: a dated snapshot is useful whether or not the month has been formally approved yet, so the button always works.
+A third chip — **PDF snapshot to SharePoint** — sits next to Ryan's and Joey's, always active. There's no need to wait on a lock: a dated snapshot is useful whether or not the month has been formally approved yet, so the button always works. Hover it to see whether it's about to save a finalized record or a live one, and the exact filename it'll use.
 
-- **Month is finalized** — the chip reads **"finalized"** and clicking **Save to SharePoint** saves the locked snapshot — the same figures Ryan and Joey approved.
-- **Month isn't finalized** — the chip reads **"live snapshot"** and clicking it saves the current live figures as of whatever date **Viewing as of** is set to. The PDF itself is labeled **"Live snapshot"** in its header (not "Finalized"), so anyone who opens it later can tell at a glance it wasn't an approved record — just a saved moment in time.
+- **Month is finalized** — the chip turns green and clicking it saves the locked snapshot — the same figures Ryan and Joey approved.
+- **Month isn't finalized** — clicking it saves the current live figures as of whatever date **Viewing as of** is set to. The PDF itself is labeled **"Live snapshot"** in its header (not "Finalized"), so anyone who opens it later can tell at a glance it wasn't an approved record — just a saved moment in time.
 
 Either way it saves to:
 
