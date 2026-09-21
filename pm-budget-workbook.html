@@ -376,10 +376,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v57';
+const CORE_VERSION = 'v58';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v58', date:'2026-09-21', notes:'Replaced the whole prompt()/blur-based over-budget gate — it was clunky and kept misfiring. Now a line pushing its division more than 10% over its estimate just auto-opens its comment box with a Budgeting comment already written explaining the overage; click Post (or Enter) to save the note and the figure together, no typing required. Esc still backs out and reverts the amount. Once a line has any Budgeting comment, later edits to it aren’t flagged again.' },
   { v:'v57', date:'2026-09-21', notes:'The v56 fix wasn’t enough — the over-budget prompt was still firing twice. Deferred the prompt() call itself to the next tick so it no longer runs from inside the blur handler at all, which is what let the browser treat the click that caused the blur as unfinished and replay it a second time once the dialog closed.' },
   { v:'v56', date:'2026-09-21', notes:'Fixed the over-budget prompt reappearing right after answering it — showing a native prompt() from a blur handler makes some browsers refire blur again the instant the dialog closes, which was popping the same prompt a second time. Guarded against that duplicate firing.' },
   { v:'v55', date:'2026-09-21', notes:'Stronger gate for the over-budget note: clicking Post (or Enter) still saves the note and figure together, but clicking or tabbing anywhere else without posting now interrupts with a blocking browser prompt demanding the explanation, instead of just leaving an ignorable box open. Answering the prompt posts the note; cancelling it lets the original click through (e.g. into the amount field, to fix the number instead).' },
@@ -1626,14 +1627,18 @@ function divNameFor(divKey){
   }
   return divKey;
 }
-// Builds the over-budget explanation — shared by the inline notice and the
-// click-away prompt so the wording and figures always match.
-function overageNotice(divKey){
+// A short caption explaining why the comment box opened on its own, plus an
+// auto-generated comment body pre-filling the input — the PM can edit it, or just
+// click Post as-is. No typing required.
+function overageCaption(){
+  return 'Flagged automatically — this line pushes the division over its estimate. Edit the note below or just click Post.';
+}
+function overageComment(divKey){
   const d = divByKey(divKey);
-  if(!d) return null;
-  const dEstC = estForDiv(d), dBudC = divBudC(d);
-  return 'This edit puts ' + divNameFor(divKey) + ' over its ' + fmtC(dEstC) + ' estimate by ' + fmtC(dBudC - dEstC) +
-    ' (more than ' + (OVER_BUDGET_GATE_PCT * 100) + '%). A note is required to save it — edit the amount instead if this was a mistake.';
+  if(!d) return 'Went over the division’s estimate.';
+  const dEstC = estForDiv(d), dBudC = divBudC(d), overC = dBudC - dEstC;
+  const pct = dEstC ? Math.round((overC / dEstC) * 100) : 0;
+  return 'Went over the ' + fmtC(dEstC) + ' estimate for ' + divNameFor(divKey) + ' by ' + fmtC(overC) + ' (' + pct + '% over).';
 }
 function deltaChip(estC, budC){
   if(!estC && !budC) return '';
@@ -1764,10 +1769,11 @@ function renderWorkbook(){
           ' data-line="' + escAttr(rid) + '" data-div="' + escAttr(d.key) + '" data-label="' + escAttr(r.label) + '"' +
           ' data-src="' + (r.template ? 'Template' : 'PM') + '" onchange="toggleFixed(this)"></td></tr>';
         const addingL = wb.addingCmt === 'L:' + tk;
-        const gateNotice = (addingL && r._pendingBudgetC !== undefined) ? overageNotice(d.key) : null;
+        const gated = addingL && r._pendingBudgetC !== undefined;
         if(lc.length || addingL){
           html += '<tr class="cmt-panel"><td colspan="2">' + lc.map(cmtHtml).join('') +
-            (addingL ? cmtInputHtml('L', String(refIdx), { notice: gateNotice }) : '') + '</td><td class="amt"></td><td class="fx"></td></tr>';
+            (addingL ? cmtInputHtml('L', String(refIdx), gated ? { caption: overageCaption(), value: overageComment(d.key) } : {}) : '') +
+            '</td><td class="amt"></td><td class="fx"></td></tr>';
         }
       });
       html += '<tr class="addline"><td colspan="4">' +
@@ -1887,50 +1893,19 @@ function divCmtRows(d){
 }
 function cmtInputHtml(kind, key, opts){
   opts = opts || {};
-  return (opts.notice ? '<div class="cmt-gate-notice">' + escHtml(opts.notice) + '</div>' : '') +
+  return (opts.caption ? '<div class="cmt-gate-notice">' + escHtml(opts.caption) + '</div>' : '') +
     '<div class="cmt-inrow"><input type="text" id="cin-' + kind + '-' + escAttr(key) + '"' +
-    ' placeholder="' + escAttr(opts.notice ? 'Explain the overage \u2014 Enter or Post to save (required)' : 'Add comment \u2014 Enter to post, Esc to cancel') + '"' +
-    ' onkeydown="cmtKey(event,\'' + kind + '\',\'' + escAttr(key) + '\')"' +
-    (opts.notice ? ' onblur="cmtBlur(\'' + kind + '\',\'' + escAttr(key) + '\')"' : '') + '>' +
-    // mousedown preventDefault keeps the input focused through a Post click, so clicking
-    // Post itself never blurs (and so never triggers the click-away prompt below).
-    '<button class="cmt-post"' + (opts.notice ? ' onmousedown="event.preventDefault()"' : '') +
-    ' onclick="submitCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Post</button>' +
+    (opts.value ? ' value="' + escAttr(opts.value) + '"' : '') +
+    ' placeholder="Add comment \u2014 Enter to post, Esc to cancel"' +
+    ' onkeydown="cmtKey(event,\'' + kind + '\',\'' + escAttr(key) + '\')">' +
+    '<button class="cmt-post" onclick="submitCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Post</button>' +
     '</div>';
-}
-// Clicking (or tabbing) anywhere else while a note is required interrupts with a
-// blocking prompt instead of letting the box sit there ignorable. Answering it posts
-// the note; cancelling leaves the click to land wherever it was headed (e.g. the
-// amount field, if the PM meant to fix the number instead of explaining it).
-//
-// Showing prompt() synchronously from inside blur was firing twice: some browsers
-// treat a still-in-progress focus transition (the click that caused this blur) as
-// unfinished business once the dialog closes, and replay blur again right then. Two
-// defenses: (1) the actual prompt() call is deferred a tick, so by the time it runs
-// the original focus transition has already fully settled and there's nothing left
-// to replay; (2) a guard swallows any blur that still manages to re-fire on the same
-// row while a prompt for it is already scheduled or open.
-let cmtBlurGuardRow = null;
-function cmtBlur(kind, key){
-  if(kind !== 'L' || !wb) return;
-  const row = rowForLineRef(wb._lineRefs[parseInt(key, 10)]);
-  if(!row || row._pendingBudgetC === undefined) return;
-  if(cmtBlurGuardRow === row) return;
-  cmtBlurGuardRow = row;
-  setTimeout(() => {
-    try{
-      if(!wb || row._pendingBudgetC === undefined) return; // resolved already (e.g. Post, or the amount fixed)
-      const notice = overageNotice(row.divKey) || 'A note is required before this can save.';
-      const body = (window.prompt(notice + '\n\nEnter your note:') || '').trim();
-      if(body) postLineComment(parseInt(key, 10), body);
-    } finally { cmtBlurGuardRow = null; }
-  }, 0);
 }
 function startCmt(kind, key){
   wb.addingCmt = kind + ':' + key;
   renderWorkbook();
   const inp = document.querySelector('.cmt-inrow input');
-  if(inp) inp.focus();
+  if(inp){ inp.focus(); inp.select(); }
 }
 // Finds the canonical wb.scopeRows row a line ref points at, whether or not it's persisted yet.
 function rowForLineRef(ref){
@@ -1938,12 +1913,16 @@ function rowForLineRef(ref){
   return ref.spItemId ? wb.scopeRows.find(r => r.spItemId === ref.spItemId)
                        : wb.scopeRows.find(r => !r.spItemId && r.divKey === ref.divKey && normName(r.label) === normName(ref.label));
 }
-// Over-budget notes are mandatory \u2014 a gated line's box can't be cancelled or escaped,
-// only resolved by posting a note (or by fixing the amount itself back under threshold).
+// Cancelling (or Escape) on a gated line reverts the pending amount back to its last
+// saved value, same as backing out of any other edit.
 function cancelCmt(kind, key){
   if(kind === 'L'){
     const row = rowForLineRef(wb._lineRefs[parseInt(key, 10)]);
-    if(row && row._pendingBudgetC !== undefined) return;
+    if(row && row._pendingBudgetC !== undefined){
+      row.budgetC = row._pendingPrevBudgetC;
+      delete row._pendingBudgetC;
+      delete row._pendingPrevBudgetC;
+    }
   }
   wb.addingCmt = null;
   renderWorkbook();
