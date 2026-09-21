@@ -376,10 +376,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v54';
+const CORE_VERSION = 'v55';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v55', date:'2026-09-21', notes:'Stronger gate for the over-budget note: clicking Post (or Enter) still saves the note and figure together, but clicking or tabbing anywhere else without posting now interrupts with a blocking browser prompt demanding the explanation, instead of just leaving an ignorable box open. Answering the prompt posts the note; cancelling it lets the original click through (e.g. into the amount field, to fix the number instead).' },
   { v:'v54', date:'2026-09-21', notes:'Three revisions: (1) Sale Price is now a manual entry next to Selections/Allowance/DESIGN COGS, no longer pulled from the Pipeline. (2) The EST/DA/CA document links moved out of the admin-only financials block and up next to the project picker, so they’re visible whether admin mode is on or off. (3) The over-budget note requirement now only triggers when a division’s Budget total clears its Estimate by more than 10% (not any amount over), and the note is mandatory — Cancel and Esc no longer bypass it; the only way out without posting a note is editing the amount back under the threshold.' },
   { v:'v53', date:'2026-09-17', notes:'Going over budget on a line now requires a note. If saving a line’s Budget amount would push its division’s total over that division’s Estimate, the save is held and that line’s comment box opens with an explanation of the overage — the amount only saves once a Budgeting comment is posted (or the edit is cancelled, which reverts it). A line that already has a Budgeting comment isn’t re-gated on later edits.' },
   { v:'v52', date:'2026-09-15', notes:'Fixed GPM (Estimate) and GPM (Budget): both were computing the cost ratio, not the margin. Now correctly 1 − (that ratio) for each.' },
@@ -1616,6 +1617,22 @@ function divByKey(key){
   for(const g of TEMPLATE){ for(const d of g.divisions){ if(d.key === key) return d; } }
   return null;
 }
+function divNameFor(divKey){
+  for(const g of TEMPLATE){
+    const d = g.divisions.find(dd => dd.key === divKey);
+    if(d) return (d.noCode ? (d.label || g.label) : (d.key + ' - ' + (d.label || g.label))).toUpperCase();
+  }
+  return divKey;
+}
+// Builds the over-budget explanation — shared by the inline notice and the
+// click-away prompt so the wording and figures always match.
+function overageNotice(divKey){
+  const d = divByKey(divKey);
+  if(!d) return null;
+  const dEstC = estForDiv(d), dBudC = divBudC(d);
+  return 'This edit puts ' + divNameFor(divKey) + ' over its ' + fmtC(dEstC) + ' estimate by ' + fmtC(dBudC - dEstC) +
+    ' (more than ' + (OVER_BUDGET_GATE_PCT * 100) + '%). A note is required to save it — edit the amount instead if this was a mistake.';
+}
 function deltaChip(estC, budC){
   if(!estC && !budC) return '';
   const d = estC - budC;
@@ -1745,10 +1762,7 @@ function renderWorkbook(){
           ' data-line="' + escAttr(rid) + '" data-div="' + escAttr(d.key) + '" data-label="' + escAttr(r.label) + '"' +
           ' data-src="' + (r.template ? 'Template' : 'PM') + '" onchange="toggleFixed(this)"></td></tr>';
         const addingL = wb.addingCmt === 'L:' + tk;
-        const gateNotice = (addingL && r._pendingBudgetC !== undefined)
-          ? 'This edit puts ' + divName + ' over its ' + fmtC(dEstC) + ' estimate by ' + fmtC(dBudC - dEstC) +
-            ' (more than ' + (OVER_BUDGET_GATE_PCT * 100) + '%). A note is required to save it — edit the amount instead if this was a mistake.'
-          : null;
+        const gateNotice = (addingL && r._pendingBudgetC !== undefined) ? overageNotice(d.key) : null;
         if(lc.length || addingL){
           html += '<tr class="cmt-panel"><td colspan="2">' + lc.map(cmtHtml).join('') +
             (addingL ? cmtInputHtml('L', String(refIdx), { notice: gateNotice }) : '') + '</td><td class="amt"></td><td class="fx"></td></tr>';
@@ -1873,10 +1887,26 @@ function cmtInputHtml(kind, key, opts){
   opts = opts || {};
   return (opts.notice ? '<div class="cmt-gate-notice">' + escHtml(opts.notice) + '</div>' : '') +
     '<div class="cmt-inrow"><input type="text" id="cin-' + kind + '-' + escAttr(key) + '"' +
-    ' placeholder="' + escAttr(opts.notice ? 'Explain the overage \u2014 Enter to post & save (required)' : 'Add comment \u2014 Enter to post, Esc to cancel') + '"' +
-    ' onkeydown="cmtKey(event,\'' + kind + '\',\'' + escAttr(key) + '\')">' +
-    '<button class="cmt-post" onclick="submitCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Post</button>' +
+    ' placeholder="' + escAttr(opts.notice ? 'Explain the overage \u2014 Enter or Post to save (required)' : 'Add comment \u2014 Enter to post, Esc to cancel') + '"' +
+    ' onkeydown="cmtKey(event,\'' + kind + '\',\'' + escAttr(key) + '\')"' +
+    (opts.notice ? ' onblur="cmtBlur(\'' + kind + '\',\'' + escAttr(key) + '\')"' : '') + '>' +
+    // mousedown preventDefault keeps the input focused through a Post click, so clicking
+    // Post itself never blurs (and so never triggers the click-away prompt below).
+    '<button class="cmt-post"' + (opts.notice ? ' onmousedown="event.preventDefault()"' : '') +
+    ' onclick="submitCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Post</button>' +
     '</div>';
+}
+// Clicking (or tabbing) anywhere else while a note is required interrupts with a
+// blocking prompt instead of letting the box sit there ignorable. Answering it posts
+// the note; cancelling leaves the click to land wherever it was headed (e.g. the
+// amount field, if the PM meant to fix the number instead of explaining it).
+function cmtBlur(kind, key){
+  if(kind !== 'L' || !wb) return;
+  const row = rowForLineRef(wb._lineRefs[parseInt(key, 10)]);
+  if(!row || row._pendingBudgetC === undefined) return;
+  const notice = overageNotice(row.divKey) || 'A note is required before this can save.';
+  const body = (window.prompt(notice + '\n\nEnter your note:') || '').trim();
+  if(body) postLineComment(parseInt(key, 10), body);
 }
 function startCmt(kind, key){
   wb.addingCmt = kind + ':' + key;
