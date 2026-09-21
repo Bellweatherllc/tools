@@ -376,10 +376,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v55';
+const CORE_VERSION = 'v56';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v56', date:'2026-09-21', notes:'Fixed the over-budget prompt reappearing right after answering it — showing a native prompt() from a blur handler makes some browsers refire blur again the instant the dialog closes, which was popping the same prompt a second time. Guarded against that duplicate firing.' },
   { v:'v55', date:'2026-09-21', notes:'Stronger gate for the over-budget note: clicking Post (or Enter) still saves the note and figure together, but clicking or tabbing anywhere else without posting now interrupts with a blocking browser prompt demanding the explanation, instead of just leaving an ignorable box open. Answering the prompt posts the note; cancelling it lets the original click through (e.g. into the amount field, to fix the number instead).' },
   { v:'v54', date:'2026-09-21', notes:'Three revisions: (1) Sale Price is now a manual entry next to Selections/Allowance/DESIGN COGS, no longer pulled from the Pipeline. (2) The EST/DA/CA document links moved out of the admin-only financials block and up next to the project picker, so they’re visible whether admin mode is on or off. (3) The over-budget note requirement now only triggers when a division’s Budget total clears its Estimate by more than 10% (not any amount over), and the note is mandatory — Cancel and Esc no longer bypass it; the only way out without posting a note is editing the amount back under the threshold.' },
   { v:'v53', date:'2026-09-17', notes:'Going over budget on a line now requires a note. If saving a line’s Budget amount would push its division’s total over that division’s Estimate, the save is held and that line’s comment box opens with an explanation of the overage — the amount only saves once a Budgeting comment is posted (or the edit is cancelled, which reverts it). A line that already has a Budgeting comment isn’t re-gated on later edits.' },
@@ -1900,10 +1901,20 @@ function cmtInputHtml(kind, key, opts){
 // blocking prompt instead of letting the box sit there ignorable. Answering it posts
 // the note; cancelling leaves the click to land wherever it was headed (e.g. the
 // amount field, if the PM meant to fix the number instead of explaining it).
+//
+// Showing a native prompt() from inside a blur handler makes some browsers refire
+// blur again the instant the dialog closes — without this guard, that second firing
+// shows the same prompt a second time right after the first is answered. The guard
+// swallows that duplicate; it clears itself almost immediately, well before any real
+// future gate on the same line.
+let cmtBlurGuardRow = null;
 function cmtBlur(kind, key){
   if(kind !== 'L' || !wb) return;
   const row = rowForLineRef(wb._lineRefs[parseInt(key, 10)]);
   if(!row || row._pendingBudgetC === undefined) return;
+  if(cmtBlurGuardRow === row) return;
+  cmtBlurGuardRow = row;
+  setTimeout(() => { if(cmtBlurGuardRow === row) cmtBlurGuardRow = null; }, 250);
   const notice = overageNotice(row.divKey) || 'A note is required before this can save.';
   const body = (window.prompt(notice + '\n\nEnter your note:') || '').trim();
   if(body) postLineComment(parseInt(key, 10), body);
