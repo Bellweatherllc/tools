@@ -57,8 +57,10 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/pm-budget-wor
 
 A gear-and-switch control in the header, matching the Updater's, toggles admin mode. It controls two things:
 
-- **The financials block** (sale price, GPM figures, document links) — visible only in admin mode.
+- **The financials block** (sale price, GPM figures) — visible only in admin mode.
 - **The Setup button** — only admins can set up or re-import a project's budget.
+
+The EST/DA/CA document links sit next to the project picker itself, not in the financials block — so they're visible to everyone, admin mode or not.
 
 Admin mode does **not** control which projects you can pick — see the picker, next.
 
@@ -100,7 +102,7 @@ Once a budget exists, it opens as a spreadsheet-style grid: gray division header
 - **+Other** — the last line in most divisions; it adds a new row rather than a comment, which is why the comment icon is a speech bubble and not a "+" (a "+" right next to "Add Other" was too easy to misread).
 - **Other / E&O** — the one division with no cost code number. Its Estimate figure isn't read from a numbered line in the estimate; it comes from the estimate header's **Comp Escalation** figure, multiplied by 0.68, whenever that field has a value. Nothing to set up — it's automatic on every sync. Hover the division name to see the Comp Escalation figure it was derived from; if the estimator left a comment on that figure, it shows up in this division's own comment thread, same as any other Estimating comment.
 - **General estimate notes** — a handful of Estimating comments aren't tied to any division or cost code (they're on a header field like Sale Price or Markup %, not a numbered line). Those show up here, at the top of the workbook, each tagged **On: \<field name\>** so it's clear what the comment is actually about instead of floating with no context.
-- **Going over budget requires a note.** Estimate lives at the division level, not per line — so this is checked at that level: if editing a line's Budget figure would push its division's Budget total over that division's Estimate total, the figure won't save yet. Instead, that line's comment box opens with a note of how far over it puts the division, and the PM has to post a Budgeting comment explaining the overage before the number is saved — or hit Cancel, which reverts the field to its last saved value. Once a line has any Budgeting comment on it, later edits to that same line aren't gated again.
+- **Going more than 10% over budget requires a note.** Estimate lives at the division level, not per line — so this is checked at that level: if editing a line's Budget figure would push its division's Budget total more than 10% over that division's Estimate total, the figure won't save yet. Instead, that line's comment box opens with a note of how far over it puts the division, and a Budgeting comment explaining the overage is required before the number saves — there's no Cancel or Esc to skip it. The only way out without posting a note is to edit the amount itself back under the 10% threshold. Once a line has any Budgeting comment on it, later edits to that same line aren't gated again.
 
 ### GPM (Estimate) and GPM (Budget)
 
@@ -112,7 +114,7 @@ At the top of the financials, two stacked figures show gross profit margin two w
 
 The Estimate/Budget total is added into the cost side of the fraction, not divided into it — Sale Price is the only denominator. That fraction is a cost ratio, so the margin is 1 minus it.
 
-Sale Price itself always comes from the Pipeline — the Budget Planner only displays it, never edits it. To change a sale price, change it in the Pipeline.
+Sale Price is a manual entry in the financials strip, next to Selections, Unresolved Allowance, and DESIGN COGS — it no longer pulls from the Pipeline. The estimate file's own header Sale Price still shows as a reference underneath, for comparison.
 
 ## Part III — How the two tools connect
 
