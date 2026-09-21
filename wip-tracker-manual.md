@@ -14,7 +14,7 @@ It lives at [a web address](https://bellweatherllc.github.io/tools/wip-tracker.h
 
 > **Scope:** only **DA Signed** and **CA Signed** jobs show up here. Leads (no agreement signed yet) are excluded outright — nothing's been collected on a job that isn't under contract in some form.
 
-**Data sources and calculations** lives inside the navy header itself, right below the logo/title row — click its title, or the small light-blue chevron beside it, to expand the reference text in place; the navy header simply grows to fit it, then shrinks back when you close it. Below the header comes the **Viewing as of** strip (the date picker and the Ryan/Joey/PDF chips together, separated by thin vertical rules), then **Portfolio**, then **Projects**. Only **Portfolio** and the **Projects** heading stay pinned at the top of the window as you scroll the table below them, the way a spreadsheet's frozen header row would — the as-of/lock strip scrolls away normally, since it's a control rather than numbers you need visible while scanning rows. The Portfolio totals themselves are laid out like a small spreadsheet — one row of labels, one row of figures, one row of context — rather than a row of separate cards.
+**Data sources and calculations** lives inside the navy header itself, right below the logo/title row — click its title, or the small light-blue chevron beside it, to expand the reference text in place; the navy header simply grows to fit it, then shrinks back when you close it. Below the header comes the **Viewing as of** strip (the date picker and the **Save to PDF** chip together, separated by thin vertical rules), then **Portfolio**, then **Projects**. Only **Portfolio** and the **Projects** heading stay pinned at the top of the window as you scroll the table below them, the way a spreadsheet's frozen header row would — the as-of strip scrolls away normally, since it's a control rather than numbers you need visible while scanning rows. The Portfolio totals themselves are laid out like a small spreadsheet — one row of labels, one row of figures, one row of context — rather than a row of separate cards.
 
 The **Viewing as of** strip doesn't sit inside a boxed panel either — plain text, inputs, and buttons directly on the page, not wrapped in a bordered box.
 
@@ -56,11 +56,9 @@ A blank (**—**) means the Pipeline doesn't have enough schedule data yet — n
 
 This is a genuinely different calculation, not just a narrower live view — pick August 31st and you see the WIP picture exactly as it would read if August 31st were the day you opened the page.
 
-> **This is not a historical replay.** It recalculates using **today's** project data (contract values, schedules) and the **latest** BuilderTrend export, just with the clock turned back for the purposes of the math. If a project's schedule or contract value has changed since that date, the recalculation uses the current version, not what it looked like back then. For a true frozen record of a specific month, see *Locking the month*, below — that's the one figure this page actually preserves unchanged.
+> **This is not a historical replay.** It recalculates using **today's** project data (contract values, schedules) and the **latest** BuilderTrend export, just with the clock turned back for the purposes of the math. If a project's schedule or contract value has changed since that date, the recalculation uses the current version, not what it looked like back then. A frozen record of a specific date is only ever a saved PDF — see *Saving a PDF*, below.
 
 **Manual overrides work from any date, including a historical one** — the ✎ pencils stay available no matter what **Viewing as of** is set to. Overrides aren't scoped to a date either way: whatever's currently set applies to the calculation regardless of which date you're looking at, which is worth keeping in mind — Fike's override, say, reflects today's understanding of the windows delay, not necessarily what was known as of the earlier date you're viewing.
-
-**Locking follows the date you're viewing, not the real calendar.** See *Locking the month*, below, for how that actually works — the short version is that the Ryan/Joey chips stay visible everywhere, but only turn active for today or the last day of a month.
 
 Click **Today** to snap back to the live view.
 
@@ -102,51 +100,23 @@ Click any column header — **Project, Stage, Contract Value, % Complete, Earned
 
 Before you click anything, the table opens in its original order: worst gap first, regardless of over or under. That's still the most useful default for a quick scan, so it's not a "sort," it's just how the page starts — there's no arrow on any header until you pick one.
 
-Sorting is view-only. It doesn't change what's calculated, what's saved, or what a lock records — it just changes the order rows are listed in on your screen.
+Sorting is view-only. It doesn't change what's calculated or what's saved — it just changes the order rows are listed in on your screen.
 
-## Locking the month — Ryan's chip, Joey's chip
+## Saving a PDF
 
-There's no single generic "lock" button. Instead there are two named chips in the same strip as **Viewing as of** — **Ryan: lock** and **Joey: lock** — each one a single button that only works for that person: it checks who's actually signed in, not a name anyone could type, so Ryan can't lock Joey's slot and vice versa. Hover a chip for its current status (locked or not, and when); the button label itself just says who it's for and what clicking it does.
+The **Save to PDF** chip, next to the date picker in the **Viewing as of** strip, is always active — a dated snapshot is useful any time, so there's no approval step to wait on first.
 
-**The chips are always visible, but only active for today or the last day of a month.** Locking targets whatever month is currently being viewed (see *Viewing a different date*, above) — not a fixed "real now." That means:
+Clicking it opens a small dialog with a **file name** field, pre-filled with the same sound naming logic the page always used — **`BWC WIP Report MM-DD-YY.pdf`**, dated to whichever date **Viewing as of** is currently set to. You can edit that name before saving — rename it for a special-purpose copy, or leave it as-is. Click **Save**, or press Enter.
 
-- **Viewing today** — both chips work as usual, locking the current, in-progress month.
-- **Viewing the last day of a past month** (e.g. set *Viewing as of* to August 31st) — both chips work too, letting Ryan and Joey retroactively approve a month that was never locked at the time, or re-approve one with corrected figures.
-- **Viewing any other day** (a mid-month date) — both chips are greyed out, with a note explaining why and a suggestion to jump to that month's last day instead. This is deliberate: a mid-month figure was never meant to be "the" number for a month, so it's shown as unavailable rather than hidden — the feature hasn't gone anywhere, it's just not the right moment to use it.
-
-Whichever date it targets, the flow is the same:
-
-1. **Ryan** clicks **Ryan: lock**. His chip turns green (hover it to see the timestamp and the date it was locked as of) and its label changes to **Ryan: update**. Joey's chip still says **Joey: lock** — nothing is final yet.
-2. **Joey**, signed in as himself, clicks **Joey: lock**. That fills the second slot, **finalizes the record**, and immediately opens the browser's print dialog so it can be **saved as a PDF** — separate from, and in addition to, the **PDF to SharePoint** chip (see *Saving a PDF to SharePoint*, below).
-
-Order doesn't matter — whoever locks first, the record only finalizes once *both* slots are filled. Ryan and Joey should agree beforehand on which date they're locking (typically the month's last day) — the tool doesn't force them to have picked the identical date before each clicks, so coordinate the same way you would for any other joint sign-off.
-
-Clicking your own chip again before the other person has locked just **updates your slot** with the current figures — it's still only one signature; the label already said **update** rather than **lock** once you'd locked once. The live page keeps recalculating after that — invoiced totals and schedules don't freeze — but the finalized lock is untouched by that. Once finalized, a banner appears with **View locked figures**, which switches the page to show exactly what was recorded, and **Back to live**, which returns to the current numbers.
-
-**Locking again after it's already finalized** starts a brand-new two-slot cycle — both chips reset to **Ryan: lock** / **Joey: lock**, and both Ryan and Joey need to lock again before a new PDF comes out. That's expected for revising a month after something changes, not an error.
-
-A month that's never been locked always starts with both slots empty — nothing carries over from month to month.
-
-### Saving a PDF to SharePoint
-
-A third chip — **PDF to SharePoint** — sits next to Ryan's and Joey's (separated from them, and from the date picker, by thin vertical rules), always active. There's no need to wait on a lock: a dated snapshot is useful whether or not the month has been formally approved yet, so the button always works. Hover it to see whether it's about to save a finalized record or a live one, and the exact filename it'll use.
-
-- **Month is finalized** — the chip turns green and clicking it saves the locked snapshot — the same figures Ryan and Joey approved.
-- **Month isn't finalized** — clicking it saves the current live figures as of whatever date **Viewing as of** is set to. The PDF itself is labeled **"Live snapshot"** in its header (not "Finalized"), so anyone who opens it later can tell at a glance it wasn't an approved record — just a saved moment in time.
-
-Either way it saves to:
+It saves to:
 
 > `Operations → FINANCIAL → 1. WIP Reports & Job Costs → WIP Reports`
 
-Named to match the files already sitting in that folder: **`BWC WIP Report MM-DD-YY.pdf`**, dated to whichever date the PDF is actually for — the locked-as-of date for a finalized month, or the **Viewing as of** date for a live snapshot. Saving again for the same date overwrites that same filename rather than creating a duplicate — so if you want a record of a specific day, that's the date to set **Viewing as of** to before saving.
+**It never overwrites.** If a file with the chosen name already exists in that folder, a version number is appended automatically — `BWC WIP Report 09-21-26.pdf`, then `BWC WIP Report 09-21-26 (v2).pdf`, `(v3)`, and so on — so saving twice for the same date keeps both copies instead of replacing the first. A toast confirms the save with the exact filename actually used, or explains what went wrong (usually the same causes as the invoicing-export folder errors below: the folder's been renamed or moved, or the folder path under FINANCIAL doesn't match what the page expects).
 
 Right next to that chip, a plain **open folder** link takes you straight to that SharePoint folder in a new tab — useful for checking what's already been saved, or grabbing a report to send someone, without digging through Operations by hand. It's resolved once when the page loads; if it doesn't appear, the page couldn't reach that folder (see *The source panel says it couldn't read the invoicing export*, below, for the same kind of fix).
 
-This replaces printing to PDF by hand — there's no print dialog involved, and nothing is generated until you click the button. A toast confirms the save, or explains what went wrong (usually the same causes as the invoicing-export folder errors below: the folder's been renamed or moved, or the folder path under FINANCIAL doesn't match what the page expects).
-
-Locks are stored in `CORE_Config`, one row per month (key `wip_lock_YYYY-MM`, holding both reviewers' snapshots by name and the date each was locked as of), so they don't compete for space with anything else and there's no limit on how many months of history accumulate.
-
-> Reviewer matching is by first name on the signed-in Microsoft account (Ryan, Joey) — if either of their accounts doesn't display that first name for some reason, their button would never enable. Worth confirming once, then it's a non-issue going forward.
+This replaces printing to PDF by hand — there's no print dialog involved, and nothing is generated until you click **Save**.
 
 ## Where the rest of this data lives
 
@@ -209,9 +179,6 @@ The page looks for `1. WIP Reports & Job Costs`, then `BT_InvoicingReports_forWI
 
 **A BuilderTrend job total isn't showing up on a project.**
 First check the *BuilderTrend jobs not matched* list at the bottom of the page — the job may be sitting there under a name that didn't match closely enough. Matching compares against a project's **Job Code** and **Project Name** in the Pipeline — never Client Name, which often carries both clients' full names ("Zoe Odenwalder & Evan Skalski") and reliably defeats a close match even when the job is obvious to a person. It tries a close comparison first, then falls back to a shared name-fragment ("Odenwalder" matching even if the rest of the text around it differs) flagged with **~**. If a job still isn't matching, check that the project's **Job Code** is actually filled in and matches BuilderTrend's own naming convention (surname plus the client's first initial, e.g. `ODENWALDERZ`) — that field exists specifically to keep this reliable, and a blank or mistyped one is the most common cause of a job landing in *unmatched* or matching only weakly.
-
-**The lock chips are greyed out.**
-That's by design too, but for a narrower reason than the override pencil: locking only works for today or the last day of a month. Check *Viewing as of* — if it's set to a mid-month date, jump to that month's last day (or click **Today**) to make the buttons active again.
 
 **A project's invoiced total looks way too high.**
 Check whether it's absorbing a job that isn't really its. Matching only ever attaches a BuilderTrend job to the single closest project — it should never invent a match out of nothing, so if a job's real project isn't showing up (often because that project isn't `DA Signed`/`CA Signed` right now, or its name has drifted), that job's total belongs in the *unmatched* list, not silently parked on whichever open project happened to look closest. If a project's number seems inflated, it's worth cross-checking against the raw BuilderTrend export directly for that job's actual code. If invoiced has actually gone past the contract value, the page will already be flagging it with **"Invoiced exceeds contract value"** — once you've confirmed the real number from the export, correct it with the ✎ next to the Invoiced figure rather than leaving the bad match in place.
