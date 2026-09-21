@@ -376,10 +376,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v56';
+const CORE_VERSION = 'v57';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v57', date:'2026-09-21', notes:'The v56 fix wasn’t enough — the over-budget prompt was still firing twice. Deferred the prompt() call itself to the next tick so it no longer runs from inside the blur handler at all, which is what let the browser treat the click that caused the blur as unfinished and replay it a second time once the dialog closed.' },
   { v:'v56', date:'2026-09-21', notes:'Fixed the over-budget prompt reappearing right after answering it — showing a native prompt() from a blur handler makes some browsers refire blur again the instant the dialog closes, which was popping the same prompt a second time. Guarded against that duplicate firing.' },
   { v:'v55', date:'2026-09-21', notes:'Stronger gate for the over-budget note: clicking Post (or Enter) still saves the note and figure together, but clicking or tabbing anywhere else without posting now interrupts with a blocking browser prompt demanding the explanation, instead of just leaving an ignorable box open. Answering the prompt posts the note; cancelling it lets the original click through (e.g. into the amount field, to fix the number instead).' },
   { v:'v54', date:'2026-09-21', notes:'Three revisions: (1) Sale Price is now a manual entry next to Selections/Allowance/DESIGN COGS, no longer pulled from the Pipeline. (2) The EST/DA/CA document links moved out of the admin-only financials block and up next to the project picker, so they’re visible whether admin mode is on or off. (3) The over-budget note requirement now only triggers when a division’s Budget total clears its Estimate by more than 10% (not any amount over), and the note is mandatory — Cancel and Esc no longer bypass it; the only way out without posting a note is editing the amount back under the threshold.' },
@@ -1902,11 +1903,13 @@ function cmtInputHtml(kind, key, opts){
 // the note; cancelling leaves the click to land wherever it was headed (e.g. the
 // amount field, if the PM meant to fix the number instead of explaining it).
 //
-// Showing a native prompt() from inside a blur handler makes some browsers refire
-// blur again the instant the dialog closes — without this guard, that second firing
-// shows the same prompt a second time right after the first is answered. The guard
-// swallows that duplicate; it clears itself almost immediately, well before any real
-// future gate on the same line.
+// Showing prompt() synchronously from inside blur was firing twice: some browsers
+// treat a still-in-progress focus transition (the click that caused this blur) as
+// unfinished business once the dialog closes, and replay blur again right then. Two
+// defenses: (1) the actual prompt() call is deferred a tick, so by the time it runs
+// the original focus transition has already fully settled and there's nothing left
+// to replay; (2) a guard swallows any blur that still manages to re-fire on the same
+// row while a prompt for it is already scheduled or open.
 let cmtBlurGuardRow = null;
 function cmtBlur(kind, key){
   if(kind !== 'L' || !wb) return;
@@ -1914,10 +1917,14 @@ function cmtBlur(kind, key){
   if(!row || row._pendingBudgetC === undefined) return;
   if(cmtBlurGuardRow === row) return;
   cmtBlurGuardRow = row;
-  setTimeout(() => { if(cmtBlurGuardRow === row) cmtBlurGuardRow = null; }, 250);
-  const notice = overageNotice(row.divKey) || 'A note is required before this can save.';
-  const body = (window.prompt(notice + '\n\nEnter your note:') || '').trim();
-  if(body) postLineComment(parseInt(key, 10), body);
+  setTimeout(() => {
+    try{
+      if(!wb || row._pendingBudgetC === undefined) return; // resolved already (e.g. Post, or the amount fixed)
+      const notice = overageNotice(row.divKey) || 'A note is required before this can save.';
+      const body = (window.prompt(notice + '\n\nEnter your note:') || '').trim();
+      if(body) postLineComment(parseInt(key, 10), body);
+    } finally { cmtBlurGuardRow = null; }
+  }, 0);
 }
 function startCmt(kind, key){
   wb.addingCmt = kind + ':' + key;
