@@ -66,7 +66,7 @@ body{font-family:'TT Norms Pro',-apple-system,sans-serif;background:var(--bg);co
 /* ── Layout ── */
 .main{max-width:1180px;margin:0 auto;padding:22px 20px 60px;}
 /* Only the Portfolio grid and the Projects heading stay pinned under the
-   topbar while the table scrolls — data sources and the as-of/lock strip
+   topbar while the table scrolls — data sources and the as-of strip
    scroll away normally, above this. */
 .sticky-top{position:sticky;top:48px;z-index:90;background:var(--bg);padding-bottom:4px;border-bottom:1px solid var(--border);}
 /* Portfolio grid — a spreadsheet-style header/value/sub-note strip instead of
@@ -156,23 +156,9 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .folder-link{font-size:12px;color:var(--ok);text-decoration:none;font-weight:500;}
 .folder-link:hover{text-decoration:underline;}
 
-/* ── Lock banner ── */
-.reviewer-panel{display:flex;gap:10px;flex-wrap:wrap;}
-/* Each chip is a single <button> — the whole thing is the control, not a
-   name + state + nested button. State detail lives in the tooltip instead. */
-.reviewer-chip{display:inline-flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600;font-family:inherit;color:var(--text);cursor:pointer;}
-.reviewer-chip:hover:not(.locked-out){background:var(--bg);}
-.reviewer-chip.done{border-color:#bcd8c1;background:#f2f8f3;color:var(--good);}
-.reviewer-chip.done:hover{background:#e7f3e9;}
-.reviewer-chip.locked-out{opacity:.4;cursor:not-allowed;}
-.reviewer-chip.saving{opacity:.6;cursor:wait;}
-.reviewer-panel.disabled .reviewer-chip{opacity:.5;}
-.asof-lock-note{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 14px;margin:-2px 0 10px;font-size:12px;color:var(--text-sec);}
-.lock-banner{background:#eef3f6;border:1px solid var(--border);border-left:4px solid var(--ok);border-radius:8px;padding:12px 18px;margin-bottom:14px;font-size:12.5px;line-height:1.6;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
-.lock-banner b{font-weight:600;}
-.lock-banner .actions{margin-left:auto;display:flex;gap:8px;}
-.lock-banner .actions button{border:1px solid var(--border);background:#fff;border-radius:5px;padding:5px 11px;font-size:12px;font-family:inherit;cursor:pointer;}
-.lock-banner .actions button:hover{background:var(--bg);}
+/* ── PDF chip ── */
+.pdf-chip{display:inline-flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600;font-family:inherit;color:var(--text);cursor:pointer;}
+.pdf-chip:hover{background:var(--bg);}
 
 /* ── Override modal ── */
 #ovrOverlay{position:fixed;inset:0;background:rgba(31,46,62,.55);z-index:800;display:none;align-items:center;justify-content:center;}
@@ -181,7 +167,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-panel h3{font-family:'Swear Text',serif;font-size:16px;font-weight:500;margin-bottom:4px;}
 .ovr-panel .sub{font-size:12px;color:var(--text-sec);margin-bottom:14px;}
 .ovr-panel label{display:block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-sec);margin:12px 0 5px;}
-.ovr-panel input[type=number],.ovr-panel textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-family:inherit;font-size:13px;}
+.ovr-panel input[type=number],.ovr-panel input[type=text],.ovr-panel textarea{width:100%;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-family:inherit;font-size:13px;}
 .ovr-panel textarea{resize:vertical;min-height:52px;}
 .ovr-amt-row{display:flex;gap:8px;}
 .ovr-amt-row input[type=number]{width:auto;flex:1;}
@@ -191,8 +177,12 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 .ovr-foot button.primary{background:var(--navy);color:#fff;border-color:var(--navy);}
 .ovr-foot button.clear{color:var(--over);border-color:#e0b8b4;margin-right:auto;}
 
+/* ── Save-to-PDF modal ── */
+#pdfOverlay{position:fixed;inset:0;background:rgba(31,46,62,.55);z-index:800;display:none;align-items:center;justify-content:center;}
+#pdfOverlay.open{display:flex;}
+
 @media print{
-  .topbar,.src-panel,.unmatched,#ovrOverlay,.ovr-btn,.inv-ovr-btn,.lock-banner .actions,.reviewer-panel,.asof-bar,#toasts,#tt{display:none!important;}
+  .topbar,.src-panel,.unmatched,#ovrOverlay,#pdfOverlay,.ovr-btn,.inv-ovr-btn,.asof-bar,#toasts,#tt{display:none!important;}
   body{background:#fff;}
   #printHeader{display:block!important;margin-bottom:16px;}
   #printHeader h1{font-family:'Swear Text',serif;font-size:20px;margin-bottom:4px;}
@@ -254,10 +244,9 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
     <input type="date" id="asOfInput">
     <button type="button" id="asOfTodayBtn">Today</button>
     <span class="asof-div"></span>
-    <div id="reviewerChipsWrap" class="chips-inline"></div>
+    <div id="pdfControlsWrap" class="chips-inline"></div>
     <span class="asof-note" id="asOfNote"></span>
   </div>
-  <div id="lockBannerWrap"></div>
 
   <div class="sticky-top" id="stickyTop">
     <h2 class="sec">Portfolio <span class="note" id="portfolioNote">DA Signed &amp; CA Signed jobs, live</span></h2>
@@ -286,6 +275,19 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
   </div>
 </div>
 
+<div id="pdfOverlay">
+  <div class="ovr-panel">
+    <h3>Save to PDF</h3>
+    <div class="sub" id="pdfSub"></div>
+    <label for="pdfFilename">File name</label>
+    <input type="text" id="pdfFilename">
+    <div class="ovr-foot">
+      <button id="pdfCancelBtn">Cancel</button>
+      <button class="primary" id="pdfConfirmBtn">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="tt"></div>
 <div id="toasts"></div>
 
@@ -296,7 +298,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v28';
+const CORE_VERSION='v29';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -329,8 +331,6 @@ const INCLUDED_STAGES=/^(da signed|ca signed)$/i;
 let PROJECTS=[];   // {spId, name, clientName, jobCode, stage, contract, constr:{startWeek,durWeeks}|null}
 let INV=null;      // {rows:[{job,price,date}], byJob:Map, file, modified, exportedOn, folderUrl, error}
 let OVERRIDES={};  // spId -> {pct, note, setBy, setAt}
-let LOCK=null;     // existing lock record for the current period, or null
-let VIEW_LOCK=false;   // true while showing the locked snapshot instead of live numbers
 function startOfToday(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
 let AS_OF=startOfToday();   // the date the whole page recalculates against — defaults to today
 // End of the AS_OF day — the cutoff for "invoiced/complete as of that date." Everything
@@ -340,15 +340,6 @@ function asOfEnd(){ return new Date(AS_OF.getFullYear(),AS_OF.getMonth(),AS_OF.g
 function isToday(){ const t=startOfToday(); return AS_OF.getFullYear()===t.getFullYear()&&AS_OF.getMonth()===t.getMonth()&&AS_OF.getDate()===t.getDate(); }
 function asOfLabel(){ return AS_OF.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}); }
 function fmtInputDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-// The period a lock targets is always whichever month is being viewed — not a fixed
-// "real now." Locking while looking at August 31st locks August, never September.
-function viewPeriod(){ return AS_OF.getFullYear()+'-'+String(AS_OF.getMonth()+1).padStart(2,'0'); }
-function viewPeriodLabel(){ return AS_OF.toLocaleDateString('en-US',{month:'long',year:'numeric'}); }
-function isLastDayOfMonth(d){ const next=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1); return next.getMonth()!==d.getMonth(); }
-// Locking only makes sense for today (the live, in-progress month) or the last day of a
-// month you're approving retroactively — anything else is a mid-month snapshot that was
-// never meant to be "the" figure for that month.
-function canLockAsOf(){ return isToday()||isLastDayOfMonth(AS_OF); }
 
 // ════════════════════════════════════ UTIL
 function parseMoney(s){ const n=parseFloat(String(s==null?'':s).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:n; }
@@ -414,7 +405,7 @@ document.getElementById('authSignInBtn').addEventListener('click',()=>{
   setAuthStatus('Signing in…');
   SherpaAuth.signIn().catch(e=>{ setAuthStatus('Sign-in failed: '+e.message,true); btn.disabled=false; });
 });
-document.getElementById('refreshBtn').addEventListener('click',()=>{ INV=null; VIEW_LOCK=false; boot(); });
+document.getElementById('refreshBtn').addEventListener('click',()=>{ INV=null; boot(); });
 
 // ── As-of date control — recalculates schedule progress and the invoice cutoff against
 // a chosen date instead of the real clock. Initialized once; Refresh must not reset it. ──
@@ -434,16 +425,13 @@ function initAsOfControl(){
     if(picked<EPOCH) picked=new Date(EPOCH.getFullYear(),EPOCH.getMonth(),EPOCH.getDate());
     AS_OF=picked;
     input.value=fmtInputDate(AS_OF);
-    if(!isToday()) VIEW_LOCK=false;
     recomputeInvoicedForAsOf();
-    await loadLock();   // the relevant lock row moves with AS_OF's month
     renderAll();
   });
-  document.getElementById('asOfTodayBtn').addEventListener('click',async()=>{
+  document.getElementById('asOfTodayBtn').addEventListener('click',()=>{
     AS_OF=startOfToday();
     input.value=fmtInputDate(AS_OF);
     recomputeInvoicedForAsOf();
-    await loadLock();
     renderAll();
   });
 }
@@ -529,47 +517,6 @@ document.getElementById('ovrClearBtn').addEventListener('click',async()=>{
   }catch(e){ toast('Could not clear: '+(e.message||e),'err'); }
 });
 
-// ── Lock the viewed month — each reviewer's own button, only usable by them, and only
-// for today or a month-end date (see canLockAsOf) ──
-async function onReviewerLock(key){
-  const rows=window._wipRows||[];
-  if(!rows.length){ toast('Nothing to lock yet — let the page finish loading.','err'); return; }
-  if(!canLockAsOf()){ toast('Locking isn’t available for this date — pick today or the last day of a month.','err'); return; }
-  if(myReviewerKey()!==key){ toast('Only '+REVIEWERS.find(r=>r.key===key).label+' can use this button.','err'); return; }
-  const reviewer=REVIEWERS.find(r=>r.key===key);
-  const other=REVIEWERS.find(r=>r.key!==key);
-  const cur=(LOCK&&LOCK.period===viewPeriod())?LOCK:null;
-  const alreadyFinal=!!(cur&&cur.finalized);
-  const mine=cur&&cur.reviews&&cur.reviews[key];
-  const otherDone=cur&&cur.reviews&&cur.reviews[other.key];
-  const whenPhrase=isToday()?viewPeriodLabel():viewPeriodLabel()+' (as of '+asOfLabel()+')';
-  let msg;
-  if(alreadyFinal){
-    msg=viewPeriodLabel()+' is already finalized. Locking again as '+reviewer.label+' starts a fresh two-person confirmation — both '+reviewer.label+' and '+other.label+' need to lock again before a new PDF is produced.\n\nContinue?';
-  }else if(mine){
-    msg='Update '+reviewer.label+'’s lock for '+whenPhrase+'?';
-  }else if(otherDone){
-    msg=other.label+' already locked '+viewPeriodLabel()+'. Locking now as '+reviewer.label+' finalizes the record and opens the print dialog to save a PDF.\n\nContinue?';
-  }else{
-    msg='Lock '+whenPhrase+' as '+reviewer.label+'? '+other.label+' will still need to lock separately before this is final.\n\nContinue?';
-  }
-  if(!confirm(msg)) return;
-  try{
-    if(alreadyFinal) LOCK={period:viewPeriod(),periodLabel:viewPeriodLabel(),reviews:{},finalized:false,finalizedAt:null};
-    const wasFinal=!!(LOCK&&LOCK.finalized);
-    const result=await addReview(key,rows);
-    if(result.finalized&&!wasFinal){
-      toast('Finalized — '+viewPeriodLabel()+' is locked','ok');
-      VIEW_LOCK=true;
-      renderAll();
-      setTimeout(()=>window.print(),300);
-    }else{
-      toast(reviewer.label+'’s review is locked in','ok');
-      renderAll();
-    }
-  }catch(e){ toast('Could not lock: '+(e.message||e),'err'); }
-}
-
 async function graphGetAll(url){
   let out=[], next=url;
   while(next){ const j=await SherpaAuth.graph(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; }
@@ -642,9 +589,9 @@ async function invFindNewest(){
   files.sort((a,b)=>(b.lastModifiedDateTime||'').localeCompare(a.lastModifiedDateTime||''));
   return {file:files[0],drive,folderUrl:invFolder.webUrl};
 }
-// ── Saving the finalized PDF — same "WIP Reports" folder Ryan and Joey already
-// drop these into by hand, named to match the files already sitting there
-// (BWC WIP Report MM-DD-YY.pdf, dated to the month-end being approved). ──
+// ── Saving a PDF — into the same "WIP Reports" folder these were already saved
+// to by hand, named to match the files already sitting there (BWC WIP Report
+// MM-DD-YY.pdf, dated to the "Viewing as of" date). ──
 const WIP_REPORTS_FOLDER_LABEL='Operations → FINANCIAL → 1. WIP Reports & Job Costs → WIP Reports';
 let _wipReportsFolder=null;
 // Resolved once at boot, alongside the other loads, so the "open folder" link
@@ -668,13 +615,29 @@ async function wipReportsFolder(){
   _wipReportsFolder={id:reportsFolder.id,drive,webUrl:reportsFolder.webUrl};
   return _wipReportsFolder;
 }
-// Matches the existing files in that folder: "BWC WIP Report MM-DD-YY.pdf", dated
-// to whichever date the report is actually for — the locked-as-of date for a
-// finalized month, or the "Viewing as of" date for a live snapshot.
+// Default suggested name, matching the files already sitting in that folder:
+// "BWC WIP Report MM-DD-YY.pdf", dated to the "Viewing as of" date. The person
+// saving can rename it in the Save to PDF dialog before it goes up.
 function reportFilename(asOfStr){
   const d=new Date(asOfStr+'T00:00:00');
   const p2=n=>String(n).padStart(2,'0');
   return 'BWC WIP Report '+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'-'+String(d.getFullYear()).slice(-2)+'.pdf';
+}
+// Strips characters SharePoint/OneDrive won't allow in a file name.
+function sanitizeFilename(name){ return name.replace(/[\\/:*?"<>|]/g,'-').trim(); }
+function withVersionSuffix(name,n){
+  const m=name.match(/^(.*)(\.pdf)$/i);
+  return (m?m[1]:name)+' (v'+n+')'+(m?m[2]:'.pdf');
+}
+// Never overwrites — if the chosen name is already taken in the WIP Reports
+// folder, appends " (v2)", " (v3)", etc. until a free name is found.
+async function uniqueFilename(folder,desired){
+  const kids=await invChildren(folder.drive,folder.id);
+  const existing=new Set(kids.filter(k=>!k.folder).map(k=>(k.name||'').toLowerCase()));
+  if(!existing.has(desired.toLowerCase())) return desired;
+  let n=2;
+  while(existing.has(withVersionSuffix(desired,n).toLowerCase())) n++;
+  return withVersionSuffix(desired,n);
 }
 // Builds a standalone copy of the report (reusing the same cardsHtml/tableHtml
 // the live page renders with) for html2pdf to capture — not the live DOM
@@ -684,29 +647,28 @@ function reportFilename(asOfStr){
 // clipping here doesn't affect what it sees, but it does guarantee the person
 // at the keyboard never sees the unstyled flash those other approaches left
 // visible for a moment.
-function buildReportNode(cur){
-  const snap=finalSnapshot(cur);
-  const rows=snap.rows.map(r=>({p:r,calc:r}));
-  const isFinalized=!!cur.finalized;
+function buildReportNode(rows){
   const clip=document.createElement('div');
   clip.style.cssText='position:fixed;top:0;left:0;width:0;height:0;overflow:hidden;';
   const wrap=document.createElement('div');
   wrap.style.cssText='width:960px;background:#fff;padding:28px;';
   wrap.innerHTML=
     '<div style="margin-bottom:16px;">'+
-      '<h1 style="font-family:\'Swear Text\',serif;font-size:20px;font-weight:500;margin:0 0 4px;">WIP — '+esc(cur.periodLabel)+(isFinalized?' (Finalized)':' (Live snapshot)')+'</h1>'+
-      '<div style="font-size:12px;color:var(--text-sec);">'+(isFinalized?'Finalized by Ryan and Joey — '+esc(fmtDate(snap.at)):'Live figures — not a locked, approved record.')+(snap.asOf?' · figures as of '+esc(snap.asOf):'')+'</div>'+
+      '<h1 style="font-family:\'Swear Text\',serif;font-size:20px;font-weight:500;margin:0 0 4px;">WIP — as of '+esc(asOfLabel())+'</h1>'+
+      '<div style="font-size:12px;color:var(--text-sec);">Live figures as of '+esc(fmtDate(new Date().toISOString()))+'.</div>'+
     '</div>'+
-    cardsHtml(rows,true,snap.netPosition||null)+
+    cardsHtml(rows)+
     '<table class="tbl">'+tableHtml(rows,true)+'</table>';
   clip.appendChild(wrap);
   document.body.appendChild(clip);
   return {clip,wrap};
 }
-async function saveApprovedPdfToSharePoint(cur){
+async function saveWipPdf(desiredName){
+  const rows=window._wipRows||[];
+  if(!rows.length){ toast('Nothing to save yet — let the page finish loading.','err'); return; }
   let clipNode=null;
   try{
-    const built=buildReportNode(cur);
+    const built=buildReportNode(rows);
     clipNode=built.clip;
     const wrap=built.wrap;
     // Pin the capture to exactly this node's own box — without this, html2canvas
@@ -725,8 +687,8 @@ async function saveApprovedPdfToSharePoint(cur){
       html2canvas:{scale:2,backgroundColor:'#ffffff',width:w,height:h,windowWidth:w,windowHeight:h,x:0,y:0,scrollX:0,scrollY:0},
       jsPDF:{unit:'px',format:[w,h],orientation:'portrait'}
     }).from(wrap).outputPdf('blob');
-    const filename=reportFilename(finalSnapshot(cur).asOf);
     const folder=await wipReportsFolder();
+    const filename=await uniqueFilename(folder,desiredName);
     const buf=await blob.arrayBuffer();
     await SherpaAuth.graph(GRAPH+'/drives/'+folder.drive+'/items/'+folder.id+':/'+encodeURIComponent(filename)+':/content',
       {method:'PUT',headers:{'Content-Type':'application/pdf'},body:buf});
@@ -738,6 +700,33 @@ async function saveApprovedPdfToSharePoint(cur){
     if(clipNode) clipNode.remove();
   }
 }
+// ── Save-to-PDF modal — lets the name be customized before saving; the sound
+// default naming logic (reportFilename) is just the pre-filled starting point.
+// Never overwrites: uniqueFilename appends a version number automatically if
+// the chosen name is already taken. ──
+function openPdfModal(){
+  const input=document.getElementById('pdfFilename');
+  input.value=reportFilename(fmtInputDate(AS_OF));
+  document.getElementById('pdfSub').textContent='Saves the current live figures to '+WIP_REPORTS_FOLDER_LABEL+'. If this name is already taken, a version number is added automatically.';
+  document.getElementById('pdfOverlay').classList.add('open');
+  input.focus(); input.select();
+}
+function closePdfModal(){ document.getElementById('pdfOverlay').classList.remove('open'); }
+document.getElementById('pdfCancelBtn').addEventListener('click',closePdfModal);
+document.getElementById('pdfOverlay').addEventListener('click',e=>{ if(e.target.id==='pdfOverlay') closePdfModal(); });
+document.getElementById('pdfFilename').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('pdfConfirmBtn').click(); });
+document.getElementById('pdfConfirmBtn').addEventListener('click',async()=>{
+  const btn=document.getElementById('pdfConfirmBtn');
+  if(btn.disabled) return;
+  let name=document.getElementById('pdfFilename').value.trim();
+  if(!name){ toast('Enter a file name','err'); return; }
+  name=sanitizeFilename(name);
+  if(!/\.pdf$/i.test(name)) name+='.pdf';
+  btn.disabled=true; const label=btn.textContent; btn.textContent='Saving…';
+  await saveWipPdf(name);
+  btn.disabled=false; btn.textContent=label;
+  closePdfModal();
+});
 function extractExportedOn(rows){
   for(let i=0;i<Math.min(rows.length,3);i++){
     const t=(rows[i]||[]).map(c=>c==null?'':String(c)).join(' ');
@@ -816,7 +805,7 @@ function recomputeInvoicedForAsOf(){
 // ════════════════════════════════════ CORE_Config — shared key/value store
 // Same list and {Title,Key,Value} shape the Pipeline already uses for its
 // OPS cash-flow scenarios and other shared, lightweight state. No new
-// SharePoint list or column needed for overrides or monthly locks.
+// SharePoint list or column needed for overrides.
 let _cfgCache=null, _cfgPromise=null;
 async function cfgAll(){
   if(_cfgCache) return _cfgCache;
@@ -902,78 +891,6 @@ function computeNetPosition(rows){
   const gapRows=rows.filter(r=>r.calc.gap!=null);
   return gapRows.length?gapRows.reduce((s,r)=>s+r.calc.gap,0):null;
 }
-// A finalized snapshot saved while Net Position briefly had its own manual
-// override (v10–v13) stored an {computed,manual,value,override} object instead
-// of a plain number — unwrap it so old locked months still render.
-function netPosValueOf(np){ return (np&&typeof np==='object')?np.value:np; }
-
-// ── Monthly lock — a named slot for each of the two reviewers, not a generic
-// "whoever's signed in" signature. A deliberate, human-triggered permanent
-// record, one CORE_Config row per period (wip_lock_YYYY-MM) so it never
-// competes with the 64k text-column ceiling other CORE_Config keys have hit
-// before. Each reviewer's button only works when THEY are the one signed
-// in — Ryan can't lock Joey's slot by clicking Joey's button while signed in
-// as himself. The record "finalizes" — and only then produces a PDF — once
-// both named slots are filled. Locking again after it's finalized starts a
-// fresh two-slot cycle rather than silently amending a record already
-// called final. ──
-const REVIEWERS=[
-  {key:'ryan', label:'Ryan', rx:/^ryan\b/i},
-  {key:'joey', label:'Joey', rx:/^joey\b/i}
-];
-function identity(){
-  const acct=SherpaAuth.getAccount();
-  return {name:(acct&&(acct.name||acct.username))||'Unknown', email:(acct&&acct.username)||''};
-}
-function myReviewerKey(){
-  const who=identity();
-  const hit=REVIEWERS.find(r=>r.rx.test(who.name||''));
-  return hit?hit.key:null;
-}
-// Re-run whenever AS_OF changes — the relevant period (and therefore the relevant
-// CORE_Config row) moves with it. Cheap: cfgAll() only hits the network once per session.
-async function loadLock(){
-  try{ const row=await cfgGet('wip_lock_'+viewPeriod()); LOCK=row&&row.value?JSON.parse(row.value):null; }
-  catch(e){ console.warn('[wip] lock load failed:',e); LOCK=null; }
-}
-async function addReview(reviewerKey,rows){
-  const who=identity();
-  const snapshot={
-    by:who.name, byEmail:who.email, at:new Date().toISOString(), asOf:fmtInputDate(AS_OF),
-    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,phase:r.calc.phase,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden,invoicedOverridden:r.calc.invoicedOverridden})),
-    netPosition:computeNetPosition(rows)
-  };
-  const cur=(LOCK&&LOCK.period===viewPeriod())?LOCK:{period:viewPeriod(),periodLabel:viewPeriodLabel(),reviews:{},finalized:false,finalizedAt:null};
-  cur.reviews[reviewerKey]=snapshot;
-  cur.finalized=!!(cur.reviews.ryan&&cur.reviews.joey);
-  cur.finalizedAt=cur.finalized?new Date().toISOString():null;
-  await cfgSet('wip_lock_'+viewPeriod(),JSON.stringify(cur));
-  LOCK=cur;
-  return cur;
-}
-// Whichever slot was filled more recently — the state of the world at the
-// moment the record actually became final, not whichever reviewer clicked first.
-function finalSnapshot(lock){
-  const a=lock.reviews.ryan, b=lock.reviews.joey;
-  if(!a) return b; if(!b) return a;
-  return a.at>b.at?a:b;
-}
-// Builds an in-memory, never-saved "cur" from the currently viewed rows, in the
-// same shape addReview would produce — used whenever the PDF button is clicked
-// for a month that hasn't actually been locked yet, so saving a PDF never
-// requires waiting on Ryan and Joey. finalized stays false so the PDF itself is
-// labeled "Live snapshot," not "Finalized" — it's a real save, just not an
-// approved record.
-function buildLiveCur(){
-  const rows=window._wipRows||[];
-  const who=identity();
-  const snapshot={
-    by:who.name, byEmail:who.email, at:new Date().toISOString(), asOf:fmtInputDate(AS_OF),
-    rows:rows.map(r=>({spId:r.p.spId,name:r.p.name,stage:r.p.stage,phase:r.calc.phase,contract:r.p.contract,pct:r.calc.pct,earned:r.calc.earned,invoiced:r.calc.invoiced,gap:r.calc.gap,overridden:r.calc.overridden,invoicedOverridden:r.calc.invoicedOverridden})),
-    netPosition:computeNetPosition(rows)
-  };
-  return {period:viewPeriod(),periodLabel:viewPeriodLabel(),reviews:{ryan:snapshot,joey:snapshot},finalized:false,finalizedAt:null};
-}
 
 // ════════════════════════════════════ MATCH + COMPUTE
 // Matches on Job Code and Project Name — never Client Name. Client Name often
@@ -1038,7 +955,7 @@ function projectPhase(p,atWeek){
   return preConEnd!=null?'CONSTRUCTION':'PRE-CON';
 }
 // A manual override always wins and sets earned = contract × override %, full stop —
-// no phase math at all, just "mark it X%" the way Ryan and Joey would say it.
+// no phase math at all, just "mark it X%" by hand.
 // Without one, the formula depends on which of the three phases the project is
 // in (see projectPhase, above, and the "Data sources and calculations" panel
 // on the page — this mirrors it exactly):
@@ -1111,17 +1028,14 @@ function renderSource(){
 }
 // Pure — builds the cards markup without touching the DOM, so it can be reused
 // both for the live page and for the offscreen node the PDF export renders from.
-// lockedNetPos, when given (the locked-snapshot view), is the number captured at
-// lock time rather than recomputed live — see netPosValueOf for the legacy shape
-// a month locked under v10–v13's short-lived Net Position override might carry.
-function cardsHtml(rows,fromLock,lockedNetPos){
+function cardsHtml(rows){
   const withNums=rows.filter(r=>r.calc.earned!=null);
   const sum=k=>withNums.reduce((s,r)=>s+(r.calc[k]||0),0);
   const contractSum=rows.reduce((s,r)=>s+(r.p.contract||0),0);
   const invoicedRows=rows.filter(r=>r.calc.invoiced!=null);
   const invoicedSum=invoicedRows.reduce((s,r)=>s+r.calc.invoiced,0);
   const earnedSum=sum('earned');
-  const gap=fromLock?netPosValueOf(lockedNetPos):computeNetPosition(rows);
+  const gap=computeNetPosition(rows);
   const cols=[
     {lbl:'Contract Value in WIP',val:fmt$(contractSum),sub:rows.length+' active job'+(rows.length===1?'':'s'),cls:''},
     {lbl:'Earned to Date',val:fmt$(earnedSum),sub:withNums.length+' of '+rows.length+' have a % complete set',cls:''},
@@ -1134,8 +1048,8 @@ function cardsHtml(rows,fromLock,lockedNetPos){
     +cols.map(c=>'<div class="pf-sub">'+esc(c.sub)+'</div>').join('')
     +'</div>';
 }
-function renderCards(rows,fromLock,lockedNetPos){
-  document.getElementById('cards').innerHTML=cardsHtml(rows,fromLock,lockedNetPos);
+function renderCards(rows){
+  document.getElementById('cards').innerHTML=cardsHtml(rows);
 }
 // ── Column sort — click a header to sort by it, click again to flip direction.
 // Unclicked default stays the original "worst gap first" ordering. ──
@@ -1172,7 +1086,7 @@ function sortRows(rows){
 }
 // Pure — builds the header + row markup without touching the DOM, so it can be
 // reused both for the live page and for the offscreen node the PDF export renders from.
-function tableHtml(rows,fromLock){
+function tableHtml(rows,forExport){
   let h='<tr>'+SORT_COLUMNS.map(c=>{
     const active=SORT.key===c.key;
     const arrow=active?(SORT.dir==='asc'?' ▲':' ▼'):'';
@@ -1185,7 +1099,7 @@ function tableHtml(rows,fromLock){
     const gapTxt=c.gap==null?'—':fmt$(Math.abs(c.gap))+(c.gap>=0?' over':' under');
     const phaseCls=c.phase==='DESIGN'?'design':c.phase==='PRE-CON'?'precon':c.phase==='CONSTRUCTION'?'construction':'';
     const stageBadge='<span class="stage-label'+(phaseCls?' '+phaseCls:'')+'">'+esc(c.phase||'—')+'</span>';
-    const ovrBtn=fromLock?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
+    const ovrBtn=forExport?'':' <button class="ovr-btn" data-ovr="'+esc(r.p.spId)+'">✎</button>';
     let progress;
     const note=c.override&&c.override.note?'<span class="ovr-note" data-tip="Manual override" data-tip-d="'+esc(c.override.note)+' — set by '+esc(c.override.setBy||'')+'">'+esc(c.override.note.length>28?c.override.note.slice(0,28)+'…':c.override.note)+'</span>':'';
     const progressBar=(pct,flag,tip)=>'<span class="progress-mini"'+(tip||'')+'><span class="bar"><span style="width:'+Math.round(pct*100)+'%"></span></span>'+fmtPct(pct)+(flag||'')+ovrBtn+note+'</span>';
@@ -1208,32 +1122,30 @@ function tableHtml(rows,fromLock){
     }
     const weakBadge=c.weakMatch?' <span class="flag weak" data-tip="Weak name match" data-tip-d="Matched to BuilderTrend by a shared name fragment, not a close full-name match — worth a second look.">~</span>':'';
     const overInvBadge=c.overInvoiced?' <span class="flag bad" data-tip="Invoiced exceeds contract value" data-tip-d="Invoiced is higher than the contract value — usually a bad BuilderTrend match pulling in another job’s invoices. Check the match, or set a manual invoiced amount using the ✎ next to this figure.">!</span>':'';
-    const invOvrBtn=fromLock?'':' <button class="ovr-btn inv-ovr-btn" data-ovr-inv="'+esc(r.p.spId)+'">✎</button>';
+    const invOvrBtn=forExport?'':' <button class="ovr-btn inv-ovr-btn" data-ovr-inv="'+esc(r.p.spId)+'">✎</button>';
     const invManualFlag=c.invoicedOverridden?' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual invoiced amount, not the BuilderTrend match.">manual</span>':'';
     const invNote=c.invOverride&&c.invOverride.note?'<span class="ovr-note" data-tip="Manual invoiced amount" data-tip-d="'+esc(c.invOverride.note)+' — set by '+esc(c.invOverride.setBy||'')+'">'+esc(c.invOverride.note.length>28?c.invOverride.note.slice(0,28)+'…':c.invOverride.note)+'</span>':'';
     const invTxt=c.invoiced==null
       ?'<span class="dim">no BT match</span> <span class="flag bad" data-tip="Not matched to a BuilderTrend job" data-tip-d="No job in the latest BuilderTrend invoicing export matched this project by name. Check the export, or the project name in the Pipeline.">!</span>'+invOvrBtn
       :fmt$(c.invoiced)+weakBadge+invManualFlag+overInvBadge+invOvrBtn+invNote;
     const contractTxt=r.p.contract?fmt$(r.p.contract):'<span class="dim">—</span> <span class="flag bad" data-tip="No contract value" data-tip-d="EstimatedProjectValue is empty for this project in the Pipeline — earned revenue can’t be calculated until it’s set.">!</span>';
-    const gapOvrBtn=fromLock?'':' <button class="ovr-btn gap-ovr-btn" data-ovr-gap="'+esc(r.p.spId)+'">✎</button>';
+    const gapOvrBtn=forExport?'':' <button class="ovr-btn gap-ovr-btn" data-ovr-gap="'+esc(r.p.spId)+'">✎</button>';
     const gapManualFlag=c.gapOverridden?' <span class="flag" data-tip="Manually set" data-tip-d="This is a manual over/under amount, not calculated from Invoiced minus Earned.">manual</span>':'';
     const gapNote=c.gapOverride&&c.gapOverride.note?'<span class="ovr-note" data-tip="Manual over/under" data-tip-d="'+esc(c.gapOverride.note)+' — set by '+esc(c.gapOverride.setBy||'')+'">'+esc(c.gapOverride.note.length>28?c.gapOverride.note.slice(0,28)+'…':c.gapOverride.note)+'</span>':'';
     h+='<tr><td>'+esc(r.p.name)+'</td><td>'+stageBadge+'</td><td>'+contractTxt+'</td><td>'+progress+'</td><td>'+fmt$(c.earned)+'</td><td>'+invTxt+'</td><td class="'+gapCls+'">'+gapTxt+gapManualFlag+gapOvrBtn+gapNote+'</td></tr>';
   });
   return h;
 }
-function renderTable(rows,fromLock){
-  document.getElementById('projTbl').innerHTML=tableHtml(rows,fromLock);
-  if(!fromLock){
-    document.querySelectorAll('[data-ovr]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr'),'pct')));
-    document.querySelectorAll('[data-ovr-inv]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr-inv'),'invoiced')));
-    document.querySelectorAll('[data-ovr-gap]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr-gap'),'gap')));
-  }
+function renderTable(rows){
+  document.getElementById('projTbl').innerHTML=tableHtml(rows,false);
+  document.querySelectorAll('[data-ovr]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr'),'pct')));
+  document.querySelectorAll('[data-ovr-inv]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr-inv'),'invoiced')));
+  document.querySelectorAll('[data-ovr-gap]').forEach(btn=>btn.addEventListener('click',()=>openOverrideModal(btn.getAttribute('data-ovr-gap'),'gap')));
   document.querySelectorAll('#projTbl th.sortable').forEach(th=>th.addEventListener('click',()=>{
     const key=th.getAttribute('data-sortkey');
     if(SORT.key===key) SORT.dir=(SORT.dir==='asc'?'desc':'asc');
     else { SORT.key=key; SORT.dir=(key==='name'||key==='stage')?'asc':'desc'; }
-    renderTable(rows,fromLock);
+    renderTable(rows);
   }));
 }
 function renderUnmatched(unmatched){
@@ -1248,17 +1160,11 @@ function renderUnmatched(unmatched){
   h+='<div style="margin-top:8px;">Likely a completed/archived job still receiving invoices, or a name that drifted between BuilderTrend and the Pipeline.</div></div>';
   wrap.innerHTML=h;
 }
-function renderPrintHeader(fromLock){
+function renderPrintHeader(){
   const wrap=document.getElementById('printHeader');
-  if(fromLock){
-    const snap=finalSnapshot(LOCK);
-    wrap.querySelector('h1').textContent='WIP — '+LOCK.periodLabel+' (Finalized)';
-    wrap.querySelector('.sub').textContent='Finalized by Ryan and Joey — '+fmtDate(snap.at)+(snap.asOf?' · figures as of '+snap.asOf:'');
-    return;
-  }
   wrap.querySelector('h1').textContent='WIP — as of '+asOfLabel()+(isToday()?' (Live)':' (Historical)');
   wrap.querySelector('.sub').textContent=isToday()
-    ? 'Live figures as of '+fmtDate(new Date().toISOString())+' — not yet locked for this month.'
+    ? 'Live figures as of '+fmtDate(new Date().toISOString())+'.'
     : 'Recalculated as of '+asOfLabel()+' using today’s project data and the latest BuilderTrend export — not a saved historical record.';
 }
 function renderAsOfBar(){
@@ -1267,82 +1173,31 @@ function renderAsOfBar(){
   btn.disabled=isToday();
   note.textContent=isToday()?'':'Historical view — recalculated with today’s project data and the latest BuilderTrend export, not a saved snapshot from that date. Manual overrides are only available when viewing today.';
 }
-function renderReviewerPanel(){
-  const chipsWrap=document.getElementById('reviewerChipsWrap');
-  const wrap=document.getElementById('lockBannerWrap');
-  const eligible=canLockAsOf();
-  const cur=(LOCK&&LOCK.period===viewPeriod())?LOCK:null;
-  const myKey=myReviewerKey();
-  // Each chip is now one clickable element — its own label ("Ryan: lock") is the
-  // whole button, not a name + state + separate button glued together. The state
-  // detail (locked when, as of what date) moves into the hover tooltip instead
-  // of sitting in the button as visible text.
-  const chips=REVIEWERS.map(r=>{
-    const rev=cur&&cur.reviews&&cur.reviews[r.key];
-    const isMe=myKey===r.key;
-    const canClick=eligible&&isMe;
-    const label=r.label+': '+(rev?'update':'lock');
-    const stateDesc=rev?('Locked '+esc(fmtDate(rev.at))+(rev.asOf?' · as of '+esc(rev.asOf):'')+'.'):'Not locked yet.';
-    let tip=' data-tip="'+(rev?'Locked':'Not locked')+'" data-tip-d="'+stateDesc+'"';
-    if(!eligible) tip=' data-tip="Not available for this date" data-tip-d="Locking only works for today or the last day of a month. Pick the last day of '+esc(viewPeriodLabel())+', or switch to Today."';
-    else if(!isMe) tip=' data-tip="Only '+esc(r.label)+' can use this" data-tip-d="You’re signed in as '+esc(identity().name||'someone else')+'."';
-    return '<button class="reviewer-chip'+(rev?' done':'')+(canClick?'':' locked-out')+'" data-reviewer="'+r.key+'"'+tip+'>'+esc(label)+'</button>';
-  }).join('');
-  const note=eligible?'':'<div class="asof-lock-note">Locking is only available for today or the last day of a month — '+esc(viewPeriodLabel())+' isn’t either right now, so both buttons above are inactive. Pick the last day of the month to approve it retroactively, or switch to Today.</div>';
-  // Always active — a PDF is a real, useful record of a moment in time whether
-  // or not the month has been formally locked yet. Finalized months save their
-  // locked snapshot; anything else saves the live figures as of the date being
-  // viewed, clearly labeled "Live snapshot" (not "Finalized") in the PDF itself.
-  const realFinalized=!!(cur&&cur.finalized);
-  const pdfAsOf=realFinalized?finalSnapshot(cur).asOf:fmtInputDate(AS_OF);
-  const pdfTip=realFinalized
-    ? ' data-tip="Finalized" data-tip-d="Generates the finalized report as a PDF and saves it as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."'
-    : ' data-tip="Live snapshot" data-tip-d="'+esc(viewPeriodLabel())+' isn’t finalized yet, so this saves the live figures as of '+esc(asOfLabel())+', labeled a Live snapshot (not Finalized) in the PDF — saved as &#8216;'+esc(reportFilename(pdfAsOf))+'&#8217; in '+esc(WIP_REPORTS_FOLDER_LABEL)+'."';
-  const pdfChip='<button class="reviewer-chip pdf-chip'+(realFinalized?' done':'')+'" id="savePdfBtn"'+pdfTip+'>PDF to SharePoint</button>';
+// A PDF is always a live snapshot — click opens the Save to PDF dialog so the
+// name can be customized before it goes up (see openPdfModal / saveWipPdf).
+function renderPdfControls(){
+  const wrap=document.getElementById('pdfControlsWrap');
+  const pdfTip=' data-tip="Save to PDF" data-tip-d="Builds a PDF of the current figures as of '+esc(asOfLabel())+' — you can rename the file before it saves to '+esc(WIP_REPORTS_FOLDER_LABEL)+'."';
+  const pdfChip='<button class="pdf-chip" id="savePdfBtn"'+pdfTip+'>Save to PDF</button>';
   const folderLink=WIP_REPORTS_FOLDER
     ? '<a class="folder-link" href="'+esc(WIP_REPORTS_FOLDER.webUrl)+'" target="_blank" rel="noopener" data-tip="Open in SharePoint" data-tip-d="'+esc(WIP_REPORTS_FOLDER_LABEL)+'">open folder</a>'
     : '';
-  chipsWrap.innerHTML='<div class="reviewer-panel'+(eligible?'':' disabled')+'">'+chips+'</div>'
-    +'<span class="asof-div"></span>'+pdfChip+folderLink;
-  wrap.innerHTML=note
-    +(cur&&cur.finalized?'<div class="lock-banner">🔒 <span><b>'+esc(cur.periodLabel)+' is finalized</b> — locked by Ryan and Joey'+(finalSnapshot(cur).asOf?' (figures as of '+esc(finalSnapshot(cur).asOf)+')':'')+'. Live numbers below keep moving; the lock is the permanent record.</span>'
-      +'<div class="actions"><button id="viewLockedBtn">'+(VIEW_LOCK?'Back to live':'View locked figures')+'</button></div></div>':'');
-  document.querySelectorAll('[data-reviewer]').forEach(btn=>btn.addEventListener('click',()=>onReviewerLock(btn.getAttribute('data-reviewer'))));
-  const vb=document.getElementById('viewLockedBtn');
-  if(vb) vb.addEventListener('click',()=>{ VIEW_LOCK=!VIEW_LOCK; renderAll(); });
+  wrap.innerHTML=pdfChip+folderLink;
   const pb=document.getElementById('savePdfBtn');
-  if(pb) pb.addEventListener('click',async()=>{
-    if(pb.classList.contains('saving')) return;
-    const target=(cur&&cur.finalized)?cur:buildLiveCur();
-    pb.classList.add('saving'); const label=pb.textContent; pb.textContent='Saving…';
-    await saveApprovedPdfToSharePoint(target);
-    pb.classList.remove('saving'); pb.textContent=label;
-  });
+  if(pb) pb.addEventListener('click',openPdfModal);
 }
 function renderAll(){
   renderAsOfBar();
   document.getElementById('portfolioNote').textContent=isToday()?'DA Signed & CA Signed jobs, live':'DA Signed & CA Signed jobs, as of '+asOfLabel();
-  if(VIEW_LOCK&&LOCK&&LOCK.finalized){
-    const snap=finalSnapshot(LOCK);
-    const rows=snap.rows.map(r=>({p:r,calc:r}));
-    renderReviewerPanel();
-    renderPrintHeader(true);
-    renderCards(rows,true,snap.netPosition||null);
-    renderTable(rows,true);
-    const sp=document.getElementById('srcPanel'); sp.className='src-panel';
-    sp.innerHTML='<b>Showing the finalized '+esc(LOCK.periodLabel)+' figures</b> — recorded '+esc(fmtDate(snap.at))+'. These don’t change; use "Back to live" above to see current numbers.';
-    document.getElementById('unmatchedWrap').innerHTML='';
-    return;
-  }
   const {matched,unmatched}=matchInvoices();
   const rows=PROJECTS.map(p=>({p,calc:computeRow(p, INV.error?null:(matched.get(p.spId)||null), OVERRIDES[p.spId]||null, INV_OVERRIDES[p.spId]||null, GAP_OVERRIDES[p.spId]||null)}));
-  renderReviewerPanel();
-  renderPrintHeader(false);
+  renderPdfControls();
+  renderPrintHeader();
   renderSource();
-  renderCards(rows,false);
-  renderTable(rows,false);
+  renderCards(rows);
+  renderTable(rows);
   renderUnmatched(INV.error?[]:unmatched);
-  window._wipRows=rows;   // last computed rows, for the Lock button
+  window._wipRows=rows;   // last computed rows, for overrides and the PDF export
 }
 
 // ════════════════════════════════════ BOOT
@@ -1350,7 +1205,7 @@ async function boot(){
   document.getElementById('loadStatus').classList.remove('hidden');
   document.getElementById('main').classList.add('hidden');
   try{
-    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadInvOverrides(), loadGapOverrides(), loadLock(), loadWipReportsFolder()]);
+    await Promise.all([loadProjects(), loadInvoicing(), loadOverrides(), loadInvOverrides(), loadGapOverrides(), loadWipReportsFolder()]);
     initAsOfControl();
     renderAll();
     document.getElementById('loadStatus').classList.add('hidden');
