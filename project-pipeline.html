@@ -3478,7 +3478,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1123';
+const CORE_VERSION = 'v1124';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -11423,7 +11423,16 @@ function buildPlanningSection(){
 
     // ── 9. Confirm ──
     const confirmCell=el('div','ps-confirm-cell');
-    const canConfirm=!!(attached&&attached.proposedDesigner);
+    // v1124: gate on Trello readiness (DA Ready to Sell, or DA/CA already signed) rather
+    // than on whether a designer's been proposed — picking a designer was never actually
+    // a signal the deal is real. Falls back to the old designer-proposed gate only for
+    // leads with no Trello card at all (e.g. hand-created via core-projects-manager's
+    // + New Project), since there's no list to check for those.
+    const _cfSrc=attached?PROJECTS.find(p=>p.id===attached._fromLeadId):null;
+    const _cfList=((_cfSrc&&_cfSrc.trelloListName)||'').trim();
+    const _cfDaReady=/^da\s*ready\s*to\s*sell$/i.test(_cfList)||!!(_cfSrc&&(_cfSrc.status==='da-signed'||_cfSrc.status==='ca-signed'));
+    const _cfNoTrello=!(_cfSrc&&_cfSrc.trelloCardId);
+    const canConfirm=!!(attached&&(_cfDaReady||(_cfNoTrello&&attached.proposedDesigner)));
     const confirmBtn=el('button','ps-confirm-btn'+(canConfirm?'':' ps-confirm-placeholder'));
     if(canConfirm){
       confirmBtn.dataset.approvePlanningProj=attached.id;
@@ -16320,6 +16329,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1124', date: '2026-09-22',
+    entries:['Sales screen CONFIRM button: the gate is no longer "has a designer been proposed" — it’s now the lead’s Trello card sitting in DA Ready to Sell (or already DA/CA signed). Picking a designer was never actually a signal the deal was real. Leads with no Trello card at all (hand-created in core-projects-manager) still fall back to the old designer-proposed gate, since there’s no Trello list to check for those.'],
+  },
   {
     version: 'v1123', date: '2026-09-22',
     entries:['Sales screen "N new in Trello" import list: each card now has an Ignore button alongside Import, for cards already imported that keep reappearing when their Trello card gets moved between lists. Ignoring doesn’t touch the Trello card itself — it just stops counting it as new here. Ignored cards are listed (who, when) under a "Show ignored" toggle in the same dropdown with a Restore button, and a card that does get genuinely imported later automatically drops off the ignored list on its own.'],
