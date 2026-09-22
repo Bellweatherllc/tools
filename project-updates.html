@@ -327,7 +327,7 @@ body.delete-mode .log-trash-btn{display:flex;}
 <script>
 'use strict';
 
-const CORE_VERSION='v77';
+const CORE_VERSION='v78';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 // ── Styled tooltips via data-tip (replaces native title everywhere) ──
@@ -386,6 +386,7 @@ const EPOCH_MS=Date.UTC(2025,0,5);
 let msalApp=null,accessToken='',currentUser='',currentUserEmail='',currentUserFullName='',isAdmin=false,adminModeOn=false,canDelete=false,deleteModeOn=false;
 let activePM=null;
 let jumpProjectId=null; // set by the header's "jump directly to a project" picker — overrides the PM-tab filter to show just this one project
+let _dlAutoOpenOnce=false; // one-shot: expand the card when ?project= lands us on it, per the deep link below
 let projects=[],reviews=[];
 // Titles (CORE_Budget_Config.ProjectKey) -> 'none'|'partial'|'complete', judged by
 // the same three fillable financial fields the Budget Planner itself uses
@@ -537,6 +538,11 @@ async function loadAll(){
     catch(e){ console.warn('[loadReviews] non-fatal:',e.message); reviews=[]; }
     try{ await loadBudgetStatuses(); }
     catch(e){ console.warn('[loadBudgetStatuses] non-fatal:',e.message); budgetStatusMap=new Map(); }
+    // Deep link from other tools (e.g. the Pipeline's Production screen): ?project=
+    // <CORE_Projects item id> jumps straight to that project, reusing the existing
+    // jump-to-project picker — same single-project view, same Clear button back out.
+    const _dlProjectId=new URLSearchParams(location.search).get('project');
+    if(_dlProjectId&&projects.some(p=>p.id===_dlProjectId)){ jumpProjectId=_dlProjectId; _dlAutoOpenOnce=true; }
     renderAll();
   }catch(e){
     console.error('[load]',e);
@@ -686,8 +692,10 @@ function renderAll(){
 
   area.innerHTML='';
   list.forEach(proj=>{
-    buildCard(proj,area,open.has(proj.id),editingEnd.has(proj.id),editingCost.has(proj.id));
+    const startOpen=open.has(proj.id)||(_dlAutoOpenOnce&&jumpProjectId===proj.id);
+    buildCard(proj,area,startOpen,editingEnd.has(proj.id),editingCost.has(proj.id));
   });
+  _dlAutoOpenOnce=false;
 
   renderJumpPicker();
 }
