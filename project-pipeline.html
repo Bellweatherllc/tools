@@ -3161,13 +3161,24 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .pp-trello-badge.has-new:hover{background:rgba(216,182,79,.28);animation:none;box-shadow:0 0 7px 2px rgba(216,182,79,.22);border-color:rgba(216,182,79,.90);}
 @keyframes ppTrelloGlow{0%,100%{box-shadow:0 0 0 0 rgba(216,182,79,0);border-color:rgba(216,182,79,.55);}50%{box-shadow:0 0 7px 3px rgba(216,182,79,.22);border-color:rgba(216,182,79,.90);}}
 .pp-trello-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);flex-shrink:0;}
-.pp-trello-drop{position:fixed;z-index:600;background:var(--navy);border:1px solid rgba(255,255,255,.10);border-radius:7px;overflow:hidden;display:none;min-width:220px;max-width:300px;box-shadow:0 8px 24px rgba(0,0,0,.38);}
+.pp-trello-drop{position:fixed;z-index:600;background:var(--navy);border:1px solid rgba(255,255,255,.10);border-radius:7px;overflow:hidden;display:none;min-width:220px;max-width:330px;box-shadow:0 8px 24px rgba(0,0,0,.38);}
 .pp-trello-drop.open{display:block;}
 .pp-trello-drop-list{font-size:8.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.30);padding:7px 11px 3px;}
 .pp-trello-drop-row{display:flex;align-items:center;gap:6px;padding:5px 11px;border-top:1px solid rgba(255,255,255,.06);}
 .pp-trello-drop-nm{font-size:10.5px;font-weight:500;color:rgba(255,255,255,.80);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pp-trello-drop-imp{font-size:8.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid rgba(216,182,79,.40);border-radius:3px;color:var(--gold);padding:2px 8px;cursor:pointer;flex-shrink:0;font-family:inherit;}
 .pp-trello-drop-imp:hover{background:rgba(216,182,79,.12);}
+/* v1123: Ignore / Restore — same pill shape as Import, muted (not gold) since it's a
+   quiet housekeeping action, not the primary path through this dropdown. */
+.pp-trello-drop-ign{font-size:8.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:none;border:1px solid rgba(255,255,255,.18);border-radius:3px;color:rgba(255,255,255,.45);padding:2px 8px;cursor:pointer;flex-shrink:0;font-family:inherit;}
+.pp-trello-drop-ign:hover{background:rgba(255,255,255,.08);color:rgba(255,255,255,.75);border-color:rgba(255,255,255,.32);}
+.pp-trello-drop-empty{font-size:10px;color:rgba(255,255,255,.40);padding:9px 11px;font-style:italic;}
+.pp-trello-ign-bar{border-top:1px solid rgba(255,255,255,.10);padding:4px 11px;}
+.pp-trello-ign-toggle{font-size:9px;font-weight:600;color:rgba(255,255,255,.45);background:none;border:none;cursor:pointer;font-family:inherit;padding:3px 0;}
+.pp-trello-ign-toggle:hover{color:rgba(255,255,255,.75);}
+.pp-trello-ign-wrap{max-height:180px;overflow-y:auto;}
+.pp-trello-drop-row-ign .pp-trello-drop-nm{color:rgba(255,255,255,.55);}
+.pp-trello-ign-sub{font-size:8.5px;color:rgba(255,255,255,.35);flex-shrink:0;}
 .pp-lost-notice{display:flex;align-items:center;gap:7px;padding:5px 14px;background:rgba(163,10,10,.05);border-top:1px solid rgba(163,10,10,.18);}
 .pp-lost-dot{width:7px;height:7px;border-radius:50%;background:#a30a0a;flex-shrink:0;}
 .ps-chip-pencil:hover,.ps-chip-pencil.pp-pencil-noted{opacity:1;}
@@ -3467,7 +3478,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1122';
+const CORE_VERSION = 'v1123';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -10709,10 +10720,15 @@ function buildPlanningSection(){
   const planningCmdLeft=el('div','cap-cmd-left'); planningCmdLeft.style.cssText='min-width:60px;border-right:none;padding-left:8px;';
   if(_trelloSynced){
     const hasNew=_trelloNetNew.length>0;
+    const ignoredIds=Object.keys(TRELLO_IGNORED);
+    const hasIgnored=ignoredIds.length>0;
     const tBadge=el('button','pp-trello-badge'+(hasNew?' has-new':''));
-    if(hasNew){
-      const tDot=el('span','pp-trello-dot'); tBadge.appendChild(tDot);
-      const tCt=el('span',''); tCt.textContent=_trelloNetNew.length+' new in Trello'; tBadge.appendChild(tCt);
+    const tCt=el('span',''); tCt.textContent=(hasNew?_trelloNetNew.length:'0')+' new in Trello';
+    if(hasNew){ const tDot=el('span','pp-trello-dot'); tBadge.appendChild(tDot); }
+    tBadge.appendChild(tCt);
+    // v1123: the dropdown (and its ignored-cards reveal) needs to stay reachable even once
+    // every net-new card has been ignored \u2014 otherwise there'd be no way back to Restore.
+    if(hasNew||hasIgnored){
       // Populate static dropdown with current net-new cards grouped by list
       const tDrop=document.getElementById('ppTrelloDrop');
       if(tDrop){
@@ -10726,13 +10742,48 @@ function buildPlanningSection(){
             const nm=el('span','pp-trello-drop-nm'); nm.textContent=c.name;
             const imp=el('button','pp-trello-drop-imp'); imp.textContent='Import \u2192';
             imp.addEventListener('click',()=>{window.open('core-projects-manager.html','_blank');_closeTrelloDrop();});
-            row.appendChild(nm); row.appendChild(imp); tDrop.appendChild(row);
+            const ign=el('button','pp-trello-drop-ign'); ign.textContent='Ignore'; ign.dataset.tip='Already imported \u2014 stop showing this card as new'; ign.dataset.trelloIgnore=c.cardId;
+            ign.addEventListener('click',e=>{
+              e.stopPropagation();
+              TRELLO_IGNORED[c.cardId]={name:c.name,list:c.list,by:_histUser(),at:new Date().toISOString()};
+              saveTrelloIgnored();
+              _trelloNetNew=_trelloNetNew.filter(x=>x.cardId!==c.cardId);
+              rebuildSection('planning');
+            });
+            row.appendChild(nm); row.appendChild(imp); row.appendChild(ign); tDrop.appendChild(row);
           });
         });
+        if(!hasNew){ const empty=el('div','pp-trello-drop-empty'); empty.textContent='No new cards right now.'; tDrop.appendChild(empty); }
+        if(hasIgnored){
+          const toggleBar=el('div','pp-trello-ign-bar');
+          const toggleBtn=el('button','pp-trello-ign-toggle'); toggleBtn.dataset.trelloToggleIgnored='1';
+          toggleBtn.textContent=(_trelloShowIgnored?'Hide':'Show')+' ignored ('+ignoredIds.length+')';
+          toggleBtn.addEventListener('click',e=>{ e.stopPropagation(); _trelloShowIgnored=!_trelloShowIgnored; rebuildSection('planning'); });
+          toggleBar.appendChild(toggleBtn); tDrop.appendChild(toggleBar);
+          if(_trelloShowIgnored){
+            const wrap=el('div','pp-trello-ign-wrap');
+            ignoredIds.forEach(id=>{
+              const rec=TRELLO_IGNORED[id];
+              const row=el('div','pp-trello-drop-row pp-trello-drop-row-ign');
+              const nm=el('span','pp-trello-drop-nm'); nm.textContent=rec.name||id;
+              const sub=el('span','pp-trello-ign-sub'); sub.textContent=(rec.by?rec.by+' \u00b7 ':'')+(rec.at?new Date(rec.at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'');
+              const rst=el('button','pp-trello-drop-imp'); rst.textContent='Restore'; rst.dataset.trelloRestore=id;
+              rst.addEventListener('click',e=>{
+                e.stopPropagation();
+                delete TRELLO_IGNORED[id];
+                saveTrelloIgnored();
+                // Optimistic \u2014 reappears immediately using the last-known name/list rather
+                // than waiting on a fresh Trello fetch; a real re-sync will true it up.
+                if(!_trelloNetNew.some(x=>x.cardId===id)) _trelloNetNew.push({name:rec.name,list:rec.list,cardId:id});
+                rebuildSection('planning');
+              });
+              row.appendChild(nm); row.appendChild(sub); row.appendChild(rst); wrap.appendChild(row);
+            });
+            tDrop.appendChild(wrap);
+          }
+        }
       }
       tBadge.addEventListener('click',e=>{e.stopPropagation();_openTrelloDrop(tBadge);});
-    } else {
-      const tCt=el('span',''); tCt.textContent='0 new in Trello'; tBadge.appendChild(tCt);
     }
     planningCmdLeft.appendChild(tBadge);
   }
@@ -12625,6 +12676,41 @@ document.addEventListener('visibilitychange',()=>{
 
 // ════════════════════════════════════════════════  TRELLO SYNC
 let _trelloCfg=null,_trelloNetNew=[],_trelloLostNotices=[],_trelloSynced=false,_ppTrelloDropOpen=false;
+// v1123: cards ignored from the "N new in Trello" import list — the card stays in Trello
+// and keeps moving lists like any other, it just never counts as net-new again. Keyed by
+// Trello card id (netNew's own .cardId, i.e. card.id — never card.shortLink, so lookups
+// stay consistent) so a card is only ever ignored once no matter how it's referenced
+// elsewhere. Shown-and-restorable in the dropdown, not a silent drop — see _renderTrelloDrop.
+let TRELLO_IGNORED={}, _trelloIgnoredItemId=null, _trelloShowIgnored=false;
+function saveTrelloIgnored(){ _saveTrelloIgnoredToSP(); }
+async function _saveTrelloIgnoredToSP(){
+  try{
+    const token=await getToken().catch(()=>null); if(!token) return;
+    const val=JSON.stringify(TRELLO_IGNORED);
+    if(_trelloIgnoredItemId){
+      await graphPatch(BWC_SITE+'/CORE_Config/items/'+_trelloIgnoredItemId+'/fields',{Value:val});
+    } else {
+      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_trello_ignored');
+      if(row){ _trelloIgnoredItemId=row.id; await graphPatch(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{Value:val}); }
+      else {
+        const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_trello_ignored',Key:'pipeline_trello_ignored',Value:val}})}).then(r=>r.json());
+        _trelloIgnoredItemId=r.id;
+      }
+    }
+  }catch(e){ console.warn('[trello] ignored-list SP save failed:',e); }
+}
+async function loadTrelloIgnoredFromSP(){
+  try{
+    const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+    const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_trello_ignored');
+    if(row){
+      _trelloIgnoredItemId=row.id;
+      const parsed=JSON.parse(row.fields?.Value||'{}');
+      if(parsed&&typeof parsed==='object') TRELLO_IGNORED=parsed;
+    }
+  }catch(e){ console.warn('[trello] ignored-list SP load failed:',e); }
+}
 function _isRecentTrelloChange(proj){
   if(!proj?.trelloListChangedAt) return false;
   return (Date.now()-new Date(proj.trelloListChangedAt).getTime())<7*24*60*60*1000;
@@ -12764,6 +12850,7 @@ document.addEventListener('pointerdown',e=>{
 async function _trelloSync(){
   if(!_trelloCfg) return;
   const{apiKey,token,boardId}=_trelloCfg;
+  await loadTrelloIgnoredFromSP().catch(()=>{}); // v1123: only ever called once at startup — cheap to await here
   try{
     const[listsR,cardsR]=await Promise.all([
       fetch(`https://api.trello.com/1/boards/${boardId}/lists?key=${apiKey}&token=${token}&filter=open`),
@@ -12786,6 +12873,7 @@ async function _trelloSync(){
     // Save SP-loaded list names before clearing — used for cross-session change detection
     PROJECTS.filter(p=>p.isLead).forEach(p=>{p._prevTrelloListName=p.trelloListName;p.trelloListName='';});
     const netNew=[],lostNames=[];
+    let _trelloIgnoredDirty=false;
     for(const card of cards){
       const listName=listMap[card.idList]||'';
       // Match on full API id OR shortLink — handles both pasted formats
@@ -12826,10 +12914,13 @@ async function _trelloSync(){
         }
       } else if(anyProj){
         // Already in CORE at a later stage — not net-new, skip
+        // v1123: it's genuinely imported now — an ignore entry for it (if any) is moot; drop it
+        if(TRELLO_IGNORED[card.id]){ delete TRELLO_IGNORED[card.id]; _trelloIgnoredDirty=true; }
       } else if(isApproved(listName)){
-        netNew.push({name:card.name,list:listName,cardId:card.id});
+        if(!TRELLO_IGNORED[card.id]) netNew.push({name:card.name,list:listName,cardId:card.id});
       }
     }
+    if(_trelloIgnoredDirty){ _trelloIgnoredDirty=false; saveTrelloIgnored(); }
     _trelloNetNew=netNew; _trelloLostNotices=lostNames; _trelloSynced=true;
     if(!document.getElementById('ppTrelloDrop')){
       const d=document.createElement('div'); d.id='ppTrelloDrop'; d.className='pp-trello-drop';
@@ -16229,6 +16320,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1123', date: '2026-09-22',
+    entries:['Sales screen "N new in Trello" import list: each card now has an Ignore button alongside Import, for cards already imported that keep reappearing when their Trello card gets moved between lists. Ignoring doesn’t touch the Trello card itself — it just stops counting it as new here. Ignored cards are listed (who, when) under a "Show ignored" toggle in the same dropdown with a Restore button, and a card that does get genuinely imported later automatically drops off the ignored list on its own.'],
+  },
   {
     version: 'v1122', date: '2026-09-17',
     entries:['Refinement to v1121: since CA and the Pre-con/Construction bars no longer move together in Production, clicking one no longer glows the whole gantt either. Clicking CA there highlights only CA; clicking Pre-con or Construction highlights just those two bars. The highlight now also survives the drag correctly instead of snapping back to a full-project glow the moment you release. Design is unchanged — clicking anything on a linked project there still glows the whole thing.'],
