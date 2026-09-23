@@ -3481,7 +3481,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1127';
+const CORE_VERSION = 'v1128';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -3987,7 +3987,13 @@ function _buildSnapshotObj(kind){
       planning:JSON.parse(JSON.stringify(PLANNING_PROJECTS)),
       archive:JSON.parse(JSON.stringify(ARCHIVE)),
       history:JSON.parse(JSON.stringify(APPROVED_HISTORY)),
-      shared:sharedStatePayload()
+      // v1128: PERSON_TARGETS/CAP_BOOSTS moved out of the live shared-state row (their own
+      // row now, reconciled per-person), but a Time Machine snapshot still captures them
+      // here so restoring an older snapshot still rolls capacity back too.
+      shared:Object.assign(sharedStatePayload(),{
+        PERSON_TARGETS:JSON.parse(JSON.stringify(PERSON_TARGETS)),
+        CAP_BOOSTS:JSON.parse(JSON.stringify(CAP_BOOSTS))
+      })
     }
   };
 }
@@ -10108,8 +10114,8 @@ function _applyTimeOff(src){ // v1049: also refreshes palm button state after ap
 function sharedStatePayload(){
   return {
     USED_SLOTS:[...USED_SLOTS],
-    PERSON_TARGETS,
-    CAP_BOOSTS, // v1044
+    // v1128: PERSON_TARGETS and CAP_BOOSTS moved to their own row — see the note above
+    // _capacityPayload() for why.
     SLOT_DEFAULT_BUDGET,SLOT_COL_ORDER,
     PANEL_THRESHOLDS,
     TIME_OFF:_collectTimeOff()
@@ -10296,6 +10302,110 @@ async function _saveDomainMerged(domain){
   _snapshotDomainItems(domain);
 }
 
+// ══ Capacity split out of pipeline_state (v1128) ═══════════════════════════════
+// PERSON_TARGETS and CAP_BOOSTS used to ride inside the single whole-blob pipeline_state
+// row along with USED_SLOTS, slot defaults, and panel thresholds. Any unrelated save from
+// ANY open tab — moving a project, editing a note, anything — rewrote that entire row with
+// whatever stale copy of everyone's capacity numbers that tab happened to be holding,
+// silently clobbering a colleague's more recent capacity edit that hadn't made it back to
+// this tab yet inside the 30s reconciliation window. That's the "designer suddenly over
+// capacity, then fine, then over again" bug.
+// Own row now (pipeline_capacity), reconciled per-person on every write — the same idea as
+// the per-item _m-timestamp merge already used for planning/archive/history
+// (_reconcileDomain/_saveDomainMerged), sized down to flat id→value maps since there's
+// nothing here to delete or reorder: every designer and PM always has a target, and an
+// absent boost just means zero.
+let _capacityItemId=null;
+let _lastKnownTargets={}, _lastKnownBoosts={}; // person id → value, as last read/written — merge base
+let _capTargetsMeta={}, _capBoostsMeta={};     // person id → ISO timestamp of that value, same basis
+function _capacityPayload(){
+  const rec=(flat,meta)=>{ const out={}; Object.keys(flat).forEach(k=>{ out[k]={v:flat[k],_m:meta[k]||''}; }); return out; };
+  return JSON.stringify({targets:rec(PERSON_TARGETS,_capTargetsMeta),boosts:rec(CAP_BOOSTS,_capBoostsMeta)});
+}
+// Has either capacity map changed locally since it was last written/adopted — an edit, an
+// addition (new team member defaulted), or a removal (person deleted from the team)?
+function _capacityDirty(){
+  const chk=(flat,known)=>{
+    const keys=new Set([...Object.keys(flat),...Object.keys(known)]);
+    for(const k of keys){
+      if((k in flat)!==(k in known)) return true;
+      if((k in flat)&&JSON.stringify(flat[k])!==JSON.stringify(known[k])) return true;
+    }
+    return false;
+  };
+  return chk(PERSON_TARGETS,_lastKnownTargets)||chk(CAP_BOOSTS,_lastKnownBoosts);
+}
+// Per-key reconciliation for one capacity map (targets or boosts) against a freshly-fetched
+// remote record. Mutates flat/meta/known in place — const-object-mutate-not-reassign, same
+// rule PERSON_TARGETS and CAP_BOOSTS already follow everywhere else. Returns true if any
+// key actually took the remote's value (including a remote deletion the remote knows about
+// but this tab hasn't touched). A local deletion (person removed from the team here) counts
+// as "no value" and only loses to a remote value stamped newer than the deletion itself.
+function _reconcileCapMap(flat,meta,known,remoteRecord){
+  const now=new Date().toISOString();
+  const M=r=>String((r&&r._m)||''); // ISO strings compare lexically; '' = legacy/none = oldest
+  let changed=false;
+  const keys=new Set([...Object.keys(flat),...Object.keys(known),...Object.keys(remoteRecord||{})]);
+  keys.forEach(k=>{
+    const R=remoteRecord&&remoteRecord[k];
+    const hasL=k in flat, hasK=k in known;
+    const localTouched=(hasL!==hasK)||(hasL&&JSON.stringify(flat[k])!==JSON.stringify(known[k]));
+    const Lm=localTouched?now:(meta[k]||'');
+    let present,winnerVal,winnerM;
+    if(R&&localTouched){
+      if(M(R)>Lm){ present=true; winnerVal=R.v; winnerM=M(R); }
+      else { present=hasL; winnerVal=flat[k]; winnerM=Lm; }
+    } else if(R){ present=true; winnerVal=R.v; winnerM=M(R); } // remote only, never touched here — adopt
+    else { present=hasL; winnerVal=flat[k]; winnerM=Lm; } // no remote opinion — keep local as-is
+    const before=hasL?JSON.stringify(flat[k]):undefined;
+    const after=present?JSON.stringify(winnerVal):undefined;
+    if(after!==before) changed=true;
+    if(present){ flat[k]=winnerVal; meta[k]=winnerM; known[k]=winnerVal; }
+    else { delete flat[k]; delete meta[k]; delete known[k]; }
+  });
+  return changed;
+}
+async function _saveCapacityMerged(){
+  if(!_capacityItemId) return;
+  let remoteTargets={},remoteBoosts={};
+  try{
+    const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_capacityItemId+'?$expand=fields&$select=id,fields');
+    const parsed=JSON.parse(item?.fields?.Value||'{}');
+    if(parsed&&typeof parsed==='object'){ remoteTargets=parsed.targets||{}; remoteBoosts=parsed.boosts||{}; }
+  }catch(e){ console.warn('[capacitySave] remote fetch/parse failed — writing local only:',e.message); }
+  const tChanged=_reconcileCapMap(PERSON_TARGETS,_capTargetsMeta,_lastKnownTargets,remoteTargets);
+  const bChanged=_reconcileCapMap(CAP_BOOSTS,_capBoostsMeta,_lastKnownBoosts,remoteBoosts);
+  if(tChanged||bChanged){
+    const notes=[]; if(tChanged) notes.push('capacity targets'); if(bChanged) notes.push('capacity adjustments');
+    try{ rebuildSection(document.body.getAttribute('data-focus')||'production'); }catch(e){}
+    _showSyncInd(notes.join(', ')+' from SharePoint');
+  }
+  await graphPatch(BWC_SITE+'/CORE_Config/items/'+_capacityItemId+'/fields',{Value:_capacityPayload()});
+}
+// Background poll — pulls a colleague's capacity change in even when this tab has made
+// none of its own. Mirrors _refreshDomainsFromSP: skip entirely while a local edit is
+// pending so it can't get reconciled away before the real save gets to it.
+async function _refreshCapacityFromSP(){
+  if(!_capacityItemId||_capacityDirty()) return;
+  try{
+    const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_capacityItemId+'?$expand=fields&$select=id,fields');
+    let parsed=null; try{ parsed=JSON.parse(item?.fields?.Value||'{}'); }catch(e){ return; }
+    if(!parsed||typeof parsed!=='object') return;
+    const tChanged=_reconcileCapMap(PERSON_TARGETS,_capTargetsMeta,_lastKnownTargets,parsed.targets||{});
+    const bChanged=_reconcileCapMap(CAP_BOOSTS,_capBoostsMeta,_lastKnownBoosts,parsed.boosts||{});
+    if(tChanged||bChanged){
+      const notes=[]; if(tChanged) notes.push('capacity targets'); if(bChanged) notes.push('capacity adjustments');
+      const current=document.body.getAttribute('data-focus')||'production';
+      ['production','design','planning'].forEach(sec=>{
+        if(sec===current){ try{ rebuildSection(sec); }catch(e){} } else _staleSections.add(sec);
+      });
+      try{ if(typeof renderProdPanel==='function'&&PROD_PANEL_OPEN) renderProdPanel(); }catch(e){}
+      _showSyncInd(notes.join(', ')+' from SharePoint');
+      console.log(APP_VER+' [bgSync] capacity updated:',notes.join(', '));
+    }
+  }catch(e){ /* transient — try again next tick */ }
+}
+
 function markDirty(proj){
   if(proj&&proj._gdCorrupt){
     console.warn(APP_VER+' Save blocked for quarantined project (damaged GanttData):',proj.clientName||proj.name);
@@ -10435,6 +10545,15 @@ function triggerSave(dirtyProj){
           })
         );
       });
+      // Capacity (targets/boosts) — own row, merged write, only when it actually changed (v1128)
+      if(_capacityItemId&&_capacityDirty()){
+        writes.push(
+          _saveCapacityMerged().catch(e=>{
+            failures.push('capacity');
+            console.error('[save] capacity merged save failed:',e);
+          })
+        );
+      }
       await Promise.all(writes);
       if(conflicts.length>0){
         try{ buildAll(); }catch(e){ console.error('[save] rebuild after conflict adopt failed:',e); }
@@ -11973,16 +12092,8 @@ async function loadTeamMembers(saved){
   setAuthStatus('Loading team — team members…');
   const items=await graphGetAll(BWC_SITE+'/CORE_TeamMembers/items?$expand=fields&$select=id,fields');
   DESIGNERS.length=0; PROD_PMS.length=0; SALES_PEOPLE.length=0; LC_COORDS.length=0; FIELD_MECHANICS.length=0;
-  // Restore saved targets first so existing overrides survive
-  if(saved&&saved.PERSON_TARGETS) Object.assign(PERSON_TARGETS,saved.PERSON_TARGETS);
-  // v1060: capacity boosts ride in the same shared-state row. This is the normal
-  // page-load path; the v1044 hook was in _applyRestore(), which only fires for a
-  // Time Machine restore, so boosts saved fine but were never read back.
-  if(saved&&saved.CAP_BOOSTS&&typeof saved.CAP_BOOSTS==='object'){
-    Object.keys(CAP_BOOSTS).forEach(k=>delete CAP_BOOSTS[k]);
-    Object.assign(CAP_BOOSTS,saved.CAP_BOOSTS);
-    console.log('[cap] restored boosts for '+Object.keys(CAP_BOOSTS).length+' designer(s)');
-  }
+  // v1128: PERSON_TARGETS and CAP_BOOSTS are loaded from their own pipeline_capacity row
+  // in initFromSharePoint(), before this runs — nothing to restore from `saved` here.
   items.forEach(item=>{
     const f=item.fields||{};
     const role=(f.Role||'').trim();
@@ -12390,6 +12501,7 @@ async function _bgSync(){
     // below, since a colleague's planning-only change doesn't touch CORE_Projects
     _refreshDomainsFromSP().catch(()=>{});
     _refreshSharedStateFromSP().catch(()=>{}); // v845: USED_SLOTS et al. — see above
+    _refreshCapacityFromSP().catch(()=>{}); // v1128: capacity targets/boosts — own row now
     // Detect changed items client-side. Graph's $filter on lastModifiedDateTime for list
     // items is unreliable (non-indexed; failed silently here through v824 — the same wall
     // _fetchPMReviews hit, which is why it also filters client-side). Instead: one light
@@ -12586,10 +12698,8 @@ async function _refreshSharedStateFromSP(){
   if(!_configItemId) return;
   // Local edits in flight (inside the save debounce) — don't reconcile over them. Mirrors
   // the _domainDirty guard; the debounce writes within the second and the next tick agrees.
-  const _excl=p=>{ const{CAP_BOOSTS:_,...r}=p; return r; }; // v1046: plus-file-only
-  const localNow=JSON.stringify(_excl(sharedStatePayload()));
-  const lastExcl=_lastWrittenShared?(()=>{ try{return JSON.stringify(_excl(JSON.parse(_lastWrittenShared)));}catch(_){return '';} })():'';
-  if(localNow!==lastExcl) return;
+  const localNow=JSON.stringify(sharedStatePayload());
+  if(localNow!==_lastWrittenShared) return;
   try{
     const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_configItemId+'?$expand=fields&$select=id,fields');
     const f=item?.fields||{};
@@ -12608,19 +12718,7 @@ async function _refreshSharedStateFromSP(){
         if(freed.length) notes.push(freed.length+' slot'+(freed.length>1?'s':'')+' freed');
       }
     }
-    if(parsed.CAP_BOOSTS&&typeof parsed.CAP_BOOSTS==='object'
-       &&JSON.stringify(parsed.CAP_BOOSTS)!==JSON.stringify(CAP_BOOSTS)){
-      Object.keys(CAP_BOOSTS).forEach(k=>{ delete CAP_BOOSTS[k]; });
-      Object.assign(CAP_BOOSTS,parsed.CAP_BOOSTS);
-      notes.push('capacity adjustments'); // v1060
-    }
-    if(parsed.PERSON_TARGETS&&typeof parsed.PERSON_TARGETS==='object'
-       &&JSON.stringify(parsed.PERSON_TARGETS)!==JSON.stringify(PERSON_TARGETS)){
-      // const object — mutate in place, never reassign
-      Object.keys(PERSON_TARGETS).forEach(k=>{ delete PERSON_TARGETS[k]; });
-      Object.assign(PERSON_TARGETS,parsed.PERSON_TARGETS);
-      notes.push('capacity targets');
-    }
+    // v1128: capacity targets/boosts reconciled separately — see _refreshCapacityFromSP()
     if(typeof parsed.SLOT_DEFAULT_BUDGET==='number'&&parsed.SLOT_DEFAULT_BUDGET!==SLOT_DEFAULT_BUDGET){
       SLOT_DEFAULT_BUDGET=parsed.SLOT_DEFAULT_BUDGET; notes.push('slot budget');
     }
@@ -13023,6 +13121,29 @@ async function initFromSharePoint(){
     const _hi=await _ensureDomainRow('approved_history',saved?.APPROVED_HISTORY);
     _planningItemId=_pl.id; _archiveItemId=_ar.id; _historyItemId=_hi.id;
     try{ const _sc=await _ensureDomainRow('ops_scenarios',[]); _opsScenarioRowId=_sc.id; OPS_SCENARIOS=_sc.arr; }catch(e){ console.warn(APP_VER+' Operations: scenarios row unavailable',e); } // v1002
+    // ── v1128: capacity split out of pipeline_state — own row, migrated from the legacy
+    // blob's PERSON_TARGETS/CAP_BOOSTS on first run after the split ──
+    try{
+      const capRow=_findCfgRow('pipeline_capacity');
+      let capTargets={},capBoosts={};
+      if(capRow){
+        try{ const p=JSON.parse(capRow.fields?.Value||'{}'); capTargets=(p&&p.targets)||{}; capBoosts=(p&&p.boosts)||{}; }
+        catch(e){ console.warn('[v1128] Bad JSON in pipeline_capacity — starting from empty:',e); }
+        _capacityItemId=capRow.id;
+      } else {
+        const now=new Date().toISOString();
+        const legacyT=(saved&&saved.PERSON_TARGETS)||{}, legacyB=(saved&&saved.CAP_BOOSTS)||{};
+        Object.keys(legacyT).forEach(k=>{ capTargets[k]={v:legacyT[k],_m:now}; });
+        Object.keys(legacyB).forEach(k=>{ capBoosts[k]={v:legacyB[k],_m:now}; });
+        const data=await graphPost(BWC_SITE+'/CORE_Config/items',
+          {fields:{Title:'pipeline_capacity',Key:'pipeline_capacity',Value:JSON.stringify({targets:capTargets,boosts:capBoosts})}});
+        _capacityItemId=data.id;
+        console.log('[v1128] Created pipeline_capacity row (migrated '+Object.keys(capTargets).length+' targets, '+Object.keys(capBoosts).length+' boost sets), id:',_capacityItemId);
+      }
+      Object.keys(capTargets).forEach(k=>{ PERSON_TARGETS[k]=capTargets[k].v; _capTargetsMeta[k]=capTargets[k]._m||''; });
+      Object.keys(capBoosts).forEach(k=>{ CAP_BOOSTS[k]=capBoosts[k].v; _capBoostsMeta[k]=capBoosts[k]._m||''; });
+      Object.assign(_lastKnownTargets,PERSON_TARGETS); Object.assign(_lastKnownBoosts,CAP_BOOSTS);
+    }catch(e){ console.warn('[v1128] Capacity row init failed — capacity targets will not persist this session:',e); }
     // v826: stored rows carry live items + tombstone records — split before anything
     // downstream sees them (in-memory arrays stay tombstone-free; render sites unchanged)
     const _plSp=_splitDomainRaw(_pl.arr),_arSp=_splitDomainRaw(_ar.arr),_hiSp=_splitDomainRaw(_hi.arr);
@@ -16360,6 +16481,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1128', date: '2026-09-23',
+    entries:['Fixed: designer capacity numbers flickering (over capacity, then fine, then over again) with no one in admin mode. Cause: capacity targets and boosts lived inside one shared settings row with everything else, so any unrelated save from any open tab — even something with nothing to do with capacity — rewrote the whole row with whatever stale copy of everyone’s numbers that tab was holding, racing against colleagues’ own saves. Capacity now has its own row, reconciled person-by-person on every save (newest change per designer wins) instead of being overwritten wholesale — same approach already used for the planning list, archive, and approved history.'],
+  },
   {
     version: 'v1127', date: '2026-09-22',
     entries:['Fixed: the PM Workbook icon could show up on an unassigned Slot once a PM was pre-assigned to it for capacity planning — a Slot still isn’t a real signed project even with a PM attached, so there’s nothing for the Workbook to open. It’s excluded now regardless of PM assignment; only real projects get the icon.'],
