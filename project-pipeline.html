@@ -3481,7 +3481,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1128';
+const CORE_VERSION = 'v1129';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -3987,13 +3987,18 @@ function _buildSnapshotObj(kind){
       planning:JSON.parse(JSON.stringify(PLANNING_PROJECTS)),
       archive:JSON.parse(JSON.stringify(ARCHIVE)),
       history:JSON.parse(JSON.stringify(APPROVED_HISTORY)),
-      // v1128: PERSON_TARGETS/CAP_BOOSTS moved out of the live shared-state row (their own
-      // row now, reconciled per-person), but a Time Machine snapshot still captures them
-      // here so restoring an older snapshot still rolls capacity back too.
-      shared:Object.assign(sharedStatePayload(),{
+      // v1128/v1129: sharedStatePayload() is retired (always '{}') now that capacity, time
+      // off, slot claims, and settings each live in their own merged row — but a Time
+      // Machine snapshot still needs a full point-in-time picture to restore, so it's
+      // assembled explicitly here regardless of how live storage is partitioned.
+      shared:{
+        USED_SLOTS:[...USED_SLOTS],
         PERSON_TARGETS:JSON.parse(JSON.stringify(PERSON_TARGETS)),
-        CAP_BOOSTS:JSON.parse(JSON.stringify(CAP_BOOSTS))
-      })
+        CAP_BOOSTS:JSON.parse(JSON.stringify(CAP_BOOSTS)),
+        SLOT_DEFAULT_BUDGET,SLOT_COL_ORDER:JSON.parse(JSON.stringify(SLOT_COL_ORDER)),
+        PANEL_THRESHOLDS:JSON.parse(JSON.stringify(PANEL_THRESHOLDS)),
+        TIME_OFF:_collectTimeOff()
+      }
     }
   };
 }
@@ -4183,7 +4188,10 @@ function _applyRestore(d){
       if(idx>=0) liveArr[idx]=clone; else liveArr.push(clone);
     });
   });
-  // Shared state: time off, capacity targets, slots, thresholds
+  // Shared state: time off, capacity targets, slots, thresholds. Each field below is now
+  // its own per-key-merged row (v1128/v1129) — mutating it here in place is enough; the
+  // next triggerSave() picks up the change via the normal dirty-check for that row, same
+  // as any other edit.
   if(d.shared){
     const sh=d.shared;
     if(sh.TIME_OFF){ _applyTimeOff(sh.TIME_OFF); setTimeout(_refreshAllPalmBtns,0); } // v1049
@@ -10111,15 +10119,16 @@ function _applyTimeOff(src){ // v1049: also refreshes palm button state after ap
   if(!src||typeof src!=='object') return;
   [...DESIGNERS,...PROD_PMS].forEach(p=>{ if(!p) return; p.timeOff=_normTimeOff(src[p.id]); });
 }
+// v1128/v1129: every field that used to live here (PERSON_TARGETS, CAP_BOOSTS, TIME_OFF,
+// USED_SLOTS, SLOT_DEFAULT_BUDGET, SLOT_COL_ORDER, PANEL_THRESHOLDS) now has its own
+// per-key-merged row — see "Everything that used to ride in the shared pipeline_state
+// blob" above. pipeline_state itself is retired: this always returns '{}' now, so the
+// row simply stops changing rather than being torn out — the plumbing around it
+// (_configItemId, this function, the triggerSave/beforeunload writes) is left in place
+// as harmless no-ops instead of ripped out, since removing it touches more code for zero
+// behavioral benefit.
 function sharedStatePayload(){
-  return {
-    USED_SLOTS:[...USED_SLOTS],
-    // v1128: PERSON_TARGETS and CAP_BOOSTS moved to their own row — see the note above
-    // _capacityPayload() for why.
-    SLOT_DEFAULT_BUDGET,SLOT_COL_ORDER,
-    PANEL_THRESHOLDS,
-    TIME_OFF:_collectTimeOff()
-  };
+  return {};
 }
 function userPrefsPayload(){
   return {
@@ -10302,46 +10311,58 @@ async function _saveDomainMerged(domain){
   _snapshotDomainItems(domain);
 }
 
-// ══ Capacity split out of pipeline_state (v1128) ═══════════════════════════════
-// PERSON_TARGETS and CAP_BOOSTS used to ride inside the single whole-blob pipeline_state
-// row along with USED_SLOTS, slot defaults, and panel thresholds. Any unrelated save from
-// ANY open tab — moving a project, editing a note, anything — rewrote that entire row with
-// whatever stale copy of everyone's capacity numbers that tab happened to be holding,
-// silently clobbering a colleague's more recent capacity edit that hadn't made it back to
-// this tab yet inside the 30s reconciliation window. That's the "designer suddenly over
-// capacity, then fine, then over again" bug.
-// Own row now (pipeline_capacity), reconciled per-person on every write — the same idea as
-// the per-item _m-timestamp merge already used for planning/archive/history
-// (_reconcileDomain/_saveDomainMerged), sized down to flat id→value maps since there's
-// nothing here to delete or reorder: every designer and PM always has a target, and an
-// absent boost just means zero.
-let _capacityItemId=null;
-let _lastKnownTargets={}, _lastKnownBoosts={}; // person id → value, as last read/written — merge base
-let _capTargetsMeta={}, _capBoostsMeta={};     // person id → ISO timestamp of that value, same basis
-function _capacityPayload(){
-  const rec=(flat,meta)=>{ const out={}; Object.keys(flat).forEach(k=>{ out[k]={v:flat[k],_m:meta[k]||''}; }); return out; };
-  return JSON.stringify({targets:rec(PERSON_TARGETS,_capTargetsMeta),boosts:rec(CAP_BOOSTS,_capBoostsMeta)});
+// ══ Everything that used to ride in the shared pipeline_state blob (v1128/v1129) ═══════
+// PERSON_TARGETS, CAP_BOOSTS, TIME_OFF, USED_SLOTS, SLOT_DEFAULT_BUDGET, SLOT_COL_ORDER,
+// and PANEL_THRESHOLDS all used to live inside one whole-blob pipeline_state row. Any
+// unrelated save from ANY open tab — moving a project, editing a note, anything — rewrote
+// that entire row with whatever stale copy of all seven fields that tab happened to be
+// holding, silently clobbering a colleague's more recent change that hadn't made it back
+// to this tab yet inside the 30s reconciliation window. That's both the designer-capacity
+// flicker (v1128) and the disappearing Time Off (v1129) — same root cause, different field.
+// Each now has its own row, reconciled per-key on every write — the same idea as the
+// per-item _m-timestamp merge already used for planning/archive/history
+// (_reconcileDomain/_saveDomainMerged), sized down to flat id→value maps. One generic
+// engine (_reconcileKeyedMap) does the merge for all four; only the shape of the flat map
+// differs — person→number (targets), person→{week:hours} (boosts), person→[days] (time
+// off), slot-week→true (used slots), or a handful of named settings keys.
+// sharedStatePayload()/pipeline_state itself is now retired — always writes '{}' — kept
+// in place rather than torn out, since removing it touches more code for zero benefit.
+// Plain-JSON-only deep copy. Every value that flows through this engine (numbers, plain
+// objects, arrays of strings) round-trips through JSON.stringify for the SharePoint write
+// anyway, so this is safe and cheap — and it's the fix for a real bug: several of these
+// values (CAP_BOOSTS[pid], PANEL_THRESHOLDS, SLOT_COL_ORDER) are objects/arrays that get
+// mutated IN PLACE elsewhere (th.unassigned+=1, CAP_BOOSTS[pid][w]=h) rather than
+// reassigned. If `known` ever held the SAME object reference as `flat` — e.g. from a naive
+// `known[k]=flat[k]` or `Object.assign(known,flat)` — an in-place edit would silently
+// change both at once, so the dirty-check would never see a difference and the edit would
+// never save. Every write into a known/_lastKnownX map in this file must go through this.
+function _deepClone(v){ return (v&&typeof v==='object')?JSON.parse(JSON.stringify(v)):v; }
+// Seeds a known/_lastKnownX map from a flat map, cloning every value — the safe
+// replacement for Object.assign(known,flat) at load time (see _deepClone above for why).
+function _seedKnown(known,flat){ Object.keys(flat).forEach(k=>{ known[k]=_deepClone(flat[k]); }); }
+// Stamps a fresh _m on every locally-touched key, without a full reconcile round trip.
+// Mirrors _stampDomain(domain) — used right before a blind unload write, so a last-second
+// edit ships with an honest timestamp instead of whatever _m it last had at load/save.
+function _stampKeyedMap(flat,meta,known){
+  const now=new Date().toISOString();
+  Object.keys(flat).forEach(k=>{ if(JSON.stringify(flat[k])!==JSON.stringify(known[k])) meta[k]=now; });
 }
-// Has either capacity map changed locally since it was last written/adopted — an edit, an
-// addition (new team member defaulted), or a removal (person deleted from the team)?
-function _capacityDirty(){
-  const chk=(flat,known)=>{
-    const keys=new Set([...Object.keys(flat),...Object.keys(known)]);
-    for(const k of keys){
-      if((k in flat)!==(k in known)) return true;
-      if((k in flat)&&JSON.stringify(flat[k])!==JSON.stringify(known[k])) return true;
-    }
-    return false;
-  };
-  return chk(PERSON_TARGETS,_lastKnownTargets)||chk(CAP_BOOSTS,_lastKnownBoosts);
+// Has this flat map changed locally since it was last written/adopted — an edit, an
+// addition, or a removal?
+function _keyedMapDirty(flat,known){
+  const keys=new Set([...Object.keys(flat),...Object.keys(known)]);
+  for(const k of keys){
+    if((k in flat)!==(k in known)) return true;
+    if((k in flat)&&JSON.stringify(flat[k])!==JSON.stringify(known[k])) return true;
+  }
+  return false;
 }
-// Per-key reconciliation for one capacity map (targets or boosts) against a freshly-fetched
-// remote record. Mutates flat/meta/known in place — const-object-mutate-not-reassign, same
-// rule PERSON_TARGETS and CAP_BOOSTS already follow everywhere else. Returns true if any
-// key actually took the remote's value (including a remote deletion the remote knows about
-// but this tab hasn't touched). A local deletion (person removed from the team here) counts
-// as "no value" and only loses to a remote value stamped newer than the deletion itself.
-function _reconcileCapMap(flat,meta,known,remoteRecord){
+// Per-key reconciliation for one flat map against a freshly-fetched remote record ({key:
+// {v,_m}}). Mutates flat/meta/known in place — const-object-mutate-not-reassign. Returns
+// true if any key actually took the remote's value (including a remote deletion the remote
+// knows about but this tab hasn't touched). A local deletion counts as "no value" and only
+// loses to a remote value stamped newer than the deletion itself.
+function _reconcileKeyedMap(flat,meta,known,remoteRecord){
   const now=new Date().toISOString();
   const M=r=>String((r&&r._m)||''); // ISO strings compare lexically; '' = legacy/none = oldest
   let changed=false;
@@ -10360,49 +10381,183 @@ function _reconcileCapMap(flat,meta,known,remoteRecord){
     const before=hasL?JSON.stringify(flat[k]):undefined;
     const after=present?JSON.stringify(winnerVal):undefined;
     if(after!==before) changed=true;
-    if(present){ flat[k]=winnerVal; meta[k]=winnerM; known[k]=winnerVal; }
+    // known gets an independent clone — see _deepClone above. flat keeps the live
+    // reference (winnerVal as-is) since callers read it back directly (e.g. PANEL_
+    // THRESHOLDS, CAP_BOOSTS[pid]) and mutate it in place going forward; only known must
+    // never alias anything that can change out from under it.
+    if(present){ flat[k]=winnerVal; meta[k]=winnerM; known[k]=_deepClone(winnerVal); }
     else { delete flat[k]; delete meta[k]; delete known[k]; }
   });
   return changed;
 }
+// Shared render/announce step for the per-domain _refreshXFromSP() pollers below.
+function _announceSync(notes){
+  if(!notes.length) return;
+  const current=document.body.getAttribute('data-focus')||'production';
+  ['production','design','planning'].forEach(sec=>{
+    if(sec===current){ try{ rebuildSection(sec); }catch(e){} } else _staleSections.add(sec);
+  });
+  try{ if(typeof renderProdPanel==='function'&&PROD_PANEL_OPEN) renderProdPanel(); }catch(e){}
+  _showSyncInd(notes.join(', ')+' from SharePoint');
+  console.log(APP_VER+' [bgSync] updated:',notes.join(', '));
+}
+
+// ── Capacity (v1128): targets + boosts ──────────────────────────────────────────────────
+let _capacityItemId=null;
+let _lastKnownTargets={}, _lastKnownBoosts={}; // person id → value, as last read/written — merge base
+let _capTargetsMeta={}, _capBoostsMeta={};     // person id → ISO timestamp of that value, same basis
+function _capacityPayload(){
+  const rec=(flat,meta)=>{ const out={}; Object.keys(flat).forEach(k=>{ out[k]={v:flat[k],_m:meta[k]||''}; }); return out; };
+  return JSON.stringify({targets:rec(PERSON_TARGETS,_capTargetsMeta),boosts:rec(CAP_BOOSTS,_capBoostsMeta)});
+}
+function _capacityDirty(){
+  return _keyedMapDirty(PERSON_TARGETS,_lastKnownTargets)||_keyedMapDirty(CAP_BOOSTS,_lastKnownBoosts);
+}
+async function _mergeCapacity(){
+  let remote={};
+  try{
+    const item=_capacityItemId&&await graphGet(BWC_SITE+'/CORE_Config/items/'+_capacityItemId+'?$expand=fields&$select=id,fields');
+    const parsed=item&&JSON.parse(item?.fields?.Value||'{}');
+    if(parsed&&typeof parsed==='object') remote=parsed;
+  }catch(e){ console.warn('[capacitySync] remote fetch/parse failed — using local only:',e.message); }
+  const tChanged=_reconcileKeyedMap(PERSON_TARGETS,_capTargetsMeta,_lastKnownTargets,remote.targets||{});
+  const bChanged=_reconcileKeyedMap(CAP_BOOSTS,_capBoostsMeta,_lastKnownBoosts,remote.boosts||{});
+  const notes=[]; if(tChanged) notes.push('capacity targets'); if(bChanged) notes.push('capacity adjustments');
+  return notes;
+}
 async function _saveCapacityMerged(){
   if(!_capacityItemId) return;
-  let remoteTargets={},remoteBoosts={};
-  try{
-    const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_capacityItemId+'?$expand=fields&$select=id,fields');
-    const parsed=JSON.parse(item?.fields?.Value||'{}');
-    if(parsed&&typeof parsed==='object'){ remoteTargets=parsed.targets||{}; remoteBoosts=parsed.boosts||{}; }
-  }catch(e){ console.warn('[capacitySave] remote fetch/parse failed — writing local only:',e.message); }
-  const tChanged=_reconcileCapMap(PERSON_TARGETS,_capTargetsMeta,_lastKnownTargets,remoteTargets);
-  const bChanged=_reconcileCapMap(CAP_BOOSTS,_capBoostsMeta,_lastKnownBoosts,remoteBoosts);
-  if(tChanged||bChanged){
-    const notes=[]; if(tChanged) notes.push('capacity targets'); if(bChanged) notes.push('capacity adjustments');
-    try{ rebuildSection(document.body.getAttribute('data-focus')||'production'); }catch(e){}
-    _showSyncInd(notes.join(', ')+' from SharePoint');
-  }
+  const notes=await _mergeCapacity();
+  if(notes.length){ try{ rebuildSection(document.body.getAttribute('data-focus')||'production'); }catch(e){} _showSyncInd(notes.join(', ')+' from SharePoint'); }
   await graphPatch(BWC_SITE+'/CORE_Config/items/'+_capacityItemId+'/fields',{Value:_capacityPayload()});
 }
-// Background poll — pulls a colleague's capacity change in even when this tab has made
-// none of its own. Mirrors _refreshDomainsFromSP: skip entirely while a local edit is
-// pending so it can't get reconciled away before the real save gets to it.
+// Background poll — pulls a colleague's change in even when this tab has made none of its
+// own. Mirrors _refreshDomainsFromSP: skip entirely while a local edit is pending so it
+// can't get reconciled away before the real save gets to it.
 async function _refreshCapacityFromSP(){
   if(!_capacityItemId||_capacityDirty()) return;
+  try{ _announceSync(await _mergeCapacity()); }catch(e){ /* transient — try again next tick */ }
+}
+
+// ── Time Off (v1129) ─────────────────────────────────────────────────────────────────────
+let _timeoffItemId=null;
+let _lastKnownTimeOff={}, _timeOffMeta={}; // person id → array / ISO, same basis as capacity
+function _timeoffPayload(flat){
+  const f=flat||_collectTimeOff();
+  const out={}; Object.keys(f).forEach(k=>{ out[k]={v:f[k],_m:_timeOffMeta[k]||''}; });
+  return JSON.stringify(out);
+}
+function _timeoffDirty(){ return _keyedMapDirty(_collectTimeOff(),_lastKnownTimeOff); }
+async function _mergeTimeOff(){
+  let remote={};
   try{
-    const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_capacityItemId+'?$expand=fields&$select=id,fields');
-    let parsed=null; try{ parsed=JSON.parse(item?.fields?.Value||'{}'); }catch(e){ return; }
-    if(!parsed||typeof parsed!=='object') return;
-    const tChanged=_reconcileCapMap(PERSON_TARGETS,_capTargetsMeta,_lastKnownTargets,parsed.targets||{});
-    const bChanged=_reconcileCapMap(CAP_BOOSTS,_capBoostsMeta,_lastKnownBoosts,parsed.boosts||{});
-    if(tChanged||bChanged){
-      const notes=[]; if(tChanged) notes.push('capacity targets'); if(bChanged) notes.push('capacity adjustments');
-      const current=document.body.getAttribute('data-focus')||'production';
-      ['production','design','planning'].forEach(sec=>{
-        if(sec===current){ try{ rebuildSection(sec); }catch(e){} } else _staleSections.add(sec);
-      });
-      try{ if(typeof renderProdPanel==='function'&&PROD_PANEL_OPEN) renderProdPanel(); }catch(e){}
-      _showSyncInd(notes.join(', ')+' from SharePoint');
-      console.log(APP_VER+' [bgSync] capacity updated:',notes.join(', '));
-    }
+    const item=_timeoffItemId&&await graphGet(BWC_SITE+'/CORE_Config/items/'+_timeoffItemId+'?$expand=fields&$select=id,fields');
+    const parsed=item&&JSON.parse(item?.fields?.Value||'{}');
+    if(parsed&&typeof parsed==='object') remote=parsed;
+  }catch(e){ console.warn('[timeoffSync] remote fetch/parse failed — using local only:',e.message); }
+  const to=_collectTimeOff();
+  const changed=_reconcileKeyedMap(to,_timeOffMeta,_lastKnownTimeOff,remote);
+  if(changed){ _applyTimeOff(to); setTimeout(_refreshAllPalmBtns,0); }
+  return {changed,to};
+}
+async function _saveTimeOffMerged(){
+  if(!_timeoffItemId) return;
+  const {changed,to}=await _mergeTimeOff();
+  if(changed){ try{ rebuildSection(document.body.getAttribute('data-focus')||'production'); }catch(e){} _showSyncInd('time off from SharePoint'); }
+  await graphPatch(BWC_SITE+'/CORE_Config/items/'+_timeoffItemId+'/fields',{Value:_timeoffPayload(to)});
+}
+async function _refreshTimeOffFromSP(){
+  if(!_timeoffItemId||_timeoffDirty()) return;
+  try{
+    const {changed}=await _mergeTimeOff();
+    _announceSync(changed?['time off']:[]);
+  }catch(e){ /* transient — try again next tick */ }
+}
+
+// ── Slot claims (v1129) ──────────────────────────────────────────────────────────────────
+// USED_SLOTS is a Set of claimed slot-weeks — modeled here as slot-week → true so the same
+// keyed-map engine applies. v845's original worry ("two projects, one week") was only ever
+// half-fixed — the 30s poll adopted remote additions, but a save still overwrote the whole
+// Set, so a claim made moments earlier by a colleague could still be wiped by the next
+// unrelated save. This closes that gap the same way capacity and time off were closed.
+let _slotsItemId=null;
+let _lastKnownSlots={}, _slotsMeta={}; // slot-week → true / ISO
+function _slotsFlat(){ const out={}; USED_SLOTS.forEach(k=>{ out[k]=true; }); return out; }
+function _slotsPayload(flat){
+  const f=flat||_slotsFlat();
+  const out={}; Object.keys(f).forEach(k=>{ out[k]={v:true,_m:_slotsMeta[k]||''}; });
+  return JSON.stringify(out);
+}
+function _slotsDirty(){ return _keyedMapDirty(_slotsFlat(),_lastKnownSlots); }
+async function _mergeSlots(){
+  let remote={};
+  try{
+    const item=_slotsItemId&&await graphGet(BWC_SITE+'/CORE_Config/items/'+_slotsItemId+'?$expand=fields&$select=id,fields');
+    const parsed=item&&JSON.parse(item?.fields?.Value||'{}');
+    if(parsed&&typeof parsed==='object') remote=parsed;
+  }catch(e){ console.warn('[slotsSync] remote fetch/parse failed — using local only:',e.message); }
+  const flat=_slotsFlat();
+  const changed=_reconcileKeyedMap(flat,_slotsMeta,_lastKnownSlots,remote);
+  if(changed) USED_SLOTS=new Set(Object.keys(flat));
+  return {changed,flat};
+}
+async function _saveSlotsMerged(){
+  if(!_slotsItemId) return;
+  const {changed,flat}=await _mergeSlots();
+  if(changed){ try{ rebuildSection(document.body.getAttribute('data-focus')||'production'); }catch(e){} _showSyncInd('slot claims from SharePoint'); }
+  await graphPatch(BWC_SITE+'/CORE_Config/items/'+_slotsItemId+'/fields',{Value:_slotsPayload(flat)});
+}
+async function _refreshSlotsFromSP(){
+  if(!_slotsItemId||_slotsDirty()) return;
+  try{
+    const {changed}=await _mergeSlots();
+    _announceSync(changed?['slot claims']:[]);
+  }catch(e){ /* transient — try again next tick */ }
+}
+
+// ── Settings (v1129): slot default budget, slot column order, panel warning thresholds ──
+// Three admin-only knobs, almost never touched, bundled as one small keyed map so a change
+// to one survives a concurrent change to another (still no different from before for the
+// rare case of two people editing THE SAME knob at once — newest wins, same as everywhere
+// else here). The real fix for these is isolation from the high-churn project/capacity/
+// time-off traffic that used to share the row with them.
+let _settingsItemId=null;
+let _lastKnownSettings={}, _settingsMeta={};
+function _settingsFlat(){ return {SLOT_DEFAULT_BUDGET,SLOT_COL_ORDER,PANEL_THRESHOLDS}; }
+function _settingsPayload(flat){
+  const f=flat||_settingsFlat();
+  const out={}; Object.keys(f).forEach(k=>{ out[k]={v:f[k],_m:_settingsMeta[k]||''}; });
+  return JSON.stringify(out);
+}
+function _settingsDirty(){ return _keyedMapDirty(_settingsFlat(),_lastKnownSettings); }
+function _applySettingsFlat(flat){
+  if('SLOT_DEFAULT_BUDGET' in flat) SLOT_DEFAULT_BUDGET=flat.SLOT_DEFAULT_BUDGET;
+  if('SLOT_COL_ORDER' in flat) SLOT_COL_ORDER=flat.SLOT_COL_ORDER;
+  if('PANEL_THRESHOLDS' in flat) PANEL_THRESHOLDS=flat.PANEL_THRESHOLDS;
+}
+async function _mergeSettings(){
+  let remote={};
+  try{
+    const item=_settingsItemId&&await graphGet(BWC_SITE+'/CORE_Config/items/'+_settingsItemId+'?$expand=fields&$select=id,fields');
+    const parsed=item&&JSON.parse(item?.fields?.Value||'{}');
+    if(parsed&&typeof parsed==='object') remote=parsed;
+  }catch(e){ console.warn('[settingsSync] remote fetch/parse failed — using local only:',e.message); }
+  const flat=_settingsFlat();
+  const changed=_reconcileKeyedMap(flat,_settingsMeta,_lastKnownSettings,remote);
+  if(changed) _applySettingsFlat(flat);
+  return {changed,flat};
+}
+async function _saveSettingsMerged(){
+  if(!_settingsItemId) return;
+  const {changed,flat}=await _mergeSettings();
+  if(changed){ try{ rebuildSection(document.body.getAttribute('data-focus')||'production'); }catch(e){} _showSyncInd('settings from SharePoint'); }
+  await graphPatch(BWC_SITE+'/CORE_Config/items/'+_settingsItemId+'/fields',{Value:_settingsPayload(flat)});
+}
+async function _refreshSettingsFromSP(){
+  if(!_settingsItemId||_settingsDirty()) return;
+  try{
+    const {changed}=await _mergeSettings();
+    _announceSync(changed?['settings']:[]);
   }catch(e){ /* transient — try again next tick */ }
 }
 
@@ -10442,6 +10597,29 @@ window.addEventListener('beforeunload',()=>{
     _stampDomain(domain); // last-second edits still get their _m before the blind write
     fetch(BWC_SITE+'/CORE_Config/items/'+rowId+'/fields',{
       method:'PATCH',headers:hdrs,body:JSON.stringify({Value:_domainPayload(domain)}),keepalive:true
+    });
+  });
+  // Capacity, time off, slot claims, settings — same blind-write-on-unload treatment
+  // (v1129). No time to fetch-and-merge during unload; same tradeoff already accepted
+  // for planning/archive/history above — a normal save from any tab afterward merges
+  // properly. Without this, an edit followed immediately by a tab close/refresh (inside
+  // the 900ms save debounce) would be silently lost — the exact symptom this release
+  // fixes, just reappearing via a different, unflushed path.
+  if(_capacityItemId&&_capacityDirty()){
+    _stampKeyedMap(PERSON_TARGETS,_capTargetsMeta,_lastKnownTargets);
+    _stampKeyedMap(CAP_BOOSTS,_capBoostsMeta,_lastKnownBoosts);
+    fetch(BWC_SITE+'/CORE_Config/items/'+_capacityItemId+'/fields',{
+      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:_capacityPayload()}),keepalive:true
+    });
+  }
+  [[_timeoffItemId,_timeoffDirty,_collectTimeOff,_timeOffMeta,_lastKnownTimeOff,()=>_timeoffPayload()],
+   [_slotsItemId,_slotsDirty,_slotsFlat,_slotsMeta,_lastKnownSlots,()=>_slotsPayload()],
+   [_settingsItemId,_settingsDirty,_settingsFlat,_settingsMeta,_lastKnownSettings,()=>_settingsPayload()]
+  ].forEach(([rowId,dirtyFn,flatFn,meta,known,payloadFn])=>{
+    if(!rowId||!dirtyFn()) return;
+    _stampKeyedMap(flatFn(),meta,known);
+    fetch(BWC_SITE+'/CORE_Config/items/'+rowId+'/fields',{
+      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:payloadFn()}),keepalive:true
     });
   });
   // Presence sign-off — zero out the heartbeat so peers drop us on their next poll
@@ -10551,6 +10729,31 @@ function triggerSave(dirtyProj){
           _saveCapacityMerged().catch(e=>{
             failures.push('capacity');
             console.error('[save] capacity merged save failed:',e);
+          })
+        );
+      }
+      // Time off, slot claims, settings — same own-row merged-write treatment (v1129)
+      if(_timeoffItemId&&_timeoffDirty()){
+        writes.push(
+          _saveTimeOffMerged().catch(e=>{
+            failures.push('time off');
+            console.error('[save] time off merged save failed:',e);
+          })
+        );
+      }
+      if(_slotsItemId&&_slotsDirty()){
+        writes.push(
+          _saveSlotsMerged().catch(e=>{
+            failures.push('slot claims');
+            console.error('[save] slot claims merged save failed:',e);
+          })
+        );
+      }
+      if(_settingsItemId&&_settingsDirty()){
+        writes.push(
+          _saveSettingsMerged().catch(e=>{
+            failures.push('settings');
+            console.error('[save] settings merged save failed:',e);
           })
         );
       }
@@ -12500,8 +12703,10 @@ async function _bgSync(){
     // Business-data rows (planning/archive/history) — must run before the early return
     // below, since a colleague's planning-only change doesn't touch CORE_Projects
     _refreshDomainsFromSP().catch(()=>{});
-    _refreshSharedStateFromSP().catch(()=>{}); // v845: USED_SLOTS et al. — see above
     _refreshCapacityFromSP().catch(()=>{}); // v1128: capacity targets/boosts — own row now
+    _refreshTimeOffFromSP().catch(()=>{}); // v1129: own row now
+    _refreshSlotsFromSP().catch(()=>{});   // v1129: own row now
+    _refreshSettingsFromSP().catch(()=>{}); // v1129: own row now
     // Detect changed items client-side. Graph's $filter on lastModifiedDateTime for list
     // items is unreliable (non-indexed; failed silently here through v824 — the same wall
     // _fetchPMReviews hit, which is why it also filters client-side). Instead: one light
@@ -12689,63 +12894,12 @@ function _stopPresence(){ clearInterval(_presenceTimer); _presenceTimer=null; }
 // v826: true per-item reconciliation — remote-newer items replace local, remote
 // tombstones remove local items live (no reload needed), local-newer edits are kept
 // and will win the next merged save.
-// v845: the shared pipeline_state row (USED_SLOTS, PERSON_TARGETS, slot defaults, panel
-// thresholds) was read once at load and never again — _refreshDomainsFromSP only covers
-// planning/archive/history. So two open boards drifted apart on which slot weeks were
-// consumed, and because the row is whole-blob last-write-wins, the second save could erase
-// the first person's slot claim: two projects, one week. This pulls it in on every sync.
-async function _refreshSharedStateFromSP(){
-  if(!_configItemId) return;
-  // Local edits in flight (inside the save debounce) — don't reconcile over them. Mirrors
-  // the _domainDirty guard; the debounce writes within the second and the next tick agrees.
-  const localNow=JSON.stringify(sharedStatePayload());
-  if(localNow!==_lastWrittenShared) return;
-  try{
-    const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_configItemId+'?$expand=fields&$select=id,fields');
-    const f=item?.fields||{};
-    const raw=f.Value||f.Value0||'';
-    if(!raw||raw===_lastWrittenShared) return; // nothing new remotely
-    let parsed=null; try{ parsed=JSON.parse(raw); }catch(e){ return; }
-    if(!parsed||typeof parsed!=='object') return;
-    const notes=[];
-    if(Array.isArray(parsed.USED_SLOTS)){
-      const incoming=new Set(parsed.USED_SLOTS);
-      const added=[...incoming].filter(w=>!USED_SLOTS.has(w));
-      const freed=[...USED_SLOTS].filter(w=>!incoming.has(w));
-      if(added.length||freed.length){
-        USED_SLOTS=incoming;
-        if(added.length) notes.push(added.length+' slot'+(added.length>1?'s':'')+' consumed');
-        if(freed.length) notes.push(freed.length+' slot'+(freed.length>1?'s':'')+' freed');
-      }
-    }
-    // v1128: capacity targets/boosts reconciled separately — see _refreshCapacityFromSP()
-    if(typeof parsed.SLOT_DEFAULT_BUDGET==='number'&&parsed.SLOT_DEFAULT_BUDGET!==SLOT_DEFAULT_BUDGET){
-      SLOT_DEFAULT_BUDGET=parsed.SLOT_DEFAULT_BUDGET; notes.push('slot budget');
-    }
-    if(Array.isArray(parsed.SLOT_COL_ORDER)&&JSON.stringify(parsed.SLOT_COL_ORDER)!==JSON.stringify(SLOT_COL_ORDER)){
-      SLOT_COL_ORDER=parsed.SLOT_COL_ORDER; notes.push('slot order');
-    }
-    if(parsed.PANEL_THRESHOLDS&&typeof parsed.PANEL_THRESHOLDS==='object'
-       &&JSON.stringify(parsed.PANEL_THRESHOLDS)!==JSON.stringify(PANEL_THRESHOLDS)){
-      PANEL_THRESHOLDS=parsed.PANEL_THRESHOLDS; notes.push('panel thresholds');
-    }
-    if('TIME_OFF' in parsed && JSON.stringify(parsed.TIME_OFF||{})!==JSON.stringify(_collectTimeOff())){
-      _applyTimeOff(parsed.TIME_OFF); notes.push('time off');
-    }
-    // In step with the store either way — otherwise the save path would treat the adopted
-    // values as a local edit and write them straight back out.
-    _lastWrittenShared=JSON.stringify(sharedStatePayload());
-    if(notes.length){
-      const current=document.body.getAttribute('data-focus')||'production';
-      ['production','design','planning'].forEach(sec=>{
-        if(sec===current){ try{ rebuildSection(sec); }catch(e){} } else _staleSections.add(sec);
-      });
-      try{ if(typeof renderProdPanel==='function'&&PROD_PANEL_OPEN) renderProdPanel(); }catch(e){}
-      _showSyncInd(notes.join(', ')+' from SharePoint');
-      console.log(APP_VER+' [bgSync] shared state updated:',notes.join(', '));
-    }
-  }catch(e){ /* transient — try again next tick */ }
-}
+// v845 originally added a reconciliation pull for the shared pipeline_state row (USED_SLOTS,
+// PERSON_TARGETS, slot defaults, panel thresholds, time off) here. v1128/v1129 moved every
+// one of those fields out to its own row with real per-key merge (see the "Capacity",
+// "Time Off", "Slot claims", and "Settings" blocks above) — sharedStatePayload() is now
+// always '{}', so there was nothing left for this function to do. Removed rather than left
+// as permanent dead weight polling a row that can no longer change.
 
 async function _refreshDomainsFromSP(){
   const domains=['planning','archive','history'];
@@ -13100,7 +13254,16 @@ async function initFromSharePoint(){
       }catch(e){ console.error('[v393] Failed to create pipeline_state:',e); }
     }
     // ── v824: resolve the split business-data rows (create + migrate on first run) ──
-    const _findCfgRow=key=>cfgItems.find(it=>(it.fields?.Key||it.fields?.Title)===key);
+    // Picks the OLDEST match (lowest item id) when more than one row shares a Key/Title —
+    // self-healing against the create-race below: if two tabs both find no row and both
+    // POST a new one (no atomic get-or-create available via Graph against a plain list),
+    // every tab converges on the same "winner" the next time it re-fetches cfgItems from
+    // scratch, rather than staying split across two rows forever.
+    const _findCfgRow=key=>{
+      const matches=cfgItems.filter(it=>(it.fields?.Key||it.fields?.Title)===key);
+      if(matches.length<=1) return matches[0];
+      return matches.reduce((a,b)=>(parseInt(b.id,10)<parseInt(a.id,10)?b:a));
+    };
     async function _ensureDomainRow(key,seedArr){
       const row=_findCfgRow(key);
       if(row){
@@ -13142,8 +13305,67 @@ async function initFromSharePoint(){
       }
       Object.keys(capTargets).forEach(k=>{ PERSON_TARGETS[k]=capTargets[k].v; _capTargetsMeta[k]=capTargets[k]._m||''; });
       Object.keys(capBoosts).forEach(k=>{ CAP_BOOSTS[k]=capBoosts[k].v; _capBoostsMeta[k]=capBoosts[k]._m||''; });
-      Object.assign(_lastKnownTargets,PERSON_TARGETS); Object.assign(_lastKnownBoosts,CAP_BOOSTS);
+      _seedKnown(_lastKnownTargets,PERSON_TARGETS); _seedKnown(_lastKnownBoosts,CAP_BOOSTS);
     }catch(e){ console.warn('[v1128] Capacity row init failed — capacity targets will not persist this session:',e); }
+    // ── v1129: time off, slot claims, and slot/panel settings — same own-row-per-domain
+    // treatment as capacity above, migrated from the legacy blob on first run. A row's
+    // stored shape is always {key:{v,_m}}; _flattenRec splits that into a plain value map
+    // plus a matching timestamp map. Each override lands on `saved.X` so the existing
+    // loadTeamMembers()/restoreSavedState() consumers pick it up unchanged. ──
+    async function _ensureKeyedRow(key,legacyFlat){
+      const row=_findCfgRow(key);
+      if(row){
+        let rec={};
+        try{ const p=JSON.parse(row.fields?.Value||'{}'); if(p&&typeof p==='object') rec=p; }
+        catch(e){ console.warn('[v1129] Bad JSON in '+key+' — starting from empty:',e); }
+        return {id:row.id,rec};
+      }
+      const now=new Date().toISOString();
+      const rec={};
+      Object.keys(legacyFlat||{}).forEach(k=>{ rec[k]={v:legacyFlat[k],_m:now}; });
+      const data=await graphPost(BWC_SITE+'/CORE_Config/items',
+        {fields:{Title:key,Key:key,Value:JSON.stringify(rec)}});
+      console.log('[v1129] Created '+key+' row (migrated '+Object.keys(rec).length+' entries), id:',data.id);
+      return {id:data.id,rec};
+    }
+    function _flattenRec(rec){
+      const v={},m={};
+      Object.keys(rec||{}).forEach(k=>{ v[k]=rec[k].v; m[k]=rec[k]._m||''; });
+      return {v,m};
+    }
+    try{
+      const toRow=await _ensureKeyedRow('pipeline_timeoff',(saved&&saved.TIME_OFF)||{});
+      _timeoffItemId=toRow.id;
+      const {v:toFlat,m:toMeta}=_flattenRec(toRow.rec);
+      saved=saved||{}; saved.TIME_OFF=toFlat;
+      Object.assign(_timeOffMeta,toMeta);
+      // _lastKnownTimeOff is seeded after loadTeamMembers() runs below — time off passes
+      // through _normTimeOff() there, so the true post-load shape is what has to match.
+    }catch(e){ console.warn('[v1129] Time off row init failed — time off will not persist this session:',e); }
+    try{
+      const legacySlots={}; ((saved&&saved.USED_SLOTS)||[]).forEach(w=>{ legacySlots[w]=true; });
+      const slotsRow=await _ensureKeyedRow('pipeline_slots',legacySlots);
+      _slotsItemId=slotsRow.id;
+      const {v:slotsFlat,m:slotsMeta}=_flattenRec(slotsRow.rec);
+      saved.USED_SLOTS=Object.keys(slotsFlat);
+      Object.assign(_slotsMeta,slotsMeta);
+      _seedKnown(_lastKnownSlots,slotsFlat);
+    }catch(e){ console.warn('[v1129] Slot claims row init failed — slot claims will not persist this session:',e); }
+    try{
+      const legacySettings={
+        SLOT_DEFAULT_BUDGET:(saved&&saved.SLOT_DEFAULT_BUDGET)??SLOT_DEFAULT_BUDGET,
+        SLOT_COL_ORDER:(saved&&saved.SLOT_COL_ORDER)||SLOT_COL_ORDER,
+        PANEL_THRESHOLDS:(saved&&saved.PANEL_THRESHOLDS)||PANEL_THRESHOLDS
+      };
+      const setRow=await _ensureKeyedRow('pipeline_settings',legacySettings);
+      _settingsItemId=setRow.id;
+      const {v:setFlat,m:setMeta}=_flattenRec(setRow.rec);
+      if('SLOT_DEFAULT_BUDGET' in setFlat) saved.SLOT_DEFAULT_BUDGET=setFlat.SLOT_DEFAULT_BUDGET;
+      if('SLOT_COL_ORDER' in setFlat) saved.SLOT_COL_ORDER=setFlat.SLOT_COL_ORDER;
+      if('PANEL_THRESHOLDS' in setFlat) saved.PANEL_THRESHOLDS=setFlat.PANEL_THRESHOLDS;
+      Object.assign(_settingsMeta,setMeta);
+      _seedKnown(_lastKnownSettings,setFlat);
+    }catch(e){ console.warn('[v1129] Settings row init failed — slot/panel settings will not persist this session:',e); }
     // v826: stored rows carry live items + tombstone records — split before anything
     // downstream sees them (in-memory arrays stay tombstone-free; render sites unchanged)
     const _plSp=_splitDomainRaw(_pl.arr),_arSp=_splitDomainRaw(_ar.arr),_hiSp=_splitDomainRaw(_hi.arr);
@@ -13175,6 +13397,10 @@ async function initFromSharePoint(){
       }
     }catch(e){ console.warn('[v827] Prefs row init failed — personal view state will not persist this session:',e); }
     await loadTeamMembers(saved);
+    // v1129: seeded post-load, not above with the others — time off passes through
+    // _normTimeOff() inside loadTeamMembers(), so this is the first point where
+    // _collectTimeOff() reflects the exact shape that'll be compared against later.
+    _seedKnown(_lastKnownTimeOff,_collectTimeOff());
     await loadProjects(saved);
     // Extract Trello credentials from the same CORE_Config fetch (no extra round-trip)
     const _cfgGet=key=>{const r=cfgItems.find(it=>(it.fields?.Title||it.fields?.Key||'')===key);return r?(r.fields?.Value||r.fields?.Value0||''):'';};
@@ -16481,6 +16707,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1129', date: '2026-09-23',
+    entries:['Fixed: Time Off for designers disappearing. Same root cause as yesterday’s capacity fix (v1128), just a field that fix didn’t touch — Time Off was still riding in the shared settings row, so an unrelated save from any open tab could silently overwrite a colleague’s just-added days off. Time Off now has its own row with the same per-person merge treatment. Also found and closed the same gap for slot claims (the mechanism that prevents two projects from grabbing the same production week — flagged but only half-fixed back in v845) and moved the remaining admin-only settings (slot budget default, slot column order, panel warning thresholds) into their own isolated row so ordinary project/capacity/time-off activity can’t touch them. Along the way, caught and fixed a subtler bug in the merge logic itself: it could end up comparing a value against itself instead of against a real snapshot, which would have made some edits (capacity boosts, panel thresholds) look saved on screen but silently fail to actually persist — verified with a standalone test before shipping. An independent review pass then caught two more gaps and both are closed here too: an edit made right before closing the tab (inside the ~1s save delay) is now flushed on the way out instead of silently dropped, and the one-time creation of these new rows is self-healing if two people happen to open the Pipeline in the same instant before any of them exist yet.'],
+  },
   {
     version: 'v1128', date: '2026-09-23',
     entries:['Fixed: designer capacity numbers flickering (over capacity, then fine, then over again) with no one in admin mode. Cause: capacity targets and boosts lived inside one shared settings row with everything else, so any unrelated save from any open tab — even something with nothing to do with capacity — rewrote the whole row with whatever stale copy of everyone’s numbers that tab was holding, racing against colleagues’ own saves. Capacity now has its own row, reconciled person-by-person on every save (newest change per designer wins) instead of being overwritten wholesale — same approach already used for the planning list, archive, and approved history.'],
