@@ -241,8 +241,12 @@
   .tl-bar-row{border:1.5px solid transparent;border-radius:8px;padding:12px 14px;margin:0 -14px;}
   .tl-bar-row.is-current{border-color:var(--navy);}
   .tl-bar-label{font-family:'Fraunces',serif;font-size:14px;font-weight:600;color:var(--navy);margin-bottom:8px;display:block;}
-  .tl-bar{height:14px;border-radius:8px;margin-bottom:8px;}
+  .tl-bar{height:14px;border-radius:8px;margin-bottom:8px;display:flex;overflow:hidden;}
+  .tl-seg{height:100%;}
+  .tl-seg:not(:last-child){border-right:2px solid var(--white);}
+  .tl-seg-parallel{background-image:repeating-linear-gradient(45deg, rgba(255,255,255,0.4) 0, rgba(255,255,255,0.4) 3px, transparent 3px, transparent 7px);}
   .tl-bar-meta{font-size:11px;font-weight:600;color:var(--steel);margin-bottom:4px;}
+  .tl-bar-parallel-note{font-size:11px;color:var(--steel);font-style:italic;margin-bottom:4px;}
   .tl-bar-desc{font-size:12px;color:var(--steel);line-height:1.5;}
   .conclusion-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;}
   .conclusion-tag{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--steel);background:var(--snow);border:1px solid var(--cloud);border-radius:10px;padding:2px 8px;}
@@ -330,7 +334,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v33</span>
+      <span class="header-version">v34</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -1428,15 +1432,18 @@ async function doDelete(id){
 }
 
 // ══════════════════════════════════════════════════ SUMMARY ════
-// Phase I/II weeks are typical ranges (see disclaimer in the Design Timeline section) — not commitments.
+// Phase week counts are typical ranges (see disclaimer in the Design Timeline section) — not commitments.
+// Phase III design runs parallel to Production, not sequentially after Phase II — sized to match
+// the corresponding Production tier's total duration (Fast-Track floors to Standard, same as
+// computeCompositeTier's low->med production floor elsewhere in this file).
 const DESIGN_TIMELINE = [
-  {tier:'low',  label:'Fast-Track', phase1:4, phase2:16, desc:'Concept-level intent is enough to proceed; minimal iteration expected.'},
-  {tier:'med',  label:'Standard',   phase1:6, phase2:20, desc:'Typical design development pace with normal review cycles.'},
-  {tier:'high', label:'Extended',   phase1:8, phase2:28, desc:'Full CD-level detail required; expect added coordination and review rounds.'},
+  {tier:'low',  label:'Fast-Track', phases:[{name:'Phase I',weeks:4},{name:'Phase II',weeks:16}], parallelPhase:{name:'Phase III',weeks:30}, desc:'Concept-level intent is enough to proceed; minimal iteration expected.'},
+  {tier:'med',  label:'Standard',   phases:[{name:'Phase I',weeks:6},{name:'Phase II',weeks:20}], parallelPhase:{name:'Phase III',weeks:30}, desc:'Typical design development pace with normal review cycles.'},
+  {tier:'high', label:'Extended',   phases:[{name:'Phase I',weeks:8},{name:'Phase II',weeks:28}], parallelPhase:{name:'Phase III',weeks:42}, desc:'Full CD-level detail required; expect added coordination and review rounds.'},
 ];
 const PRODUCTION_TIMELINE = [
-  {tier:'med',  label:'Standard', desc:'Normal build sequence and trade coordination — no special scheduling accommodations expected.'},
-  {tier:'high', label:'Extended', desc:'Complex build; plan for extended trade coordination and additional inspection/review cycles.'},
+  {tier:'med',  label:'Standard', phases:[{name:'Pre-Construction',weeks:6},{name:'Construction',weeks:24}], desc:'Normal build sequence and trade coordination — no special scheduling accommodations expected.'},
+  {tier:'high', label:'Extended', phases:[{name:'Pre-Construction',weeks:8},{name:'Construction',weeks:34}], desc:'Complex build — pre-construction starts sooner and runs longer, and construction may take longer too; plan for extended trade coordination and additional inspection/review cycles.'},
 ];
 // Key Conclusions library — the dimensions we actually need to influence per composite tier.
 // `tags` name which functional area(s) a conclusion affects, since a prototype library like this
@@ -1598,24 +1605,28 @@ function computeCompositeTier(dataObj){
 // Bar length is a qualitative signal (shorter/typical/longer), not a literal duration.
 // Qualitative fallback for timelines with no explicit week data (e.g. Production) — standard is
 // 2/3 the length of extended, matching the ratio used when real durations aren't known yet.
-const TIER_BAR_WIDTH = {low:'45%', med:'67%', high:'100%'};
 function renderTimelineBars(options, currentTier){
-  const hasWeeks = options.every(o=>o.phase1!==undefined);
-  const maxTotal = hasWeeks ? Math.max(...options.map(o=>o.phase1+o.phase2)) : null;
+  const seqTotal = o => o.phases.reduce((s,p)=>s+p.weeks,0);
+  const fullTotal = o => seqTotal(o) + (o.parallelPhase ? o.parallelPhase.weeks : 0);
+  const maxTotal = Math.max(...options.map(fullTotal));
   return `<div class="tl-bars">${options.map(o=>{
     const isCurrent = o.tier===currentTier;
-    let widthPct, metaHtml='';
-    if(hasWeeks){
-      const total=o.phase1+o.phase2;
-      widthPct=(total/maxTotal*100).toFixed(0)+'%';
-      metaHtml=`<div class="tl-bar-meta">Phase I: ${o.phase1} wks &middot; Phase II: ${o.phase2} wks &middot; Total: ${total} wks</div>`;
-    } else {
-      widthPct=TIER_BAR_WIDTH[o.tier];
-    }
+    const total = seqTotal(o);
+    const full = fullTotal(o);
+    const barWidthPct = (full/maxTotal*100).toFixed(0)+'%';
+    const segs = o.phases.map(p=>`<div class="tl-seg" style="width:${(p.weeks/full*100).toFixed(2)}%;background:${tierColor(o.tier)}"></div>`).join('');
+    const parallelSeg = o.parallelPhase
+      ? `<div class="tl-seg tl-seg-parallel" style="width:${(o.parallelPhase.weeks/full*100).toFixed(2)}%;background-color:${tierColor(o.tier)}"></div>`
+      : '';
+    const metaHtml = `<div class="tl-bar-meta">${o.phases.map(p=>`${p.name}: ${p.weeks} wks`).join(' &middot; ')} &middot; Total: ${total} wks</div>`;
+    const parallelHtml = o.parallelPhase
+      ? `<div class="tl-bar-parallel-note">${o.parallelPhase.name} runs parallel with Production (~${o.parallelPhase.weeks} wks) — not additional sequential time.</div>`
+      : '';
     return `<div class="tl-bar-row${isCurrent?' is-current':''}">
       <span class="tl-bar-label">${o.label}</span>
-      <div class="tl-bar" style="width:${widthPct};background:${tierColor(o.tier)}"></div>
+      <div class="tl-bar" style="width:${barWidthPct}">${segs}${parallelSeg}</div>
       ${metaHtml}
+      ${parallelHtml}
       <div class="tl-bar-desc">${o.desc}</div>
     </div>`;
   }).join('')}</div>`;
