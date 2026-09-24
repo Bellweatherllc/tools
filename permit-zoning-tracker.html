@@ -543,7 +543,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v89';
+const CORE_VERSION = 'v90';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -990,9 +990,36 @@ window.dumpConstructionLead=function(){
   console.log('[construction-clock] '+rows.length+' permit cards · '+missing+' projects with a Construction phase in the Pipeline · buffer: '+CONSTRUCTION_BUFFER_DAYS+' calendar days');
   return rows;
 };
+// v_audit: CHECKINS was a blind whole-object overwrite — this is a dashboard several
+// people keep open, so two people editing different projects' notes around the same time
+// could silently erase each other's. Each entry already carries its own 'at' timestamp
+// from when it was last edited, reused directly as the merge timestamp (same approach as
+// project-pipeline.html's Trello-ignored list) — newest edit per project wins, both
+// survive if they touched different projects.
+function _reconcileCheckins(local,remote){
+  const M=x=>String((x&&x.at)||'');
+  const merged={};
+  new Set([...Object.keys(local||{}),...Object.keys(remote||{})]).forEach(k=>{
+    const L=local&&local[k],R=remote&&remote[k];
+    merged[k]=(L&&R)?((M(R)>M(L))?R:L):(L||R);
+  });
+  return merged;
+}
 async function saveCheckins(){ // v39
   setSave('syncing','Saving note…');
-  try{ await setConfigRow('pz_checkins',JSON.stringify(CHECKINS)); setSave('ok','Saved'); }
+  try{
+    let remote={};
+    try{
+      const row=_cfgRows.pz_checkins;
+      if(row){
+        const d=await graphGet(BWC_SITE+'/CORE_Config/items/'+row.id+'?$expand=fields($select=Title,Key,Value)');
+        if(d&&d.fields&&d.fields.Value!=null) remote=JSON.parse(d.fields.Value||'{}');
+      }
+    }catch(e){ console.warn('[checkins] remote fetch failed — writing local only:',e); }
+    CHECKINS=_reconcileCheckins(CHECKINS,remote);
+    await setConfigRow('pz_checkins',JSON.stringify(CHECKINS));
+    setSave('ok','Saved');
+  }
   catch(e){ console.error('[checkins]',e); setSave('err','Note not saved'); }
 }
 function _checkinEdit(cell){
@@ -1009,8 +1036,12 @@ function _checkinEdit(cell){
     const v=ta.value.trim();
     if(v!==cur){
       const acct=msalApp.getActiveAccount();
-      if(v) CHECKINS[proj]={note:v,by:(acct&&acct.name)||'',at:new Date().toISOString()};
-      else delete CHECKINS[proj];
+      // v_audit: clearing keeps the entry (empty note, fresh timestamp) instead of
+      // deleting it outright — a delete has no timestamp to compare, so a merge can't
+      // tell "I just cleared this" from "this was never set," and a stale remote copy
+      // could resurrect a note someone deliberately cleared. Display sites treat an
+      // empty note the same as no entry either way (see renderAbsolutes below).
+      CHECKINS[proj]={note:v,by:(acct&&acct.name)||'',at:new Date().toISOString()};
       saveCheckins();
     }
     renderAbsolutes();
@@ -1919,9 +1950,10 @@ function renderAbsolutes(){
       return '<tr><td class="abs-proj">'+esc(n)+'</td><td>'+esc(owner)+'</td><td>'+ae+'</td><td>'+bin(z)+'</td><td>'+bin(p)+'</td><td>'+bin(apps)+'</td>'+
         '<td class="abs-note-cell" data-proj="'+esc(normName(n))+'">'+(function(){
           const ci=CHECKINS[normName(n)];
-          const meta=ci?'<div class="abs-note-meta">'+esc(ci.by||'')+(ci.at?' \u00b7 '+fmtDate(new Date(ci.at)):'')+'</div>':'';
-          return '<div class="abs-note-body">'+(ci?esc(ci.note):'<span class="abs-note-hint">Add note</span>')+'</div>'+meta+
-            '<button class="abs-note-pencil'+(ci?' has-note':'')+'" title="Edit check-in note"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button>';
+          const hasNote=!!(ci&&ci.note); // v_audit: a cleared entry keeps its row (empty note) for merge purposes — treat it as no note here
+          const meta=hasNote?'<div class="abs-note-meta">'+esc(ci.by||'')+(ci.at?' \u00b7 '+fmtDate(new Date(ci.at)):'')+'</div>':'';
+          return '<div class="abs-note-body">'+(hasNote?esc(ci.note):'<span class="abs-note-hint">Add note</span>')+'</div>'+meta+
+            '<button class="abs-note-pencil'+(hasNote?' has-note':'')+'" title="Edit check-in note"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg></button>';
         })()+'</td></tr>';
     }).join('')+'</tbody></table>';
 }
