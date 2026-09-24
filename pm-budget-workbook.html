@@ -378,10 +378,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v60';
+const CORE_VERSION = 'v61';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v61', date:'2026-09-24', notes:'Fixed the manual Estimate edit not accepting any typing after confirming the "you’re about to..." dialog — focusing the new field immediately as the confirm() dialog closed could silently fail to take, the same dialog-vs-focus quirk hit earlier with the over-budget prompt. Deferred it a tick so focus reliably lands in the field.' },
   { v:'v60', date:'2026-09-24', notes:'Fixed the v59 Estimate click-to-edit not appearing: toggling admin mode never re-rendered the grid itself, only the chrome around it, so the Estimate cells stayed frozen as plain text from whenever the grid last drew — usually before admin mode was turned on. Toggling admin mode now redraws the grid immediately when a budget is open.' },
   { v:'v59', date:'2026-09-24', notes:'Admins in admin mode can now manually adjust a division’s Estimate figure (normally a read-only snapshot from the estimate file). Clicking it asks "You’re about to manually adjust an estimate figure. Do you want to proceed?" before it becomes editable — a plain confirm, no typing required to dismiss it. A reimport will still overwrite the figure again from the estimate file, same as always.' },
   { v:'v58', date:'2026-09-21', notes:'Replaced the whole prompt()/blur-based over-budget gate — it was clunky and kept misfiring. Now a line pushing its division more than 10% over its estimate just auto-opens its comment box with a Budgeting comment already written explaining the overage; click Post (or Enter) to save the note and the figure together, no typing required. Esc still backs out and reverts the amount. Once a line has any Budgeting comment, later edits to it aren’t flagged again.' },
@@ -2023,10 +2024,17 @@ function lineInput(inp){
 function tryEditDivEstimate(code){
   if(!isBudgetAdmin || !adminModeOn || !wb) return;
   if(!window.confirm('You’re about to manually adjust an estimate figure. Do you want to proceed?')) return;
-  wb.editingEst = code;
-  renderWorkbook();
-  const inp = document.querySelector('.est-edit-input');
-  if(inp){ inp.focus(); inp.select(); }
+  // Deferred a tick: focusing a freshly-rendered input immediately after a native
+  // confirm() dialog closes can silently fail to take in some browsers (the same
+  // dialog-vs-focus quirk hit earlier with the over-budget prompt) — by the next tick
+  // the dialog's own focus teardown has fully settled and .focus() actually sticks.
+  setTimeout(() => {
+    if(!wb) return;
+    wb.editingEst = code;
+    renderWorkbook();
+    const inp = document.querySelector('.est-edit-input');
+    if(inp){ inp.focus(); inp.select(); }
+  }, 0);
 }
 function saveDivEstimate(inp){
   if(!isBudgetAdmin || !wb) return;
