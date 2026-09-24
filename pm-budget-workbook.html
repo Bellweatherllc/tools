@@ -228,6 +228,8 @@ table.wb td{border:1px solid #e2e2e2;padding:3px 8px;}
 tr.div-hdr td{background:#fff;}
 tr.div-hdr td.lbl-h{background:#d9d9d9;color:#111;font-weight:700;font-size:13px;letter-spacing:.01em;border-right:none;}
 td.est-col{background:transparent;border-left:none;border-right:none;}
+.est-editable{cursor:pointer;border-bottom:1px dashed var(--gold);}
+.est-editable:hover{color:var(--gold);}
 td.bud-col{background:#edf3e2;}
 td.amt input{background:transparent;border:none;width:100%;min-width:0;text-align:right;font-size:13.5px;padding:2px 4px;}
 td.amt input:focus{outline:2px solid var(--gold);border-radius:2px;}
@@ -376,10 +378,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v58';
+const CORE_VERSION = 'v59';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v59', date:'2026-09-24', notes:'Admins in admin mode can now manually adjust a division’s Estimate figure (normally a read-only snapshot from the estimate file). Clicking it asks "You’re about to manually adjust an estimate figure. Do you want to proceed?" before it becomes editable — a plain confirm, no typing required to dismiss it. A reimport will still overwrite the figure again from the estimate file, same as always.' },
   { v:'v58', date:'2026-09-21', notes:'Replaced the whole prompt()/blur-based over-budget gate — it was clunky and kept misfiring. Now a line pushing its division more than 10% over its estimate just auto-opens its comment box with a Budgeting comment already written explaining the overage; click Post (or Enter) to save the note and the figure together, no typing required. Esc still backs out and reverts the amount. Once a line has any Budgeting comment, later edits to it aren’t flagged again.' },
   { v:'v57', date:'2026-09-21', notes:'The v56 fix wasn’t enough — the over-budget prompt was still firing twice. Deferred the prompt() call itself to the next tick so it no longer runs from inside the blur handler at all, which is what let the browser treat the click that caused the blur as unfinished and replay it a second time once the dialog closed.' },
   { v:'v56', date:'2026-09-21', notes:'Fixed the over-budget prompt reappearing right after answering it — showing a native prompt() from a blur handler makes some browsers refire blur again the instant the dialog closes, which was popping the same prompt a second time. Guarded against that duplicate firing.' },
@@ -1561,7 +1564,7 @@ async function openWorkbook(proj){
     const firstDivOf = {};
     TEMPLATE.forEach(g => { firstDivOf['GRP-' + g.code] = g.divisions[0].key; });
     comments.forEach(cm => { if(firstDivOf[cm.code]) cm.code = firstDivOf[cm.code]; });
-    wb = { proj, cfg: existingConfig, estByCode, scopeRows, comments, unmappedEst, addingCmt: null, editingCmt: null };
+    wb = { proj, cfg: existingConfig, estByCode, scopeRows, comments, unmappedEst, addingCmt: null, editingCmt: null, editingEst: null };
     syncAdminUI();
     renderWorkbook();
     setStatus('wbStatus','');
@@ -1748,8 +1751,20 @@ function renderWorkbook(){
         const ce = wb.cfg && wb.cfg.fields && wb.cfg.fields.CompEscalation;
         if(ce != null) divTip = ' data-tip="From Comp Escalation (' + moneyC(cents(ce)) + ') × 0.68"';
       }
+      const estCode = d.estCodes && d.estCodes[0];
+      const editingEst = estCode && wb.editingEst === estCode;
+      let estCellHtml;
+      if(editingEst){
+        estCellHtml = '<input type="text" inputmode="decimal" class="est-edit-input" value="' + fromCents(dEstC) + '"' +
+          ' data-code="' + escAttr(estCode) + '" onblur="saveDivEstimate(this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
+      }else if(estCode && isBudgetAdmin && adminModeOn){
+        estCellHtml = '<span class="est-editable" data-tip="Click to manually adjust this estimate figure" onclick="tryEditDivEstimate(\'' + escAttr(estCode) + '\')">' +
+          (dEstC ? fmtC(dEstC) : '—') + '</span>';
+      }else{
+        estCellHtml = dEstC ? fmtC(dEstC) : '';
+      }
       html += '<tr class="div-hdr"><td class="lbl-h"' + divTip + '>' + addBtnD + escHtml(divName) + '</td>' +
-        '<td class="amt est-col">' + (dEstC ? fmtC(dEstC) : '') + '</td>' +
+        '<td class="amt est-col">' + estCellHtml + '</td>' +
         '<td class="amt bud-col" id="dbud-' + escAttr(d.key) + '">' + budCellHtml(dEstC, dBudC) + '</td><td class="fx"></td></tr>';
       html += divCmtRows(d);
       rows.forEach(r => {
@@ -1996,6 +2011,43 @@ function lineInput(inp){
   if(num === null) return; // don't recalc on partial junk; blur will flag it
   const row = stateRowFor(inp);
   if(row){ row.budgetC = cents(num); renderTotals(); }
+}
+// Admin-only: manually override a division's Estimate figure (normally a read-only
+// snapshot from the estimate file). Gated behind a confirm — this is meant to be rare
+// and deliberate, and a reimport will overwrite it again like any other estimate figure.
+function tryEditDivEstimate(code){
+  if(!isBudgetAdmin || !adminModeOn || !wb) return;
+  if(!window.confirm('You’re about to manually adjust an estimate figure. Do you want to proceed?')) return;
+  wb.editingEst = code;
+  renderWorkbook();
+  const inp = document.querySelector('.est-edit-input');
+  if(inp){ inp.focus(); inp.select(); }
+}
+function saveDivEstimate(inp){
+  if(!isBudgetAdmin || !wb) return;
+  const code = inp.dataset.code;
+  wb.editingEst = null;
+  const num = parseAmt(inp.value);
+  if(num === null){ setStatus('wbStatus','Not a number: ' + inp.value,'err'); renderWorkbook(); return; }
+  const newC = cents(num);
+  let entry = wb.estByCode[code];
+  if(entry && entry.amountC === newC){ renderWorkbook(); return; }
+  if(entry) entry.amountC = newC;
+  else entry = wb.estByCode[code] = { amountC: newC, title: code, spItemId: null };
+  renderWorkbook();
+  const proj = wb.proj;
+  enqueueSave(async () => {
+    if(entry.spItemId){
+      await graphPatch(SP_LISTS + '/CORE_Budget_Lines/items/' + entry.spItemId + '/fields',
+        { EstimateAmount: fromCents(newC) });
+    }else{
+      const made = await graphPost(SP_LISTS + '/CORE_Budget_Lines/items', { fields: {
+        Title: entry.title, ProjectKey: proj, CostCode: code, LineType:'Division',
+        EstimateAmount: fromCents(newC), BudgetAmount: 0, SortOrder: 0, Source:'PM', Active: true }});
+      entry.spItemId = made.id;
+    }
+    setStatus('wbStatus','');
+  });
 }
 // Writes a scope line's BudgetAmount to SharePoint. Split out of saveLineAmount so the
 // over-budget note gate (below) can defer this same write until a note lands.

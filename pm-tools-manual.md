@@ -95,8 +95,9 @@ Creating the budget alone doesn't turn its dot green — that only happens once 
 
 ### Working the grid
 
-Once a budget exists, it opens as a spreadsheet-style grid: gray division headers, a scope line per row, an Estimate column (read-only, from the snapshot) beside an editable Budget column. A few things worth knowing:
+Once a budget exists, it opens as a spreadsheet-style grid: gray division headers, a scope line per row, an Estimate column (normally read-only, from the snapshot) beside an editable Budget column. A few things worth knowing:
 
+- **Manually adjusting a division's Estimate figure** — admins only, and only in admin mode. Click the figure in a gray division row and a confirmation asks "You're about to manually adjust an estimate figure. Do you want to proceed?" before anything happens. Say yes and it becomes an editable field, pre-filled with the current number; save it like any other figure. This is meant to be rare — a manual override is temporary in the sense that **Back to Estimate Spreadsheet and Tab** will overwrite it again from the estimate file, same as any other estimate figure.
 - **FIXED checkbox** — a per-line marker a PM ticks once a figure is confirmed rather than still being worked. Ticked lines turn from red to black. It's just a visual "I'm done with this one," not a lock.
 - **Comments** — the speech-bubble icon on any line or division opens a comment thread. **Estimating** comments (amber) came from the original estimate file and are read-only here. **Budgeting** comments (blue) are written in the Planner itself, and a PM can edit or delete their own (an admin can delete anyone's).
 - **+Other** — the last line in most divisions; it adds a new row rather than a comment, which is why the comment icon is a speech bubble and not a "+" (a "+" right next to "Add Other" was too easy to misread).
