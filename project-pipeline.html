@@ -3481,7 +3481,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1129';
+const CORE_VERSION = 'v1130';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -12974,34 +12974,47 @@ let _trelloCfg=null,_trelloNetNew=[],_trelloLostNotices=[],_trelloSynced=false,_
 // stay consistent) so a card is only ever ignored once no matter how it's referenced
 // elsewhere. Shown-and-restorable in the dropdown, not a silent drop — see _renderTrelloDrop.
 let TRELLO_IGNORED={}, _trelloIgnoredItemId=null, _trelloShowIgnored=false;
-function saveTrelloIgnored(){ _saveTrelloIgnoredToSP(); }
-async function _saveTrelloIgnoredToSP(){
-  try{
-    const token=await getToken().catch(()=>null); if(!token) return;
-    const val=JSON.stringify(TRELLO_IGNORED);
-    if(_trelloIgnoredItemId){
-      await graphPatch(BWC_SITE+'/CORE_Config/items/'+_trelloIgnoredItemId+'/fields',{Value:val});
-    } else {
-      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
-      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_trello_ignored');
-      if(row){ _trelloIgnoredItemId=row.id; await graphPatch(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{Value:val}); }
-      else {
-        const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_trello_ignored',Key:'pipeline_trello_ignored',Value:val}})}).then(r=>r.json());
-        _trelloIgnoredItemId=r.id;
-      }
-    }
-  }catch(e){ console.warn('[trello] ignored-list SP save failed:',e); }
+// v1130: was a blind whole-object overwrite on every save — the exact same shared-data
+// risk as capacity/time off/slots (any two people ignoring different cards around the same
+// time could stomp each other, or a stale tab could resurrect a card someone deliberately
+// ignored). Reuses the _reconcileKeyedMap engine, but the on-disk shape doesn't change:
+// each entry already carries its own 'at' timestamp from when it was ignored, so that's
+// used directly as the merge timestamp instead of a separate {v,_m} wrapper.
+let _lastKnownTrelloIgnored={}, _trelloIgnoredMeta={};
+function _trelloIgnoredAsRecord(raw){
+  const out={};
+  Object.keys(raw||{}).forEach(k=>{ out[k]={v:raw[k],_m:(raw[k]&&raw[k].at)||''}; });
+  return out;
 }
-async function loadTrelloIgnoredFromSP(){
+async function _mergeTrelloIgnored(){
+  let remoteRaw={};
   try{
     const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
     const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_trello_ignored');
     if(row){
       _trelloIgnoredItemId=row.id;
-      const parsed=JSON.parse(row.fields?.Value||'{}');
-      if(parsed&&typeof parsed==='object') TRELLO_IGNORED=parsed;
+      try{ const p=JSON.parse(row.fields?.Value||'{}'); if(p&&typeof p==='object') remoteRaw=p; }
+      catch(e){ console.warn('[trello] bad JSON in ignored-list row:',e); }
     }
-  }catch(e){ console.warn('[trello] ignored-list SP load failed:',e); }
+  }catch(e){ console.warn('[trello] ignored-list fetch failed — using local only:',e.message); }
+  return _reconcileKeyedMap(TRELLO_IGNORED,_trelloIgnoredMeta,_lastKnownTrelloIgnored,_trelloIgnoredAsRecord(remoteRaw));
+}
+function saveTrelloIgnored(){ _saveTrelloIgnoredToSP(); }
+async function _saveTrelloIgnoredToSP(){
+  try{
+    const token=await getToken().catch(()=>null); if(!token) return;
+    await _mergeTrelloIgnored(); // pulls in anyone else's ignore/restore since our last sync
+    const val=JSON.stringify(TRELLO_IGNORED);
+    if(_trelloIgnoredItemId){
+      await graphPatch(BWC_SITE+'/CORE_Config/items/'+_trelloIgnoredItemId+'/fields',{Value:val});
+    } else {
+      const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_trello_ignored',Key:'pipeline_trello_ignored',Value:val}})}).then(r=>r.json());
+      _trelloIgnoredItemId=r.id;
+    }
+  }catch(e){ console.warn('[trello] ignored-list SP save failed:',e); }
+}
+async function loadTrelloIgnoredFromSP(){
+  try{ await _mergeTrelloIgnored(); }catch(e){ console.warn('[trello] ignored-list SP load failed:',e); }
 }
 function _isRecentTrelloChange(proj){
   if(!proj?.trelloListChangedAt) return false;
@@ -16708,6 +16721,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1130', date: '2026-09-24',
+    entries:['A full audit for the same "shared data silently overwritten" pattern behind the last two fixes, covering every other piece of data multiple people can touch. Found and fixed three more with the same blind-overwrite risk: the Trello "ignore this card" list (two people ignoring/restoring different cards around the same time could undo each other), Brief acknowledgments (same risk when two people review the weekly brief together), and the slot-deletion audit log (could lose one of two people’s log entries if they deleted slots close together). All three now merge instead of overwrite, same approach as capacity, time off, and slot claims. Two lower-stakes items were flagged but left alone for now: the weekly brief’s comparison baseline (worst case is review noise reappearing, not lost data, and it self-corrects) and Operations’ cash-flow scenarios (already a deliberate last-write-wins tradeoff, documented as such since it was built). One real remaining risk — the bug/feature report list on the Brief screen, which unlike the others can be reordered and marked resolved, not just added to — needs the fuller treatment already built for the planning list rather than a quick patch, so it’s next rather than rushed in here.'],
+  },
+  {
     version: 'v1129', date: '2026-09-23',
     entries:['Fixed: Time Off for designers disappearing. Same root cause as yesterday’s capacity fix (v1128), just a field that fix didn’t touch — Time Off was still riding in the shared settings row, so an unrelated save from any open tab could silently overwrite a colleague’s just-added days off. Time Off now has its own row with the same per-person merge treatment. Also found and closed the same gap for slot claims (the mechanism that prevents two projects from grabbing the same production week — flagged but only half-fixed back in v845) and moved the remaining admin-only settings (slot budget default, slot column order, panel warning thresholds) into their own isolated row so ordinary project/capacity/time-off activity can’t touch them. Along the way, caught and fixed a subtler bug in the merge logic itself: it could end up comparing a value against itself instead of against a real snapshot, which would have made some edits (capacity boosts, panel thresholds) look saved on screen but silently fail to actually persist — verified with a standalone test before shipping. An independent review pass then caught two more gaps and both are closed here too: an edit made right before closing the tab (inside the ~1s save delay) is now flushed on the way out instead of silently dropped, and the one-time creation of these new rows is self-healing if two people happen to open the Pipeline in the same instant before any of them exist yet.'],
   },
@@ -18064,36 +18081,54 @@ let _briefBugsItemId     = null;
 let _briefAcksItemId     = null;
 
 // ── Brief persistence (SharePoint only — no localStorage) ──────────────────────
-
+// v1130: BRIEF_ACKS was a blind whole-object overwrite on every save — same risk class as
+// capacity/time off/slots: two people acknowledging different brief items around the same
+// time could silently un-acknowledge each other's. Values here are plain strings with no
+// timestamp of their own (unlike TRELLO_IGNORED's 'at'), so the on-disk shape gains a
+// {v,_m} wrapper going forward; a legacy flat value (from before this fix) is read as
+// _m:'' — oldest — so it correctly loses to any real local touch.
+let _lastKnownBriefAcks={}, _briefAcksMeta={};
+function _briefAcksAsRecord(raw){
+  const out={};
+  Object.keys(raw||{}).forEach(k=>{
+    const v=raw[k];
+    out[k]=(v&&typeof v==='object'&&'v'in v)?v:{v,_m:''};
+  });
+  return out;
+}
+async function _mergeBriefAcks(){
+  let remoteRaw={};
+  try{
+    const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+    const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_brief_acks');
+    if(row){
+      _briefAcksItemId=row.id;
+      try{ const p=JSON.parse(row.fields?.Value||'{}'); if(p&&typeof p==='object') remoteRaw=p; }
+      catch(e){ console.warn('[brief] bad JSON in acks row:',e); }
+    }
+  }catch(e){ console.warn('[brief] acks fetch failed — using local only:',e.message); }
+  return _reconcileKeyedMap(BRIEF_ACKS,_briefAcksMeta,_lastKnownBriefAcks,_briefAcksAsRecord(remoteRaw));
+}
 function saveBriefAcks(){
   _saveBriefAcksToSP();
 }
 async function _saveBriefAcksToSP(){
   try{
     const token=await getToken().catch(()=>null); if(!token) return;
-    const val=JSON.stringify(BRIEF_ACKS);
+    await _mergeBriefAcks(); // pulls in anyone else's acknowledgments since our last sync
+    const out={}; Object.keys(BRIEF_ACKS).forEach(k=>{ out[k]={v:BRIEF_ACKS[k],_m:_briefAcksMeta[k]||''}; });
+    const val=JSON.stringify(out);
     if(_briefAcksItemId){
       await graphPatch(BWC_SITE+'/CORE_Config/items/'+_briefAcksItemId+'/fields',{Value:val});
     } else {
-      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
-      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_brief_acks');
-      if(row){ _briefAcksItemId=row.id; await graphPatch(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{Value:val}); }
-      else {
-        const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_brief_acks',Key:'pipeline_brief_acks',Value:val}})}).then(r=>r.json());
-        _briefAcksItemId=r.id;
-      }
+      const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_brief_acks',Key:'pipeline_brief_acks',Value:val}})}).then(r=>r.json());
+      _briefAcksItemId=r.id;
     }
   }catch(e){ console.warn('[brief] acks SP save failed:',e); }
 }
 async function loadBriefAcksFromSP(){
   try{
-    const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
-    const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_brief_acks');
-    if(row){
-      _briefAcksItemId=row.id;
-      const parsed=JSON.parse(row.fields?.Value||'{}');
-      if(parsed&&typeof parsed==='object') BRIEF_ACKS=parsed;
-    }
+    await _mergeBriefAcks();
   }catch(e){ console.warn('[save] Brief acks SP load failed:',e); }
   await loadSlotDeletionsFromSP(); // v873
 }
@@ -18115,20 +18150,36 @@ function logSlotDeletion(proj){
   if(SLOT_DELETIONS.length>200) SLOT_DELETIONS.length=200;
   _saveSlotDeletionsToSP();
 }
+// v1130: was a blind whole-array overwrite — two people deleting different slots around
+// the same time could lose one of the two log entries. Unlike capacity/time off, log
+// entries are never edited once written, only ever added — so there's no conflicting-edit
+// case to resolve, just a union by natural key (id+ts) keeping both sides' entries.
+function _sdKey(x){ return (x&&x.id||'')+'|'+(x&&x.ts||''); }
 async function _saveSlotDeletionsToSP(){
   try{
     const token=await getToken().catch(()=>null); if(!token) return;
+    let remoteArr=[];
+    try{
+      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_slot_deletions');
+      if(row){
+        _slotDelItemId=row.id;
+        try{ const p=JSON.parse(row.fields?.Value||'[]'); if(Array.isArray(p)) remoteArr=p; }
+        catch(e){ console.warn('[slot del] bad JSON in row:',e); }
+      }
+    }catch(e){ console.warn('[slot del] fetch failed — writing local only:',e.message); }
+    const byKey=new Map();
+    remoteArr.forEach(x=>byKey.set(_sdKey(x),x));
+    SLOT_DELETIONS.forEach(x=>byKey.set(_sdKey(x),x)); // local wins ties — same key means same event anyway
+    const merged=[...byKey.values()].sort((a,b)=>(b.ts||0)-(a.ts||0));
+    if(merged.length>200) merged.length=200;
+    SLOT_DELETIONS.length=0; merged.forEach(x=>SLOT_DELETIONS.push(x));
     const val=JSON.stringify(SLOT_DELETIONS);
     if(_slotDelItemId){
       await graphPatch(BWC_SITE+'/CORE_Config/items/'+_slotDelItemId+'/fields',{Value:val});
     } else {
-      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
-      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_slot_deletions');
-      if(row){ _slotDelItemId=row.id; await graphPatch(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{Value:val}); }
-      else {
-        const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_slot_deletions',Key:'pipeline_slot_deletions',Value:val}})}).then(r=>r.json());
-        _slotDelItemId=r.id;
-      }
+      const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+await getToken(),'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_slot_deletions',Key:'pipeline_slot_deletions',Value:val}})}).then(r=>r.json());
+      _slotDelItemId=r.id;
     }
   }catch(e){ console.warn('[slot del] SP save failed:',e); }
 }
