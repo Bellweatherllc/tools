@@ -3481,7 +3481,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1130';
+const CORE_VERSION = 'v1131';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -10622,6 +10622,31 @@ window.addEventListener('beforeunload',()=>{
       method:'PATCH',headers:hdrs,body:JSON.stringify({Value:payloadFn()}),keepalive:true
     });
   });
+  // Trello ignored list, brief acks, slot-deletion log, bug/feature log (v1130/v1131) —
+  // same blind-write-on-unload treatment. Skipped if the row hasn't loaded yet this
+  // session (nothing to have changed).
+  if(_trelloIgnoredItemId&&_keyedMapDirty(TRELLO_IGNORED,_lastKnownTrelloIgnored)){
+    fetch(BWC_SITE+'/CORE_Config/items/'+_trelloIgnoredItemId+'/fields',{
+      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:JSON.stringify(TRELLO_IGNORED)}),keepalive:true
+    });
+  }
+  if(_briefAcksItemId&&_keyedMapDirty(BRIEF_ACKS,_lastKnownBriefAcks)){
+    const out={}; Object.keys(BRIEF_ACKS).forEach(k=>{ out[k]={v:BRIEF_ACKS[k],_m:_briefAcksMeta[k]||''}; });
+    fetch(BWC_SITE+'/CORE_Config/items/'+_briefAcksItemId+'/fields',{
+      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:JSON.stringify(out)}),keepalive:true
+    });
+  }
+  if(_slotDelItemId&&SLOT_DELETIONS.length){
+    fetch(BWC_SITE+'/CORE_Config/items/'+_slotDelItemId+'/fields',{
+      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:JSON.stringify(SLOT_DELETIONS)}),keepalive:true
+    });
+  }
+  if(_briefBugsItemId&&_briefBugsDirty()){
+    _stampBriefBugs();
+    fetch(BWC_SITE+'/CORE_Config/items/'+_briefBugsItemId+'/fields',{
+      method:'PATCH',headers:hdrs,body:JSON.stringify({Value:JSON.stringify(BRIEF_BUGS)}),keepalive:true
+    });
+  }
   // Presence sign-off — zero out the heartbeat so peers drop us on their next poll
   if(_presenceItemId){
     fetch(PRESENCE_LIST+'/'+_presenceItemId+'/fields',{
@@ -12707,6 +12732,7 @@ async function _bgSync(){
     _refreshTimeOffFromSP().catch(()=>{}); // v1129: own row now
     _refreshSlotsFromSP().catch(()=>{});   // v1129: own row now
     _refreshSettingsFromSP().catch(()=>{}); // v1129: own row now
+    _refreshBriefBugsFromSP().catch(()=>{}); // v1131: bug/feature log — per-item merge now
     // Detect changed items client-side. Graph's $filter on lastModifiedDateTime for list
     // items is unreliable (non-indexed; failed silently here through v824 — the same wall
     // _fetchPMReviews hit, which is why it also filters client-side). Instead: one light
@@ -16721,6 +16747,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1131', date: '2026-09-24',
+    entries:['The last piece of the shared-data audit: the bug/feature request list on the Brief screen had the same silent-overwrite risk as everything fixed this week, but couldn’t use the same quick fix since items here get reordered, edited, and marked resolved rather than just added to. It now gets the fuller per-item treatment already used for the planning list — each item tracks its own last-changed time, so two changes to two different items both survive, and a genuine conflict on the same item is decided by which change is actually newer rather than by which save happened to land last.'],
+  },
+  {
     version: 'v1130', date: '2026-09-24',
     entries:['A full audit for the same "shared data silently overwritten" pattern behind the last two fixes, covering every other piece of data multiple people can touch. Found and fixed three more with the same blind-overwrite risk: the Trello "ignore this card" list (two people ignoring/restoring different cards around the same time could undo each other), Brief acknowledgments (same risk when two people review the weekly brief together), and the slot-deletion audit log (could lose one of two people’s log entries if they deleted slots close together). All three now merge instead of overwrite, same approach as capacity, time off, and slot claims. Two lower-stakes items were flagged but left alone for now: the weekly brief’s comparison baseline (worst case is review noise reappearing, not lost data, and it self-corrects) and Operations’ cash-flow scenarios (already a deliberate last-write-wins tradeoff, documented as such since it was built). One real remaining risk — the bug/feature report list on the Brief screen, which unlike the others can be reordered and marked resolved, not just added to — needs the fuller treatment already built for the planning list rather than a quick patch, so it’s next rather than rushed in here.'],
   },
@@ -18196,6 +18226,46 @@ async function loadSlotDeletionsFromSP(){
 }
 
 // ── Bug/Feature persistence (SP primary, localStorage cache) ──────────────────
+// v1131: was a blind whole-array overwrite — unlike the append-only logs fixed in v1130,
+// BRIEF_BUGS items get reordered, edited, resolved, and reopened in place, so a simple
+// union-by-key isn't enough (two edits to the SAME item need a real winner, not just
+// "keep both"). This mirrors _reconcileDomain/_saveDomainMerged (planning/archive/
+// history) — per-item _m timestamps, newest wins — as new, self-contained code rather
+// than bolting a 4th domain onto that already-proven machinery, so this can't regress it.
+let _lastKnownBriefBugs=new Map(); // bug id → JSON of its content, as last read/written
+function _snapshotBriefBugs(){
+  _lastKnownBriefBugs.clear();
+  BRIEF_BUGS.forEach(b=>{ if(b&&b.id) _lastKnownBriefBugs.set(b.id,JSON.stringify(b)); });
+}
+function _briefBugsDirty(){
+  if(BRIEF_BUGS.length!==_lastKnownBriefBugs.size) return true;
+  return BRIEF_BUGS.some(b=>JSON.stringify(b)!==_lastKnownBriefBugs.get(b&&b.id));
+}
+// Stamp _m on every item that changed since it was last synced — the single choke point,
+// no mutation site (add/edit/reorder/resolve/reopen) needs to remember timestamps itself.
+function _stampBriefBugs(){
+  const now=new Date().toISOString();
+  BRIEF_BUGS.forEach(b=>{ if(b&&JSON.stringify(b)!==_lastKnownBriefBugs.get(b.id)) b._m=now; });
+}
+// Per-item reconciliation, no deletions (nothing in the UI removes an entry — resolving
+// just flips status). Local order wins for known items; brand-new remote items append.
+function _reconcileBriefBugs(localArr,remoteArr){
+  const M=x=>String((x&&x._m)||'');
+  const localMap=new Map(),remoteMap=new Map();
+  localArr.forEach(x=>{ if(x&&x.id) localMap.set(x.id,x); });
+  (remoteArr||[]).forEach(x=>{ if(x&&x.id) remoteMap.set(x.id,x); });
+  const order=[...localMap.keys()];
+  remoteMap.forEach((v,k)=>{ if(!localMap.has(k)) order.push(k); });
+  const merged=[]; let adopted=0,updated=0;
+  order.forEach(k=>{
+    const L=localMap.get(k),R=remoteMap.get(k);
+    let winner; if(L&&R) winner=(M(R)>M(L))?R:L; else winner=L||R;
+    if(!L) adopted++;
+    else if(winner===R&&JSON.stringify(R)!==JSON.stringify(L)) updated++;
+    merged.push(winner);
+  });
+  return {merged,adopted,updated};
+}
 function saveBriefBugs(){
   _saveBriefBugsToSP();
 }
@@ -18203,20 +18273,50 @@ async function _saveBriefBugsToSP(){
   setSaveState('saving');
   try{
     const token=await getToken().catch(()=>null); if(!token) return;
+    _stampBriefBugs();
+    let remoteArr=[];
+    try{
+      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
+      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_bug_log');
+      if(row){
+        _briefBugsItemId=row.id;
+        try{ const p=JSON.parse(row.fields?.Value||'[]'); if(Array.isArray(p)) remoteArr=p; }
+        catch(e){ console.warn('[bug log] bad JSON in row:',e); }
+      }
+    }catch(e){ console.warn('[bug log] fetch failed — writing local only:',e.message); }
+    const {merged,adopted,updated}=_reconcileBriefBugs(BRIEF_BUGS,remoteArr);
+    BRIEF_BUGS.length=0; merged.forEach(x=>BRIEF_BUGS.push(x));
+    if(adopted+updated>0){
+      const body=document.getElementById('briefBody'); if(body) body.innerHTML=generateBriefHTML();
+      _showSyncInd((adopted+updated)+' bug/feature update'+(adopted+updated>1?'s':'')+' from SharePoint');
+    }
+    _snapshotBriefBugs();
     const val=JSON.stringify(BRIEF_BUGS);
     if(_briefBugsItemId){
       await graphPatch(BWC_SITE+'/CORE_Config/items/'+_briefBugsItemId+'/fields',{Value:val});
     } else {
-      const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').catch(()=>[]);
-      const row=items.find(it=>(it.fields?.Key||it.fields?.Title)==='pipeline_bug_log');
-      if(row){ _briefBugsItemId=row.id; await graphPatch(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{Value:val}); }
-      else {
-        const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_bug_log',Key:'pipeline_bug_log',Value:val}})}).then(r=>r.json());
-        _briefBugsItemId=r.id;
-      }
+      const r=await fetch(BWC_SITE+'/CORE_Config/items',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'pipeline_bug_log',Key:'pipeline_bug_log',Value:val}})}).then(r=>r.json());
+      _briefBugsItemId=r.id;
     }
     setSaveState('saved');
   }catch(e){ console.warn('[save] Brief bug log SP save failed:',e); setSaveState('error'); _showSaveError(['notes & requests']); }
+}
+// Background poll — mirrors _refreshDomainsFromSP: skip while a local edit is pending so
+// it can't get reconciled away before the real save gets to it.
+async function _refreshBriefBugsFromSP(){
+  if(!_briefBugsItemId||_briefBugsDirty()) return;
+  try{
+    const item=await graphGet(BWC_SITE+'/CORE_Config/items/'+_briefBugsItemId+'?$expand=fields&$select=id,fields');
+    let remoteArr=[]; try{ const p=JSON.parse(item?.fields?.Value||'[]'); if(Array.isArray(p)) remoteArr=p; }catch(e){ return; }
+    const {merged,adopted,updated}=_reconcileBriefBugs(BRIEF_BUGS,remoteArr);
+    if(adopted+updated>0){
+      BRIEF_BUGS.length=0; merged.forEach(x=>BRIEF_BUGS.push(x));
+      _snapshotBriefBugs();
+      const body=document.getElementById('briefBody'); if(body) body.innerHTML=generateBriefHTML();
+      _showSyncInd((adopted+updated)+' bug/feature update'+(adopted+updated>1?'s':'')+' from SharePoint');
+      console.log(APP_VER+' [bgSync] bug/feature log updated');
+    }
+  }catch(e){ /* transient — try again next tick */ }
 }
 // ── v894: bug screenshots — pasted or picked, uploaded to the snapshot library ──
 let _bugShotPending=null; // {blob,name,objUrl}
@@ -18272,6 +18372,7 @@ async function loadBriefBugsFromSP(){
       if(Array.isArray(parsed)) BRIEF_BUGS=parsed;
     }
   }catch(e){ console.warn('[save] Brief bug log SP load failed:',e); }
+  _snapshotBriefBugs(); // baseline for the dirty-check — nothing local yet, so this just adopts whatever loaded
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
