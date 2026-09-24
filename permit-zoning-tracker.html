@@ -248,7 +248,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    own top edge (=dot) rather than "top" off the dot, so the gap stays exact
    regardless of the tag's own rendered height. v81: left:0, not left:-50% — see
    the .ph-lbl note above, same bug, same fix. */
-.ph-seg{position:absolute;bottom:calc(100% + 17px);left:0;width:100%;display:flex;justify-content:center;pointer-events:none;z-index:2;}
+.ph-seg{position:absolute;bottom:calc(100% + 17px);left:-50%;width:100%;display:flex;justify-content:center;pointer-events:none;z-index:2;} /* v87: reverted the v81 "fix" — left:-50% was never the bug here. Durations were resolved early in the Connector Language prototype to sit BETWEEN dots, on the connecting line itself ("the line is the duration"), not over either dot — left:-50% is exactly what puts this box's center on the boundary between the current step and the previous one. .ph-lbl and .ph-timer (below) are correctly left:0 — a stage's name and its live clock belong to THAT dot specifically, not the gap before it — v81 was right about those two, wrong about this one. */
 .ph-seg::after{content:'';position:absolute;left:50%;top:calc(100% + 2.5px);width:1px;height:17px;background:rgba(40,40,40,.18);} /* v81: nudged down 2.5px */
 .ph-seg .txt{padding:0 5px;white-space:nowrap;position:relative;z-index:1;font-size:8.1px;letter-spacing:.03em;} /* v83: dropped the white punch-through background — plain floating text, no chip */
 .ph-seg.est .txt{font-weight:700;color:#8a723a;}
@@ -408,6 +408,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .bin-on{background:var(--st-done);}
 .bin-off{background:var(--st-over);}
 .bin-na{background:none;color:var(--tm);border:1px solid var(--bdr);}
+.bin-warn{background:var(--st-warn);} /* v88: "Due Soon" — was falling through to ON TRACK with no distinct look before the two absolute-deadline checks could ever push a project here */
 .abs-note-pending{font-size:10.5px;color:var(--tm);font-style:italic;}
 /* v39: check-in notes — the Absolutes ritual's written trace */
 .abs-note-cell{position:relative;min-width:220px;padding-right:34px!important;}
@@ -542,7 +543,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v86';
+const CORE_VERSION = 'v89';
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
 const MSAL_TENANT    = 'ff0e3f46-615a-4a22-8a80-4bb83d627785';
@@ -625,6 +626,7 @@ let _trelloCfg=null;          // {apiKey, token, boardId}
 let _cfgRows={};              // key → {id, value} from CORE_Config
 let APPS=[];                  // application cards (have Track Type)
 let CA_BY_PROJECT={};         // v43: normName(project) → {week, date, status} from CORE_Projects GanttData
+let CONSTRUCTION_BY_PROJECT={}; // v88: normName(project) → {week, date} — Construction phase start, from the same GanttData.productionLane.phases the Pipeline itself draws its Gantt from. Populated alongside CA_BY_PROJECT in loadProjectCAs (same read, no extra Graph call).
 let INTAKE=[];                // cards without Track Type (project intake mirrors)
 let SP_ROWS=[];               // CORE_Permits items
 let _spRowsPromise=null;      // v47: mirror read starts alongside the Trello calls
@@ -831,11 +833,18 @@ async function loadProjectDesigners(){
    inside CORE_Projects.GanttData as {milestones:[{name:'CA', week:<int>, status}]}.
    week counts from CA_EPOCH (see caWeekToDate). status: projected | da-signed |
    ca-signed. Defensive throughout — any parse failure yields no entry, never an
-   error. One-way read; the tracker never writes project data. */
+   error. One-way read; the tracker never writes project data.
+   v88: same pass now also pulls the Construction phase's start week out of
+   GanttData.productionLane.phases (the same array the Pipeline's own Gantt bars
+   are drawn from) — matched by name, case-insensitive, trimmed, since that's
+   read-only borrowed data whose exact casing isn't this tool's to assume. Feeds
+   CONSTRUCTION_BY_PROJECT for the "permit ready 3 calendar weeks before
+   Construction start" absolute (see computeConstructionLead). */
 async function loadProjectCAs(){
   try{
     const projs=await graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields($select=ProjectName,ClientName,Title,GanttData)&$select=id,fields'); // v46: only what the CA read needs
     CA_BY_PROJECT={};
+    CONSTRUCTION_BY_PROJECT={};
     projs.forEach(it=>{
       const f=it.fields||{};
       const name=f.ProjectName||f.ClientName||f.Title||'';
@@ -843,9 +852,16 @@ async function loadProjectCAs(){
       try{
         const gd=JSON.parse(f.GanttData);
         const ca=(gd&&gd.milestones||[]).find(m=>m&&m.name==='CA');
-        if(!ca) return;
-        const wk=(ca.week!=null&&isFinite(ca.week))?ca.week:null;
-        CA_BY_PROJECT[normName(name)]={week:wk, date:wk!=null?caWeekToDate(wk):null, status:ca.status||'projected'};
+        if(ca){
+          const wk=(ca.week!=null&&isFinite(ca.week))?ca.week:null;
+          CA_BY_PROJECT[normName(name)]={week:wk, date:wk!=null?caWeekToDate(wk):null, status:ca.status||'projected'};
+        }
+        const phases=(gd&&gd.productionLane&&gd.productionLane.phases)||[];
+        const constr=phases.find(p=>p&&p.name&&String(p.name).trim().toLowerCase()==='construction');
+        if(constr){
+          const wk=(constr.startWeek!=null&&isFinite(constr.startWeek))?constr.startWeek:null;
+          if(wk!=null) CONSTRUCTION_BY_PROJECT[normName(name)]={week:wk, date:caWeekToDate(wk)};
+        }
       }catch(e2){}
     });
   }catch(e){ console.warn('[ca-clock]',e); }
@@ -919,6 +935,59 @@ window.dumpCALead=function(){
   console.table(rows);
   const missing=Object.keys(CA_BY_PROJECT).length;
   console.log('[ca-clock] '+rows.length+' cards · '+missing+' projects with a CA milestone in CORE_Projects · lead-time defaults:',LEAD_WEEKS);
+  return rows;
+};
+
+const CONSTRUCTION_BUFFER_DAYS=21; // v88: "permit ready 3 calendar weeks before Construction start" — a fixed absolute, confirmed foundational, not a per-project override like leadWeeks
+/* v88: SECOND absolute deadline, parallel to computeCALead above — Permit track
+   only (confirmed: Zoning carries no absolute of its own). Same shape/states as
+   computeCALead on purpose: both are "protect a real downstream date" checks
+   racing the same target (reaching Approved), just against different dates —
+   here, the Pipeline's own Construction phase start minus a fixed 21-day buffer,
+   not the CA date. Pure — reads the card, CONSTRUCTION_BY_PROJECT, and the
+   clock; touches nothing. States: comfortable / at-risk / critical / paused /
+   quiet / no-data, plus n-a for anything not on the Permit track. */
+function computeConstructionLead(a){
+  if(String(a.track).toLowerCase().indexOf('permit')===-1) return {state:'n-a', why:'not on the Permit track — no Construction-start absolute'};
+  const meta=stageMeta(a.stage);
+  if(meta&&meta.terminal==='dead') return {state:'quiet', why:'application closed'};
+  if(meta&&meta.hold) return {state:'paused', why:'On Hold'};
+  const cs=CONSTRUCTION_BY_PROJECT[normName(a.project)];
+  if(!cs||cs.week==null) return {state:'no-data', why:'no Construction start in Pipeline'};
+  const deadline=new Date(cs.date.getTime()-CONSTRUCTION_BUFFER_DAYS*24*3600*1000);
+  const apRank=stageRank('Approved');
+  if(meta&&(meta.terminal==='done'||stageRank(a.stage)>=apRank))
+    return {state:'quiet', why:'permit at/past Approved', daysNeeded:0, deadline, constructionDate:cs.date};
+  let weeksNeeded=null, src='defaults';
+  if(a.leadWeeks!=null){ weeksNeeded=a.leadWeeks; src='card override'; }
+  else{
+    const canon=Object.keys(LEAD_PATH).find(k=>k.toLowerCase()===String(a.stage).toLowerCase());
+    if(!canon) return {state:'no-data', why:'unknown stage "'+a.stage+'" — no lead-time estimate', deadline, constructionDate:cs.date};
+    weeksNeeded=LEAD_PATH[canon].reduce((t,st)=>t+(LEAD_WEEKS[st]||0),0);
+  }
+  const daysNeeded=weeksNeeded*7;
+  const daysAvailable=Math.floor((deadline.getTime()-Date.now())/(24*3600*1000));
+  const slackDays=daysAvailable-daysNeeded;
+  const state=slackDays<=0?'critical':(slackDays<=LEAD_YELLOW_SLACK*7?'at-risk':'comfortable');
+  return {state, daysNeeded, daysAvailable, slackDays, deadline, constructionDate:cs.date, src};
+}
+/* v88: verification surface, same pattern as dumpCALead — run window.dumpConstructionLead()
+   in the console against the live board before trusting this in the UI. */
+window.dumpConstructionLead=function(){
+  const rows=APPS.map(a=>{
+    const r=computeConstructionLead(a);
+    if(r.state==='n-a') return null;
+    return {project:a.project, track:a.track, stage:a.stage,
+      constructionDate:r.constructionDate?r.constructionDate.toISOString().slice(0,10):'—',
+      deadline:r.deadline?r.deadline.toISOString().slice(0,10):'—',
+      needed:r.daysNeeded!=null?r.daysNeeded:'—',
+      available:r.daysAvailable!=null?r.daysAvailable:'—',
+      slack:r.slackDays!=null?r.slackDays:'—',
+      state:r.state, note:r.why||r.src||''};
+  }).filter(Boolean);
+  console.table(rows);
+  const missing=Object.keys(CONSTRUCTION_BY_PROJECT).length;
+  console.log('[construction-clock] '+rows.length+' permit cards · '+missing+' projects with a Construction phase in the Pipeline · buffer: '+CONSTRUCTION_BUFFER_DAYS+' calendar days');
   return rows;
 };
 async function saveCheckins(){ // v39
@@ -1253,10 +1322,74 @@ async function _reconcileCardDue(a){
 
 /* ═══ Rendering ═══ */
 const STATE_RANK={over:0,warn:1,unknown:2,hold:3,ok:4,done:5,closed:6};
+/* v88: the two "absolute" deadlines (CA signing date; permit ready 3 calendar
+   weeks before Construction start, Permit-track only) are real external dates
+   that must never slip — they now override whatever the ordinary per-stage
+   review/age clock alone would say, everywhere this function's result is used
+   (the Absolutes table AND the two project-sort call sites). A card can be
+   comfortably "3d left" on its own review clock and still be the thing about
+   to blow the CA date or the Construction-start buffer — that risk has to win.
+   See projectOffTrackDetail below for the why/how-much/impact explanation,
+   used by the Absolutes table's tooltip. */
+function projectAbsoluteState(apps){
+  let worst=null;
+  apps.forEach(a=>{
+    [computeCALead(a), computeConstructionLead(a)].forEach(r=>{
+      if(r.state==='critical') worst='over';
+      else if(r.state==='at-risk'&&worst!=='over') worst='warn';
+    });
+  });
+  return worst;
+}
+/* v89: replaces the old one-line projectAbsoluteWhy — an OFF TRACK (or DUE SOON)
+   bin needs to say WHY, HOW MUCH, and what the PROJECT IMPACT is, not just name
+   a cause. Returns {tip, tipD} for data-tip/data-tip-d (tip = the headline, tipD
+   = the number + what it means), or null when nothing explains an elevated bin
+   (shouldn't happen, but bin() falls back to no tooltip rather than a broken one).
+   Priority mirrors projectAbsoluteState above: any critical absolute wins over
+   an at-risk one, which wins over a plain overdue review clock — same ordering,
+   just keeping the numbers this time instead of collapsing to a state name. */
+function projectOffTrackDetail(apps){
+  let best=null;
+  const consider=(rank,tip,tipD)=>{ if(!best||rank<best.rank) best={rank,tip,tipD}; };
+  apps.forEach(a=>{
+    const ca=computeCALead(a);
+    if(ca.state==='critical'){
+      const n=Math.abs(ca.slack);
+      consider(0, 'CA signing date at risk ('+a.project+')',
+        n+' week'+(n===1?'':'s')+' short at the current pace — the CA date itself would need to move to hold, unless this speeds up.');
+    }else if(ca.state==='at-risk'){
+      consider(2, 'CA signing date getting tight ('+a.project+')',
+        'Only '+ca.slack+' week'+(ca.slack===1?'':'s')+' of slack left before it tips into risking the CA date.');
+    }
+    const cs=computeConstructionLead(a);
+    if(cs.state==='critical'){
+      const n=Math.abs(cs.slackDays);
+      consider(1, 'Construction-start buffer blown ('+a.project+')',
+        n+' day'+(n===1?'':'s')+' short of the 3-week buffer before Construction start — Construction would need to slip to hold, unless this speeds up.');
+    }else if(cs.state==='at-risk'){
+      consider(3, 'Construction-start buffer getting tight ('+a.project+')',
+        cs.slackDays+' day'+(cs.slackDays===1?'':'s')+' of slack left before the 3-week buffer before Construction start is gone.');
+    }
+  });
+  if(best) return {tip:best.tip, tipD:best.tipD};
+  // No absolute is in play — an OFF TRACK bin at this point is a plain overdue
+  // review clock (Submitted → In Review) on some card. Name the worst one.
+  const overdue=apps.filter(a=>a.state==='over').sort((a,b)=>(a.daysLeft||0)-(b.daysLeft||0))[0];
+  if(overdue) return {tip:overdue.project+' — '+overdue.stage+' is past its own deadline',
+    tipD:(overdue.clockText||'overdue')+' on the jurisdiction review clock — every day it sits here pushes every stage after it back by the same amount.'};
+  const unknown=apps.find(a=>a.state==='unknown');
+  if(unknown) return {tip:unknown.project+' — unrecognized stage "'+(unknown.stage||'—')+'"',
+    tipD:'This card sits in a Trello list the tracker doesn\'t recognize, so it can\'t be projected until it\'s moved to a known stage.'};
+  return null;
+}
 function projectRollup(apps){
   const active=apps.filter(a=>a.state!=='done'&&a.state!=='closed');
-  if(!active.length) return apps.length?'done':'ok';
-  return active.slice().sort((a,b)=>STATE_RANK[a.state]-STATE_RANK[b.state])[0].state;
+  const base=!active.length ? (apps.length?'done':'ok') : active.slice().sort((a,b)=>STATE_RANK[a.state]-STATE_RANK[b.state])[0].state;
+  const absolute=projectAbsoluteState(active);
+  if(absolute==='over') return 'over';
+  if(absolute==='warn'&&STATE_RANK[base]>STATE_RANK['warn']) return 'warn';
+  return base;
 }
 const ROLL_LBL={ok:'On Track',warn:'Due Soon',over:'Overdue',hold:'On Hold',done:'Complete',unknown:'Check'};
 const ROLL_CLS={ok:'roll-ok',warn:'roll-warn',over:'roll-over',hold:'roll-hold',done:'roll-done',unknown:'roll-warn'};
@@ -1747,8 +1880,17 @@ function renderAbsolutes(){
   const bin=apps=>{
     if(!apps.length) return '<span class="bin bin-na">—</span>';
     const r=projectRollup(apps);
+    // v89: OFF TRACK / DUE SOON need to explain themselves on hover — why, how
+    // much, and what it means for the project — not just carry the label. ON
+    // TRACK/DONE/HOLD don't get a tooltip; there's nothing to explain.
+    let tip='';
+    if(r==='over'||r==='unknown'||r==='warn'){
+      const d=projectOffTrackDetail(apps.filter(a=>a.state!=='done'&&a.state!=='closed'));
+      if(d) tip=' data-tip="'+esc(d.tip)+'" data-tip-d="'+esc(d.tipD)+'"';
+    }
     if(r==='done') return '<span class="bin bin-on">DONE</span>';
-    if(r==='over'||r==='unknown') return '<span class="bin bin-off">OFF TRACK</span>';
+    if(r==='over'||r==='unknown') return '<span class="bin bin-off"'+tip+'>OFF TRACK</span>';
+    if(r==='warn') return '<span class="bin bin-warn"'+tip+'>DUE SOON</span>';
     if(r==='hold') return '<span class="bin bin-na">HOLD</span>';
     return '<span class="bin bin-on">ON TRACK</span>';
   };

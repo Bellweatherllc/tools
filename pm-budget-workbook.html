@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" sizes="any" href="https://bellweatherllc.github.io/tools/logos/favicon.svg">
-<title>PM Budget Workbook</title>
+<title>PM Budget Planner</title>
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -103,6 +103,8 @@ input.wide{flex:1;min-width:320px;}
 .proj-picker-row:hover{background:var(--bg);}
 .proj-picker-row.active{background:var(--gold-light);}
 .proj-picker-row-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dot-legend{display:flex;align-items:center;gap:11px;font-size:10px;color:var(--text-sec);flex-shrink:0;}
+.dot-legend-item{display:flex;align-items:center;gap:4px;white-space:nowrap;}
 .btn{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--navy);color:#fff;border:1px solid var(--navy);border-radius:4px;padding:7px 18px;cursor:pointer;transition:opacity .12s;}
 .btn:hover{opacity:.88;}
 .btn:disabled{opacity:.4;cursor:default;}
@@ -130,6 +132,7 @@ table.est tr.total td{font-weight:700;border-top:2px solid var(--border);border-
 .cmt-head .cmt-when{font-weight:400;color:var(--muted);margin-left:5px;}
 .cmt-text{display:inline;font-size:13px;font-style:italic;color:var(--err);white-space:pre-wrap;}
 .tag-est{display:inline;font-size:8px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--est);margin-right:5px;}
+.cmt-src{display:block;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--est);margin-bottom:2px;}
 .hidden{display:none;}
 .small-note{font-size:10px;color:var(--muted);line-height:1.5;margin-top:10px;}
 pre.spec{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:12px;font-size:10.5px;line-height:1.5;overflow-x:auto;white-space:pre;}
@@ -182,6 +185,7 @@ tr.subtotal td{font-weight:700;background:var(--bg);border-top:1px solid var(--b
 .cmt-inrow input:focus{outline:none;border-color:var(--gold);}
 .cmt-post{font-size:8.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-sec);padding:4px 10px;cursor:pointer;}
 .cmt-post:hover{border-color:var(--navy);color:var(--navy);}
+.cmt-gate-notice{font-size:10.5px;font-weight:600;color:var(--err);margin:4px 0;max-width:560px;}
 .cmt-block.bud .cmt-head{color:#4a6a8a;}
 
 .tag-bud{display:inline;font-size:8px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--bud);margin-right:5px;}
@@ -261,7 +265,7 @@ tr.col-hdr td.fx{text-align:center;}
 <div id="authOverlay">
   <div class="auth-box">
     <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
-    <div class="auth-title">PM Budget Workbook</div>
+    <div class="auth-title">PM Budget Planner</div>
     <div class="auth-subtitle">Bellweather CORE</div>
     <div class="auth-version" id="authVersionBadge"></div>
     <button class="auth-sign-in" onclick="doSignIn()">Sign in with Microsoft</button>
@@ -271,7 +275,7 @@ tr.col-hdr td.fx{text-align:center;}
 
 <header class="app-header">
   <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
-  <span class="hdr-title">PM Budget Workbook</span>
+  <span class="hdr-title">PM Budget Planner</span>
   <div class="admin-control" id="adminControl">
     <span class="admin-ctrl-label">Admin</span>
     <label class="admin-switch">
@@ -292,7 +296,7 @@ tr.col-hdr td.fx{text-align:center;}
   <!-- SETUP / PROVISIONING -->
   <div class="panel hidden" id="setupPanel">
     <h2>SharePoint Setup</h2>
-    <div class="sub">Checks whether the three Budget Workbook lists exist on BWCore and creates any that are missing. List creation requires the <b>Sites.Manage.All</b> delegated permission on the app registration; if it is not granted, creation will fail with a 403 and the lists can be created manually from the specs below.</div>
+    <div class="sub">Checks whether the three Budget Planner lists exist on BWCore and creates any that are missing. List creation requires the <b>Sites.Manage.All</b> delegated permission on the app registration; if it is not granted, creation will fail with a 403 and the lists can be created manually from the specs below.</div>
     <div id="provStatusRows">
       <div class="prov-row"><span class="prov-name">CORE_Budget_Config</span><span class="prov-state unknown" id="prov-CORE_Budget_Config">not checked</span></div>
       <div class="prov-row"><span class="prov-name">CORE_Budget_Lines</span><span class="prov-state unknown" id="prov-CORE_Budget_Lines">not checked</span></div>
@@ -322,6 +326,12 @@ tr.col-hdr td.fx{text-align:center;}
           </button>
           <div class="proj-picker-panel" id="projPickerPanel" role="listbox" hidden></div>
         </div>
+        <div class="dot-legend">
+          <span class="dot-legend-item"><span class="proj-dot no"></span>Not set up</span>
+          <span class="dot-legend-item"><span class="proj-dot partial"></span>Partial</span>
+          <span class="dot-legend-item"><span class="proj-dot ok"></span>Set up</span>
+        </div>
+        <div id="wbDocs"></div>
         <button class="wb-reimport hidden" id="btnReimport" onclick="startReimport()">← Back to Estimate Spreadsheet and Tab</button>
         <button class="wb-reset hidden" id="btnResetBudget" onclick="resetBudget()" data-tip="Delete this project's budget config, lines, and comments — puts it back to Not set up.">Reset Budget</button>
         <span class="status-line" id="importStatus" style="margin-top:0;flex:1;"></span>
@@ -349,7 +359,7 @@ tr.col-hdr td.fx{text-align:center;}
       </div>
       <div class="status-line" id="scStatus"></div>
     </div>
-    <div class="sub hidden" id="noBudgetMsg" style="padding:8px 0 14px;">Budget Workbook hasn't been set up. Ryan has been alerted in the Project Pipeline weekly summary.</div>
+    <div class="sub hidden" id="noBudgetMsg" style="padding:8px 0 14px;">Budget Planner hasn't been set up. Ryan has been alerted in the Project Pipeline weekly summary.</div>
     <div id="wbGridWrap" class="hidden">
     <table class="wb"><tbody id="wbBody"></tbody></table>
     <div class="status-line" id="wbStatus"></div>
@@ -361,15 +371,28 @@ tr.col-hdr td.fx{text-align:center;}
 <script>
 'use strict';
 /* =========================================================
-   PM Budget Workbook — CORE — v1
+   PM Budget Planner — CORE — v1
    Phase 1: auth, project picker, estimate fetch + client-side
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v45';
+const CORE_VERSION = 'v58';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v58', date:'2026-09-21', notes:'Replaced the whole prompt()/blur-based over-budget gate — it was clunky and kept misfiring. Now a line pushing its division more than 10% over its estimate just auto-opens its comment box with a Budgeting comment already written explaining the overage; click Post (or Enter) to save the note and the figure together, no typing required. Esc still backs out and reverts the amount. Once a line has any Budgeting comment, later edits to it aren’t flagged again.' },
+  { v:'v57', date:'2026-09-21', notes:'The v56 fix wasn’t enough — the over-budget prompt was still firing twice. Deferred the prompt() call itself to the next tick so it no longer runs from inside the blur handler at all, which is what let the browser treat the click that caused the blur as unfinished and replay it a second time once the dialog closed.' },
+  { v:'v56', date:'2026-09-21', notes:'Fixed the over-budget prompt reappearing right after answering it — showing a native prompt() from a blur handler makes some browsers refire blur again the instant the dialog closes, which was popping the same prompt a second time. Guarded against that duplicate firing.' },
+  { v:'v55', date:'2026-09-21', notes:'Stronger gate for the over-budget note: clicking Post (or Enter) still saves the note and figure together, but clicking or tabbing anywhere else without posting now interrupts with a blocking browser prompt demanding the explanation, instead of just leaving an ignorable box open. Answering the prompt posts the note; cancelling it lets the original click through (e.g. into the amount field, to fix the number instead).' },
+  { v:'v54', date:'2026-09-21', notes:'Three revisions: (1) Sale Price is now a manual entry next to Selections/Allowance/DESIGN COGS, no longer pulled from the Pipeline. (2) The EST/DA/CA document links moved out of the admin-only financials block and up next to the project picker, so they’re visible whether admin mode is on or off. (3) The over-budget note requirement now only triggers when a division’s Budget total clears its Estimate by more than 10% (not any amount over), and the note is mandatory — Cancel and Esc no longer bypass it; the only way out without posting a note is editing the amount back under the threshold.' },
+  { v:'v53', date:'2026-09-17', notes:'Going over budget on a line now requires a note. If saving a line’s Budget amount would push its division’s total over that division’s Estimate, the save is held and that line’s comment box opens with an explanation of the overage — the amount only saves once a Budgeting comment is posted (or the edit is cancelled, which reverts it). A line that already has a Budgeting comment isn’t re-gated on later edits.' },
+  { v:'v52', date:'2026-09-15', notes:'Fixed GPM (Estimate) and GPM (Budget): both were computing the cost ratio, not the margin. Now correctly 1 − (that ratio) for each.' },
+  { v:'v51', date:'2026-09-14', notes:'Setup screen: the estimate-link status is now an actual clickable link ("open link") instead of just saying a link was found. Dropped "on the Pipeline" from both the found and not-found messages.' },
+  { v:'v50', date:'2026-09-14', notes:'Fixed the Comp Escalation comment not routing to E&O: it was matched by exact cell "B9", but a comment on the label cell (or any other cell in that row) missed. Now matched by row, like everything else here. Bigger fix: any Estimating comment that lands in General estimate notes — because it isn’t tied to a division or cost code — now says which header field it’s on ("On: Comp Escalation", "On: Sale Price", etc.) instead of floating with no context. Comments already synced before this fix keep their original placement; only new syncs pick up the corrected routing.' },
+  { v:'v49', date:'2026-09-14', notes:'Correction to v48: E&O is derived from the estimate header’s Comp Escalation figure (not a "COMP ESTIMATE" row — that was a mistake) × 0.68. Hovering the E&O division now shows that figure and the multiplier; a genuine estimator comment on Comp Escalation now flows into E&O’s own comment thread instead of the general estimate notes. Also fixed the division header still showing a literal "EO -" prefix — it now reads just "OTHER / E&O", no code at all.' },
+  { v:'v48', date:'2026-09-14', notes:'E&O now auto-populates from the estimate’s standalone "COMP ESTIMATE" total × .68, instead of sitting blank under a fake cost code — the division is keyed EO now, not 5000 (existing 5000-tagged data still reads and self-heals on the next sync). GPM (Estimate) and GPM (Budget) changed: the Estimate/Budget total is now added into the other figures rather than being the divisor — both are now ÷ Sale Price. Hover text on both updated to match.' },
+  { v:'v47', date:'2026-09-09', notes:'Renamed to PM Budget Planner — browser tab, sign-in screen, header, and every in-app mention. The file itself is unchanged (still pm-budget-workbook.html) so the Updater’s deep link and every bookmark keep working.' },
+  { v:'v46', date:'2026-09-09', notes:'Added a small legend beside the project picker spelling out what the dots mean: red = not set up, gold = partial, green = set up.' },
   { v:'v45', date:'2026-09-06', notes:'The picker’s scrollbar is now always visible (styled, not the OS default overlay), so a longer project list reads as "scroll for more" instead of looking cut off.' },
   { v:'v44', date:'2026-09-06', notes:'Status is smarter now: a project counts as set up only once its three financial fields (Selections, Unresolved Allowance, DESIGN COGS) are all filled in, not just because a budget config row exists. Some filled and some blank shows a new muted-gold "partial" dot; none filled is red; all three is green — same three states Project Updates now shows. Change estimate / tab and Reset Budget are bigger, and the former reads "Back to Estimate Spreadsheet and Tab."' },
   { v:'v43', date:'2026-09-06', notes:'Same timing bug as before, different spot: Change estimate / tab and Reset Budget only appeared after reselecting the project, because their visibility was decided in renderWorkbook() (which only re-runs on an edit) instead of syncAdminUI() (which runs the instant admin mode toggles). Moved it — both buttons now appear or disappear the moment admin mode does, on an already-open workbook.' },
@@ -498,11 +521,6 @@ document.addEventListener('mousemove', e => {
   }
 });
 function urlOf(v){ return typeof v === 'string' ? v : (v && v.Url) || ''; }
-function parsePipelineValue(v){
-  if(v === null || v === undefined || v === '') return null;
-  const n = Number(String(v).replace(/[^0-9.]/g, ''));
-  return (isFinite(n) && n > 0) ? n : null;
-}
 
 window.addEventListener('DOMContentLoaded', initAuth);
 
@@ -657,8 +675,7 @@ async function loadProjects(){
       const pm = (rawPM && !rawPM.includes(' ')) ? (TM_FIRST_TO_FULL[rawPM.toLowerCase()] || rawPM) : rawPM;
       const rec = { spItemId: it.id, title: f.Title || '(untitled)', stage: f.PipelineStage || '', pm };
       PROJ_META[rec.title] = { spItemId: it.id, stage: rec.stage,
-        estUrl: urlOf(f.EstimateUrl), daUrl: urlOf(f.DAUrl), caUrl: urlOf(f.CAUrl),
-        saleVal: parsePipelineValue(f.EstimatedProjectValue) };
+        estUrl: urlOf(f.EstimateUrl), daUrl: urlOf(f.DAUrl), caUrl: urlOf(f.CAUrl) };
       return rec;
     });
     const ACTIVE_STAGES = ['CA Signed','DA Signed','Paused'];
@@ -982,7 +999,7 @@ function buildThreads(comments, persons){
 /* ---------- Provisioning ---------- */
 const LIST_DEFS = [
   { name:'CORE_Budget_Config',
-    description:'Per-project configuration for the PM Budget Workbook: estimate source pointer, snapshot state, and contract financial parameters.',
+    description:'Per-project configuration for the PM Budget Planner: estimate source pointer, snapshot state, and contract financial parameters.',
     columns:[
       col('ProjectKey','text'), col('EstimateFileUrl','text'), col('EstimateFileName','text'),
       col('EstimateTab','text'), col('EstimateLastModified','text'), col('SnapshotDate','text'),
@@ -991,7 +1008,7 @@ const LIST_DEFS = [
       choiceCol('Status',['Draft','Active','Closed'])
     ]},
   { name:'CORE_Budget_Lines',
-    description:'Budget line items for the PM Budget Workbook. Title = line label. Divisions carry the snapshotted estimate amount; scope lines carry PM budget amounts.',
+    description:'Budget line items for the PM Budget Planner. Title = line label. Divisions carry the snapshotted estimate amount; scope lines carry PM budget amounts.',
     columns:[
       col('ProjectKey','text'), col('CostCode','text'),
       choiceCol('LineType',['Division','ScopeLine']),
@@ -1000,7 +1017,7 @@ const LIST_DEFS = [
       boolCol('Active')
     ]},
   { name:'CORE_Budget_Comments',
-    description:'Unified comment stream for the PM Budget Workbook. Estimating comments are synced from the estimate workbook (with original author, timestamp, and source GUID for dedupe); Budgeting comments are authored by PMs in the tool.',
+    description:'Unified comment stream for the PM Budget Planner. Estimating comments are synced from the estimate workbook (with original author, timestamp, and source GUID for dedupe); Budgeting comments are authored by PMs in the tool.',
     columns:[
       col('ProjectKey','text'), col('CostCode','text'), col('LineId','text'),
       choiceCol('CommentType',['Estimating','Budgeting']),
@@ -1143,6 +1160,7 @@ async function onProjectChanged(explicitProj){
   document.getElementById('noBudgetMsg').classList.add('hidden');
   document.getElementById('btnReimport').classList.add('hidden');
   document.getElementById('btnResetBudget').classList.add('hidden');
+  renderDocsLinks(proj);
   if(!proj){ setStatus('importStatus','',''); return; }
   setStatus('importStatus','Checking for an existing budget\u2026');
   try{
@@ -1173,9 +1191,14 @@ function showSetupCard(proj, redo){
   if(redo){
     setStatus('scStatus','Load the file, pick the correct tab, and re-create. Estimate figures and comments will follow the new tab; PM budget lines and budgeting comments are untouched.', 'warn');
   }else{
-    setStatus('scStatus', document.getElementById('scUrl').value ?
-      'Estimate link found on the Pipeline.' :
-      'No estimate link on the Pipeline for this project \u2014 paste one above.', document.getElementById('scUrl').value ? 'ok' : 'warn');
+    const url = document.getElementById('scUrl').value;
+    const scStatus = document.getElementById('scStatus');
+    if(url){
+      scStatus.className = 'status-line ok';
+      scStatus.innerHTML = 'Estimate: <a href="' + escAttr(url) + '" target="_blank" rel="noopener">open link</a>';
+    }else{
+      setStatus('scStatus', 'No estimate link for this project \u2014 paste one above.', 'warn');
+    }
   }
 }
 function updateStickyOffsets(){
@@ -1288,6 +1311,7 @@ async function setupCreate(){
 
 async function cleanupAfterReimport(proj, model, tabName, say){
   const validCodes = new Set(model.codes.filter(c => c.code !== 'TOTAL').map(c => c.code));
+  validCodes.add('EO'); // synthetic (COMP ESTIMATE × .68), never in model.codes — never stale-cleaned
   say('Cleaning up lines from the previous tab\u2026');
   const lines = await fetchAllItems('CORE_Budget_Lines');
   for(const it of lines){
@@ -1337,7 +1361,7 @@ async function syncSnapshotCore(proj, model, tabName, fileMeta, fileUrl, cfgRef,
   say('Syncing estimate lines\u2026');
   const allLines = await fetchAllItems('CORE_Budget_Lines');
   const mine = allLines.filter(it => it.fields && it.fields.ProjectKey === proj && it.fields.LineType === 'Division');
-  const byCode = {}; mine.forEach(it => { byCode[it.fields.CostCode] = it; });
+  const byCode = {}; mine.forEach(it => { byCode[normCostCode(it.fields.CostCode)] = it; });
   let linesMade = 0, linesUpdated = 0;
   const codes = model.codes.filter(c => c.code !== 'TOTAL');
   for(let i = 0; i < codes.length; i++){
@@ -1355,6 +1379,29 @@ async function syncSnapshotCore(proj, model, tabName, fileMeta, fileUrl, cfgRef,
       linesUpdated++;
     }else{
       await graphPost(SP_LISTS + '/CORE_Budget_Lines/items', { fields });
+      linesMade++;
+    }
+  }
+
+  /* 2b — E&O division: not a real cost code, so it's not in model.codes. Derived
+     instead from the estimate header's Comp Escalation figure (cell B9) × 0.68 —
+     only touched when that field actually has a value. */
+  if(h.compEscalation != null){
+    say('Syncing E&O…');
+    const eoFields = {
+      Title: 'Other / E&O', ProjectKey: proj, CostCode: 'EO', LineType: 'Division',
+      EstimateAmount: r2(h.compEscalation * 0.68) ?? 0, SortOrder: (codes.length + 1) * 10,
+      Source: 'Estimate', Active: true
+    };
+    const exEO = byCode['EO'];
+    if(exEO){
+      // CostCode included so a legacy '5000'-tagged row self-heals to 'EO' on its
+      // next sync, rather than depending on the read-side remap indefinitely.
+      await graphPatch(SP_LISTS + '/CORE_Budget_Lines/items/' + exEO.id + '/fields',
+        { Title: eoFields.Title, CostCode: 'EO', EstimateAmount: eoFields.EstimateAmount, SortOrder: eoFields.SortOrder });
+      linesUpdated++;
+    }else{
+      await graphPost(SP_LISTS + '/CORE_Budget_Lines/items', { fields: eoFields });
       linesMade++;
     }
   }
@@ -1391,8 +1438,13 @@ function flattenEstComments(model){
   model.codes.forEach(c => { if(c.code !== 'TOTAL') rowCode[c.row] = c.code; });
   const flat = [];
   const push = (n, ref) => { if(n.guid){
-    const rm = ((n.ref || ref) || '').match(/[A-Z]+(\d+)/);
-    const code = rm ? (rowCode[parseInt(rm[1],10)] || '') : '';
+    const r = n.ref || ref || '';
+    const rm = r.match(/[A-Z]+(\d+)/);
+    const row = rm ? parseInt(rm[1],10) : 0;
+    // Comp Escalation (row 9 — the label cell or the value cell, whichever the
+    // comment landed on) has no cost code of its own — any comment there belongs
+    // to the E&O division, which is derived from that same figure.
+    const code = row === 9 ? 'EO' : (rowCode[row] || '');
     flat.push({ ...n, ref: n.ref || ref, code });
   }};
   model.codes.forEach(c => (c.comments || []).forEach(th => { push(th, th.ref); (th.replies||[]).forEach(rp => push(rp, th.ref)); }));
@@ -1433,7 +1485,7 @@ const TEMPLATE = [
   { code:'5132', label:'SPECIALTY', divisions:[
     { key:'5132', label:'', estCodes:['5132'], lines:['Custom Railings','Landscaping','Shower Glass','Decorative Steel','Other'] } ] },
   { code:'MISC', label:'OTHER COST CODES', divisions:[
-    { key:'5000',  label:'5000 — Other / E&O', lines:['E&O'] },
+    { key:'EO',  label:'Other / E&O', estCodes:['EO'], noCode:true, lines:['E&O'] },
     { key:'5010',  label:'5010 — Building Permits', estCodes:['5010'], lines:['Building Permits','Street Closure Permits'] },
     { key:'5014',  label:'5014 — Rental Equipment', estCodes:['5014'], lines:['Rental Equipment'] },
     { key:'5016',  label:'5016 — Inspections', estCodes:['5016'], lines:['Inspections'] },
@@ -1443,6 +1495,22 @@ const TEMPLATE = [
 ];
 const SELECTIONS_EST_CODE = '5100';
 const OVERHEAD_PCT = 0.0255, STAFF_PCT = 0.1784;
+// A division's Budget total has to clear its Estimate by more than this to require a note.
+const OVER_BUDGET_GATE_PCT = 0.10;
+// The E&O division used to be keyed '5000' (a fake cost code); it's now keyed 'EO'
+// (no cost code at all). Projects synced before this change still have SharePoint
+// rows stamped CostCode='5000' — read them as 'EO' so existing PM entries keep showing
+// up under the (renamed) division instead of going orphaned. New writes always use 'EO'.
+const normCostCode = c => c === '5000' ? 'EO' : c;
+// Header fields by row (the label cell and the value cell share a row, and a comment
+// could sit on either) — used only to give a general-notes comment some context
+// ("On: Sale Price") since it isn't tied to any division's own thread.
+const HEADER_ROW_LABELS = { 1:'Updated', 2:'Job Name', 5:'Direct Cost', 6:'Indirect %',
+  7:'Payroll %', 8:'Markup %', 9:'Comp Escalation', 11:'GP %', 12:'Sale Price' };
+function headerLabelForCell(ref){
+  const rm = String(ref || '').match(/[A-Z]+(\d+)/);
+  return rm ? (HEADER_ROW_LABELS[parseInt(rm[1],10)] || '') : '';
+}
 
 let wb = null; // runtime state: { proj, cfg, estByCode, rows, comments, unmappedEst }
 const cents = v => Math.round((parseFloat(v) || 0) * 100);
@@ -1463,24 +1531,24 @@ async function openWorkbook(proj){
       try{
         const it = await graphGet(SP_LISTS + '/CORE_Projects/items/' + pmeta0.spItemId + '?$expand=fields&$select=id,fields');
         const f0 = it.fields || {};
-        pmeta0.saleVal = parsePipelineValue(f0.EstimatedProjectValue);
         pmeta0.estUrl = urlOf(f0.EstimateUrl);
         pmeta0.daUrl = urlOf(f0.DAUrl);
         pmeta0.caUrl = urlOf(f0.CAUrl);
+        renderDocsLinks(proj);
       }catch(e){ console.warn('[pipeline refresh]', e.message); }
     }
     const [lines, cmts] = await Promise.all([fetchAllItems('CORE_Budget_Lines'), fetchAllItems('CORE_Budget_Comments')]);
     const myLines = lines.filter(it => it.fields && it.fields.ProjectKey === proj);
     const estByCode = {};
     myLines.filter(it => it.fields.LineType === 'Division').forEach(it => {
-      estByCode[it.fields.CostCode] = { amountC: cents(it.fields.EstimateAmount), title: it.fields.Title, spItemId: it.id };
+      estByCode[normCostCode(it.fields.CostCode)] = { amountC: cents(it.fields.EstimateAmount), title: it.fields.Title, spItemId: it.id };
     });
     const scopeRows = myLines.filter(it => it.fields.LineType === 'ScopeLine' && it.fields.Active !== false)
-      .map(it => ({ spItemId: it.id, divKey: it.fields.CostCode, label: it.fields.Title,
+      .map(it => ({ spItemId: it.id, divKey: normCostCode(it.fields.CostCode), label: it.fields.Title,
                     budgetC: cents(it.fields.BudgetAmount), source: it.fields.Source || 'PM',
                     fixed: it.fields.Fixed === true, sortOrder: it.fields.SortOrder || 999 }));
     const comments = cmts.filter(it => it.fields && it.fields.ProjectKey === proj).map(it => ({
-      spItemId: it.id, type: it.fields.CommentType || 'Budgeting', code: it.fields.CostCode || '',
+      spItemId: it.id, type: it.fields.CommentType || 'Budgeting', code: normCostCode(it.fields.CostCode || ''),
       lineId: it.fields.LineId || '', author: it.fields.AuthorName || '', authorEmail: (it.fields.AuthorEmail || '').toLowerCase(), when: it.fields.CommentDate || '',
       body: it.fields.Body || '', cell: it.fields.SourceCell || '', sourceGuid: it.fields.SourceGuid || ''
     })).sort((a,b) => (a.when||'').localeCompare(b.when||''));
@@ -1517,7 +1585,7 @@ function enqueueSave(fn){
 /* --- calc --- */
 function calcChain(){
   const f = (wb.cfg && wb.cfg.fields) || {};
-  const saleC = cents((PROJ_META[wb.proj] || {}).saleVal);
+  const saleC = cents(f.ContractSalePrice);
   const markup = parseFloat(f.ContractMarkupPct);
   const mk = isFinite(markup) ? markup : (parseFloat(f.MarkupPct) || 0);
   const selC = cents(f.SelectionsAmount), allowC = cents(f.UnresolvedAllowance), ddC = cents(f.DDCogs);
@@ -1532,12 +1600,13 @@ function calcChain(){
   let budTotalC = 0;
   wb.scopeRows.forEach(r => budTotalC += r.budgetC);
   const ouBudC = availableC - budTotalC;
-  // Ryan's formula: (Selections + Unresolved Allowance + DESIGN COGS + Indirect +
-  // Payroll) ÷ the construction total — computed once against the Estimate total and
-  // once against the live Budget total, so the gap between the two is visible.
+  // Ryan's formula: 1 - ((Selections + Unresolved Allowance + DESIGN COGS + Indirect +
+  // Payroll + the construction total) ÷ Sale Price) — computed once adding in the
+  // Estimate total and once adding in the live Budget total, so the gap between the
+  // two is visible.
   const nonConstructionC = selC + allowC + ddC + overheadC + staffC;
-  const gpmEstimatePct = estTotalC ? nonConstructionC / estTotalC : 0;
-  const gpmBudgetPct = budTotalC ? nonConstructionC / budTotalC : 0;
+  const gpmEstimatePct = saleC ? 1 - (nonConstructionC + estTotalC) / saleC : 0;
+  const gpmBudgetPct = saleC ? 1 - (nonConstructionC + budTotalC) / saleC : 0;
   return { saleC, mk, selC, allowC, ddC, costBasisC, overheadC, staffC, availableC, indirectPct, payrollPct,
            estTotalC, budTotalC, ouEstC: availableC - estTotalC, ouBudC, nonConstructionC, gpmEstimatePct, gpmBudgetPct };
 }
@@ -1547,6 +1616,30 @@ function divBudC(d){
   let t = 0; wb.scopeRows.forEach(r => { if(r.divKey === d.key) t += r.budgetC; }); return t;
 }
 function estForDiv(d){ return (d.estCodes||[]).reduce((t,c) => t + (wb.estByCode[c] ? wb.estByCode[c].amountC : 0), 0); }
+function divByKey(key){
+  for(const g of TEMPLATE){ for(const d of g.divisions){ if(d.key === key) return d; } }
+  return null;
+}
+function divNameFor(divKey){
+  for(const g of TEMPLATE){
+    const d = g.divisions.find(dd => dd.key === divKey);
+    if(d) return (d.noCode ? (d.label || g.label) : (d.key + ' - ' + (d.label || g.label))).toUpperCase();
+  }
+  return divKey;
+}
+// A short caption explaining why the comment box opened on its own, plus an
+// auto-generated comment body pre-filling the input — the PM can edit it, or just
+// click Post as-is. No typing required.
+function overageCaption(){
+  return 'Flagged automatically — this line pushes the division over its estimate. Edit the note below or just click Post.';
+}
+function overageComment(divKey){
+  const d = divByKey(divKey);
+  if(!d) return 'Went over the division’s estimate.';
+  const dEstC = estForDiv(d), dBudC = divBudC(d), overC = dBudC - dEstC;
+  const pct = dEstC ? Math.round((overC / dEstC) * 100) : 0;
+  return 'Went over the ' + fmtC(dEstC) + ' estimate for ' + divNameFor(divKey) + ' by ' + fmtC(overC) + ' (' + pct + '% over).';
+}
 function deltaChip(estC, budC){
   if(!estC && !budC) return '';
   const d = estC - budC;
@@ -1595,19 +1688,19 @@ function renderWorkbook(){
     ', taken ' + fmtDate(f.SnapshotDate) + '. Admin mode \u2014 financials editable.';
 
   /* Financial strip \u2014 estimate-header language, each figure cross-referenced */
-  const pmetaR = PROJ_META[wb.proj] || {};
   const estSel = wb.estByCode[SELECTIONS_EST_CODE];
   const roCell = (label, valueHtml, ref, id, tip) =>
     '<div class="fin-cell"' + (tip ? ' data-tip="' + tip + '"' : '') + '><label>' + label + '</label>' +
     '<div class="fin-ro"' + (id ? ' id="' + id + '"' : '') + '>' + valueHtml + '</div>' +
     (ref ? '<div class="fin-ref">' + ref + '</div>' : '') + '</div>';
-  const saleCell = roCell('Sale Price',
-    (pmetaR.saleVal ? moneyC(cents(pmetaR.saleVal)) : '\u2014'),
-    (pmetaR.saleVal
-      ? 'from Pipeline \u00B7 authoritative'
-      : '<a href="https://bellweatherllc.github.io/tools/project-pipeline.html" target="_blank" rel="noopener">set in Pipeline</a>') +
-    (f.SalePrice != null ? ' \u00B7 estimate sale price: ' + money(f.SalePrice) : ''), null,
-    'Set in the Project Pipeline \u2014 the workbook always uses the Pipeline value');
+  const cfgCell = (field, label, val, ref, tip) =>
+    '<div class="fin-cell"' + (tip ? ' data-tip="' + tip + '"' : '') + '><label>' + label + '</label>' +
+    '<input type="text" data-cfg="' + field + '" value="' + (val ?? '') + '"' +
+    (isBudgetAdmin ? '' : ' disabled') + ' oninput="cfgInput(this)" onblur="saveCfgField(this)">' +
+    (ref ? '<div class="fin-ref">' + ref + '</div>' : '') + '</div>';
+  const saleCell = cfgCell('ContractSalePrice', 'Sale Price', f.ContractSalePrice,
+    f.SalePrice != null ? 'estimate sale price: ' + money(f.SalePrice) : '',
+    'Manually entered \u2014 no longer pulled from the Pipeline');
   const finFields = [
     ['SelectionsAmount','Selections (5100)', f.SelectionsAmount, estSel ? 'estimate: ' + moneyC(estSel.amountC) : '', 'Subtracted from cost basis when figuring Available for Construction'],
     ['UnresolvedAllowance','Unresolved Allowance', f.UnresolvedAllowance, '', 'Subtracted from cost basis when figuring Available for Construction'],
@@ -1615,24 +1708,20 @@ function renderWorkbook(){
   ];
   const gpCell =
     '<div class="fin-cell">' +
-      '<div class="fin-gp-item" data-tip="(Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll) \u00F7 Estimate total">' +
+      '<div class="fin-gp-item" data-tip="1 \u2212 ((Selections + Unresolved Allowance + DESIGN COGS + Indirect + Payroll + Estimate total) \u00F7 Sale Price)">' +
         '<label>GPM (Estimate)</label><div class="fin-ro" id="finGpmEst">' + fmtPct(k.gpmEstimatePct) + '</div></div>' +
-      '<div class="fin-gp-item" data-tip="Same figures, divided by the live Budget total instead \u2014 compare against GPM (Estimate) to see how far the two have drifted apart">' +
+      '<div class="fin-gp-item" data-tip="Same formula, adding in the live Budget total instead of the Estimate total \u2014 compare against GPM (Estimate) to see how far the two have drifted apart">' +
         '<label>GPM (Budget)</label><div class="fin-ro" id="finGpmBud">' + fmtPct(k.gpmBudgetPct) + '</div></div>' +
     '</div>';
   document.getElementById('wbFin').innerHTML =
     '<div class="fin-row">' + saleCell + gpCell + '</div>' +
-    '<div class="fin-row">' + finFields.map(ff =>
-    '<div class="fin-cell"' + (ff[4] ? ' data-tip="' + ff[4] + '"' : '') + '><label>' + ff[1] + '</label>' +
-    '<input type="text" data-cfg="' + ff[0] + '" value="' + (ff[2] ?? '') + '"' +
-    (isBudgetAdmin ? '' : ' disabled') + ' oninput="cfgInput(this)" onblur="saveCfgField(this)">' +
-    (ff[3] ? '<div class="fin-ref">' + ff[3] + '</div>' : '') + '</div>').join('') + '</div>' +
+    '<div class="fin-row">' + finFields.map(ff => cfgCell(ff[0], ff[1], ff[2], ff[3], ff[4])).join('') + '</div>' +
     '<div class="fin-row">' +
     roCell('Indirect Allocation (' + fmtPct(k.indirectPct) + ')', moneyC(k.overheadC), 'from estimate header', 'finIndirect',
       'Sale Price \u00D7 ' + fmtPct(k.indirectPct) + ' (percentage from the estimate header)') +
     roCell('Payroll (' + fmtPct(k.payrollPct) + ')', moneyC(k.staffC), 'from estimate header', 'finPayroll',
       'Sale Price \u00D7 ' + fmtPct(k.payrollPct) + ' (percentage from the estimate header)') +
-    docsCellHtml() + '</div>';
+    '</div>';
 
   const gen = wb.comments.filter(cm => cm.type === 'Estimating' && !cm.code);
   document.getElementById('wbGeneralNotes').innerHTML = gen.length
@@ -1648,12 +1737,18 @@ function renderWorkbook(){
   wb._lineRefs = [];
   TEMPLATE.forEach(g => {
     g.divisions.forEach(d => {
-      const divName = (d.key + ' - ' + (d.label || g.label)).toUpperCase();
+      const divName = (d.noCode ? (d.label || g.label) : (d.key + ' - ' + (d.label || g.label))).toUpperCase();
       const dEstC = estForDiv(d);
       const rows = rowsFor(d);
       const dBudC = rows.reduce((t, r) => t + r.budgetC, 0);
       const addBtnD = '<button class="add-cmt" data-tip="Comment on this division" onclick="startCmt(\'D\',\'' + d.key + '\')">' + COMMENT_ICON_SVG + '</button>';
-      html += '<tr class="div-hdr"><td class="lbl-h">' + addBtnD + escHtml(divName) + '</td>' +
+      // E&O's Estimate figure isn't a real cost code — spell out where it came from.
+      let divTip = '';
+      if(d.key === 'EO'){
+        const ce = wb.cfg && wb.cfg.fields && wb.cfg.fields.CompEscalation;
+        if(ce != null) divTip = ' data-tip="From Comp Escalation (' + moneyC(cents(ce)) + ') × 0.68"';
+      }
+      html += '<tr class="div-hdr"><td class="lbl-h"' + divTip + '>' + addBtnD + escHtml(divName) + '</td>' +
         '<td class="amt est-col">' + (dEstC ? fmtC(dEstC) : '') + '</td>' +
         '<td class="amt bud-col" id="dbud-' + escAttr(d.key) + '">' + budCellHtml(dEstC, dBudC) + '</td><td class="fx"></td></tr>';
       html += divCmtRows(d);
@@ -1674,9 +1769,11 @@ function renderWorkbook(){
           ' data-line="' + escAttr(rid) + '" data-div="' + escAttr(d.key) + '" data-label="' + escAttr(r.label) + '"' +
           ' data-src="' + (r.template ? 'Template' : 'PM') + '" onchange="toggleFixed(this)"></td></tr>';
         const addingL = wb.addingCmt === 'L:' + tk;
+        const gated = addingL && r._pendingBudgetC !== undefined;
         if(lc.length || addingL){
           html += '<tr class="cmt-panel"><td colspan="2">' + lc.map(cmtHtml).join('') +
-            (addingL ? cmtInputHtml('L', String(refIdx)) : '') + '</td><td class="amt"></td><td class="fx"></td></tr>';
+            (addingL ? cmtInputHtml('L', String(refIdx), gated ? { caption: overageCaption(), value: overageComment(d.key) } : {}) : '') +
+            '</td><td class="amt"></td><td class="fx"></td></tr>';
         }
       });
       html += '<tr class="addline"><td colspan="4">' +
@@ -1702,13 +1799,17 @@ function renderWorkbook(){
   updateStickyOffsets();
 }
 
-function docsCellHtml(){
-  const pmeta = PROJ_META[wb.proj] || {};
+function docsCellHtml(proj){
+  const pmeta = PROJ_META[proj] || {};
   const links = [['EST', pmeta.estUrl], ['DA', pmeta.daUrl], ['CA', pmeta.caUrl]].filter(x => x[1]);
   if(!links.length) return '';
-  return '<div class="fin-cell"><label>Link to Documents</label><div class="fin-docs">' +
-    links.map(l => '<a class="doc-pill dp-' + l[0].toLowerCase() + '" href="' + escAttr(l[1]) + '" target="_blank" rel="noopener" data-tip="Open the ' + l[0] + ' document">' + l[0] + '</a>').join('') +
-    '</div></div>';
+  return links.map(l => '<a class="doc-pill dp-' + l[0].toLowerCase() + '" href="' + escAttr(l[1]) + '" target="_blank" rel="noopener" data-tip="Open the ' + l[0] + ' document">' + l[0] + '</a>').join('');
+}
+// Lives in the always-visible picker row (not gated by admin mode) since PMs need
+// these links as much as admins do.
+function renderDocsLinks(proj){
+  const el = document.getElementById('wbDocs');
+  if(el) el.innerHTML = docsCellHtml(proj);
 }
 
 /* Live recalculation: updates computed cells only — never rebuilds inputs. */
@@ -1749,7 +1850,11 @@ function cmtHtml(cm){
     ((canEdit ? '<button class="cmt-act" onclick="editCmt(\'' + escAttr(cm.spItemId) + '\')">Edit</button>' : '') +
      (canEdit && canDel ? '<span class="cmt-sep">/</span>' : '') +
      (canDel ? '<button class="cmt-act" title="Delete" onclick="deleteCmt(\'' + escAttr(cm.spItemId) + '\')">' + TRASH_SVG + '</button>' : ''));
+  // A general-notes comment (Estimating, no division/cost-code of its own) is
+  // otherwise floating with no context — tag it with the header field it's on.
+  const srcLabel = (est && !cm.code) ? headerLabelForCell(cm.cell) : '';
   return '<div class="cmt-block' + (est ? '' : ' bud') + '">' +
+    (srcLabel ? '<span class="cmt-src">On: ' + escHtml(srcLabel) + '</span>' : '') +
     '<span class="cmt-text">' + escHtml(cm.body) + '</span>' +
     '<span class="cmt-head"> \u2014 ' + fmtDate(cm.when) + ' \u00B7 ' + escHtml(cm.author) +
     (est ? ' <span class="tag-est">Estimating Comment</span>' : ' <span class="tag-bud">Budgeting Comment</span>') +
@@ -1786,26 +1891,50 @@ function divCmtRows(d){
   return '<tr class="cmt-panel"><td colspan="2">' + list.map(cmtHtml).join('') +
     (adding ? cmtInputHtml('D', d.key) : '') + '</td><td class="amt"></td><td class="fx"></td></tr>';
 }
-function cmtInputHtml(kind, key){
-  return '<div class="cmt-inrow"><input type="text" id="cin-' + kind + '-' + escAttr(key) + '"' +
+function cmtInputHtml(kind, key, opts){
+  opts = opts || {};
+  return (opts.caption ? '<div class="cmt-gate-notice">' + escHtml(opts.caption) + '</div>' : '') +
+    '<div class="cmt-inrow"><input type="text" id="cin-' + kind + '-' + escAttr(key) + '"' +
+    (opts.value ? ' value="' + escAttr(opts.value) + '"' : '') +
     ' placeholder="Add comment \u2014 Enter to post, Esc to cancel"' +
     ' onkeydown="cmtKey(event,\'' + kind + '\',\'' + escAttr(key) + '\')">' +
-    '<button class="cmt-post" onclick="submitCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Post</button></div>';
+    '<button class="cmt-post" onclick="submitCmt(\'' + kind + '\',\'' + escAttr(key) + '\')">Post</button>' +
+    '</div>';
 }
 function startCmt(kind, key){
   wb.addingCmt = kind + ':' + key;
   renderWorkbook();
   const inp = document.querySelector('.cmt-inrow input');
-  if(inp) inp.focus();
+  if(inp){ inp.focus(); inp.select(); }
+}
+// Finds the canonical wb.scopeRows row a line ref points at, whether or not it's persisted yet.
+function rowForLineRef(ref){
+  if(!ref) return null;
+  return ref.spItemId ? wb.scopeRows.find(r => r.spItemId === ref.spItemId)
+                       : wb.scopeRows.find(r => !r.spItemId && r.divKey === ref.divKey && normName(r.label) === normName(ref.label));
+}
+// Cancelling (or Escape) on a gated line reverts the pending amount back to its last
+// saved value, same as backing out of any other edit.
+function cancelCmt(kind, key){
+  if(kind === 'L'){
+    const row = rowForLineRef(wb._lineRefs[parseInt(key, 10)]);
+    if(row && row._pendingBudgetC !== undefined){
+      row.budgetC = row._pendingPrevBudgetC;
+      delete row._pendingBudgetC;
+      delete row._pendingPrevBudgetC;
+    }
+  }
+  wb.addingCmt = null;
+  renderWorkbook();
 }
 function cmtKey(e, kind, key){
   if(e.key === 'Enter'){ e.preventDefault(); submitCmt(kind, key); }
-  else if(e.key === 'Escape'){ wb.addingCmt = null; renderWorkbook(); }
+  else if(e.key === 'Escape'){ cancelCmt(kind, key); }
 }
 function submitCmt(kind, key){
   const inp = document.getElementById('cin-' + kind + '-' + key);
   const body = (inp && inp.value.trim()) || '';
-  if(!body){ wb.addingCmt = null; renderWorkbook(); return; }
+  if(!body){ cancelCmt(kind, key); return; }
   if(kind === 'D') postDivComment(key, body);
   else postLineComment(parseInt(key, 10), body);
 }
@@ -1820,7 +1949,7 @@ async function postLineComment(refIdx, body){
         Title: ref.label, ProjectKey: wb.proj, CostCode: ref.divKey, LineType:'ScopeLine',
         BudgetAmount: 0, EstimateAmount: 0, SortOrder: 500, Source: ref.src, Active: true }});
       ref.spItemId = made.id;
-      const row = wb.scopeRows.find(r => !r.spItemId && r.divKey === ref.divKey && normName(r.label) === normName(ref.label));
+      const row = rowForLineRef({ spItemId: null, divKey: ref.divKey, label: ref.label });
       if(row) row.spItemId = made.id;
       else wb.scopeRows.push({ spItemId: made.id, divKey: ref.divKey, label: ref.label, budgetC: 0, source: ref.src, sortOrder: 500 });
     }
@@ -1830,6 +1959,13 @@ async function postLineComment(refIdx, body){
       CommentDate: nowIso, Body: body, SourceGuid:'', SourceCell:'', SourceTab:'', ParentGuid:'' }});
     wb.comments.push({ spItemId: made.id, type:'Budgeting', code: ref.divKey, lineId: String(ref.spItemId),
       author: currentUser, authorEmail: currentUserEmail, when: nowIso, body, cell:'', sourceGuid:'' });
+    // A note satisfies the over-budget gate — release the amount it was holding back.
+    const row = wb.scopeRows.find(r => r.spItemId === ref.spItemId);
+    if(row && row._pendingBudgetC !== undefined){
+      delete row._pendingBudgetC;
+      delete row._pendingPrevBudgetC;
+      persistLineBudget(row);
+    }
     wb.addingCmt = null;
     renderWorkbook();
   }catch(e){ setStatus('wbStatus','Comment failed: ' + e.message,'err'); }
@@ -1861,14 +1997,9 @@ function lineInput(inp){
   const row = stateRowFor(inp);
   if(row){ row.budgetC = cents(num); renderTotals(); }
 }
-function saveLineAmount(inp){
-  if(!wb) return;
-  const num = parseAmt(inp.value);
-  if(num === null){ setStatus('wbStatus','Not a number: ' + inp.value,'err'); return; }
-  const row = stateRowFor(inp);
-  if(!row) return;
-  row.budgetC = cents(num);
-  renderTotals();
+// Writes a scope line's BudgetAmount to SharePoint. Split out of saveLineAmount so the
+// over-budget note gate (below) can defer this same write until a note lands.
+function persistLineBudget(row, inp){
   const proj = wb.proj;
   enqueueSave(async () => {
     if(row.spItemId){
@@ -1884,11 +2015,42 @@ function saveLineAmount(inp){
           BudgetAmount: fromCents(row.budgetC), EstimateAmount: 0, SortOrder: row.sortOrder,
           Source: row.source, Active: true }});
         row.spItemId = made.id;
-        inp.dataset.line = made.id;
+        if(inp) inp.dataset.line = made.id;
       }finally{ row._persisting = false; }
     }
     setStatus('wbStatus','');
   });
+}
+function saveLineAmount(inp){
+  if(!wb) return;
+  const num = parseAmt(inp.value);
+  if(num === null){ setStatus('wbStatus','Not a number: ' + inp.value,'err'); return; }
+  const row = stateRowFor(inp);
+  if(!row) return;
+  const tk = row.divKey + '||' + normName(row.label);
+  // Preserve the true last-saved value across repeated edits while a note is still pending.
+  const prevBudgetC = row._pendingBudgetC === undefined ? row.budgetC : row._pendingPrevBudgetC;
+  row.budgetC = cents(num);
+  renderTotals();
+  const d = divByKey(row.divKey);
+  const estC = d ? estForDiv(d) : 0;
+  const overBudget = estC > 0 && divBudC(d) > estC * (1 + OVER_BUDGET_GATE_PCT);
+  const alreadyNoted = row.spItemId ? lineComments(row.spItemId).length > 0 : false;
+  if(overBudget && !alreadyNoted){
+    row._pendingBudgetC = row.budgetC;
+    row._pendingPrevBudgetC = prevBudgetC;
+    startCmt('L', tk);
+    return;
+  }
+  const wasGated = row._pendingBudgetC !== undefined;
+  delete row._pendingBudgetC;
+  delete row._pendingPrevBudgetC;
+  persistLineBudget(row, inp);
+  // A direct fix back under threshold resolves the gate on its own — close its stale box.
+  if(wasGated && wb.addingCmt === 'L:' + tk){
+    wb.addingCmt = null;
+    renderWorkbook();
+  }
 }
 function toggleFixed(inp){
   if(!wb) return;

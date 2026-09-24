@@ -1,0 +1,194 @@
+# WIP Tracker — Help & Repair Manual
+
+*What it does, where its numbers come from, and what to do when something looks wrong — written for people, not programmers.*
+
+*September 2026 edition*
+
+## What this page is
+
+WIP Tracker answers one question, for every job that's collected money: **are we billed ahead of the work, or behind it?**
+
+It replaces the old monthly spreadsheet review. There's no profit-margin math here — just a formula (or a manual figure, where the formula doesn't apply yet), calculated fresh every time you open the page.
+
+It lives at [a web address](https://bellweatherllc.github.io/tools/wip-tracker.html), like every CORE tool. Sign in with your Bellweather Microsoft account and it loads.
+
+> **Scope:** only **DA Signed** and **CA Signed** jobs show up here. Leads (no agreement signed yet) are excluded outright — nothing's been collected on a job that isn't under contract in some form.
+
+**Data sources and calculations** lives inside the navy header itself, right below the logo/title row — click its title, or the small light-blue chevron beside it, to expand the reference text in place; the navy header simply grows to fit it, then shrinks back when you close it. Below the header comes the **Viewing as of** strip (the date picker and the **Save to PDF** chip together, separated by thin vertical rules), then **Portfolio**, then **Projects**. Only **Portfolio** and the **Projects** heading stay pinned at the top of the window as you scroll the table below them, the way a spreadsheet's frozen header row would — the as-of strip scrolls away normally, since it's a control rather than numbers you need visible while scanning rows. The Portfolio totals themselves are laid out like a small spreadsheet — one row of labels, one row of figures, one row of context — rather than a row of separate cards.
+
+The **Viewing as of** strip doesn't sit inside a boxed panel either — plain text, inputs, and buttons directly on the page, not wrapped in a bordered box.
+
+### How earned revenue is calculated
+
+The formula depends on which of the three phases a project is in — see *Reading the Stage column*, just below, for exactly how those phases are defined. The same walkthrough is also built into the page itself: click **Data sources and calculations** near the top of the page to expand it without leaving the page.
+
+- **Design** (DA signed, before CA signing) — earned is **50% of whatever's actually been invoiced so far**. Design-phase billing runs roughly 25% of the *projected* construction amount (the estimate set at DA signing) over the course of Design, paid in installments; only half of each of those payments is booked as earned, the other half is collected ahead of the work. This is new as of this revision — Design-phase jobs used to have no formula at all and needed a manual % just to show anything.
+- **Pre-Con** (CA signed, before construction starts) — earned is a flat **20% of the current contract value**. A larger deposit — **30%** — is actually collected at CA signing (sized so cumulative billing reaches 30% of the *exact* construction amount, which commonly comes in higher than the Design-phase estimate), but only 20 of those percentage points are recognized as earned; the remaining 10 are collected ahead of the work, the same idea as the Design-phase split above. Progress stays at 0% for the whole Pre-Con stretch; it doesn't move until construction's first week.
+- **Construction** (the Pipeline's construction phase, start to last week) — earned is the **20% already earned at signing, plus 80% of contract value × schedule progress**, where schedule progress is elapsed weeks ÷ construction duration.
+- **A manual override, when set, always wins** — see *Manual % overrides*, below. It replaces whichever of the above would otherwise apply, and works the same in every phase: earned = contract value × the percentage set by hand.
+- **Missing schedule data** (no DA/CA signing week yet, or a Construction phase that hasn't been built into the Gantt) leaves a project blank — better an honest gap than a guessed number nobody signed off on. See *Reading the flags*, below.
+
+Compare earned to what's actually been invoiced, and the difference is the number that matters:
+
+- **Invoiced more than earned** (red, "over") — the client's been billed ahead of the work. This is *expected* during Design, by design — half of every design payment is deliberately booked ahead of the work, so Design-phase jobs will almost always show "over."
+- **Invoiced less than earned** (green, "under") — the work is ahead of the billing.
+
+### Reading the Stage column
+
+The Stage column shows one of three lifecycle phases — plain text, not a badge, but still the label — and it's separate from a project's DA Signed/CA Signed contract status underneath:
+
+| Phase | Runs from | Runs through |
+|---|---|---|
+| **Design** | The week the DA is signed | The week before the CA is signed |
+| **Pre-Con** | The week the CA is signed | The last week of the Pipeline's Pre-Con phase |
+| **Construction** | The first week of the Pipeline's Construction phase | Its last week |
+
+This moves with **Viewing as of** the same way earned and invoiced do — pick an earlier date and the Stage column shows whichever phase the project was in as of that date, not necessarily where it sits today.
+
+A blank (**—**) means the Pipeline doesn't have enough schedule data yet — no DA/CA signing week, or no Pre-Con/Construction phase — to place the project in one of the three.
+
+## Viewing a different date
+
+**Viewing as of**, near the top of the page, defaults to today. Pick an earlier date and the whole page recalculates as if that date *were* today:
+
+- Build progress (and therefore earned revenue) is measured through that date instead of today.
+- The invoiced-to-date total only counts invoices dated on or before that exact date, not the end of that month.
+
+This is a genuinely different calculation, not just a narrower live view — pick August 31st and you see the WIP picture exactly as it would read if August 31st were the day you opened the page.
+
+> **This is not a historical replay.** It recalculates using **today's** project data (contract values, schedules) and the **latest** BuilderTrend export, just with the clock turned back for the purposes of the math. If a project's schedule or contract value has changed since that date, the recalculation uses the current version, not what it looked like back then. A frozen record of a specific date is only ever a saved PDF — see *Saving a PDF*, below.
+
+**Manual overrides work from any date, including a historical one** — the ✎ pencils stay available no matter what **Viewing as of** is set to. Overrides aren't scoped to a date either way: whatever's currently set applies to the calculation regardless of which date you're looking at, which is worth keeping in mind — Fike's override, say, reflects today's understanding of the windows delay, not necessarily what was known as of the earlier date you're viewing.
+
+Click **Today** to snap back to the live view.
+
+## Manual overrides
+
+Three different **✎** buttons let a human override the math — one for % Complete (and therefore Earned), one for Invoiced, one for the Gap ("over/under") column itself. They're separate because they fix separate problems: % Complete is for when the *formula* doesn't apply or doesn't match reality; Invoiced is for when the *BuilderTrend match* is wrong; Gap is for adjusting the bottom-line over/under figure directly, without implying anything about Invoiced or Earned individually. Overriding one never touches the others.
+
+**None of the three are scoped to "Viewing as of."** They can be set, changed, or cleared no matter which date is currently being viewed, and once set they apply to every date the same way — a manual figure isn't "as of" anything, it's just the number until someone changes it.
+
+### % Complete
+
+Click the **✎** next to any project's % Complete to set it by hand. This is for exactly the cases the formula can't handle:
+
+- **A project with no phase data yet** — no DA/CA signing week in the Gantt, so there's no way to place it in Design, Pre-Con, or Construction, let alone calculate a formula for it.
+- **A Design-phase job with no invoicing yet** — the 50%-of-invoiced formula has nothing to work from until something posts.
+- **A Construction-phase job where the schedule says something the work doesn't.** Fike is the standing example: the Pipeline's construction phase reads 100% complete, but a large chunk of the work (windows) is still on backorder. Rather than drag the project's end date out to today — which would throw off its $/week average by inflating the apparent project length — set the override to what's actually true, say 90%, with a note explaining why.
+
+An override replaces the formula entirely: earned becomes contract value × the percentage you set, full stop. It's marked **manual** in the table so it's never confused with a calculated figure, and its note (visible on hover) is the record of why a human overrode the math. Overrides persist until changed or cleared — they carry forward month to month rather than resetting, so update Fike's number as the real picture changes rather than re-entering it from scratch.
+
+Overrides are stored in **`CORE_Config`** (key `wip_overrides`) — the same shared list the Pipeline already uses for things like its OPS cash-flow scenarios. No SharePoint schema change was needed to add this.
+
+### Invoiced amount
+
+Click the **✎** next to any project's Invoiced figure to replace it with a number you enter by hand. This is the fix for a bad BuilderTrend match — most often the exact problem the **invoiced-exceeds-contract** flag catches (see *Reading the flags*, below): a short or common job name absorbs another project's invoices and inflates the total. Rather than let a wrong number sit in the portfolio total, correct it at the project where it's actually wrong.
+
+A manual invoiced amount is marked **manual** in the table, replaces the BuilderTrend-matched total everywhere that figure is used (Gap, and — during Design — the 50%-of-invoiced earned calculation), and flows straight into the **Net Position** figure in the Portfolio grid, which is the sum of every row's own Gap. There's no separate override for Net Position itself; fixing the project-level number is what fixes the portfolio total.
+
+Like % Complete overrides, this persists until changed or cleared and is stored in **`CORE_Config`** (key `wip_invoiced_overrides`).
+
+### Over/under (Gap)
+
+Click the **✎** next to any project's Gap figure to set the over/under amount directly, with an **over**/**under** choice next to it. This is for when you want the bottom-line figure to say something specific — reconciled against a statement, agreed with the client, whatever the reason — without changing what Invoiced or Earned show above it. Both of those keep displaying their own real (or separately overridden) values; only the Gap cell itself reflects the manual figure.
+
+A manual Gap is marked **manual** in the table, with its note visible on hover. Like the other two overrides, it persists until changed or cleared and applies regardless of which date is being viewed — stored in **`CORE_Config`** (key `wip_gap_overrides`). It also flows into the **Net Position** figure at the top, since that's just the sum of every row's own Gap — zero out one project's over/under and the portfolio total moves with it.
+
+## Sorting the table
+
+Click any column header — **Project, Stage, Contract Value, % Complete, Earned, Invoiced, Gap** — to sort the table by that column. Click it again to flip between ascending and descending; an arrow (▲/▼) on the header shows which one is active.
+
+Before you click anything, the table opens in its original order: worst gap first, regardless of over or under. That's still the most useful default for a quick scan, so it's not a "sort," it's just how the page starts — there's no arrow on any header until you pick one.
+
+Sorting is view-only. It doesn't change what's calculated or what's saved — it just changes the order rows are listed in on your screen.
+
+## Saving a PDF
+
+The **Save to PDF** chip, next to the date picker in the **Viewing as of** strip, is always active — a dated snapshot is useful any time, so there's no approval step to wait on first.
+
+Clicking it opens a small dialog with a **file name** field, pre-filled with the same sound naming logic the page always used — **`BWC WIP Report MM-DD-YY.pdf`**, dated to whichever date **Viewing as of** is currently set to. You can edit that name before saving — rename it for a special-purpose copy, or leave it as-is. Click **Save**, or press Enter.
+
+It saves to:
+
+> `Operations → FINANCIAL → 1. WIP Reports & Job Costs → WIP Reports`
+
+**It never overwrites.** If a file with the chosen name already exists in that folder, a version number is appended automatically — `BWC WIP Report 09-21-26.pdf`, then `BWC WIP Report 09-21-26 (v2).pdf`, `(v3)`, and so on — so saving twice for the same date keeps both copies instead of replacing the first. A toast confirms the save with the exact filename actually used, or explains what went wrong (usually the same causes as the invoicing-export folder errors below: the folder's been renamed or moved, or the folder path under FINANCIAL doesn't match what the page expects).
+
+Right next to that chip, a plain **open folder** link takes you straight to that SharePoint folder in a new tab — useful for checking what's already been saved, or grabbing a report to send someone, without digging through Operations by hand. It's resolved once when the page loads; if it doesn't appear, the page couldn't reach that folder (see *The source panel says it couldn't read the invoicing export*, below, for the same kind of fix).
+
+This replaces printing to PDF by hand — there's no print dialog involved, and nothing is generated until you click **Save**.
+
+## Where the rest of this data lives
+
+Everything else is read live and recalculated on the spot — nothing else is written back to SharePoint, and nothing is cached beyond your browser tab.
+
+### Contract value & construction schedule
+
+Both come from the **`CORE_Projects`** list on the BWCore SharePoint site — the same list the Pipeline and Projects Manager read and write. Specifically:
+
+- **Contract value** is the `EstimatedProjectValue` field.
+- **Construction schedule** is the `Construction` phase inside `GanttData` — its start week and duration, exactly as drawn on the Pipeline's Gantt. Only used for CA-Signed jobs without an override.
+- **Matching to BuilderTrend** uses the `JobCode` and `ProjectName` fields — never `ClientName`. See *A BuilderTrend job total isn't showing up on a project*, below.
+
+### Invoiced to date
+
+The same status shown here — which file was read, when, and how to refresh it — is also live on the page itself, inside **Data sources and calculations** near the top (see *What this page is*, above, for where that panel sits). This comes from a BuilderTrend export, dropped by hand into:
+
+> `Operations → FINANCIAL → 1. WIP Reports & Job Costs → BT_InvoicingReports_forWIPTool`
+
+The page always reads whichever file in that folder was **most recently saved**. It sums every invoice line that isn't still a `Draft` (a Draft hasn't actually gone out to the client, whatever date it carries) **and is dated on or before the date being viewed** — today by default, or whichever date is set in *Viewing as of* (above). There's no dedicated "invoice date" column in this export, so `Deadline` stands in for it — checked against `Date Paid` across a real export, invoices here come due the same day they're paid more often than not, so `Deadline` tracks the real invoice date closely. (If a row has no `Deadline`, `Date Paid` is used instead; if neither exists, it's counted regardless of date rather than silently dropped.) Note this is the exact date, not the end of its month — an invoice dated for later this month doesn't count yet just because it's still technically "this month."
+
+### Keeping the export current
+
+1. In BuilderTrend: **Financial → Invoice → All Jobs → Export**.
+2. Save the file as `Invoices_MM_DD_YYYY.xls` (today's date).
+3. Drop it in the folder above.
+4. Reload WIP Tracker, or click **Refresh** in the top bar.
+
+## Reading the table
+
+| Column | What it means |
+|---|---|
+| Stage | The project's current phase — Design, Pre-Con, or Construction. See *Reading the Stage column*, below. |
+| Contract Value | `EstimatedProjectValue` from the Pipeline. |
+| % Complete | Construction schedule progress — blank during Design (no physical schedule yet), 0% through Pre-Con, ramping during Construction — or a manual override. |
+| Earned | The phase formula's result (see *How earned revenue is calculated*, above), or a manual override. Blank if the phase can't be determined or its formula is missing an input. |
+| Invoiced | Sum of non-Draft invoices matched to this job, dated on or before the date being viewed. |
+| Gap | Invoiced − Earned, or a manual override. Red = billed ahead; green = work ahead of billing. |
+
+Click any column header to sort by it — see *Sorting the table*, above.
+
+### Reading the flags
+
+- **"Not set"** — the project has no DA/CA signing week in the Gantt yet, so it can't be placed in Design, Pre-Con, or Construction at all. Fix in the Pipeline, or set a manual override.
+- **"No invoicing yet"** (Design-phase jobs) — Design-phase earned comes from actual invoicing, and nothing's posted for this job yet. Earned stays blank until something does, or until a manual override is set.
+- **A Pre-Con job's % Complete shows 0% with no flag** — that's expected, not an error: construction hasn't started, so earned reflects the signing share only until it does. The Stage column already says Pre-Con, so there's no separate flag for it — hover the 0% for the same explanation.
+- **"No construction schedule"** (Construction-phase jobs) — no `Construction` phase in the Gantt, so earned is showing the 20% signing share only, without the schedule-driven remainder. Fix: add the construction phase in the Pipeline, or set a manual override.
+- **"~" (weak match)** next to an invoiced figure — this job matched a BuilderTrend job code by a shared name fragment against Job Code or Project Name, rather than a close match on either. Worth a second look, but often just means the project's Job Code is blank or doesn't follow BuilderTrend's naming convention — it's shown, not hidden, so it stays checkable rather than silently guessed.
+- **"No BT match"** — nothing in the latest export matched this project's Job Code or Project Name at all. Check the *BuilderTrend jobs not matched* list further down the page.
+- **"Invoiced exceeds contract value"** — the invoiced total is higher than the project's contract value. This can mean a bad BuilderTrend match pulled in another job's invoices (see *A project's invoiced total looks way too high*, below), but just as often it means the contract value itself is stale — change orders are common after CA signing, and if `EstimatedProjectValue` was never updated to include them, real invoicing can legitimately outpace it. Check both before assuming the match is wrong; set a manual invoiced amount with the ✎ next to the figure only if the match itself is actually broken.
+- **"No contract value"** — `EstimatedProjectValue` is empty in the Pipeline.
+
+## When something looks wrong
+
+**The whole page says "Failed to load."**
+Usually a sign-in or permissions issue. Reload and sign in again. If it keeps happening, check whether other CORE tools are also having trouble.
+
+**The source panel says it couldn't read the invoicing export.**
+The page looks for `1. WIP Reports & Job Costs`, then `BT_InvoicingReports_forWIPTool`, inside FINANCIAL on the Operations SharePoint site. If either's been renamed or moved, check the error message's folder path against what's actually there.
+
+**A BuilderTrend job total isn't showing up on a project.**
+First check the *BuilderTrend jobs not matched* list at the bottom of the page — the job may be sitting there under a name that didn't match closely enough. Matching compares against a project's **Job Code** and **Project Name** in the Pipeline — never Client Name, which often carries both clients' full names ("Zoe Odenwalder & Evan Skalski") and reliably defeats a close match even when the job is obvious to a person. It tries a close comparison first, then falls back to a shared name-fragment ("Odenwalder" matching even if the rest of the text around it differs) flagged with **~**. If a job still isn't matching, check that the project's **Job Code** is actually filled in and matches BuilderTrend's own naming convention (surname plus the client's first initial, e.g. `ODENWALDERZ`) — that field exists specifically to keep this reliable, and a blank or mistyped one is the most common cause of a job landing in *unmatched* or matching only weakly.
+
+**A project's invoiced total looks way too high.**
+Check whether it's absorbing a job that isn't really its. Matching only ever attaches a BuilderTrend job to the single closest project — it should never invent a match out of nothing, so if a job's real project isn't showing up (often because that project isn't `DA Signed`/`CA Signed` right now, or its name has drifted), that job's total belongs in the *unmatched* list, not silently parked on whichever open project happened to look closest. If a project's number seems inflated, it's worth cross-checking against the raw BuilderTrend export directly for that job's actual code. If invoiced has actually gone past the contract value, the page will already be flagging it with **"Invoiced exceeds contract value"** — once you've confirmed the real number from the export, correct it with the ✎ next to the Invoiced figure rather than leaving the bad match in place.
+
+**Remember the invoiced figure excludes `Draft` rows** (not actually sent yet) **and anything dated after the date being viewed** — a milestone invoice pre-staged for later this month doesn't count yet just because BuilderTrend already shows it as sent.
+
+## What this page deliberately doesn't do
+
+- **No profit margin or GPM.** This is a billing-pace tool, not a profitability one.
+- **No liability recognition.** It doesn't model what's owed on a job beyond the invoiced-vs-earned gap.
+- **No formula for a project with no phase data.** See *How earned revenue is calculated*, above — that's what manual overrides are for.
+
+These are deliberate simplifications, not gaps waiting to be filled in.
