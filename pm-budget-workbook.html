@@ -378,10 +378,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v61';
+const CORE_VERSION = 'v62';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v62', date:'2026-09-24', notes:'Fixed some divisions not being editable (e.g. Jobsite Dumpster/Porta John, Jobsite Parking under 5121) — they have no cost code of their own in the estimate, so there was nothing for the click-to-edit to attach to. They now fall back to a manual entry keyed by their own template slot, so every division is editable in admin mode, not just ones the estimate happens to break out separately.' },
   { v:'v61', date:'2026-09-24', notes:'Fixed the manual Estimate edit not accepting any typing after confirming the "you’re about to..." dialog — focusing the new field immediately as the confirm() dialog closed could silently fail to take, the same dialog-vs-focus quirk hit earlier with the over-budget prompt. Deferred it a tick so focus reliably lands in the field.' },
   { v:'v60', date:'2026-09-24', notes:'Fixed the v59 Estimate click-to-edit not appearing: toggling admin mode never re-rendered the grid itself, only the chrome around it, so the Estimate cells stayed frozen as plain text from whenever the grid last drew — usually before admin mode was turned on. Toggling admin mode now redraws the grid immediately when a budget is open.' },
   { v:'v59', date:'2026-09-24', notes:'Admins in admin mode can now manually adjust a division’s Estimate figure (normally a read-only snapshot from the estimate file). Clicking it asks "You’re about to manually adjust an estimate figure. Do you want to proceed?" before it becomes editable — a plain confirm, no typing required to dismiss it. A reimport will still overwrite the figure again from the estimate file, same as always.' },
@@ -1563,7 +1564,10 @@ async function openWorkbook(proj){
     })).sort((a,b) => (a.when||'').localeCompare(b.when||''));
     const mappedEstCodes = new Set();
     TEMPLATE.forEach(g => { (g.estCodes||[]).forEach(c => mappedEstCodes.add(c));
-      g.divisions.forEach(d => (d.estCodes||[]).forEach(c => mappedEstCodes.add(c))); });
+      // Every division's own key counts as mapped too, even ones with no real cost
+      // code of their own (e.g. 5121-2, 5121-3) — a manually-entered Estimate for one
+      // of those lands under its template key, and shouldn't then look "unmapped".
+      g.divisions.forEach(d => { (d.estCodes||[]).forEach(c => mappedEstCodes.add(c)); mappedEstCodes.add(d.key); }); });
     mappedEstCodes.add(SELECTIONS_EST_CODE);
     const unmappedEst = Object.keys(estByCode).filter(c => !mappedEstCodes.has(c));
     // Legacy: budgeting comments posted at group level re-home to the group's first division
@@ -1624,7 +1628,12 @@ function calcChain(){
 function divBudC(d){
   let t = 0; wb.scopeRows.forEach(r => { if(r.divKey === d.key) t += r.budgetC; }); return t;
 }
-function estForDiv(d){ return (d.estCodes||[]).reduce((t,c) => t + (wb.estByCode[c] ? wb.estByCode[c].amountC : 0), 0); }
+function estForDiv(d){
+  if(d.estCodes && d.estCodes.length) return d.estCodes.reduce((t,c) => t + (wb.estByCode[c] ? wb.estByCode[c].amountC : 0), 0);
+  // No real cost code of its own (e.g. 5121-2, 5121-3) — falls back to a manual entry
+  // keyed by the division's own template key, if one's ever been entered.
+  return wb.estByCode[d.key] ? wb.estByCode[d.key].amountC : 0;
+}
 function divByKey(key){
   for(const g of TEMPLATE){ for(const d of g.divisions){ if(d.key === key) return d; } }
   return null;
@@ -1757,13 +1766,15 @@ function renderWorkbook(){
         const ce = wb.cfg && wb.cfg.fields && wb.cfg.fields.CompEscalation;
         if(ce != null) divTip = ' data-tip="From Comp Escalation (' + moneyC(cents(ce)) + ') × 0.68"';
       }
-      const estCode = d.estCodes && d.estCodes[0];
-      const editingEst = estCode && wb.editingEst === estCode;
+      // Falls back to the division's own template key when it has no real cost code of
+      // its own (e.g. 5121-2, 5121-3) — every division is manually editable in admin mode.
+      const estCode = (d.estCodes && d.estCodes[0]) || d.key;
+      const editingEst = wb.editingEst === estCode;
       let estCellHtml;
       if(editingEst){
         estCellHtml = '<input type="text" inputmode="decimal" class="est-edit-input" value="' + fromCents(dEstC) + '"' +
           ' data-code="' + escAttr(estCode) + '" onblur="saveDivEstimate(this)" onkeydown="if(event.key===\'Enter\')this.blur()">';
-      }else if(estCode && isBudgetAdmin && adminModeOn){
+      }else if(isBudgetAdmin && adminModeOn){
         estCellHtml = '<span class="est-editable" data-tip="Click to manually adjust this estimate figure" onclick="tryEditDivEstimate(\'' + escAttr(estCode) + '\')">' +
           (dEstC ? fmtC(dEstC) : '—') + '</span>';
       }else{
@@ -2046,7 +2057,7 @@ function saveDivEstimate(inp){
   let entry = wb.estByCode[code];
   if(entry && entry.amountC === newC){ renderWorkbook(); return; }
   if(entry) entry.amountC = newC;
-  else entry = wb.estByCode[code] = { amountC: newC, title: code, spItemId: null };
+  else entry = wb.estByCode[code] = { amountC: newC, title: divNameFor(code), spItemId: null };
   renderWorkbook();
   const proj = wb.proj;
   enqueueSave(async () => {
