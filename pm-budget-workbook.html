@@ -378,10 +378,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v62';
+const CORE_VERSION = 'v63';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v63', date:'2026-09-24', notes:'Fixed estimate import for older COMP Estimating files (e.g. MARSAL) whose comp-table has an extra spacer column, shifting the COMP Averages/% Income/Budget columns one to the right (L/M/N there vs. K/L/M in the current template). The parser now finds the "COMP Averages" header wherever it actually sits and reads the other two relative to it, instead of assuming a fixed column — so older files import with the correct per-cost-code estimate figures instead of reading blank/wrong ones.' },
   { v:'v62', date:'2026-09-24', notes:'Fixed some divisions not being editable (e.g. Jobsite Dumpster/Porta John, Jobsite Parking under 5121) — they have no cost code of their own in the estimate, so there was nothing for the click-to-edit to attach to. They now fall back to a manual entry keyed by their own template slot, so every division is editable in admin mode, not just ones the estimate happens to break out separately.' },
   { v:'v61', date:'2026-09-24', notes:'Fixed the manual Estimate edit not accepting any typing after confirming the "you’re about to..." dialog — focusing the new field immediately as the confirm() dialog closed could silently fail to take, the same dialog-vs-focus quirk hit earlier with the over-budget prompt. Deferred it a tick so focus reliably lands in the field.' },
   { v:'v60', date:'2026-09-24', notes:'Fixed the v59 Estimate click-to-edit not appearing: toggling admin mode never re-rendered the grid itself, only the chrome around it, so the Estimate cells stayed frozen as plain text from whenever the grid last drew — usually before admin mode was turned on. Toggling admin mode now redraws the grid immediately when a budget is open.' },
@@ -935,6 +936,18 @@ async function parseWorkbook(buffer){
 /* ---------- Tab parse + verify render ---------- */
 const CODE_RE = /^(\d{4,5})\s*[·\.\-]\s*(.+)$/;
 
+// Base-26 spreadsheet column letter increment (A->B, ..., Z->AA).
+function nextCol(col){
+  const chars = col.split('');
+  let i = chars.length - 1;
+  while(i >= 0){
+    if(chars[i] === 'Z'){ chars[i] = 'A'; i--; }
+    else { chars[i] = String.fromCharCode(chars[i].charCodeAt(0) + 1); break; }
+  }
+  if(i < 0) chars.unshift('A');
+  return chars.join('');
+}
+
 function buildEstimateModel(cells, comments, persons){
   // Header block (V4 format, graceful if absent)
   const header = {
@@ -949,6 +962,26 @@ function buildEstimateModel(cells, comments, persons){
     salePrice: numOrNull(cells['B12'])
   };
 
+  // The comp-table's three trailing columns (COMP Averages $, % Income, Budget %) sit at
+  // K/L/M in the current template, but older estimate files can have an extra spacer
+  // column earlier in that same table, shifting all three one column right (L/M/N).
+  // Rather than assume a fixed column, find "COMP Averages" wherever it actually is and
+  // derive the other two from its position — works for either layout, and any other
+  // historical offset, without needing to know which format a given file is.
+  let compAvgCol = 'K', pctIncomeCol = 'L', budgetTargetCol = 'M';
+  for(const ref in cells){
+    const v = cells[ref];
+    if(typeof v === 'string' && v.trim().toLowerCase() === 'comp averages'){
+      const m = ref.match(/^([A-Z]+)\d+$/);
+      if(m){
+        compAvgCol = m[1];
+        pctIncomeCol = nextCol(compAvgCol);
+        budgetTargetCol = nextCol(pctIncomeCol);
+      }
+      break;
+    }
+  }
+
   // Cost code rows: scan column A for code pattern
   const codes = [];
   const rowOfCode = {};
@@ -961,14 +994,14 @@ function buildEstimateModel(cells, comments, persons){
     const cm = v.match(CODE_RE);
     if(cm){
       codes.push({ row, code: cm[1], name: cm[2].trim(), full: v.trim(),
-        compTotal: numOrNull(cells['K'+row]),
-        pctIncome: numOrNull(cells['L'+row]),
-        budgetTarget: numOrNull(cells['M'+row]) });
+        compTotal: numOrNull(cells[compAvgCol+row]),
+        pctIncome: numOrNull(cells[pctIncomeCol+row]),
+        budgetTarget: numOrNull(cells[budgetTargetCol+row]) });
       rowOfCode[row] = cm[1];
     }
     if(typeof v === 'string' && v.trim() === 'Total COGS'){
       codes.push({ row, code:'TOTAL', name:'Total COGS', full:'Total COGS',
-        compTotal: numOrNull(cells['K'+row]), pctIncome:null, budgetTarget:null });
+        compTotal: numOrNull(cells[compAvgCol+row]), pctIncome:null, budgetTarget:null });
     }
   }
   codes.sort((a,b) => a.row - b.row);
