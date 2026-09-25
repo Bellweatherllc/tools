@@ -237,7 +237,7 @@ select.section-chip-sel{font-family:inherit;font-size:11px;padding:2px 4px;borde
     <p>Sign in with your Bellweather account to load and save estimate data.</p>
     <button class="auth-go" onclick="doSignIn()">Sign in</button>
     <div class="auth-error" id="auth-error"></div>
-    <div style="margin-top:14px;font-size:10px;color:#B7A9A3;letter-spacing:.03em;">CA Writing Tool &nbsp;·&nbsp; Estimate Extractor &nbsp;·&nbsp; v8</div>
+    <div style="margin-top:14px;font-size:10px;color:#B7A9A3;letter-spacing:.03em;">CA Writing Tool &nbsp;·&nbsp; Estimate Extractor &nbsp;·&nbsp; v9</div>
   </div>
 </div>
 
@@ -252,7 +252,7 @@ select.section-chip-sel{font-family:inherit;font-size:11px;padding:2px 4px;borde
     </div>
   </div>
   <div class="header-right">
-    <div class="version-badge">v8</div>
+    <div class="version-badge">v9</div>
     <button class="icon-btn" id="btn-show-prompt" onclick="openPromptPanel()" style="display:none" title="View the prompt sent to Claude">{ } Prompt</button>
     <button class="icon-btn" onclick="openSettings()" title="API key &amp; settings">⚙ Settings</button>
     <span class="header-user" id="user-label"></span>
@@ -408,7 +408,8 @@ select.section-chip-sel{font-family:inherit;font-size:11px;padding:2px 4px;borde
 // ═══════════════════════════════════════════════════════════════
 // V4 FORMAT CONSTANTS
 // Column A (index 0) holds the cost code · title string.
-// Column K (index 10) holds the COMP Averages amount.
+// The COMP Averages amount is found by its header (column K in V4 files,
+// L in V5 files with the "Increase" column); K is only the fallback.
 // Data rows are Excel rows 23–45 (0-indexed: 22–44).
 // ═══════════════════════════════════════════════════════════════
 const V4_DESC_COL      = 0;
@@ -612,9 +613,19 @@ async function extractAllThreadedComments(buffer, sheetNames) {
   return result;
 }
 
+function findCompAvgCol(rows) {
+  for (const row of rows) {
+    if (!row) continue;
+    const i = row.findIndex(v => typeof v==='string' && v.trim().toLowerCase()==='comp averages');
+    if (i>=0) return i;
+  }
+  return V4_AMT_COL;
+}
+
 function extractLineItems(sheetName) {
   const ws = workbook.Sheets[sheetName];
   const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+  const amtCol = findCompAvgCol(rows);
   const items = [];
   for (let i=V4_DATA_ROW_START; i<=V4_DATA_ROW_END && i<rows.length; i++) {
     const row=rows[i]; if (!row) continue;
@@ -626,8 +637,8 @@ function extractLineItems(sheetName) {
     const title=sepIdx>=0 ? raw.slice(sepIdx+V4_SEPARATOR.length).trim() : raw.replace(/^\d+\s*/,'').trim();
     if (!costCode) continue;
     const description=costCode+V4_SEPARATOR+title;
-    const cellK=row[V4_AMT_COL];
-    const amount=(typeof cellK==='number'&&!isNaN(cellK)) ? cellK : null;
+    const cellAmt=row[amtCol];
+    const amount=(typeof cellAmt==='number'&&!isNaN(cellAmt)) ? cellAmt : null;
     items.push({worksheet:sheetName,row:i+1,costCode,title,description,amount,isZero:(amount===null||amount===0),caSection:mapCostCode(costCode)||'',caNote:''});
   }
   return items;

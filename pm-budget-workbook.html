@@ -378,10 +378,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v63';
+const CORE_VERSION = 'v64';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v64', date:'2026-09-25', notes:'Fixed Estimate Markup on newer (V5) COMP Estimating files. They carry extra markup points in an "Increase" column (C8) on top of the base markup in B8, and the file\u2019s sale price is built on both, but only B8 was read. That made the cost basis, and so Available for Construction, come out too high. Markup now reads B8 + C8 when the Increase column is present; older files are unchanged. Projects already set up from a V5 file keep the old figure until an admin reimports the estimate (or sets a Contract Markup).' },
   { v:'v63', date:'2026-09-24', notes:'Fixed estimate import for older COMP Estimating files (e.g. MARSAL) whose comp-table has an extra spacer column, shifting the COMP Averages/% Income/Budget columns one to the right (L/M/N there vs. K/L/M in the current template). The parser now finds the "COMP Averages" header wherever it actually sits and reads the other two relative to it, instead of assuming a fixed column — so older files import with the correct per-cost-code estimate figures instead of reading blank/wrong ones.' },
   { v:'v62', date:'2026-09-24', notes:'Fixed some divisions not being editable (e.g. Jobsite Dumpster/Porta John, Jobsite Parking under 5121) — they have no cost code of their own in the estimate, so there was nothing for the click-to-edit to attach to. They now fall back to a manual entry keyed by their own template slot, so every division is editable in admin mode, not just ones the estimate happens to break out separately.' },
   { v:'v61', date:'2026-09-24', notes:'Fixed the manual Estimate edit not accepting any typing after confirming the "you’re about to..." dialog — focusing the new field immediately as the confirm() dialog closed could silently fail to take, the same dialog-vs-focus quirk hit earlier with the over-budget prompt. Deferred it a tick so focus reliably lands in the field.' },
@@ -948,6 +949,15 @@ function nextCol(col){
   return chars.join('');
 }
 
+// Newer (V5) estimate files add an "Increase" column: C8 holds extra markup points on top of
+// B8, and the file's sale price is built on B8 + C8. Older files have no C column there, so
+// only read C8 when the C4 header says "Increase".
+function estimateMarkupPct(cells){
+  const base = numOrNull(cells['B8']);
+  const extra = /increase/i.test(String(cells['C4'] ?? '')) ? numOrNull(cells['C8']) : null;
+  return (base != null && extra != null) ? Math.round((base + extra) * 1e6) / 1e6 : base;
+}
+
 function buildEstimateModel(cells, comments, persons){
   // Header block (V4 format, graceful if absent)
   const header = {
@@ -956,7 +966,7 @@ function buildEstimateModel(cells, comments, persons){
     directCost: numOrNull(cells['B5']),
     indirectPct: numOrNull(cells['D6']),
     payrollPct: numOrNull(cells['D7']),
-    markupPct: numOrNull(cells['B8']),
+    markupPct: estimateMarkupPct(cells),
     compEscalation: numOrNull(cells['B9']),
     gpPct: numOrNull(cells['D11']) ?? numOrNull(cells['C11']),
     salePrice: numOrNull(cells['B12'])
