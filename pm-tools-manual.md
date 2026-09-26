@@ -12,7 +12,7 @@ For Project Managers keeping their projects current, and anyone reviewing that r
 
 Project Updates (usually just called "the Updater") is where a Project Manager makes simple, tracked edits to their projects — end dates and costs. It's deliberately narrow: it isn't a place to redesign a schedule or rewrite a scope, just to log the small changes that happen as a project runs, in a way Ryan can see without asking.
 
-It lives at [a web address](https://bellweatherllc.github.io/tools/project-updates.html). Sign in with your Bellweather Microsoft account, and you land on your own projects.
+It lives at [a web address](https://bellweatherllc.github.io/tools/pm-workbook.html). Sign in with your Bellweather Microsoft account, and you land on your own projects.
 
 ### Signing in and finding your projects
 
@@ -51,7 +51,7 @@ For Project Managers tracking a budget against its estimate, and for Ryan and ot
 
 The Budget Planner takes a project's original estimate (the COMP Estimating workbook, built during Sales) and turns it into a living budget: the same divisions and cost codes, but now with editable PM figures tracked against the original numbers, division by division, line by line.
 
-It lives at [a web address](https://bellweatherllc.github.io/tools/pm-budget-workbook.html). Sign in the same way as every other CORE tool.
+It lives at [a web address](https://bellweatherllc.github.io/tools/pm-budget-planner.html). Sign in the same way as every other CORE tool.
 
 ### Admin mode
 
@@ -123,7 +123,7 @@ Neither tool duplicates the other's data — the Updater never touches a budget 
 
 ### The link
 
-The Updater's **Budget Planner** button opens `pm-budget-workbook.html?project=<id>` — `<id>` being that project's SharePoint item ID from CORE_Projects. On load, the Planner checks for that `?project=` parameter and, if present, opens straight to that project — bypassing the normal picker (and its PM-only scoping) entirely, so the link works even for a project outside your own picker filter. This is the same mechanism an admin relies on to jump straight to any project.
+The Updater's **Budget Planner** button opens `pm-budget-planner.html?project=<id>` — `<id>` being that project's SharePoint item ID from CORE_Projects. On load, the Planner checks for that `?project=` parameter and, if present, opens straight to that project — bypassing the normal picker (and its PM-only scoping) entirely, so the link works even for a project outside your own picker filter. This is the same mechanism an admin relies on to jump straight to any project.
 
 ### The shared status logic
 
