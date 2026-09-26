@@ -182,7 +182,7 @@ svg.focus .node.on { opacity:1; }
 .rw-table th { text-align:left; font-size:10.5px; color:var(--ink-3); font-weight:600; padding:8px 0 2px; }
 .rw-table td { padding:2px 0; border-bottom:1px solid var(--line); }
 .rw-table td.c { width:34px; text-align:center; }
-.form-actions { display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
+.form-actions { display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; position:sticky; bottom:-40px; background:var(--surface); padding:10px 0 12px; border-top:1px solid var(--line); }
 
 dialog { border:1px solid var(--line-2); border-radius:10px; background:var(--surface); color:var(--ink); padding:18px; width:min(720px, calc(100vw - 32px)); }
 dialog::backdrop { background:rgba(0,0,0,.35); }
@@ -1392,7 +1392,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "file": "core-system-map.html",
    "group": "admin",
    "status": "reference",
-   "version": "v4",
+   "version": "v5",
    "purpose": "This map — tools, the lists behind them, and where each lives.",
    "functions": [
     "Tools view: how tools connect to each other",
@@ -1834,7 +1834,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
 // Captured before anything touches the DOM — Export HTML rewrites this with new data.
 const PRISTINE = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 
-const CORE_VERSION = 'v4';
+const CORE_VERSION = 'v5';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
 
 const PAGES_BASE = 'https://bellweatherllc.github.io/tools/';
@@ -2002,6 +2002,26 @@ function drawHulls() {
     const t = txt(g, mode === 'labels' ? x0 : (x0 + x1) / 2, top - (mode === 'labels' ? 9 : 18), grp.label, 'grp-title' + (mode === 'labels' ? ' bare' : ''), mode === 'labels' ? null : 'middle');
     t.setAttribute('data-gid', grp.id);
   }
+}
+// Push other boxes clear of a resized one (that box stays put), cascading outward.
+function resolveOverlaps(view, fixedId) {
+  const P = MAP.layout && MAP.layout[view]; if (!P || !P[fixedId]) return;
+  const nodes = visibleNodes(view).filter(o => P[o.id]).map(o => ({ id: o.id, x: P[o.id][0], y: P[o.id][1], ...size(o, view) }));
+  const pad = 14;
+  for (let it = 0; it < 60; it++) {
+    let moved = false;
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j], dx = b.x - a.x, dy = b.y - a.y;
+      const ox = (a.w + b.w) / 2 + pad - Math.abs(dx), oy = (a.h + b.h) / 2 + pad - Math.abs(dy);
+      if (ox <= 0 || oy <= 0) continue;
+      const af = a.id === fixedId, bf = b.id === fixedId, share = af || bf ? 1 : .5;
+      if (ox < oy) { const s = (dx < 0 ? -1 : 1) * ox * share; if (!af) a.x -= bf ? s : s; if (!bf) b.x += af ? s : s; }
+      else { const s = (dy < 0 ? -1 : 1) * oy * share; if (!af) a.y -= s; if (!bf) b.y += s; }
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  for (const n of nodes) P[n.id] = [Math.round(n.x), Math.round(n.y)];
 }
 function regionMode() { return state.regions || (MAP.settings && MAP.settings.regions) || 'labels'; }
 function updateEdges() { for (const e of R.edges) e.el.setAttribute('d', edgePath(e.a, e.b, e.bend)); }
@@ -2314,10 +2334,10 @@ function editForm(id) {
     return `<div class="form" data-kind="tool" data-id="${escHtml(id)}">
       <div class="kicker">Editing tool</div><h2>${escHtml(t.label)}</h2>
       <label>Name</label><input name="label" value="${escHtml(t.label)}">
+      <label>Size on the map</label><select name="size">${['S', 'M', 'L', 'XL'].map(z => `<option value="${z}"${sizeOf(t) === z ? ' selected' : ''}>${{ S: 'S — minor', M: 'M — standard', L: 'L — major', XL: 'XL — core' }[z]}</option>`).join('')}</select><div class="hint">Bigger box = more significant. Applies straight away; neighbours move aside if it would overlap them.</div>
       <label>File</label><input name="file" value="${escHtml(t.file)}"><div class="hint">Path under bellweatherllc.github.io/tools/</div>
       <label>Region</label><select name="group"><option value="">(none)</option>${opt(MAP.groups, t.group)}</select>
       <label>Status</label><select name="status">${opt(MAP.statuses, t.status)}</select>
-      <label>Size on the map</label><select name="size">${['S', 'M', 'L', 'XL'].map(z => `<option value="${z}"${sizeOf(t) === z ? ' selected' : ''}>${{ S: 'S — minor', M: 'M — standard', L: 'L — major', XL: 'XL — core' }[z]}</option>`).join('')}</select><div class="hint">Bigger box = more significant. Drag neighbours apart if it crowds them.</div>
       <label>Version</label><input name="version" value="${escHtml(t.version || '')}">
       <label>What it does</label><textarea name="purpose">${escHtml(t.purpose || '')}</textarea>
       <label>Key functions</label><textarea name="functions">${escHtml((t.functions || []).join('\n'))}</textarea><div class="hint">One per line</div>
@@ -2366,6 +2386,15 @@ function wireForm() {
   const f = document.querySelector('#panel .form'); if (!f) return;
   const kind = f.dataset.kind, id = f.dataset.id;
   const val = n => { const x = f.querySelector(`[name="${n}"]`); return x ? x.value.trim() : ''; };
+  // Size, status and region apply the moment they change — no Save needed.
+  if (kind === 'tool') for (const n of ['size', 'status', 'group']) {
+    const x = f.querySelector(`[name="${n}"]`); if (!x) continue;
+    x.addEventListener('change', () => {
+      const t = tool(id); t[n] = x.value;
+      if (n === 'size') { resolveOverlaps('tools', id); resolveOverlaps('full', id); }
+      saveDraft(); render(); toast({ size: 'Size', status: 'Status', group: 'Region' }[n] + ' updated');
+    });
+  }
   f.querySelector('[data-act="save"]').onclick = () => {
     if (kind === 'tool') {
       const t = tool(id);
