@@ -19,6 +19,8 @@
   --write:#263860; --read:#8c8981; --link:#a8743a;
   --live:#3f7d4e; --testing:#b7862b; --dev:#4a6fa5; --reference:#8c8981; --missing:#b0413e;
   --tt-bg:#263860; --tt-ink:#fff; --tt-n:#E5E1D8;
+  --hull:rgba(229,225,216,.55); --hull-on:rgba(38,56,96,.10); --hull-gap:rgba(176,65,62,.07); --share:#5a5854;
+  --site-bwcore:#263860; --site-opssec:#b0413e; --site-ops:#3f7d6e; --site-bwc:#a8743a; --site-ext:#8c8981; --site-planned:#CFC9BD;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -29,6 +31,8 @@
     --write:#9fb3de; --read:#7d7870; --link:#d1a066;
     --live:#6fb07f; --testing:#d9ad55; --dev:#86a7d8; --reference:#8f8a80; --missing:#e0716d;
     --tt-bg:#E5E1D8; --tt-ink:#282828; --tt-n:#263860;
+    --hull:rgba(255,255,255,.045); --hull-on:rgba(159,179,222,.12); --hull-gap:rgba(224,113,109,.08); --share:#b8b2a7;
+    --site-bwcore:#9fb3de; --site-opssec:#e0716d; --site-ops:#6fbfa9; --site-bwc:#d1a066; --site-ext:#8f8a80; --site-planned:#4a4844;
     color-scheme: dark;
   }
 }
@@ -39,6 +43,8 @@
   --write:#9fb3de; --read:#7d7870; --link:#d1a066;
   --live:#6fb07f; --testing:#d9ad55; --dev:#86a7d8; --reference:#8f8a80; --missing:#e0716d;
   --tt-bg:#E5E1D8; --tt-ink:#282828; --tt-n:#263860;
+  --hull:rgba(255,255,255,.045); --hull-on:rgba(159,179,222,.12); --hull-gap:rgba(224,113,109,.08); --share:#b8b2a7;
+  --site-bwcore:#9fb3de; --site-opssec:#e0716d; --site-ops:#6fbfa9; --site-bwc:#d1a066; --site-ext:#8f8a80; --site-planned:#4a4844;
   color-scheme: dark;
 }
 
@@ -68,14 +74,17 @@ header.top .theme { background:none; border:1px solid rgba(246,242,238,.35); col
 .btn[aria-pressed="true"] { background:var(--accent); color:var(--bg); border-color:var(--accent); }
 .spacer { flex:1; }
 .edit-only { display:none; }
-body.editing .edit-only { display:inline-flex; }
+body.editing .edit-only { display:inline-flex !important; }
 .draft-flag { font-size:11.5px; color:var(--testing); display:none; }
 body.has-draft .draft-flag { display:inline; }
 
 main { display:grid; grid-template-columns:minmax(0,1fr) 380px; min-height:calc(100vh - 120px); }
-.canvas { overflow:auto; padding:14px 10px 30px; }
-.canvas svg { display:block; width:100%; min-width:980px; height:auto; }
-main > .canvas, main > aside.panel { min-width:0; }
+.canvas { overflow:auto; padding:6px 10px 30px; max-height:calc(100vh - 175px); cursor:grab; }
+.canvas svg { display:block; touch-action:none; }
+.canvas.panning { cursor:grabbing; }
+.zoom { display:inline-flex; gap:4px; margin-left:auto; }
+.zoom button { min-width:30px; }
+main > .stage, main > aside.panel { min-width:0; }
 aside.panel { border-left:1px solid var(--line); background:var(--surface); padding:18px 20px 40px; overflow:auto; max-height:calc(100vh - 60px); position:sticky; top:52px; align-self:start; min-height:calc(100vh - 120px); }
 @media (max-width: 900px) {
   main { grid-template-columns:1fr; }
@@ -86,33 +95,53 @@ aside.panel { border-left:1px solid var(--line); background:var(--surface); padd
 
 /* ── SVG ── */
 svg text { font-family:'TT Norms Pro', system-ui, sans-serif; fill:var(--ink); }
-.col-title { font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; fill:var(--ink-3); }
-.grp-title { font-size:11.5px; font-weight:700; fill:var(--ink-2); }
-.grp-sub { font-size:10.5px; fill:var(--ink-3); }
-.grp-band { fill:var(--surface-2); }
+.grp-title { font-size:13px; font-weight:700; fill:var(--ink-2); letter-spacing:.02em; cursor:pointer; }
+.hull { fill:var(--hull); stroke:var(--hull); stroke-width:34; stroke-linejoin:round; cursor:pointer; }
+.hull.gaps { fill:var(--hull-gap); stroke:var(--hull-gap); }
+.hull.on { fill:var(--hull-on); stroke:var(--hull-on); }
 .node { cursor:pointer; }
+body.editing .node { cursor:grab; }
 .node rect.box { fill:var(--surface); stroke:var(--line-2); stroke-width:1; }
+.node.tool rect.box { filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.08)); }
 .node:hover rect.box { stroke:var(--accent); }
 .node text.lbl { font-size:12.5px; font-weight:500; }
-.node text.meta { font-size:10px; fill:var(--ink-3); }
+.node.store text.lbl { font-size:11.5px; }
 .node .dot { stroke:var(--surface); stroke-width:1.5; }
 .node.st-missing rect.box { stroke:var(--missing); stroke-dasharray:3 2; }
 .node.st-missing text.lbl { fill:var(--missing); }
+.node.store.planned rect.box { stroke-dasharray:3 2; fill:transparent; }
 .node.sel rect.box { stroke:var(--accent); stroke-width:2; fill:var(--accent-soft); }
-.node.hit rect.box { stroke:var(--link); stroke-width:1.6; }
-.edge { fill:none; stroke-width:1.1; }
-.edge.w { stroke:var(--write); opacity:.42; }
-.edge.r { stroke:var(--read); stroke-dasharray:4 3; opacity:.5; }
-.edge.rw { stroke:var(--write); stroke-width:1.8; opacity:.42; }
-.edge.lk { stroke:var(--link); opacity:.55; }
-svg.focus .edge { opacity:.05; }
-svg.focus .edge.on { opacity:.95; stroke-width:2; }
-svg.focus .node { opacity:.28; }
+.node.hit rect.box { stroke:var(--link); stroke-width:1.8; }
+.bb rect { fill:none; stroke:var(--line-2); }
+.bb text { font-size:8.5px; font-weight:700; fill:var(--ink-3); }
+.bb.w rect { fill:var(--write); stroke:var(--write); } .bb.w text { fill:var(--surface); }
+.bb.r rect { stroke:var(--write); } .bb.r text { fill:var(--write); }
+.bb.none { opacity:.35; }
+.loc-bwcore .stripe, i.ls.loc-bwcore { fill:var(--site-bwcore); background:var(--site-bwcore); }
+.loc-opssec .stripe, i.ls.loc-opssec { fill:var(--site-opssec); background:var(--site-opssec); }
+.loc-ops .stripe, i.ls.loc-ops { fill:var(--site-ops); background:var(--site-ops); }
+.loc-bwc .stripe, i.ls.loc-bwc { fill:var(--site-bwc); background:var(--site-bwc); }
+.loc-ext .stripe, i.ls.loc-ext { fill:var(--site-ext); background:var(--site-ext); }
+.loc-planned .stripe, i.ls.loc-planned { fill:var(--site-planned); background:var(--site-planned); }
+.node.store.loc-opssec rect.box { stroke:var(--site-opssec); stroke-opacity:.6; }
+.edge { fill:none; stroke-width:1.2; }
+.edge.w { stroke:var(--write); opacity:.45; }
+.edge.r { stroke:var(--read); stroke-dasharray:4 3; opacity:.6; }
+.edge.rw { stroke:var(--write); stroke-width:2; opacity:.45; }
+.edge.lk { stroke:var(--link); stroke-width:1.6; opacity:.85; }
+.edge.sh { stroke:var(--share); opacity:.45; stroke-linecap:round; }
+svg.focus .edge { opacity:.06; }
+svg.focus .edge.on { opacity:1; }
+svg.focus .node { opacity:.25; }
 svg.focus .node.on { opacity:1; }
-svg.focus .grp-title, svg.focus .grp-sub { opacity:.5; }
-svg.hide-data .edge.w, svg.hide-data .edge.r, svg.hide-data .edge.rw { display:none; }
-svg.hide-links .edge.lk { display:none; }
-.legend text { font-size:11px; fill:var(--ink-2); }
+.legend { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; padding:10px 20px 0; font-size:12px; color:var(--ink-2); }
+.legend span { display:inline-flex; align-items:center; gap:6px; }
+.legend svg { overflow:visible; }
+.legend i.ld { width:9px; height:9px; border-radius:50%; display:inline-block; }
+.legend i.ls { width:6px; height:13px; border-radius:2px; display:inline-block; }
+.legend i.lb { font-style:normal; font-size:8.5px; font-weight:700; width:12px; height:12px; border-radius:2.5px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--write); }
+.legend i.lb.w { background:var(--write); color:var(--surface); } .legend i.lb.r { color:var(--write); }
+.hint-line { padding:4px 20px 0; font-size:12px; color:var(--ink-3); }
 
 /* ── Panel ── */
 .panel h2 { font-family:'Swear Display', Georgia, serif; font-weight:500; font-size:22px; margin:0 0 4px; line-height:1.2; }
@@ -172,10 +201,10 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
 
 <div class="toolbar">
   <input type="search" id="q" placeholder="Search tools, lists, functions…" aria-label="Search">
-  <div class="seg" role="group" aria-label="Layers">
-    <span class="seg-label">Show</span>
-    <button class="chip" id="layerData" aria-pressed="true" data-tip="Tool → list connections" data-tip-d="Solid = writes · dashed = reads only · thick = reads and writes">Data</button>
-    <button class="chip" id="layerLinks" aria-pressed="true" data-tip="Tool → tool links" data-tip-d="Arcs on the left: one tool opens or deep-links into another">Tool links</button>
+  <div class="seg" role="group" aria-label="View">
+    <span class="seg-label">View</span>
+    <button class="chip" id="viewTools" aria-pressed="true" data-tip="Tools only" data-tip-d="How the tools connect: which opens which, and which share a list">Tools</button>
+    <button class="chip" id="viewFull" aria-pressed="false" data-tip="Tools + data" data-tip-d="Every list, file and service, placed beside the tools that use it and coloured by the site that houses it">Tools + data</button>
   </div>
   <div class="seg" role="group" aria-label="Location filter" id="locFilter">
     <span class="seg-label">Location</span>
@@ -191,7 +220,12 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
 </div>
 
 <main>
-  <div class="canvas" id="canvas"></div>
+  <div class="stage">
+    <div class="legend" id="legend"></div>
+    <div class="hint-line" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span>Click a tool to trace it · click a region label to light up that area · drag the background to pan · Ctrl/⌘ + scroll to zoom.<span class="edit-only" style="display:none">&nbsp;Edit mode: drag a box to move it — positions save with your draft.</span></span>
+      <span class="zoom"><button class="btn" id="zOut" aria-label="Zoom out">−</button><button class="btn" id="zFit">Fit</button><button class="btn" id="zIn" aria-label="Zoom in">+</button></span></div>
+    <div class="canvas" id="canvas"></div>
+  </div>
   <aside class="panel" id="panel" aria-live="polite"></aside>
 </main>
 
@@ -311,13 +345,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "id": "sherpa-lookup",
    "short": "lookup",
    "file": "lib/sherpa-lookup.js",
-   "desc": "SherpaLookup.find(project, sourceType) — read-only search of the Customers drive for source docs."
-  },
-  {
-   "id": "ca-session",
-   "short": "ca-session",
-   "file": "lib/ca-session.js",
-   "desc": "Project/folder session helper. Loaded by no tool today; ca-setup and CA_DataSources keep their own copies."
+   "desc": "SherpaLookup.find(project, sourceType) — read-only search of the Customers drive for source docs. Only the Lookup Tester uses it now."
   },
   {
    "id": "phase-profiles",
@@ -346,11 +374,6 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "id": "permits",
    "label": "Permits",
    "desc": "Permit & zoning clock"
-  },
-  {
-   "id": "ca",
-   "label": "CA Tool",
-   "desc": "Setup → Sources → six extractors"
   },
   {
    "id": "docs",
@@ -385,7 +408,9 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "loc": "bwcore",
    "kind": "list",
    "desc": "The master project record. Every project-aware tool starts here.",
-   "fields": "ProjectName, ClientName, PipelineStage, SalesPerson, DesignerName, GanttData, EstimatedProjectValue, SPFolderItemId, DocLinkMeta, ScopeOutline, DesignInvoices, CADateSeen, TrelloListName, CAUrl, SelectionsSheetUrl"
+   "fields": "ProjectName, ClientName, PipelineStage, SalesPerson, DesignerName, GanttData, EstimatedProjectValue, SPFolderItemId, DocLinkMeta, ScopeOutline, DesignInvoices, CADateSeen, TrelloListName, CAUrl, SelectionsSheetUrl",
+   "backbone": true,
+   "abbr": "P"
   },
   {
    "id": "CORE_Config",
@@ -394,7 +419,9 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "kind": "list",
    "desc": "Key/value rows: shared settings, credentials, and tool state blobs.",
    "fields": "pipeline_state, pipeline_prefs_<user>, pipeline_capacity, pipeline_timeoff, pipeline_slots, pipeline_settings, pipeline_archive, ops_scenarios, pz_checkins, wip_overrides, wip_invoiced_overrides, wip_gap_overrides, TrelloApiKey, TrelloToken, TrelloSalesBoardId, TrelloPermitBoardId, AnthropicApiKey",
-   "notes": "Trello and Anthropic keys live here, not in code."
+   "notes": "Trello and Anthropic keys live here, not in code.",
+   "backbone": true,
+   "abbr": "C"
   },
   {
    "id": "CORE_TeamMembers",
@@ -403,7 +430,9 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "kind": "list",
    "desc": "Staff roster and per-tool roles.",
    "fields": "EmployeeName, Department, PipelineRole, ProjectUpdatesRole, BudgetRole, OpsRole, TrackAsLC",
-   "notes": "Roster membership is separate from BWCore Members group access — granted manually."
+   "notes": "Roster membership is separate from BWCore Members group access — granted manually.",
+   "backbone": true,
+   "abbr": "T"
   },
   {
    "id": "CORE_ProjectReviews",
@@ -620,20 +649,6 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "kind": "drive",
    "desc": "Phase folders (1. Active Leads, 2. Active-Design, 3. Active-Construction, 1. DAs ← 1. IDEA & FDDA …) → project folder → sub-folders.",
    "notes": "Discovered at runtime from TEMPLATE. Linked by driveItem id, never by path."
-  },
-  {
-   "id": "bwc-extracted",
-   "label": "Extractor outputs (*.json)",
-   "loc": "bwc",
-   "kind": "files",
-   "desc": "Written into the project folder: scope_outline_enriched, plan_notes_extracted, design_agreement_extracted, estimate_extracted, selections_extracted, reference_cas_extracted."
-  },
-  {
-   "id": "bwc-ca-session",
-   "label": "CA_Session_<LASTNAME>.json",
-   "loc": "bwc",
-   "kind": "file",
-   "desc": "CA Sources session file in the project folder. Autosaves after 2 s; polled every 30 s."
   },
   {
    "id": "bwc-scope-letters",
@@ -1047,247 +1062,6 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "libs": []
   },
   {
-   "id": "ca-setup",
-   "label": "CA Setup",
-   "file": "ca-setup.html",
-   "group": "ca",
-   "status": "partial",
-   "libs": [
-    "sherpa-auth",
-    "sherpa-lookup"
-   ],
-   "purpose": "Step 1 of the CA tool: pick a project and match it to its Customers folder.",
-   "functions": [
-    "Match project → folder by last-name tokens, JobCode tie-break",
-    "Deposit / payment schedule form (not saved anywhere yet)",
-    "Hand off to Sources"
-   ],
-   "reads": [
-    "CORE_Projects",
-    "bwc-folders"
-   ],
-   "writes": [],
-   "links": [
-    {
-     "to": "CA_DataSources",
-     "note": "?project=<id> — Sources does not read it yet"
-    }
-   ]
-  },
-  {
-   "id": "CA_DataSources",
-   "label": "CA Data Sources",
-   "file": "CA_DataSources.html",
-   "group": "ca",
-   "status": "partial",
-   "libs": [
-    "sherpa-auth",
-    "sherpa-lookup"
-   ],
-   "purpose": "Step 2: gather the source documents, launch the extractors, check readiness and alignment.",
-   "functions": [
-    "Auto-find sources with SherpaLookup (DA, estimate, scope, plans)",
-    "Launch extractors with driveId / folderId / fileId / autoRun",
-    "Poll for each *_extracted.json and summarise",
-    "Alignment check: estimate vs. scope vs. DA; reference-CA suggestions",
-    "\"Generate Baseline CA\" is still a placeholder"
-   ],
-   "reads": [
-    "CORE_Projects",
-    "bwc-folders",
-    "bwc-extracted",
-    "bwc-ca-session"
-   ],
-   "writes": [
-    "bwc-ca-session"
-   ],
-   "links": [
-    {
-     "to": "scope_outline_extractor",
-     "note": "scope slot"
-    },
-    {
-     "to": "plan_note_extractor",
-     "note": "plans slot"
-    },
-    {
-     "to": "da_extractor",
-     "note": "DA slot"
-    },
-    {
-     "to": "estimate_extractor",
-     "note": "estimate slot"
-    },
-    {
-     "to": "selections_extractor",
-     "note": "folder params only"
-    },
-    {
-     "to": "reference_ca_extractor",
-     "note": "folder params only"
-    },
-    {
-     "to": "sharepoint-sherpa-v1",
-     "note": "Fallback search — file does not exist"
-    }
-   ]
-  },
-  {
-   "id": "scope_outline_extractor",
-   "label": "Scope Outline Extractor",
-   "file": "scope_outline_extractor.html",
-   "group": "ca",
-   "status": "live",
-   "version": "v2.1",
-   "libs": [
-    "sherpa-auth",
-    "sherpa-lookup"
-   ],
-   "purpose": "Parses a Scope Outline .docx into CA divisions and classifications, then enriches it with Claude.",
-   "functions": [
-    "docx parse (JSZip)",
-    "Claude enrichment",
-    "PUT scope_outline_enriched.json to the project folder"
-   ],
-   "reads": [
-    "bwc-folders",
-    "claude-direct",
-    "local-upload"
-   ],
-   "writes": [
-    "bwc-extracted"
-   ],
-   "links": []
-  },
-  {
-   "id": "plan_note_extractor",
-   "label": "Plan Note Extractor",
-   "file": "plan_note_extractor.html",
-   "group": "ca",
-   "status": "live",
-   "version": "v5.1",
-   "libs": [
-    "sherpa-auth",
-    "sherpa-lookup"
-   ],
-   "purpose": "Renders plan PDF pages with pdf.js and extracts notes by floor and division.",
-   "functions": [
-    "Page render → Claude vision",
-    "PUT plan_notes_extracted.json; optional .txt download"
-   ],
-   "reads": [
-    "bwc-folders",
-    "claude-direct",
-    "local-upload"
-   ],
-   "writes": [
-    "bwc-extracted"
-   ],
-   "links": []
-  },
-  {
-   "id": "da_extractor",
-   "label": "DA Extractor",
-   "file": "da_extractor.html",
-   "group": "ca",
-   "status": "live",
-   "version": "v5",
-   "libs": [
-    "sherpa-auth",
-    "sherpa-lookup"
-   ],
-   "purpose": "Extracts Design Agreement terms — fee, schedule, scope, responsibilities — from a .docx.",
-   "functions": [
-    "docx parse (JSZip)",
-    "Claude extraction",
-    "PUT design_agreement_extracted.json"
-   ],
-   "reads": [
-    "bwc-folders",
-    "claude-direct",
-    "local-upload"
-   ],
-   "writes": [
-    "bwc-extracted"
-   ],
-   "links": []
-  },
-  {
-   "id": "estimate_extractor",
-   "label": "Estimate Extractor",
-   "file": "estimate_extractor.html",
-   "group": "ca",
-   "status": "live",
-   "version": "v9",
-   "libs": [
-    "sherpa-auth"
-   ],
-   "purpose": "Reads the estimate workbook, maps it to CA sections, and extracts line items and comp projects.",
-   "functions": [
-    "XLSX parse, CA_SECTION_MAP",
-    "Claude extraction incl. comp_projects",
-    "PUT estimate_extracted.json or download"
-   ],
-   "reads": [
-    "bwc-folders",
-    "claude-direct",
-    "local-upload"
-   ],
-   "writes": [
-    "bwc-extracted"
-   ],
-   "links": []
-  },
-  {
-   "id": "selections_extractor",
-   "label": "Selections Extractor",
-   "file": "selections_extractor.html",
-   "group": "ca",
-   "status": "live",
-   "libs": [
-    "sherpa-auth"
-   ],
-   "purpose": "Extracts items from a Buildertrend \"Selections Details\" PDF and maps them to CA sections.",
-   "functions": [
-    "PDF → Claude document block",
-    "Editable review",
-    "PUT selections_extracted.json or download"
-   ],
-   "reads": [
-    "claude-direct",
-    "local-upload",
-    "buildertrend"
-   ],
-   "writes": [
-    "bwc-extracted"
-   ],
-   "links": []
-  },
-  {
-   "id": "reference_ca_extractor",
-   "label": "Reference CA Extractor",
-   "file": "reference_ca_extractor.html",
-   "group": "ca",
-   "status": "live",
-   "libs": [
-    "sherpa-auth"
-   ],
-   "purpose": "Summarises past Construction Agreements as reference benchmarks.",
-   "functions": [
-    "Multi-file queue (PDF / docx)",
-    "Claude summary",
-    "PUT reference_cas_extracted.json or download"
-   ],
-   "reads": [
-    "claude-direct",
-    "local-upload"
-   ],
-   "writes": [
-    "bwc-extracted"
-   ],
-   "links": []
-  },
-  {
    "id": "sharepoint-sherpa",
    "label": "SharePoint Sherpa",
    "file": "sharepoint-sherpa.html",
@@ -1617,7 +1391,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "status": "offline",
    "purpose": "Launcher: tool tiles in sections, admin mode to add, edit and reorder.",
    "functions": [
-    "Default tiles for 24 tools",
+    "Default tiles for 16 tools",
     "Admin edits saved in this browser"
    ],
    "reads": [],
@@ -1628,7 +1402,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
      "note": "Tile points to a missing file — likely fba-matrix"
     }
    ],
-   "notes": "Not listed: design-intake, project-hours-analyzer, scout-board, fba-matrix, permit-zoning-tracker, pm-budget-workbook, project-updates, core-system-map. revenue-tracker and wip-tracker are defined but hidden.",
+   "notes": "Not listed: design-intake, project-hours-analyzer, scout-board, fba-matrix, permit-zoning-tracker, pm-budget-workbook, project-updates. revenue-tracker and wip-tracker are defined but hidden.",
    "libs": []
   },
   {
@@ -1650,11 +1424,12 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "file": "core-system-map.html",
    "group": "admin",
    "status": "reference",
-   "version": "v1",
+   "version": "v2",
    "purpose": "This map — tools, the lists behind them, and where each lives.",
    "functions": [
-    "Trace connections",
-    "Edit in place, export a new copy"
+    "Tools view: how tools connect to each other",
+    "Data view: each list placed beside the tools that use it",
+    "Drag to rearrange, edit in place, export a new copy"
    ],
    "reads": [],
    "writes": [],
@@ -1676,20 +1451,6 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "libs": []
   },
   {
-   "id": "sharepoint-sherpa-v1",
-   "label": "SharePoint Sherpa v1",
-   "file": "sharepoint-sherpa-v1.html",
-   "group": "gaps",
-   "status": "missing",
-   "purpose": "Linked from CA Data Sources; no such file.",
-   "functions": [],
-   "reads": [],
-   "writes": [],
-   "links": [],
-   "notes": "CA Data Sources → missing file. sharepoint-sherpa.html exists but ignores ?q= / ?hint=.",
-   "libs": []
-  },
-  {
    "id": "provision-core-projects",
    "label": "Provision CORE Projects",
    "file": "provision-core-projects.html",
@@ -1703,7 +1464,413 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "notes": "CORE Roadmap → missing file.",
    "libs": []
   }
- ]
+ ],
+ "layout": {
+  "tools": {
+   "project-pipeline": [
+    830,
+    250
+   ],
+   "core-projects-manager": [
+    600,
+    250
+   ],
+   "project-basis": [
+    600,
+    160
+   ],
+   "scout-board": [
+    600,
+    340
+   ],
+   "project-updates": [
+    1080,
+    190
+   ],
+   "pm-budget-workbook": [
+    1080,
+    290
+   ],
+   "revenue-tracker": [
+    1080,
+    430
+   ],
+   "wip-tracker": [
+    1080,
+    520
+   ],
+   "permit-zoning-tracker": [
+    830,
+    70
+   ],
+   "sharepoint-sherpa": [
+    790,
+    470
+   ],
+   "sherpa-lookup-tester": [
+    610,
+    550
+   ],
+   "scope-letter-tool": [
+    850,
+    550
+   ],
+   "design-intake": [
+    111,
+    480
+   ],
+   "project-hours-analyzer": [
+    349,
+    480
+   ],
+   "timecard-analyzer": [
+    120,
+    560
+   ],
+   "design-deliverables": [
+    340,
+    560
+   ],
+   "cp-process-scoring": [
+    1060,
+    680
+   ],
+   "fba-matrix": [
+    830,
+    680
+   ],
+   "people-analyzer": [
+    610,
+    680
+   ],
+   "core-admin": [
+    340,
+    100
+   ],
+   "team-members": [
+    120,
+    100
+   ],
+   "core_roadmap": [
+    120,
+    260
+   ],
+   "bw-tool-index": [
+    340,
+    260
+   ],
+   "bellweather-style-guide": [
+    120,
+    180
+   ],
+   "core-system-map": [
+    340,
+    180
+   ],
+   "fba_tool_JW": [
+    340,
+    350
+   ],
+   "provision-core-projects": [
+    120,
+    350
+   ]
+  },
+  "full": {
+   "project-pipeline": [
+    1357,
+    386
+   ],
+   "core-projects-manager": [
+    957,
+    419
+   ],
+   "project-basis": [
+    986,
+    224
+   ],
+   "scout-board": [
+    980,
+    541
+   ],
+   "project-updates": [
+    1680,
+    291
+   ],
+   "pm-budget-workbook": [
+    1616,
+    469
+   ],
+   "revenue-tracker": [
+    1656,
+    664
+   ],
+   "wip-tracker": [
+    1632,
+    794
+   ],
+   "permit-zoning-tracker": [
+    1357,
+    98
+   ],
+   "sharepoint-sherpa": [
+    1139,
+    712
+   ],
+   "sherpa-lookup-tester": [
+    1164,
+    772
+   ],
+   "scope-letter-tool": [
+    1373,
+    860
+   ],
+   "design-intake": [
+    437,
+    735
+   ],
+   "project-hours-analyzer": [
+    632,
+    739
+   ],
+   "timecard-analyzer": [
+    420,
+    860
+   ],
+   "design-deliverables": [
+    645,
+    905
+   ],
+   "cp-process-scoring": [
+    1688,
+    1088
+   ],
+   "fba-matrix": [
+    1320,
+    1080
+   ],
+   "people-analyzer": [
+    1026,
+    1030
+   ],
+   "core-admin": [
+    648,
+    146
+   ],
+   "team-members": [
+    373,
+    136
+   ],
+   "core_roadmap": [
+    302,
+    410
+   ],
+   "bw-tool-index": [
+    641,
+    399
+   ],
+   "bellweather-style-guide": [
+    304,
+    249
+   ],
+   "core-system-map": [
+    642,
+    269
+   ],
+   "fba_tool_JW": [
+    629,
+    535
+   ],
+   "provision-core-projects": [
+    328,
+    572
+   ],
+   "CORE_Projects": [
+    1156,
+    389
+   ],
+   "CORE_Config": [
+    1150,
+    484
+   ],
+   "CORE_TeamMembers": [
+    1165,
+    294
+   ],
+   "CORE_ProjectReviews": [
+    1491,
+    288
+   ],
+   "CORE_Permits": [
+    1315,
+    209
+   ],
+   "CORE_Budget_Config": [
+    1525,
+    366
+   ],
+   "CORE_Budget_Lines": [
+    1756,
+    459
+   ],
+   "CORE_Budget_Comments": [
+    1736,
+    403
+   ],
+   "CORE_Presence": [
+    1423,
+    326
+   ],
+   "CORE_Pipeline_Snapshots": [
+    1311,
+    444
+   ],
+   "CORE_Revenue": [
+    1744,
+    702
+   ],
+   "CORE_Roadmap_Config": [
+    362,
+    303
+   ],
+   "CORE_DesignForecast": [
+    298,
+    791
+   ],
+   "CORE_DesignerTimecard": [
+    511,
+    808
+   ],
+   "CORE_ProjectMeta": [
+    766,
+    716
+   ],
+   "PB_Config": [
+    866,
+    262
+   ],
+   "PB_Assessments": [
+    929,
+    117
+   ],
+   "CP_ProcessScoring": [
+    1773,
+    1141
+   ],
+   "CP_ScoringSession": [
+    1691,
+    1198
+   ],
+   "FBA-Significant Steps": [
+    1418,
+    1157
+   ],
+   "FBA-SOPs": [
+    1273,
+    1195
+   ],
+   "ScoutBoard": [
+    936,
+    645
+   ],
+   "DeliverableIndex": [
+    641,
+    1021
+   ],
+   "PA_Evaluations": [
+    928,
+    1111
+   ],
+   "PA_Sessions": [
+    1032,
+    1139
+   ],
+   "opssec-qb": [
+    1398,
+    520
+   ],
+   "ops-ar": [
+    1317,
+    482
+   ],
+   "ops-bt-inv": [
+    1736,
+    873
+   ],
+   "ops-wip-pdf": [
+    1556,
+    844
+   ],
+   "ops-wip-xlsx": [
+    1844,
+    646
+   ],
+   "ops-timecards": [
+    779,
+    772
+   ],
+   "bwc-folders": [
+    1357,
+    565
+   ],
+   "bwc-scope-letters": [
+    1277,
+    898
+   ],
+   "trello-sales": [
+    1135,
+    427
+   ],
+   "trello-permits": [
+    1363,
+    247
+   ],
+   "claude-direct": [
+    709,
+    573
+   ],
+   "azure-proxy": [
+    1430,
+    940
+   ],
+   "outlook": [
+    1445,
+    443
+   ],
+   "buildertrend": [
+    1796,
+    814
+   ],
+   "local-upload": [
+    651,
+    777
+   ],
+   "CORE_Milestones": [
+    412,
+    368
+   ],
+   "CORE_CapacityAllocations": [
+    420,
+    471
+   ],
+   "CORE_CostLines": [
+    210,
+    322
+   ],
+   "CORE_Estimates": [
+    179,
+    448
+   ],
+   "CORE_EstimateComps": [
+    172,
+    385
+   ],
+   "CORE_Jurisdictions": [
+    229,
+    501
+   ]
+  }
+ }
 }
 </script>
 
@@ -1711,7 +1878,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
 // Captured before anything touches the DOM — Export HTML rewrites this with new data.
 const PRISTINE = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 
-const CORE_VERSION = 'v1';
+const CORE_VERSION = 'v2';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
 
 const PAGES_BASE = 'https://bellweatherllc.github.io/tools/';
@@ -1729,7 +1896,8 @@ let MAP = JSON.parse(JSON.stringify(PUBLISHED));
   if (d) { try { MAP = JSON.parse(d); document.body.classList.add('has-draft'); } catch (e) { lsDel(DRAFT_KEY); } }
 }
 
-const state = { sel: null, q: '', loc: null, editing: false };
+const state = { sel: null, q: '', loc: null, editing: false, view: 'tools' };
+try { const v = localStorage.getItem('core_sysmap_view'); if (v === 'tools' || v === 'full') state.view = v; } catch (e) {}
 
 function escHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c])); }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2200); }
@@ -1760,7 +1928,9 @@ function related(id) {
   for (const e of data) { if (e.t === id) set.add(e.s); if (e.s === id) set.add(e.t); }
   for (const l of links) { if (l.from === id) set.add(l.to); if (l.to === id) set.add(l.from); }
   if (loc(id)) for (const s of MAP.stores) if (s.loc === id) { set.add(s.id); for (const e of data) if (e.s === s.id) set.add(e.t); }
-  if (MAP.groups.some(g => g.id === id)) for (const t of MAP.tools) if (t.group === id) set.add(t.id);
+  const grp = byId(MAP.groups, id);
+  if (grp) { for (const m of groupMembers(grp)) set.add(m); if (state.view === 'full') for (const e of data) if (tool(e.t) && tool(e.t).group === id) set.add(e.s); }
+  if (tool(id) && state.view === 'tools') for (const sp of sharedPairs()) { if (sp.a === id) set.add(sp.b); if (sp.b === id) set.add(sp.a); }
   return set;
 }
 function matches(obj, q) {
@@ -1770,7 +1940,57 @@ function matches(obj, q) {
 }
 
 // ── Layout + render ───────────────────────────────────────────
-const L = { W: 1180, arcX: 190, toolX: 200, toolW: 270, storeX: 830, storeW: 300, rowH: 25, boxH: 20, grpHead: 34, grpGap: 14, top: 64 };
+// Positions live in MAP.layout.tools / MAP.layout.full as { id: [centerX, centerY] }.
+// Drag nodes in Edit mode to rearrange; new nodes are placed beside their neighbours.
+const BADGE_W = 42;
+const _mw = {};
+function measure(s, cls) {
+  const k = cls + '|' + s; if (_mw[k] != null) return _mw[k];
+  let m = document.getElementById('measure');
+  if (!m) { m = el('svg', { id: 'measure', width: 0, height: 0, style: 'position:absolute;left:-9999px;top:0' }); document.body.appendChild(m); }
+  const g = el('g', { class: 'node ' + cls }, m), t = txt(g, 0, 0, s, 'lbl');
+  const w = t.getComputedTextLength(); m.removeChild(g);
+  return (_mw[k] = w || s.length * 6.5);
+}
+const size = (o, view) => tool(o.id)
+  ? { w: Math.round(measure(o.label, 'tool') + 36 + (view === 'tools' ? BADGE_W : 0)), h: 28 }
+  : { w: Math.round(measure(o.label, 'store') + 22), h: 24 };
+const R = { view: null, pos: {}, sizes: {}, nodes: {}, edges: [], svg: null };
+
+function sharedPairs() {
+  const out = [];
+  const ok = s => { const o = store(s); return o && !o.backbone && o.loc !== 'ext' && o.loc !== 'planned'; };
+  for (let i = 0; i < MAP.tools.length; i++) for (let j = i + 1; j < MAP.tools.length; j++) {
+    const a = MAP.tools[i], b = MAP.tools[j];
+    const ua = new Set([...(a.reads || []), ...(a.writes || [])]), ub = new Set([...(b.reads || []), ...(b.writes || [])]);
+    const sh = [...ua].filter(s => ub.has(s) && ok(s) && ((a.writes || []).includes(s) || (b.writes || []).includes(s)));
+    if (sh.length) out.push({ a: a.id, b: b.id, stores: sh });
+  }
+  return out;
+}
+function visibleNodes(view) { return view === 'tools' ? MAP.tools : [...MAP.tools, ...MAP.stores]; }
+function neighbours(id, view) {
+  const t = tool(id), n = new Set();
+  if (t) { for (const l of t.links || []) n.add(l.to); if (view === 'full') for (const s of [...(t.reads || []), ...(t.writes || [])]) n.add(s); }
+  for (const x of MAP.tools) { if ((x.links || []).some(l => l.to === id)) n.add(x.id); if ([...(x.reads || []), ...(x.writes || [])].includes(id)) n.add(x.id); }
+  return [...n];
+}
+function placeMissing(view) {
+  MAP.layout = MAP.layout || {}; MAP.layout[view] = MAP.layout[view] || {};
+  const P = MAP.layout[view];
+  const all = visibleNodes(view);
+  let spare = 0;
+  const maxY = Math.max(60, ...Object.values(P).map(p => p[1]));
+  for (const o of all) {
+    if (P[o.id]) continue;
+    const nb = neighbours(o.id, view).filter(id => P[id]);
+    if (nb.length) {
+      const cx = nb.reduce((s, id) => s + P[id][0], 0) / nb.length, cy = nb.reduce((s, id) => s + P[id][1], 0) / nb.length;
+      P[o.id] = [Math.round(cx + 40), Math.round(cy + 46)];
+    } else P[o.id] = [120 + (spare++ % 6) * 190, maxY + 90];
+  }
+  return P;
+}
 
 function el(tag, attrs, parent) {
   const n = document.createElementNS(NS, tag);
@@ -1779,147 +1999,233 @@ function el(tag, attrs, parent) {
   return n;
 }
 function txt(parent, x, y, s, cls, anchor) { const t = el('text', { x, y, class: cls, 'text-anchor': anchor || null }, parent); t.textContent = s; return t; }
-function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+
+function clipPt(id, dx, dy) {
+  const [cx, cy] = R.pos[id], { w, h } = R.sizes[id];
+  const tx = dx ? (w / 2 + 2) / Math.abs(dx) : Infinity, ty = dy ? (h / 2 + 2) / Math.abs(dy) : Infinity, t = Math.min(tx, ty);
+  return [cx + dx * t, cy + dy * t];
+}
+function edgePath(a, b, bend) {
+  const [ax, ay] = R.pos[a], [bx, by] = R.pos[b];
+  const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+  const mx = (ax + bx) / 2 - dy / len * len * bend, my = (ay + by) / 2 + dx / len * len * bend;
+  const s = clipPt(a, mx - ax, my - ay), e = clipPt(b, mx - bx, my - by);
+  return bend ? `M${s[0].toFixed(1)},${s[1].toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${e[0].toFixed(1)},${e[1].toFixed(1)}`
+              : `M${s[0].toFixed(1)},${s[1].toFixed(1)} L${e[0].toFixed(1)},${e[1].toFixed(1)}`;
+}
+function hull(pts) {
+  pts = pts.slice().sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  if (pts.length < 3) return pts;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of pts.reverse()) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+function groupMembers(g) {
+  const ids = MAP.tools.filter(t => t.group === g.id).map(t => t.id);
+  if (R.view === 'full') for (const s of MAP.stores) {
+    const us = MAP.tools.filter(t => [...(t.reads || []), ...(t.writes || [])].includes(s.id));
+    if (us.length && us.every(t => t.group === g.id)) ids.push(s.id);
+  }
+  return ids;
+}
+function drawHulls() {
+  const g = R.hullG; g.innerHTML = '';
+  for (const grp of MAP.groups) {
+    const ids = groupMembers(grp).filter(id => R.pos[id]); if (!ids.length) continue;
+    const pts = [];
+    for (const id of ids) { const [x, y] = R.pos[id], { w, h } = R.sizes[id]; pts.push([x - w / 2, y - h / 2], [x + w / 2, y - h / 2], [x - w / 2, y + h / 2], [x + w / 2, y + h / 2]); }
+    const hp = hull(pts);
+    el('path', { d: 'M' + hp.map(p => p.join(',')).join(' L') + ' Z', class: 'hull' + (grp.id === 'gaps' ? ' gaps' : ''), 'data-gid': grp.id }, g);
+    const top = Math.min(...pts.map(p => p[1])), cx = (Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2;
+    const t = txt(g, cx, top - 16, grp.label, 'grp-title', 'middle'); t.setAttribute('data-gid', grp.id);
+  }
+}
+function updateEdges() { for (const e of R.edges) e.el.setAttribute('d', edgePath(e.a, e.b, e.bend)); }
 
 function render() {
-  const pos = {};
-  const svg = el('svg', { viewBox: '0 0 10 10', role: 'img', 'aria-label': 'CORE system map: each tool on the left, connected to the SharePoint lists and data stores on the right that it reads and writes, grouped by the SharePoint site that houses them; arcs on the left show tools that open other tools.' });
+  const view = R.view = state.view;
+  const P = placeMissing(view);
+  R.pos = {}; R.sizes = {}; R.nodes = {}; R.edges = [];
+  const all = visibleNodes(view);
+  for (const o of all) { R.pos[o.id] = P[o.id].slice(); R.sizes[o.id] = size(o, view); }
+
+  const svg = R.svg = el('svg', { role: 'img', 'aria-label': view === 'tools'
+    ? 'CORE tools arranged by how they connect: arrows where one tool opens another, lines where two tools share a SharePoint list, grouped into regions by area.'
+    : 'CORE tools with each SharePoint list and data source placed beside the tools that read or write it, coloured by the site that houses it.' });
   const defs = el('defs', {}, svg);
-  const mk = el('marker', { id: 'arr', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 7, markerHeight: 7, markerUnits: 'userSpaceOnUse', orient: 'auto-start-reverse' }, defs);
+  const mk = el('marker', { id: 'arr', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 8, markerHeight: 8, markerUnits: 'userSpaceOnUse', orient: 'auto' }, defs);
   el('path', { d: 'M0,0 L8,4 L0,8 z', fill: 'var(--link)' }, mk);
-
-  const gBands = el('g', {}, svg), gEdges = el('g', {}, svg), gNodes = el('g', {}, svg);
-
-  txt(svg, L.toolX, 30, 'Tools  ·  GitHub Pages', 'col-title');
-  txt(svg, L.toolX, 46, 'bellweatherllc.github.io/tools/', 'grp-sub');
-  txt(svg, L.storeX, 30, 'Data backbone  ·  where it lives', 'col-title');
-  txt(svg, L.storeX, 46, 'SharePoint sites, drives & outside services', 'grp-sub');
-  txt(svg, L.arcX - 6, 30, 'Opens', 'col-title', 'end');
-
-  // Tools column
-  let y = L.top;
-  for (const g of MAP.groups) {
-    const ts = MAP.tools.filter(t => t.group === g.id);
-    if (!ts.length) continue;
-    const h = L.grpHead + ts.length * L.rowH + 4;
-    el('rect', { x: L.toolX - 8, y: y - 4, width: L.toolW + 16, height: h, rx: 8, class: 'grp-band' }, gBands);
-    const gt = txt(gNodes, L.toolX, y + 14, g.label, 'grp-title');
-    gt.setAttribute('data-gid', g.id);
-    if (g.desc) txt(gNodes, L.toolX, y + 26, clip(g.desc, 46), 'grp-sub');
-    let yy = y + L.grpHead;
-    for (const t of ts) {
-      pos[t.id] = { x: L.toolX, y: yy, cy: yy + L.boxH / 2 };
-      drawNode(gNodes, t, 'tool', L.toolX, yy, L.toolW);
-      yy += L.rowH;
-    }
-    y += h + L.grpGap;
-  }
-  const toolBottom = y;
-
-  // Stores column
-  y = L.top;
-  for (const lc of MAP.locations) {
-    const ss = MAP.stores.filter(s => s.loc === lc.id);
-    if (!ss.length) continue;
-    const h = L.grpHead + ss.length * L.rowH + 4;
-    const band = el('rect', { x: L.storeX - 8, y: y - 4, width: L.storeW + 16, height: h, rx: 8, class: 'grp-band' }, gBands);
-    if (lc.restricted) { band.setAttribute('stroke', 'var(--missing)'); band.setAttribute('stroke-dasharray', '4 3'); band.setAttribute('stroke-opacity', '.6'); }
-    const hdr = el('g', { class: 'node', 'data-id': lc.id, 'data-tip': lc.label, 'data-tip-d': (lc.access ? lc.access + ' · ' : '') + (lc.holds || '') }, gNodes);
-    txt(hdr, L.storeX, y + 14, lc.label, 'grp-title');
-    txt(hdr, L.storeX + L.storeW, y + 14, lc.access || '', 'grp-sub', 'end');
-    if (lc.path) txt(hdr, L.storeX, y + 26, clip(lc.path, 50), 'grp-sub');
-    let yy = y + L.grpHead;
-    for (const s of ss) {
-      pos[s.id] = { x: L.storeX, y: yy, cy: yy + L.boxH / 2 };
-      drawNode(gNodes, s, 'store', L.storeX, yy, L.storeW);
-      yy += L.rowH;
-    }
-    y += h + L.grpGap;
-  }
-  const H = Math.max(toolBottom, y) + 70;
+  R.hullG = el('g', {}, svg);
+  const gE = el('g', {}, svg), gN = el('g', {}, svg);
 
   // Edges
   const { data, links } = edges();
-  for (const e of data) {
-    const a = pos[e.t], b = pos[e.s]; if (!a || !b) continue;
-    const x1 = L.toolX + L.toolW, x2 = L.storeX, mx = (x1 + x2) / 2;
-    el('path', { d: `M${x1},${a.cy} C${mx},${a.cy} ${mx},${b.cy} ${x2},${b.cy}`, class: `edge ${e.kind}`, 'data-a': e.t, 'data-b': e.s }, gEdges);
+  if (view === 'full') for (const e of data) {
+    const p = el('path', { class: `edge ${e.kind}`, 'data-a': e.t, 'data-b': e.s }, gE);
+    R.edges.push({ el: p, a: e.t, b: e.s, bend: 0 });
+  }
+  if (view === 'tools') for (const sp of sharedPairs()) {
+    const p = el('path', { class: 'edge sh', 'data-a': sp.a, 'data-b': sp.b, 'data-s': sp.stores.join('|'), 'stroke-width': Math.min(5, 1.4 + (sp.stores.length - 1) * 1.1),
+      'data-tip': `${tool(sp.a).label} ↔ ${tool(sp.b).label}`, 'data-tip-d': 'Share ' + sp.stores.map(s => store(s).label).join(', ') }, gE);
+    R.edges.push({ el: p, a: sp.a, b: sp.b, bend: -0.08 });
   }
   for (const l of links) {
-    const a = pos[l.from], b = pos[l.to]; if (!a || !b) continue;
-    const dy = Math.abs(b.cy - a.cy), bulge = Math.min(L.arcX - 12, 18 + dy * 0.22);
-    const x = L.toolX - 2;
-    const p = el('path', { d: `M${x},${a.cy - 3} C${x - bulge},${a.cy - 3} ${x - bulge},${b.cy + 3} ${x},${b.cy + 3}`, class: 'edge lk', 'marker-end': 'url(#arr)', 'data-a': l.from, 'data-b': l.to }, gEdges);
-    p.setAttribute('data-tip', `${tool(l.from).label} → ${tool(l.to).label}`);
-    if (l.note) p.setAttribute('data-tip-d', l.note);
+    const p = el('path', { class: 'edge lk', 'marker-end': 'url(#arr)', 'data-a': l.from, 'data-b': l.to,
+      'data-tip': `${tool(l.from).label} opens ${tool(l.to).label}`, 'data-tip-d': l.note || null }, gE);
+    R.edges.push({ el: p, a: l.from, b: l.to, bend: 0.1 });
   }
+  updateEdges();
 
-  // Legend
-  const lg = el('g', { class: 'legend', transform: `translate(${L.toolX},${H - 38})` }, svg);
-  const items = [['w', 'writes'], ['r', 'reads'], ['rw', 'reads + writes'], ['lk', 'opens another tool']];
-  let lx = 0;
-  for (const [k, lbl] of items) {
-    el('path', { d: `M${lx},0 L${lx + 26},0`, class: `edge ${k}`, style: 'opacity:.9' }, lg);
-    txt(lg, lx + 32, 4, lbl); lx += 42 + lbl.length * 6.2;
-  }
-  lx += 10;
-  for (const s of MAP.statuses) {
-    el('circle', { cx: lx + 4, cy: 0, r: 4, fill: s.color }, lg);
-    txt(lg, lx + 12, 4, s.label); lx += 26 + s.label.length * 6.2;
-  }
+  // Nodes
+  for (const o of all) R.nodes[o.id] = drawNode(gN, o, view);
+  drawHulls();
 
-  svg.setAttribute('viewBox', `0 0 ${L.W} ${H}`);
-  svg.classList.toggle('hide-data', !document.getElementById('layerData').getAttribute('aria-pressed').includes('true'));
-  svg.classList.toggle('hide-links', !document.getElementById('layerLinks').getAttribute('aria-pressed').includes('true'));
-  const c = document.getElementById('canvas'); c.innerHTML = ''; c.appendChild(svg);
+  // Frame
+  const xs = [], ys = [];
+  for (const id in R.pos) { const [x, y] = R.pos[id], { w, h } = R.sizes[id]; xs.push(x - w / 2, x + w / 2); ys.push(y - h / 2, y + h / 2); }
+  const x0 = Math.min(...xs) - 50, y0 = Math.min(...ys) - 60, W = Math.max(...xs) - x0 + 50, H = Math.max(...ys) - y0 + 50;
+  svg.setAttribute('viewBox', `${x0} ${y0} ${W} ${H}`);
+  R.W = W; R.H = H;
+  const c = document.getElementById('canvas');
+  const keep = { l: c.scrollLeft, t: c.scrollTop };
+  c.innerHTML = ''; c.appendChild(svg);
+  applyZoom(); c.scrollLeft = keep.l; c.scrollTop = keep.t;
+  renderLegend();
   applyFocus();
 }
 
-function drawNode(parent, obj, type, x, y, w) {
-  const g = el('g', { class: 'node', 'data-id': obj.id, 'data-type': type }, parent);
-  const tip = type === 'tool' ? (obj.purpose || '') : (obj.desc || '');
-  g.setAttribute('data-tip', obj.label);
+function drawNode(parent, o, view) {
+  const isTool = !!tool(o.id), [cx, cy] = R.pos[o.id], { w, h } = R.sizes[o.id];
+  const g = el('g', { class: 'node ' + (isTool ? 'tool' : 'store'), 'data-id': o.id, transform: `translate(${cx - w / 2},${cy - h / 2})` }, parent);
+  g.setAttribute('data-tip', o.label);
+  const tip = isTool ? o.purpose : [o.desc, (loc(o.loc) || {}).label].filter(Boolean).join(' · ');
   if (tip) g.setAttribute('data-tip-d', tip);
-  el('rect', { class: 'box', x, y, width: w, height: L.boxH, rx: 4 }, g);
-  if (type === 'tool') {
-    const st = statusOf(obj.status);
-    g.classList.add('st-' + obj.status);
-    el('circle', { class: 'dot', cx: x + 10, cy: y + L.boxH / 2, r: 4, fill: st.color }, g);
-    txt(g, x + 20, y + 14, clip(obj.label, 27), 'lbl');
-    const libs = (obj.libs || []).map(id => (lib(id) || {}).short || id);
-    const meta = [obj.version, ...libs].filter(Boolean).join(' · ');
-    if (meta) txt(g, x + w - 7, y + 13.5, clip(meta, 20), 'meta', 'end');
+  if (isTool) {
+    g.classList.add('st-' + o.status);
+    el('rect', { class: 'box', width: w, height: h, rx: 7 }, g);
+    el('circle', { class: 'dot', cx: 12, cy: h / 2, r: 4, fill: statusOf(o.status).color }, g);
+    txt(g, 23, h / 2 + 4.5, o.label, 'lbl');
+    if (view === 'tools') {
+      let bx = w - BADGE_W + 2;
+      for (const s of MAP.stores.filter(s => s.backbone)) {
+        const wr = (o.writes || []).includes(s.id), rd = (o.reads || []).includes(s.id);
+        const b = el('g', { class: 'bb' + (wr ? ' w' : rd ? ' r' : ' none') }, g);
+        el('rect', { x: bx, y: h / 2 - 6, width: 12, height: 12, rx: 2.5 }, b);
+        txt(b, bx + 6, h / 2 + 3.5, s.abbr || s.label[5] || '?', '', 'middle');
+        bx += 13;
+      }
+    }
   } else {
-    txt(g, x + 8, y + 14, clip(obj.label, 30), 'lbl');
-    txt(g, x + w - 7, y + 13.5, obj.kind || '', 'meta', 'end');
+    const lc = o.loc;
+    g.classList.add('loc-' + lc);
+    if (o.kind === 'planned') g.classList.add('planned');
+    el('rect', { class: 'box', width: w, height: h, rx: 4 }, g);
+    el('rect', { class: 'stripe', width: 5, height: h, rx: 2 }, g);
+    txt(g, 13, h / 2 + 4, o.label, 'lbl');
   }
   return g;
 }
 
+function renderLegend() {
+  const L = document.getElementById('legend');
+  const sw = (cls, extra) => `<svg width="30" height="10" aria-hidden="true"><path d="M1,5 L29,5" class="edge ${cls}" style="opacity:1" ${extra || ''}/></svg>`;
+  const st = MAP.statuses.map(s => `<span><i class="ld" style="background:${s.color}"></i>${escHtml(s.label)}</span>`).join('');
+  if (R.view === 'tools') {
+    const bb = MAP.stores.filter(s => s.backbone).map(s => `${escHtml(s.abbr)} = ${escHtml(s.label)}`).join(' · ');
+    L.innerHTML = `<span>${sw('lk')}opens</span><span>${sw('sh', 'stroke-width="3"')}share a list (thicker = more lists)</span>
+      <span><i class="lb w">P</i><i class="lb r">P</i> backbone list written / read — ${bb}</span>${st}`;
+  } else {
+    const locs = MAP.locations.filter(l => MAP.stores.some(s => s.loc === l.id)).map(l => `<span><i class="ls loc-${escHtml(l.id)}"></i>${escHtml(l.label)}</span>`).join('');
+    L.innerHTML = `<span>${sw('w')}writes</span><span>${sw('r')}reads</span><span>${sw('rw')}reads + writes</span><span>${sw('lk')}opens</span>${locs}`;
+  }
+}
+
 function applyFocus() {
-  const svg = document.querySelector('#canvas svg'); if (!svg) return;
-  const q = state.q;
-  let on = null;
-  if (state.sel) on = related(state.sel);
-  else if (state.loc) on = related(state.loc);
+  const svg = R.svg; if (!svg) return;
+  const q = state.q, f = state.sel || state.loc;
+  const on = f ? related(f) : null;
   let hits = null;
   if (q) { hits = new Set(); for (const o of [...MAP.tools, ...MAP.stores]) if (matches(o, q)) hits.add(o.id); }
   const active = on || hits;
   svg.classList.toggle('focus', !!active);
   svg.querySelectorAll('.node').forEach(n => {
     const id = n.getAttribute('data-id');
-    n.classList.toggle('on', !!active && (active.has(id) || (on && hits && hits.has(id))));
+    n.classList.toggle('on', !!active && active.has(id));
     n.classList.toggle('sel', id === state.sel);
     n.classList.toggle('hit', !!hits && hits.has(id) && id !== state.sel);
   });
+  svg.querySelectorAll('.hull, .grp-title').forEach(h => h.classList.toggle('on', !!f && h.getAttribute('data-gid') === f));
   svg.querySelectorAll('.edge').forEach(p => {
-    const a = p.getAttribute('data-a'), b = p.getAttribute('data-b');
+    const a = p.getAttribute('data-a'), b = p.getAttribute('data-b'), ss = (p.getAttribute('data-s') || '').split('|');
     let lit = false;
-    if (on) { const f = state.sel || state.loc; lit = (a === f || b === f) || (loc(f) && on.has(a) && on.has(b)); }
+    if (on) lit = a === f || b === f || ss.includes(f) || ((loc(f) || byId(MAP.groups, f)) && on.has(a) && on.has(b));
     else if (hits) lit = hits.has(a) || hits.has(b);
     p.classList.toggle('on', !!lit);
   });
 }
+
+// ── Zoom + pan ──
+function fitZoom() { const c = document.getElementById('canvas'); return Math.max(0.8, Math.min(1.15, (c.clientWidth - 24) / R.W)); }
+function applyZoom() {
+  if (!R.svg) return;
+  const z = state.zoom[R.view] || fitZoom();
+  R.svg.setAttribute('width', Math.round(R.W * z)); R.svg.setAttribute('height', Math.round(R.H * z));
+}
+state.zoom = { tools: null, full: null };
+const zoomBy = f => { state.zoom[R.view] = Math.max(0.35, Math.min(2.5, (state.zoom[R.view] || fitZoom()) * f)); applyZoom(); };
+document.getElementById('zIn').onclick = () => zoomBy(1.2);
+document.getElementById('zOut').onclick = () => zoomBy(1 / 1.2);
+document.getElementById('zFit').onclick = () => { const c = document.getElementById('canvas'); state.zoom[R.view] = Math.max(0.3, Math.min((c.clientWidth - 24) / R.W, (c.clientHeight - 40) / R.H, 1.15)); applyZoom(); };
+document.getElementById('canvas').addEventListener('wheel', e => { if (!(e.ctrlKey || e.metaKey)) return; e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); }, { passive: false });
+addEventListener('resize', () => { if (!state.zoom[R.view]) applyZoom(); });
+(() => {
+  const c = document.getElementById('canvas'); let pan = null;
+  c.addEventListener('pointerdown', e => {
+    if (e.target.closest('.node') || e.button !== 0) return;
+    pan = { x: e.clientX, y: e.clientY, l: c.scrollLeft, t: c.scrollTop, moved: false };
+  });
+  addEventListener('pointermove', e => {
+    if (!pan) return;
+    const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+    if (!pan.moved && Math.hypot(dx, dy) < 4) return;
+    pan.moved = true; c.classList.add('panning'); c.scrollLeft = pan.l - dx; c.scrollTop = pan.t - dy;
+  });
+  addEventListener('pointerup', () => { if (pan && pan.moved) { state.justDragged = true; setTimeout(() => state.justDragged = false, 0); } pan = null; c.classList.remove('panning'); });
+})();
+
+// ── Drag to rearrange (Edit mode) ──
+(() => {
+  let drag = null;
+  const pt = e => { const m = R.svg.getScreenCTM().inverse(); const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m); return [p.x, p.y]; };
+  document.getElementById('canvas').addEventListener('pointerdown', e => {
+    if (!state.editing) return;
+    const n = e.target.closest('.node[data-id]'); if (!n) return;
+    const id = n.getAttribute('data-id'), [x, y] = pt(e);
+    drag = { id, n, ox: x - R.pos[id][0], oy: y - R.pos[id][1], moved: false, sx: e.clientX, sy: e.clientY };
+    n.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  document.getElementById('canvas').addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 4) return;
+    drag.moved = true; TT.classList.remove('show');
+    const [x, y] = pt(e), { w, h } = R.sizes[drag.id];
+    R.pos[drag.id] = [x - drag.ox, y - drag.oy];
+    drag.n.setAttribute('transform', `translate(${R.pos[drag.id][0] - w / 2},${R.pos[drag.id][1] - h / 2})`);
+    updateEdges(); drawHulls(); applyFocus();
+  });
+  const end = () => {
+    if (!drag) return;
+    if (drag.moved) {
+      MAP.layout[R.view][drag.id] = R.pos[drag.id].map(Math.round);
+      state.justDragged = true; setTimeout(() => state.justDragged = false, 0); saveDraft(); render();
+    }
+    drag = null;
+  };
+  document.getElementById('canvas').addEventListener('pointerup', end);
+  document.getElementById('canvas').addEventListener('pointercancel', end);
+})();
 
 // ── Panel ─────────────────────────────────────────────────────
 function refChip(id) {
@@ -1957,6 +2263,7 @@ function renderPanel() {
       <h3>Reads</h3>${chips((t.reads || []).filter(r => !(t.writes || []).includes(r)))}
       <h3>Opens</h3>${t.links && t.links.length ? t.links.map(l => `<div>${refChip(l.to)}${l.note ? `<span class="muted" style="font-size:12px">${escHtml(l.note)}</span>` : ''}</div>`).join('') : '<span class="empty">none</span>'}
       <h3>Opened from</h3>${chips(inbound.map(l => l.from))}
+      <h3>Shares lists with</h3>${(() => { const sp = sharedPairs().filter(x => x.a === id || x.b === id); return sp.length ? sp.map(x => `<div>${refChip(x.a === id ? x.b : x.a)}<span class="muted" style="font-size:12px">${escHtml(x.stores.map(s => store(s).label).join(', '))}</span></div>`).join('') : '<span class="empty">none (beyond the backbone lists)</span>'; })()}
       ${t.notes ? `<h3>Notes</h3><p>${escHtml(t.notes)}</p>` : ''}`;
   } else if (s) {
     const lcn = loc(s.loc) || {};
@@ -1999,7 +2306,9 @@ function overview() {
     <div class="kicker">Blueprint</div>
     <h2>How CORE fits together</h2>
     <p>Every tool is a single HTML file served from GitHub Pages. None of them hold data — they read and write SharePoint lists through Microsoft Graph, signed in with MSAL.</p>
-    <p>Click a tool to trace which lists it reads and writes and which tools it opens. Click a list to see every tool that touches it. Click a site header to light up everything housed there.</p>
+    <p><b>Tools</b> view shows how the tools connect to each other: an arrow where one tool opens another, a grey line where two tools share a list (one writes, the other reads or writes). The three backbone lists nearly every tool touches — Projects, Team Members, Config — are shown as the P · T · C badges instead of lines.</p>
+    <p><b>Tools + data</b> view places every list, file and outside service beside the tools that use it. The colour stripe says which SharePoint site houses it.</p>
+    <p>Click a tool or list to trace it, a region label to light up that area, or a Location chip to see everything housed on one site.</p>
     <div class="stat-row">
       <div class="stat"><b>${MAP.tools.filter(t => t.status !== 'missing').length}</b><span>Tools</span></div>
       <div class="stat"><b>${MAP.stores.filter(s => s.kind === 'list').length}</b><span>Lists</span></div>
@@ -2117,18 +2426,22 @@ function select(id) {
 }
 
 document.getElementById('canvas').addEventListener('click', e => {
+  if (state.justDragged) { state.justDragged = false; return; }
   const n = e.target.closest('.node');
   if (n) { const id = n.getAttribute('data-id'); select(state.sel === id && !state.editing ? null : id); return; }
   const gt = e.target.closest('[data-gid]');
-  if (gt) { state.sel = null; state.loc = gt.getAttribute('data-gid'); applyFocus(); renderPanel(); return; }
+  if (gt) { const g = gt.getAttribute('data-gid'); state.sel = null; state.loc = state.loc === g ? null : g; applyFocus(); renderPanel(); return; }
   if (state.sel) select(null);
 });
 document.getElementById('q').addEventListener('input', e => { state.q = e.target.value.trim().toLowerCase(); applyFocus(); });
-function layerToggle(btnId) {
-  const b = document.getElementById(btnId);
-  b.addEventListener('click', () => { b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); render(); });
+function setView(v) {
+  state.view = v; lsSet('core_sysmap_view', v);
+  document.getElementById('viewTools').setAttribute('aria-pressed', String(v === 'tools'));
+  document.getElementById('viewFull').setAttribute('aria-pressed', String(v === 'full'));
+  render();
 }
-layerToggle('layerData'); layerToggle('layerLinks');
+document.getElementById('viewTools').onclick = () => setView('tools');
+document.getElementById('viewFull').onclick = () => setView('full');
 
 function buildLocFilter() {
   const w = document.getElementById('locFilter');
@@ -2214,7 +2527,8 @@ document.addEventListener('mousemove', e => { if (TT.classList.contains('show'))
 document.addEventListener('mouseout', e => { const t = e.target.closest && e.target.closest('[data-tip]'); if (t && !(t.contains(e.relatedTarget))) TT.classList.remove('show'); });
 document.querySelectorAll('button[data-tip]:not([aria-label])').forEach(b => b.setAttribute('aria-label', b.getAttribute('data-tip')));
 
-buildLocFilter(); render(); renderPanel();
+buildLocFilter(); setView(state.view); renderPanel();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { for (const k in _mw) delete _mw[k]; render(); });
 </script>
 </body>
 </html>
