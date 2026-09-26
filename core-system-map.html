@@ -97,6 +97,9 @@ aside.panel { border-left:1px solid var(--line); background:var(--surface); padd
 svg text { font-family:'TT Norms Pro', system-ui, sans-serif; fill:var(--ink); }
 .grp-title { font-size:13px; font-weight:700; fill:var(--ink-2); letter-spacing:.02em; cursor:pointer; }
 .hull { fill:var(--hull); stroke:var(--hull); stroke-width:34; stroke-linejoin:round; cursor:pointer; }
+.hull.box { stroke-width:1; stroke:var(--line); }
+.grp-title.bare { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; fill:var(--ink-3); }
+.grp-title.on { fill:var(--accent); }
 .hull.gaps { fill:var(--hull-gap); stroke:var(--hull-gap); }
 .hull.on { fill:var(--hull-on); stroke:var(--hull-on); }
 .node { cursor:pointer; }
@@ -206,6 +209,12 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
     <button class="chip" id="viewTools" aria-pressed="true" data-tip="Tools only" data-tip-d="How the tools connect: which opens which, and which share a list">Tools</button>
     <button class="chip" id="viewFull" aria-pressed="false" data-tip="Tools + data" data-tip-d="Every list, file and service, placed beside the tools that use it and coloured by the site that houses it">Tools + data</button>
   </div>
+  <div class="seg" role="group" aria-label="Region style" id="regionSeg">
+    <span class="seg-label">Regions</span>
+    <button class="chip" data-region="labels" data-tip="Label only" data-tip-d="Just the area name above each cluster">Labels</button>
+    <button class="chip" data-region="boxes" data-tip="Boxes" data-tip-d="A plain box around each area">Boxes</button>
+    <button class="chip" data-region="shapes" data-tip="Shapes" data-tip-d="A shape that hugs each area">Shapes</button>
+  </div>
   <div class="seg" role="group" aria-label="Location filter" id="locFilter">
     <span class="seg-label">Location</span>
   </div>
@@ -214,6 +223,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
   <button class="btn" id="editBtn" aria-pressed="false" data-tip="Edit mode" data-tip-d="Click any tool or list to edit it. Edits save as a draft in this browser until exported.">Edit</button>
   <button class="btn edit-only" id="addToolBtn">+ Tool</button>
   <button class="btn edit-only" id="addStoreBtn">+ List / store</button>
+  <button class="btn edit-only" id="addGroupBtn" data-tip="Add a region" data-tip-d="Then assign tools to it from the region's form or each tool's Region field">+ Region</button>
   <button class="btn edit-only" id="jsonBtn" data-tip="View, copy or paste the raw map data (JSON)">Data JSON</button>
   <button class="btn edit-only primary" id="exportBtn" data-tip="Download core-system-map.html with your edits baked in" data-tip-d="Commit the downloaded file to the repo to publish it.">Export HTML</button>
   <button class="btn edit-only danger" id="revertBtn" data-tip="Discard draft edits and reload the published map">Revert</button>
@@ -1424,7 +1434,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "file": "core-system-map.html",
    "group": "admin",
    "status": "reference",
-   "version": "v2",
+   "version": "v3",
    "purpose": "This map — tools, the lists behind them, and where each lives.",
    "functions": [
     "Tools view: how tools connect to each other",
@@ -1465,6 +1475,9 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
    "libs": []
   }
  ],
+ "settings": {
+  "regions": "labels"
+ },
  "layout": {
   "tools": {
    "project-pipeline": [
@@ -1878,7 +1891,7 @@ dialog textarea { width:100%; min-height:50vh; font:12px/1.4 ui-monospace, Menlo
 // Captured before anything touches the DOM — Export HTML rewrites this with new data.
 const PRISTINE = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 
-const CORE_VERSION = 'v2';
+const CORE_VERSION = 'v3';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
 
 const PAGES_BASE = 'https://bellweatherllc.github.io/tools/';
@@ -2036,12 +2049,15 @@ function drawHulls() {
     const ids = groupMembers(grp).filter(id => R.pos[id]); if (!ids.length) continue;
     const pts = [];
     for (const id of ids) { const [x, y] = R.pos[id], { w, h } = R.sizes[id]; pts.push([x - w / 2, y - h / 2], [x + w / 2, y - h / 2], [x - w / 2, y + h / 2], [x + w / 2, y + h / 2]); }
-    const hp = hull(pts);
-    el('path', { d: 'M' + hp.map(p => p.join(',')).join(' L') + ' Z', class: 'hull' + (grp.id === 'gaps' ? ' gaps' : ''), 'data-gid': grp.id }, g);
-    const top = Math.min(...pts.map(p => p[1])), cx = (Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2;
-    const t = txt(g, cx, top - 16, grp.label, 'grp-title', 'middle'); t.setAttribute('data-gid', grp.id);
+    const mode = regionMode(), cls = 'hull' + (grp.id === 'gaps' ? ' gaps' : '');
+    const x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0])), top = Math.min(...pts.map(p => p[1])), bot = Math.max(...pts.map(p => p[1]));
+    if (mode === 'shapes') { const hp = hull(pts); el('path', { d: 'M' + hp.map(p => p.join(',')).join(' L') + ' Z', class: cls, 'data-gid': grp.id }, g); }
+    else if (mode === 'boxes') el('rect', { x: x0 - 14, y: top - 12, width: x1 - x0 + 28, height: bot - top + 24, rx: 12, class: cls + ' box', 'data-gid': grp.id }, g);
+    const t = txt(g, mode === 'labels' ? x0 : (x0 + x1) / 2, top - (mode === 'labels' ? 9 : 18), grp.label, 'grp-title' + (mode === 'labels' ? ' bare' : ''), mode === 'labels' ? null : 'middle');
+    t.setAttribute('data-gid', grp.id);
   }
 }
+function regionMode() { return state.regions || (MAP.settings && MAP.settings.regions) || 'labels'; }
 function updateEdges() { for (const e of R.edges) e.el.setAttribute('d', edgePath(e.a, e.b, e.bend)); }
 
 function render() {
@@ -2283,6 +2299,11 @@ function renderPanel() {
       <h3>Written by</h3>${chips(writers)}
       <h3>Read by</h3>${chips(readers)}
       ${s.notes ? `<h3>Notes</h3><p>${escHtml(s.notes)}</p>` : ''}`;
+  } else if (byId(MAP.groups, id)) {
+    const gr = byId(MAP.groups, id);
+    p.innerHTML = `<div class="kicker">Region</div><h2>${escHtml(gr.label)}</h2>
+      ${gr.desc ? `<p>${escHtml(gr.desc)}</p>` : ''}
+      <h3>Tools</h3>${chips(MAP.tools.filter(t => t.group === id).map(t => t.id))}`;
   } else if (lc) {
     const ss = MAP.stores.filter(x => x.loc === id);
     p.innerHTML = `
@@ -2319,7 +2340,7 @@ function overview() {
     ${gaps.length ? `<h3>Linked but missing</h3><ul class="gap-list">${gaps.map(t => `<li>${refChip(t.id)}<br><span class="muted" style="font-size:12px">${escHtml(t.notes || '')}</span></li>`).join('')}</ul>` : ''}
     ${orphans.length ? `<h3>Stores no tool touches yet</h3>${chips(orphans.map(s => s.id))}` : ''}
     <h3>Editing this map</h3>
-    <p class="muted" style="font-size:12.5px">Turn on <b>Edit</b>, click anything to change it, or add tools and lists. Edits stay as a draft in this browser. <b>Export HTML</b> downloads a new <code>core-system-map.html</code> with the edits baked in — commit that to the repo to publish. Or edit the <code>map-data</code> JSON block in the file directly.</p>
+    <p class="muted" style="font-size:12.5px">Turn on <b>Edit</b>, click anything to change it, drag boxes to rearrange, or add tools, lists and regions. Click a region label in Edit mode to rename it, change which tools it holds, or delete it. The <b>Regions</b> buttons switch between labels, boxes and shapes — in Edit mode that choice becomes the published default. Edits stay as a draft in this browser. <b>Export HTML</b> downloads a new <code>core-system-map.html</code> with the edits baked in — commit that to the repo to publish. Or edit the <code>map-data</code> JSON block in the file directly.</p>
   </div>`;
 }
 
@@ -2346,7 +2367,7 @@ function editForm(id) {
       <div class="kicker">Editing tool</div><h2>${escHtml(t.label)}</h2>
       <label>Name</label><input name="label" value="${escHtml(t.label)}">
       <label>File</label><input name="file" value="${escHtml(t.file)}"><div class="hint">Path under bellweatherllc.github.io/tools/</div>
-      <label>Group</label><select name="group">${opt(MAP.groups, t.group)}</select>
+      <label>Region</label><select name="group"><option value="">(none)</option>${opt(MAP.groups, t.group)}</select>
       <label>Status</label><select name="status">${opt(MAP.statuses, t.status)}</select>
       <label>Version</label><input name="version" value="${escHtml(t.version || '')}">
       <label>What it does</label><textarea name="purpose">${escHtml(t.purpose || '')}</textarea>
@@ -2370,6 +2391,17 @@ function editForm(id) {
       <label>Key fields</label><textarea name="fields">${escHtml(s.fields || '')}</textarea>
       <label>Notes</label><textarea name="notes">${escHtml(s.notes || '')}</textarea>
       <div class="form-actions"><button class="btn primary" data-act="save">Save</button><button class="btn" data-act="cancel">Done</button><span class="spacer"></span><button class="btn danger" data-act="del">Delete store</button></div>
+    </div>`;
+  const gr = byId(MAP.groups, id);
+  if (gr) return `<div class="form" data-kind="group" data-id="${escHtml(id)}">
+      <div class="kicker">Editing region</div><h2>${escHtml(gr.label)}</h2>
+      <label>Name</label><input name="label" value="${escHtml(gr.label)}">
+      <label>Description</label><input name="desc" value="${escHtml(gr.desc || '')}">
+      <label>Tools in this region</label>
+      <table class="rw-table">${MAP.tools.slice().sort((a, b) => a.label.localeCompare(b.label)).map(t => `<tr><td>${escHtml(t.label)} <small class="muted">${escHtml(t.group === id ? '' : ((byId(MAP.groups, t.group) || {}).label || 'no region'))}</small></td>
+        <td class="c"><input type="checkbox" data-g="${escHtml(t.id)}" aria-label="${escHtml(t.label)} in ${escHtml(gr.label)}"${t.group === id ? ' checked' : ''}></td></tr>`).join('')}</table>
+      <div class="hint">Ticking a tool moves it here from its current region. Unticking leaves it with no region.</div>
+      <div class="form-actions"><button class="btn primary" data-act="save">Save</button><button class="btn" data-act="cancel">Done</button><span class="spacer"></span><button class="btn danger" data-act="del">Delete region</button></div>
     </div>`;
   if (lc) return `<div class="form" data-kind="loc" data-id="${escHtml(id)}">
       <div class="kicker">Editing location</div><h2>${escHtml(lc.label)}</h2>
@@ -2396,6 +2428,9 @@ function wireForm() {
       t.libs = val('libs').split(',').map(x => x.trim()).filter(Boolean);
     } else if (kind === 'store') {
       Object.assign(store(id), { label: val('label'), loc: val('loc'), kind: val('kind'), desc: val('desc'), fields: val('fields'), notes: val('notes') });
+    } else if (kind === 'group') {
+      Object.assign(byId(MAP.groups, id), { label: val('label') || id, desc: val('desc') });
+      f.querySelectorAll('[data-g]').forEach(c => { const t = tool(c.dataset.g); if (c.checked) t.group = id; else if (t.group === id) t.group = ''; });
     } else {
       Object.assign(loc(id), { label: val('label'), access: val('access'), path: val('path'), holds: val('holds') });
     }
@@ -2405,12 +2440,13 @@ function wireForm() {
   const del = f.querySelector('[data-act="del"]');
   if (del) del.onclick = () => {
     if (!confirm('Delete this from the map? (Draft only — nothing in SharePoint changes.)')) return;
-    if (kind === 'tool') { MAP.tools = MAP.tools.filter(x => x.id !== id); MAP.tools.forEach(x => x.links = (x.links || []).filter(l => l.to !== id)); }
+    if (kind === 'group') { MAP.groups = MAP.groups.filter(g => g.id !== id); MAP.tools.forEach(t => { if (t.group === id) t.group = ''; }); }
+    else if (kind === 'tool') { MAP.tools = MAP.tools.filter(x => x.id !== id); MAP.tools.forEach(x => x.links = (x.links || []).filter(l => l.to !== id)); }
     else { MAP.stores = MAP.stores.filter(x => x.id !== id); MAP.tools.forEach(x => { x.reads = (x.reads || []).filter(r => r !== id); x.writes = (x.writes || []).filter(r => r !== id); }); }
     state.sel = null; saveDraft(); render(); renderPanel();
   };
 }
-function newId(base) { let id = base, n = 2; while (tool(id) || store(id) || loc(id)) id = base + '-' + n++; return id; }
+function newId(base) { let id = base, n = 2; while (tool(id) || store(id) || loc(id) || byId(MAP.groups, id)) id = base + '-' + n++; return id; }
 function setEditing(on) {
   state.editing = on;
   document.body.classList.toggle('editing', on);
@@ -2430,6 +2466,7 @@ document.getElementById('canvas').addEventListener('click', e => {
   const n = e.target.closest('.node');
   if (n) { const id = n.getAttribute('data-id'); select(state.sel === id && !state.editing ? null : id); return; }
   const gt = e.target.closest('[data-gid]');
+  if (gt && state.editing) { select(gt.getAttribute('data-gid')); return; }
   if (gt) { const g = gt.getAttribute('data-gid'); state.sel = null; state.loc = state.loc === g ? null : g; applyFocus(); renderPanel(); return; }
   if (state.sel) select(null);
 });
@@ -2441,6 +2478,19 @@ function setView(v) {
   render();
 }
 document.getElementById('viewTools').onclick = () => setView('tools');
+function syncRegionSeg() { document.querySelectorAll('#regionSeg [data-region]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.region === regionMode()))); }
+try { const r = localStorage.getItem('core_sysmap_regions'); if (r) state.regions = r; } catch (e) {}
+document.querySelectorAll('#regionSeg [data-region]').forEach(b => b.onclick = () => {
+  const m = b.dataset.region;
+  if (state.editing) { MAP.settings = Object.assign({}, MAP.settings, { regions: m }); state.regions = null; lsDel('core_sysmap_regions'); saveDraft(); toast('Region style saved to draft — it becomes the default when exported'); }
+  else { state.regions = m; lsSet('core_sysmap_regions', m); }
+  syncRegionSeg(); render();
+});
+syncRegionSeg();
+document.getElementById('addGroupBtn').onclick = () => {
+  const id = newId('region'); MAP.groups.push({ id, label: 'New region', desc: '' });
+  saveDraft(); render(); select(id);
+};
 document.getElementById('viewFull').onclick = () => setView('full');
 
 function buildLocFilter() {
