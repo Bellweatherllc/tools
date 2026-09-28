@@ -34,7 +34,7 @@ Last updated: 2026-09-28
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v22 |
-| Core Roadmap | `core_roadmap.html` | v0.56 |
+| Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v3 |
 | CORE System Map | `core-system-map.html` | v10 |
@@ -66,6 +66,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-09-28** — Core Roadmap v57: moved from decimal versions (v0.56) to whole numbers; the build count carries on.
 - **2026-09-28** — All version badges set to red `#ef4444`; every tool above bumped one version. New badges on People Analyzer (v1) and Sherpa Lookup Tester (v1). Revenue Tracker's tab title no longer carries the version. Permit & Zoning Tracker, Core Roadmap and FBA Matrix badges no longer show a stale hard-coded number before the script stamps them.
 - **2026-09-28** — `versions.md` started.
 - **2026-09-28** — BW Tool Index v2: added Finance (Revenue Tracker, WIP Tracker), PM Workbook & Budget, and Permits sections; added Scout Board, Project Hours Analyzer, FBA Matrix and the five manuals; removed the dead `fba_tool_JW` tile.
