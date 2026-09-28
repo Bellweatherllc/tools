@@ -26,6 +26,7 @@ Three SharePoint locations — don't confuse them:
 ## Delivery discipline — follow every time
 
 - **Bump the version on every delivery.** Whole number.
+- **Version badges are always red — `#ef4444`, the Pipeline's badge red.** Every badge, including sign-in-screen badges and new tools. Don't let a tool's own palette override it.
 - **The version lives in the badge, never the filename.** In the pipeline it's a single `CORE_VERSION` constant; badge elements in the markup are empty and stamped by an IIFE right after the constant, so there's no stale flash.
 - **Run `node --check` on the extracted script block before delivering.** Every time.
 - **Use single-occurrence-assert string replacement for edits** — fail loudly rather than silently editing the wrong match.

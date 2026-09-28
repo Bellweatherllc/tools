@@ -2,7 +2,7 @@
 
 Current version of every deployed file in this repo. Update the row whenever a delivery bumps a version, and add a line to the log below.
 
-Versions are whole numbers. The version lives in the file's badge, never in the filename. `—` means the file has no version badge yet.
+Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
 Last updated: 2026-09-28
 
@@ -11,38 +11,38 @@ Last updated: 2026-09-28
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1133 |
-| Projects Manager | `core-projects-manager.html` | v60 (`MGR_VERSION`) |
-| Project Basis | `project-basis.html` | v22 |
-| Scout Board | `scout-board.html` | v12 |
+| Project Pipeline | `project-pipeline.html` | v1134 |
+| Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
+| Project Basis | `project-basis.html` | v23 |
+| Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
-| PM Workbook | `pm-workbook.html` | v81 |
-| PM Budget Planner | `pm-budget-planner.html` | v65 |
+| PM Workbook | `pm-workbook.html` | v82 |
+| PM Budget Planner | `pm-budget-planner.html` | v66 |
 | **Finance** | | |
-| Revenue Tracker | `revenue-tracker.html` | v10 |
-| WIP Tracker | `wip-tracker.html` | v29 |
+| Revenue Tracker | `revenue-tracker.html` | v11 |
+| WIP Tracker | `wip-tracker.html` | v30 |
 | **Permits** | | |
-| Permit & Zoning Tracker | `permit-zoning-tracker.html` | v90 |
+| Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
-| Project Hours Analyzer | `project-hours-analyzer.html` | v56 |
-| People Analyzer | `people-analyzer.html` | — |
+| Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
+| People Analyzer | `people-analyzer.html` | v1 |
 | **Process** | | |
-| CP Process Scoring | `cp-process-scoring.html` | v5 |
-| FBA Matrix | `fba-matrix.html` | v1 |
+| CP Process Scoring | `cp-process-scoring.html` | v6 |
+| FBA Matrix | `fba-matrix.html` | v4 |
 | **SharePoint & Admin** | | |
-| SharePoint Sherpa | `sharepoint-sherpa.html` | v12 |
-| Sherpa Lookup Tester | `sherpa-lookup-tester.html` | — |
-| Core Admin | `core-admin.html` | v5 |
-| Team Members | `team-members.html` | v21 |
-| Core Roadmap | `core_roadmap.html` | v0.55 |
+| SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
+| Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
+| Core Admin | `core-admin.html` | v6 |
+| Team Members | `team-members.html` | v22 |
+| Core Roadmap | `core_roadmap.html` | v0.56 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v2 |
-| CORE System Map | `core-system-map.html` | v9 |
-| Brand Style Guide | `bellweather-style-guide.html` | v11 |
+| BW Tool Index | `bw-tool-index.html` | v3 |
+| CORE System Map | `core-system-map.html` | v10 |
+| Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
 
-Each HTML manual is built from the `.md` file of the same name. Neither has a version badge.
+Each HTML manual is built from the `.md` file of the same name. The manuals have no version badge.
 
 | Manual | Files |
 |---|---|
@@ -66,6 +66,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-09-28** — All version badges set to red `#ef4444`; every tool above bumped one version. New badges on People Analyzer (v1) and Sherpa Lookup Tester (v1). Revenue Tracker's tab title no longer carries the version. Permit & Zoning Tracker, Core Roadmap and FBA Matrix badges no longer show a stale hard-coded number before the script stamps them.
 - **2026-09-28** — `versions.md` started.
 - **2026-09-28** — BW Tool Index v2: added Finance (Revenue Tracker, WIP Tracker), PM Workbook & Budget, and Permits sections; added Scout Board, Project Hours Analyzer, FBA Matrix and the five manuals; removed the dead `fba_tool_JW` tile.
 - **2026-09-28** — CORE System Map v9: Tool Index entry updated; `fba_tool_JW` gap node removed.
