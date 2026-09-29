@@ -2919,7 +2919,18 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
 .ops-h .ops-rule{flex:1;height:1px;background:#e4dac4;}
 .ops-card{background:#fff;border:1px solid #e4dac4;border-radius:6px;overflow:hidden;}
 /* v992: labels sit outside the white card; the card is the four week columns only; gold divider runs past the frame */
-.ops-tablecard{padding:14px 0;position:relative;}
+.ops-tablecard{padding:14px 0;position:relative;display:flex;align-items:flex-start;gap:16px;}
+.ops-ar-reveal{width:300px;flex-shrink:0;margin-top:14px;}
+.ops-ar-reveal-empty{font-size:11px;color:#a3a3a3;line-height:1.5;padding:16px;border:1px dashed #e4dac4;border-radius:8px;text-align:center;}
+.ops-ar-reveal-bubble{position:relative;background:#fff;border:1px solid #e4dac4;border-radius:10px;box-shadow:0 4px 14px rgba(31,46,62,.08);padding:12px 14px;}
+.ops-ar-reveal-bubble::before{content:'';position:absolute;left:-9px;top:var(--tail-top,20px);width:16px;height:16px;background:#fff;border-left:1px solid #e4dac4;border-bottom:1px solid #e4dac4;transform:translateY(-50%) rotate(45deg);}
+.ops-ar-reveal-hd{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:700;color:#1f2e3e;text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #f0ece2;}
+.ops-ar-reveal-close{background:none;border:none;color:#a3a3a3;font-size:16px;cursor:pointer;line-height:1;padding:0 2px;}
+.ops-ar-reveal-close:hover{color:#1f2e3e;}
+.ops-ar-reveal-body{max-height:340px;overflow:auto;}
+.ops-ar-reveal-body .ops-inv{padding:8px 0;}
+.ops-ar-reveal-total{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#1f2e3e;padding-top:8px;margin-top:4px;border-top:1px solid #f0ece2;}
+.ops-table td.ops-ar-active{outline:2px solid #d8b64f;outline-offset:-2px;position:relative;z-index:1;}
 table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums;}
 .ops-table th,.ops-table td{padding:11px 16px;text-align:right;font-size:15px;font-weight:700;background:#fff;border-bottom:1px solid #f0ece2;width:150px;min-width:150px;white-space:nowrap;} /* v1097: 2pt smaller + nowrap so the minus stays with the figure */
 .ops-table th.rl,.ops-table td.rl{text-align:right;width:190px;min-width:190px;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#7a7a7a;background:transparent;border:none;padding-left:0;padding-right:16px;}
@@ -3481,7 +3492,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1135';
+const CORE_VERSION = 'v1136';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -16747,6 +16758,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1136', date: '2026-09-29',
+    entries:['OPS Cash Flow: the cash table now shows two weeks instead of four (the "projected" weeks three and four are dropped from the table itself — they still exist in Scenarios and the invoice lists below). The freed space is now a click-to-reveal panel: click AR Expected for either week to see the outstanding invoices behind that number, shown as a speech-bubble pointing at the row that’s open.'],
+  },
+  {
     version: 'v1135', date: '2026-09-29',
     entries:['OPS Cash Flow: added a "How the numbers work" FAQ under Data Sources, answering the questions that came up prepping for the Patti/Melissa walkthrough — why Payroll and Payables repeat the same figure every week, why a BuilderTrend-paid invoice can still show as expected, why the AR Expected total and the outstanding-invoices list below it don’t always match, who reviews the design invoice schedule, and how the bank balance actually gets in (there’s no manual field — it’s the newest QuickBooks weekly drop, read automatically).'],
   },
@@ -20115,6 +20130,12 @@ function dlOpenPanel(review,stats,scan,fill){
 // CORE-planned design payment has no matching BT Pending/Sent row. Scenarios shared via CORE_Config.
 // Gated by OpsRole on CORE_TeamMembers.
 let CURRENT_USER_OPS_ROLE='';
+// v1136: cash table shows this many weeks — was a hardcoded 4 throughout. Shrunk to 2 on
+// request; the freed table width is reused by the AR reveal panel (see opsShowArReveal).
+// Scenarios/invoices for weeks beyond this still exist and still show in the card lists
+// below the table — only the top cash table itself got narrower.
+const OPS_VISIBLE_WEEKS=2;
+let _arRevealWk=null; // which visible week's AR detail is currently shown in the reveal panel, or null
 let OPS_SCENARIOS=[]; let _opsScenarioRowId=null;
 function opsWho(){ try{ const a=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]; return (a&&(a.name||a.username))||''; }catch(_){ return ''; } }
 // Scenarios persist in CORE_Config (row key ops_scenarios), shared by everyone with the OPS role. Last write wins — it's a short list of maybes, not a ledger.
@@ -20480,6 +20501,72 @@ async function arLoad(){
 // v1075: fetch the newest AR Two-Week Report and fill the AR Expected row and
 // the "outstanding" invoice list. Runs after the render settles, same as qbApply.
 let _arBusy=false;
+// One outstanding-invoice row, shared by the bottom "invoices outstanding" list and the
+// AR reveal panel (v1136) so both ever show the exact same formatting for the same data.
+function opsBtInvRowHtml(x,extra){
+  const fmtDate=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
+  const fmtDateLong=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'date TBD';
+  return '<div class="ops-inv'+(extra||'')+'"><span class="ops-inv-date">'+fmtDate(x.deadline)+'</span>'
+    +'<span class="ops-inv-src construction">Outstanding</span>'
+    +'<span class="ops-inv-desc"><b>'+escH((x.ownerName||x.job||'').toUpperCase())+'</b>'
+    +(x.job?' <span style="color:#a3a3a3;font-size:10px;">'+escH(x.job)+'</span>':'')
+    +', '+fmtDateLong(x.deadline)+' <small>'+escH(x.title)+'</small></span>'
+    +'<span class="ops-inv-amt">'+opsMoney(x.balance)+'</span></div>';
+}
+// ── v1136: AR reveal panel — click AR Expected for a visible week to see the invoices
+// behind that figure, in the space freed by shrinking the cash table to OPS_VISIBLE_WEEKS.
+function opsArRevealHtml(wk){
+  const W=opsWeeks();
+  const wkOf=d=>{ if(!d) return -1; for(let i=0;i<4;i++) if(d>=W[i].start&&d<=W[i].end) return i; return d>W[3].end?4:-2; };
+  const wLabel=W[wk]?W[wk].sub:'';
+  let html='<div class="ops-ar-reveal-hd"><span>AR Expected — '+escH(wLabel)+'</span>'
+    +'<button type="button" class="ops-ar-reveal-close" id="opsArRevealClose" aria-label="Close">×</button></div>';
+  if(AR_DATA&&AR_DATA.invoices){
+    const items=AR_DATA.invoices.filter(x=>wkOf(x.deadline)===wk).sort((a,b)=>a.deadline-b.deadline);
+    if(items.length){
+      html+='<div class="ops-ar-reveal-body">'+items.map(x=>opsBtInvRowHtml(x)).join('')+'</div>';
+      const total=items.reduce((s,x)=>s+x.balance,0);
+      html+='<div class="ops-ar-reveal-total"><span>'+items.length+' invoice'+(items.length===1?'':'s')+'</span><span>'+opsMoney(total)+'</span></div>';
+    } else {
+      html+='<div class="ops-empty">No Pending/Sent invoices due this week per the AR report.</div>';
+    }
+  } else {
+    html+='<div class="ops-empty">AR Two-Week Report not loaded yet.</div>';
+  }
+  return html;
+}
+function opsShowArReveal(root,wk){
+  const panel=root&&root.querySelector('#opsArReveal'); if(!panel) return;
+  _arRevealWk=wk;
+  panel.innerHTML='<div class="ops-ar-reveal-bubble">'+opsArRevealHtml(wk)+'</div>';
+  root.querySelectorAll('[data-ops-row="ar"]').forEach(td=>td.classList.toggle('ops-ar-active',parseInt(td.dataset.opsWk,10)===wk));
+  // Tail points at the AR row's vertical center so the connection reads at a glance
+  // regardless of which visible week (and therefore which column) triggered it.
+  const bubble=panel.querySelector('.ops-ar-reveal-bubble');
+  const card=root.querySelector('.ops-tablecard');
+  const arRow=root.querySelector('[data-ops-row="ar"]')?.closest('tr');
+  if(bubble&&card&&arRow){
+    const cardRect=card.getBoundingClientRect(), rowRect=arRow.getBoundingClientRect();
+    bubble.style.setProperty('--tail-top',(rowRect.top-cardRect.top+rowRect.height/2)+'px');
+  }
+}
+function opsCloseArReveal(root){
+  _arRevealWk=null;
+  const panel=root&&root.querySelector('#opsArReveal'); if(!panel) return;
+  panel.innerHTML='<div class="ops-ar-reveal-empty">Click AR Expected for '+opsWeeks().slice(0,OPS_VISIBLE_WEEKS).map(w=>w.lab).join(' or ')+' to see the invoices behind that figure.</div>';
+  root.querySelectorAll('[data-ops-row="ar"]').forEach(td=>td.classList.remove('ops-ar-active'));
+}
+// Dismiss on outside click or Escape — defined once here (not inside opsRenderInto, which
+// reruns on every render) so this listener never stacks duplicates.
+document.addEventListener('click',e=>{
+  if(_arRevealWk==null) return;
+  if(e.target.closest('#opsArRevealClose')){ const root=document.querySelector('.ops-root'); if(root) opsCloseArReveal(root); return; }
+  if(e.target.closest('#opsArReveal')||e.target.closest('[data-ops-row="ar"]')) return;
+  const root=document.querySelector('.ops-root'); if(root) opsCloseArReveal(root);
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&_arRevealWk!=null){ const root=document.querySelector('.ops-root'); if(root) opsCloseArReveal(root); }
+});
 async function arApply(root){
   if(_arBusy) return; _arBusy=true;
   const W=opsWeeks();
@@ -20544,14 +20631,7 @@ async function arApply(root){
       const inWin=d.invoices.filter(x=>x.deadline&&wkOf(x.deadline)>=0&&wkOf(x.deadline)<4).sort((a,b)=>a.deadline-b.deadline);
       const undated=d.invoices.filter(x=>!x.deadline);
       const acc=inWin.filter(x=>wkOf(x.deadline)<2), prj=inWin.filter(x=>wkOf(x.deadline)>=2);
-      const fmtDate=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
-      const fmtDateLong=d=>d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'date TBD';
-      const btRow=(x,extra)=>'<div class="ops-inv'+(extra||'')+'"><span class="ops-inv-date">'+fmtDate(x.deadline)+'</span>'
-        +'<span class="ops-inv-src construction">Outstanding</span>'
-        +'<span class="ops-inv-desc"><b>'+escH((x.ownerName||x.job||'').toUpperCase())+'</b>'
-        +(x.job?' <span style="color:#a3a3a3;font-size:10px;">'+escH(x.job)+'</span>':'')
-        +', '+fmtDateLong(x.deadline)+' <small>'+escH(x.title)+'</small></span>'
-        +'<span class="ops-inv-amt">'+opsMoney(x.balance)+'</span></div>';
+      const btRow=opsBtInvRowHtml;
       let html='<div class="ops-group zone-acc">Now · two weeks · '+W[0].lab+' – '+W[1].sub.split(' – ')[1]+'</div>'+(acc.length?acc.map((x,i)=>btRow(x,' zone-acc'+(i===acc.length-1?' zone-acc-last':''))).join(''):'<div class="ops-empty zone-acc-last">Nothing outstanding in this window.</div>');
       html+='<div class="ops-group zone-proj">Projected · weeks three and four · '+W[2].lab+' – '+W[3].sub.split(' – ')[1]+'</div>'+(prj.length?prj.map(x=>btRow(x,' zone-proj')).join(''):'<div class="ops-empty">Nothing outstanding in this window.</div>');
       if(beyond.length) html+='<div class="ops-group zone-beyond">Beyond four weeks</div>'+beyond.map(x=>btRow(x,' zone-beyond')).join('');
@@ -20559,6 +20639,7 @@ async function arApply(root){
       btDiv.innerHTML=html;
     }
     note((d.file||'file')+' · '+d.invoices.length+' outstanding');
+    if(_arRevealWk!=null) opsShowArReveal(root,_arRevealWk); // v1136: refresh the reveal panel if it's open
     console.log('[ops] AR Two-Week Report:',d.file,'invoices:',d.invoices.length,'ar totals:',ar);
     // v1084: mark design schedule invoice rows with "Not sent" badge where CORE has
     // a planned invoice but BT has no matching Pending/Sent entry for that project+amount.
@@ -20620,21 +20701,21 @@ function opsRenderInto(root){
   const wkOf=d=>{ if(!d) return -1; for(let i=0;i<4;i++) if(d>=W[i].start&&d<=W[i].end) return i; return d>W[3].end?4:-2; };
   const ar=[0,0,0,0]; inv.forEach(x=>{ const k=wkOf(x.date); if(k>=0&&k<4&&x.amount!=null) ar[k]+=x.amount; });
   const cls=i=>(i<2?'znow':'zproj')+(i===0?' znow-l':'')+(i===1?' znow-r':'');
-  let thead='<tr><th class="rl"></th>'; W.forEach((w,i)=>{ thead+='<th class="'+cls(i)+'"><span class="ops-wk-lab">'+w.lab+'</span><span class="ops-wk-sub">'+w.sub+'</span></th>'; });
+  let thead='<tr><th class="rl"></th>'; W.slice(0,OPS_VISIBLE_WEEKS).forEach((w,i)=>{ thead+='<th class="'+cls(i)+'"><span class="ops-wk-lab">'+w.lab+'</span><span class="ops-wk-sub">'+w.sub+'</span></th>'; });
   thead+='</tr>';
-  const rowNo=(label,src,rk)=>{ let r='<tr><td class="rl">'+label+'<span class="ops-src">'+src+'</span></td>'; for(let i=0;i<4;i++) r+='<td class="'+cls(i)+' nodata"'+(rk?' data-ops-row="'+rk+'" data-ops-wk="'+i+'"':'')+'>\u2014</td>'; return r+'</tr>'; }; // v1078: rk = row key for cell tip
-  const rowAr='<tr><td class="rl">AR Expected<span class="ops-src">design invoices today \u00b7 construction invoices to come</span></td>'+ar.map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':'')+'" data-ops-row="ar" data-ops-wk="'+i+'">'+(v>0?'+':'')+opsMoney(v)+'</td>').join('')+'</tr>'; // v1078
+  const rowNo=(label,src,rk)=>{ let r='<tr><td class="rl">'+label+'<span class="ops-src">'+src+'</span></td>'; for(let i=0;i<OPS_VISIBLE_WEEKS;i++) r+='<td class="'+cls(i)+' nodata"'+(rk?' data-ops-row="'+rk+'" data-ops-wk="'+i+'"':'')+'>\u2014</td>'; return r+'</tr>'; }; // v1078: rk = row key for cell tip
+  const rowAr='<tr><td class="rl">AR Expected<span class="ops-src">design invoices today \u00b7 construction invoices to come</span></td>'+ar.slice(0,OPS_VISIBLE_WEEKS).map((v,i)=>'<td class="'+cls(i)+(v>0?' pos':'')+'" data-ops-row="ar" data-ops-wk="'+i+'">'+(v>0?'+':'')+opsMoney(v)+'</td>').join('')+'</tr>'; // v1078
   // v1086: in-window scenarios (wk 0-3) are numbered rows in the cash table.
   // Toggle, amount, and delete all live in the week cell. Click the cell to view/edit.
   let rowSc='';
   OPS_SCENARIOS.forEach(sc=>{ sc._num=null; }); // v1092: clear before reassigning
-  const _inWinSc=OPS_SCENARIOS.filter(sc=>sc.wk>=0&&sc.wk<4);
+  const _inWinSc=OPS_SCENARIOS.filter(sc=>sc.wk>=0&&sc.wk<OPS_VISIBLE_WEEKS);
   _inWinSc.forEach((sc,idx)=>{
     sc._num=idx+1; // display number, recalculated each render
     const amt=(sc.dir==='in'?1:-1)*(sc.amt||0);
     rowSc+='<tr class="ops-sc-tbl-row" data-sc-id="'+sc.id+'">';
     rowSc+='<td class="rl" title="'+escH(sc.t||'')+'">Scenario #'+(idx+1)+'<span class="ops-src">'+escH(sc.by?sc.by.split(' ')[0]:'maybe')+'</span></td>';
-    for(let i=0;i<4;i++){
+    for(let i=0;i<OPS_VISIBLE_WEEKS;i++){
       const hit=(i===sc.wk);
       rowSc+='<td class="'+cls(i)+(hit?(sc.on?(amt>0?' pos':' negv'):' ops-sc-off-amt'):' nodata')+'"'
         +(hit?' data-ops-row="sc" data-ops-sc-id="'+sc.id+'" data-ops-wk="'+i+'"':'')+'>'; // v1092: only the cell holding the figure is clickable
@@ -20650,7 +20731,7 @@ function opsRenderInto(root){
     rowSc+='</tr>';
   });
   if(!rowSc) rowSc='<tr><td class="rl">Scenarios<span class="ops-src">none in this window</span></td>'
-    +[0,1,2,3].map(i=>'<td class="'+cls(i)+' nodata">\u2014</td>').join('')+'</tr>';
+    +Array.from({length:OPS_VISIBLE_WEEKS},(_,i)=>i).map(i=>'<td class="'+cls(i)+' nodata">\u2014</td>').join('')+'</tr>';
   // v1035: Operating Cash and Bank Balance were the same Meridian figure under two names.
   const body=rowNo('Bank Balance','QuickBooks weekly drop','bank')
     +rowNo('Payroll','QuickBooks drop \u00b7 owed now, paid once','payroll')
@@ -20660,7 +20741,7 @@ function opsRenderInto(root){
   // opens from the previous week's close. Payroll/payables are recurring weekly costs.
   let net='<tr class="net-row"><td class="rl">Net Position</td>';
   window._opsNetCells=[];
-  for(let i=0;i<4;i++){
+  for(let i=0;i<OPS_VISIBLE_WEEKS;i++){
     net+='<td class="'+cls(i)+' nodata" data-ops-net="'+i+'" data-ops-ar="'+(ar[i]||0)+'" data-ops-sc="'+(scNet[i]||0)+'" data-ops-row="net" data-ops-wk="'+i+'">\u2014</td>'; // v1078
   }
   net+='</tr>';
@@ -20715,9 +20796,11 @@ function opsRenderInto(root){
     +'</div>';
   root.innerHTML='<div class="ops-wrap">'
     +'<div class="ops-top">'
-    +'<div class="ops-h"><h2>Four-week cash view</h2><span class="ops-sub">'+W[0].sub.split(' \u2013 ')[0]+' \u2013 '+W[3].end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u00b7 last QuickBooks drop: none yet</span><div class="ops-rule"></div></div>'
+    +'<div class="ops-h"><h2>Two-week cash view</h2><span class="ops-sub">'+W[0].sub.split(' \u2013 ')[0]+' \u2013 '+W[OPS_VISIBLE_WEEKS-1].end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u00b7 last QuickBooks drop: none yet</span><div class="ops-rule"></div></div>'
     +'<div class="ops-h"><h2>What could move</h2><span class="ops-sub">Only maybes \u00b7 lands in Net Position once cash figures are connected</span><div class="ops-rule"></div></div>'
-    +'<div class="ops-tablecard"><table class="ops-table"><thead>'+thead+'</thead><tbody>'+body+net+'</tbody></table></div>'
+    +'<div class="ops-tablecard"><table class="ops-table"><thead>'+thead+'</thead><tbody>'+body+net+'</tbody></table>'
+    +'<div class="ops-ar-reveal" id="opsArReveal"><div class="ops-ar-reveal-empty">Click AR Expected for '+W.slice(0,OPS_VISIBLE_WEEKS).map(w=>w.lab).join(' or ')+' to see the invoices behind that figure.</div></div>'
+    +'</div>'
     +'<div class="ops-card ops-move"><div class="ops-card-hd"><h3>Scenarios</h3><span class="ops-hint">Shared \u00b7 saved to CORE</span><span class="ops-sp"></span><button class="ops-add" id="opsAddBtn" type="button">+ Add</button></div>'
     +'<div class="ops-addform" id="opsAddForm"><div class="ops-af-note">A name and an amount are required. Pick the week it would land.</div>'
     +'<div class="ops-af-row"><input type="text" id="opsAfWhat" placeholder="What is it? (required) \u2014 e.g. cabinet package deposit"></div>'
@@ -20739,6 +20822,7 @@ function opsRenderInto(root){
     +'<div class="ops-card"><div style="padding:0 16px 4px;">'+dataSrcHtml+opsHowItWorksHtml()+'</div></div>'
     +'</div>';
   opsDrawScenarios(W13,root);
+  if(_arRevealWk!=null && _arRevealWk<OPS_VISIBLE_WEEKS) opsShowArReveal(root,_arRevealWk); // v1136: survive re-render
   setTimeout(()=>qbApply(root),0); // v1035: after the DOM settles — was querying an empty container
   setTimeout(()=>arApply(root),0); // v1075: AR Two-Week Reports — after DOM settles
   // v1078+v1085: scenario toggle/delete in table, then derivation tip
@@ -20747,6 +20831,13 @@ function opsRenderInto(root){
     const del=e.target.closest('[data-del]');
     if(tog){ e.stopPropagation(); const _sc=OPS_SCENARIOS.find(z=>z.id===tog.dataset.scToggle); if(_sc){ _sc.on=!_sc.on; persist(); opsRenderInto(root); } return; }
     if(del){ e.stopPropagation(); OPS_SCENARIOS=OPS_SCENARIOS.filter(z=>z.id!==del.dataset.del); persist(); opsRenderInto(root); return; }
+    const arCell=e.target.closest('[data-ops-row="ar"]');
+    if(arCell){
+      e.stopPropagation();
+      const wk=parseInt(arCell.dataset.opsWk,10);
+      if(_arRevealWk===wk) opsCloseArReveal(root); else opsShowArReveal(root,wk);
+      return;
+    }
     const cell=e.target.closest('[data-ops-row]'); if(!cell) return;
     e.stopPropagation(); window._opsCellTipShow&&window._opsCellTipShow(cell);
   });
