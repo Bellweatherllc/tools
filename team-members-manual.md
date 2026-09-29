@@ -10,7 +10,7 @@ For everyone who touches the roster or hands out access to a CORE tool. No prior
 
 ### What Team Members is
 
-Team Members is the roster of everyone at Bellweather, and the single place that controls who can get into every other CORE tool — the Project Pipeline, the PM Updater, the PM Budget Worksheet, and the Operations cash-flow lens. There's no separate sign-up process for those tools: a person's access comes entirely from what's set for them here.
+Team Members is the roster of everyone at Bellweather, and the single place that controls who can get into every other CORE tool — the Project Pipeline, the PM Workbook, the PM Budget Planner, and the Operations cash-flow lens. There's no separate sign-up process for those tools: a person's access comes entirely from what's set for them here.
 
 It lives at [a web address](https://bellweatherllc.github.io/tools/team-members.html), like the rest of CORE. Open the link, sign in, and you're looking at the roster.
 
@@ -20,7 +20,7 @@ Team Members uses your regular Bellweather Microsoft account — the same one yo
 
 Anyone with a Bellweather account can sign in and look at the roster. Actually changing it — adding people, editing their details, or touching the Access matrix or Tool Settings — depends on permissions set up ahead of time on the underlying SharePoint list. If you sign in and can't save a change, that's a permissions question — ask Byron.
 
-> **Where editing access is actually controlled.** Unlike the Pipeline, PM Updater, and Budget Worksheet, Team Members has no admin toggle or admin role built into the page itself — there's no on/off switch in here that decides who can edit. Whether you can save a change comes entirely from your permission level on the **CORE_TeamMembers list**, in the **BWCore** SharePoint site: **Edit/Contribute** lets you save changes on any tab; **Read** lets you sign in and see the roster, but every save (adding, editing, or removing a person; changing an Access-matrix cell; flipping a Tool Settings toggle) will fail with a permissions error. To grant or remove someone's editing access, go to the BWCore site, open the CORE_TeamMembers list's permissions, and add or remove them from the group (or individual permission) that has Edit/Contribute there — that's the one and only place this is controlled.
+> **Where editing access is actually controlled.** Unlike the Pipeline, PM Workbook, and PM Budget Planner, Team Members has no admin toggle or admin role built into the page itself — there's no on/off switch in here that decides who can edit. Whether you can save a change comes entirely from your permission level on the **CORE_TeamMembers list**, in the **BWCore** SharePoint site: **Edit/Contribute** lets you save changes on any tab; **Read** lets you sign in and see the roster, but every save (adding, editing, or removing a person; changing an Access-matrix cell; flipping a Tool Settings toggle) will fail with a permissions error. To grant or remove someone's editing access, go to the BWCore site, open the CORE_TeamMembers list's permissions, and add or remove them from the group (or individual permission) that has Edit/Contribute there — that's the one and only place this is controlled.
 
 ### The three tabs
 
@@ -52,13 +52,13 @@ The delete button on a row asks for confirmation, then removes them from the Sha
 
 The Access tab is a grid: one row per person, one column per CORE tool. Above the grid, a **Tool Reference** legend spells out, for each tool, what a **Member** can do versus what an **Admin** can do — read that first if you're not sure what a given level actually unlocks.
 
-This matrix controls access to the *other* CORE tools — Pipeline, PM Updater, PM Budget Worksheet, and OPS/Cash Flow. It has no effect on who can edit Team Members itself; that's a separate SharePoint permission, covered under **Signing in** above.
+This matrix controls access to the *other* CORE tools — Pipeline, PM Workbook, PM Budget Planner, and OPS/Cash Flow. It has no effect on who can edit Team Members itself; that's a separate SharePoint permission, covered under **Signing in** above.
 
 The four tools, and roughly what each level means:
 
 - **Pipeline** — *Member* can view projects, phases, and milestones on the board. *Admin* can also edit project data, dates, phases, and statuses.
-- **PM Updater** — *Member* can submit project updates. *Admin* can submit and delete them.
-- **PM Budget Worksheet** — *Member* can view the budget worksheet for the projects they're assigned to as PM. *Admin* can view, edit, and set up the worksheet for any project.
+- **PM Workbook** — *Member* can submit project updates. *Admin* can submit and delete them.
+- **PM Budget Planner** — *Member* can view the budget planner for the projects they're assigned to as PM. *Admin* can view, edit, and set up the planner for any project.
 - **OPS/Cash Flow** — this is the Operations lens inside the Pipeline, not a separate tool. Either level opens it — there's no separate write tier, so pick whichever is convenient.
 
 ### Setting a person's level

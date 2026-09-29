@@ -4,14 +4,14 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 ## Live tools
 
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1134 |
+| Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
 | Project Basis | `project-basis.html` | v23 |
 | Scout Board | `scout-board.html` | v13 |
@@ -33,7 +33,7 @@ Last updated: 2026-09-28
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v22 |
+| Team Members | `team-members.html` | v23 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v3 |
@@ -66,6 +66,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-09-29** — Team Members v23: Access screen renames PM Updater → PM Workbook and PM Budget Worksheet → PM Budget Planner (manual updated to match); sign-in footer badge was stuck on v21 in the old red, now stamped current and `#ef4444`.
 - **2026-09-28** — Core Roadmap v57: moved from decimal versions (v0.56) to whole numbers; the build count carries on.
 - **2026-09-28** — All version badges set to red `#ef4444`; every tool above bumped one version. New badges on People Analyzer (v1) and Sherpa Lookup Tester (v1). Revenue Tracker's tab title no longer carries the version. Permit & Zoning Tracker, Core Roadmap and FBA Matrix badges no longer show a stale hard-coded number before the script stamps them.
 - **2026-09-28** — `versions.md` started.
