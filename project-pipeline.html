@@ -3017,6 +3017,11 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-ca-dates{font-size:11.5px;color:#7a7a7a;flex:1;}
 .ops-ca-dates s{color:#c4bfb2;margin-right:5px;}
 .ops-ca-dates b{color:#1f2e3e;font-weight:600;}
+/* v1137: standing top-of-page alert banner — same red as the version badge */
+.ops-ca-banner{background:#7f1d1d;border:2px solid #ef4444;border-radius:10px;padding:12px;margin-bottom:18px;}
+.ops-ca-banner-hd{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;}
+.ops-ca-banner-ico{font-size:14px;}
+.ops-ca-banner-body{background:#fff;border-radius:8px;overflow:hidden;}
 .ops-group{padding:7px 16px;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a3a3a3;background:#faf8f3;border-bottom:1px solid #f0ece2;}
 .ops-empty{padding:16px;font-size:12px;color:#a3a3a3;}
 .ops-banner{display:flex;align-items:center;gap:10px;background:rgba(172,40,40,.08);border:1px solid rgba(172,40,40,.45);border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:12.5px;color:#ac2828;}
@@ -3492,7 +3497,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1136';
+const CORE_VERSION = 'v1137';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -16758,6 +16763,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1137', date: '2026-09-29',
+    entries:['OPS Cash Flow: a CA date change is now a standing red banner at the very top of the page (not a card you had to scroll to) — it catches every CA that’s moved, not just ones in the two visible weeks. Resolving it (the Acknowledge button) now requires Admin Mode, same as every other edit control in Pipeline.'],
+  },
+  {
     version: 'v1136', date: '2026-09-29',
     entries:['OPS Cash Flow: the cash table now shows two weeks instead of four (the "projected" weeks three and four are dropped from the table itself — they still exist in Scenarios and the invoice lists below). The freed space is now a click-to-reveal panel: click AR Expected for either week to see the outstanding invoices behind that number, shown as a speech-bubble pointing at the row that’s open.'],
   },
@@ -20754,8 +20763,14 @@ function opsRenderInto(root){
     +'<span class="ops-ca-tag">CA moved</span>'
     +'<span class="ops-ca-proj">'+diEsc(_projShortName(c.proj))+'</span>'
     +'<span class="ops-ca-dates"><s>'+fmtIso(c.was)+'</s> \u2192 <b>'+fmtIso(c.now)+'</b></span>'
-    +'<button type="button" class="ops-ack" data-ops-ca-ack="'+c.proj._spItemId+'">Acknowledge</button>'
+    +'<button type="button" class="ops-ack admin-only" data-tip="Admin Mode required to resolve" data-ops-ca-ack="'+c.proj._spItemId+'">Acknowledge</button>'
     +'</div>').join('');
+  // v1137: standing alert, not just a mid-page card \u2014 Byron wants any CA slip caught
+  // at a glance, whether it's in the visible 2-week window or months out, and resolved
+  // only from Admin Mode (same admin-only gating as the rest of Pipeline's edit controls).
+  const caBannerHtml=caMoves.length?('<div class="ops-ca-banner"><div class="ops-ca-banner-hd">'
+    +'<span class="ops-ca-banner-ico">\u26a0</span><span>'+caMoves.length+' CA date'+(caMoves.length===1?'':'s')+' changed \u2014 review and resolve</span>'
+    +'</div><div class="ops-ca-banner-body">'+caRows+'</div></div>'):'';
   // what's expected
   const dated=inv.filter(x=>x.date&&x.date>=today).sort((a,b)=>a.date-b.date);
   const inWin=dated.filter(x=>wkOf(x.date)<4), beyond=dated.filter(x=>wkOf(x.date)===4);
@@ -20795,6 +20810,7 @@ function opsRenderInto(root){
     +'<span style="font-size:10.5px;color:#a3a3a3;white-space:nowrap;">OPS role \u00b7\u00a0'+srcLink(OPS_SITES_BASE+'BWCore/Lists/CORE_Config/AllItems.aspx','BWCore \u2192 CORE_Config \u2192 ops_scenarios')+'</span>'
     +'</div>';
   root.innerHTML='<div class="ops-wrap">'
+    +caBannerHtml
     +'<div class="ops-top">'
     +'<div class="ops-h"><h2>Two-week cash view</h2><span class="ops-sub">'+W[0].sub.split(' \u2013 ')[0]+' \u2013 '+W[OPS_VISIBLE_WEEKS-1].end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u00b7 last QuickBooks drop: none yet</span><div class="ops-rule"></div></div>'
     +'<div class="ops-h"><h2>What could move</h2><span class="ops-sub">Only maybes \u00b7 lands in Net Position once cash figures are connected</span><div class="ops-rule"></div></div>'
@@ -20813,7 +20829,7 @@ function opsRenderInto(root){
     +'<div id="opsScList"></div><div class="ops-sc-foot"><span>Click any scenario to view or edit it · switch them on and off in the cash view.</span><span id="opsScCount"></span></div></div>'
     +'</div>'
     // v1084: alerts removed from here — now inline on invoice rows
-    +(caMoves.length?'<div class="ops-h"><h2>CA dates that have moved</h2><span class="ops-sub">Moving a CA here does not change BuilderTrend \u2014 an LC makes that change by hand</span><div class="ops-rule"></div></div>'+'<div class="ops-card">'+caRows+'</div>':'')
+    // v1137: CA-moved section moved to the standing banner at the top of the page
     +'<div class="ops-h"><h2>What\u2019s expected \u2014 invoices outstanding</h2><span class="ops-sub ops-ar-sub">AR Two-Week Report \u00b7 reading\u2026</span><div class="ops-rule"></div></div>'
     +'<div class="ops-card ops-expected"><div id="opsBtInv"><div class="ops-empty">Loading AR Two-Week Report\u2026</div></div></div>'
     +'<div class="ops-h"><h2>What\u2019s expected \u2014 design &amp; construction schedule</h2><span class="ops-sub">Design invoices seeded from signed DAs \u00b7 construction schedule via CA and LC entries'+(past?' \u00b7 '+past+' past-dated not shown':'')+'</span><div class="ops-rule"></div></div>'
