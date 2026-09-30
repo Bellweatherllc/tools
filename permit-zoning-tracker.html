@@ -544,7 +544,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v92';
+const CORE_VERSION = 'v93';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
@@ -1021,6 +1021,24 @@ function _reconcileCheckins(local,remote){
    the way this expects. */
 function isCityJurisdiction(a){ return String(a.jur||'').toLowerCase().indexOf('city')>-1; }
 
+/* v93: every verdict in this tool (OFF TRACK, DUE SOON, BEHIND GOAL) has been
+   a judgment with the actual dates hidden behind it — visible only via
+   console commands (dumpCALead/dumpConstructionLead), never on the row
+   itself. Byron's own words: "the absence of actual dates is a problem."
+   This surfaces the three real dates a Permit card is actually being judged
+   against, as a hover on the row's own stat-band — right next to the verdict
+   it explains, on every row, not just the ones currently flagged. Zoning
+   only carries the CA date (Construction has no bearing there). */
+function keyDatesDetail(a){
+  const ca=CA_BY_PROJECT[normName(a.project)];
+  const caTxt='CA signing '+(ca&&ca.date?fmtDate(ca.date)+(ca.status==='ca-signed'?' (signed)':''):'— not in Pipeline yet');
+  if(String(a.track).toLowerCase().indexOf('permit')===-1) return caTxt;
+  const cs=CONSTRUCTION_BY_PROJECT[normName(a.project)];
+  if(!cs||!cs.date) return caTxt+' · Construction start — not in Pipeline yet';
+  const deadline=new Date(cs.date.getTime()-CONSTRUCTION_BUFFER_DAYS*24*3600*1000);
+  return caTxt+' · Drop-dead (3wk before Construction) '+fmtDate(deadline)+' · Construction start '+fmtDate(cs.date);
+}
+
 /* v90: Permit's ideal, City jobs only — permits in hand at CA signing (per
    Byron: city permits are the least predictable, so getting ahead of them
    costs less than catching up later). Non-city jobs skip this entirely — a
@@ -1462,19 +1480,19 @@ function projectOffTrackDetail(apps){
     if(ca.state==='critical'){
       const n=Math.abs(ca.slack);
       consider(0, 'CA signing date at risk ('+a.project+')',
-        n+' week'+(n===1?'':'s')+' short at the current pace — the CA date itself would need to move to hold, unless this speeds up.');
+        n+' week'+(n===1?'':'s')+' short at the current pace — the CA date itself would need to move to hold, unless this speeds up. (CA signing: '+fmtDate(ca.caDate)+')');
     }else if(ca.state==='at-risk'){
       consider(2, 'CA signing date getting tight ('+a.project+')',
-        'Only '+ca.slack+' week'+(ca.slack===1?'':'s')+' of slack left before it tips into risking the CA date.');
+        'Only '+ca.slack+' week'+(ca.slack===1?'':'s')+' of slack left before it tips into risking the CA date. (CA signing: '+fmtDate(ca.caDate)+')');
     }
     const cs=computeConstructionLead(a);
     if(cs.state==='critical'){
       const n=Math.abs(cs.slackDays);
       consider(1, 'Construction-start buffer blown ('+a.project+')',
-        n+' day'+(n===1?'':'s')+' short of the 3-week buffer before Construction start — Construction would need to slip to hold, unless this speeds up.');
+        n+' day'+(n===1?'':'s')+' short of the 3-week buffer before Construction start — Construction would need to slip to hold, unless this speeds up. (Drop-dead: '+fmtDate(cs.deadline)+' · Construction start: '+fmtDate(cs.constructionDate)+')');
     }else if(cs.state==='at-risk'){
       consider(3, 'Construction-start buffer getting tight ('+a.project+')',
-        cs.slackDays+' day'+(cs.slackDays===1?'':'s')+' of slack left before the 3-week buffer before Construction start is gone.');
+        cs.slackDays+' day'+(cs.slackDays===1?'':'s')+' of slack left before the 3-week buffer before Construction start is gone. (Drop-dead: '+fmtDate(cs.deadline)+' · Construction start: '+fmtDate(cs.constructionDate)+')');
     }
   });
   if(best) return {tip:best.tip, tipD:best.tipD};
@@ -1486,7 +1504,7 @@ function projectOffTrackDetail(apps){
       const n=Math.abs(pg.slack);
       consider(4, 'Behind the CA-signing goal ('+a.project+')',
         (pg.state==='critical'?n+' week'+(n===1?'':'s')+' behind pace to have this permit in hand by CA signing':'Only '+pg.slack+' week'+(pg.slack===1?'':'s')+' of cushion left to still make CA signing')
-        +' — still well inside the 3-week Construction deadline, but City permits are the least predictable, so falling behind here costs more to recover later.');
+        +' — still well inside the 3-week Construction deadline, but City permits are the least predictable, so falling behind here costs more to recover later. (CA signing: '+fmtDate(pg.caDate)+')');
     }
     const zp=computeZoningPace(a);
     if(zp.state==='behind'){
@@ -1613,7 +1631,8 @@ function appRowHtml(a){
       const ds=fmtShortDate(a.target);
       sub=a.state==='over'?(ds+', '+Math.abs(a.daysLeft)+'d delay'):('for '+ds);
     }
-    statBand='<div class="stat-band '+(ROLL_CLS[a.state]||'roll-warn')+'"><div>'+esc(ROLL_LBL[a.state]||'')+'</div>'+(sub?'<div class="stat-band-sub">'+esc(sub)+'</div>':'')+'</div>';
+    // v93: the actual dates behind this verdict, on hover — see keyDatesDetail
+    statBand='<div class="stat-band '+(ROLL_CLS[a.state]||'roll-warn')+'" data-tip="Key dates" data-tip-d="'+esc(keyDatesDetail(a))+'"><div>'+esc(ROLL_LBL[a.state]||'')+'</div>'+(sub?'<div class="stat-band-sub">'+esc(sub)+'</div>':'')+'</div>';
   }
   const _n=a.comments?a.comments.length:0; // v38: the slot always renders — invisible when empty — so rows align
   const cmt='<span class="cmt-icon'+(_n?'':' none')+'"'+(_n?' onclick="event.stopPropagation();openQuickComments(\''+esc(a.cardId)+'\',this)"':'')+'>'
