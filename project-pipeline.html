@@ -3533,7 +3533,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1146';
+const CORE_VERSION = 'v1147';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -16812,6 +16812,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1147', date: '2026-09-30',
+    entries:['OPS Cash Flow: fixed "Beyond four weeks" not responding to clicks — its toggle listener was attached to a container that survives every re-render (adding a scenario, acknowledging a CA move) without a guard, so each render stacked another one on top, and a click firing two or three of them at once canceled itself back to no visible change. Scenario editing now includes the week picker — previously the only field Edit was missing that Add already had, so moving a scenario to a different week meant deleting it and re-adding it.'],
+  },
+  {
     version: 'v1146', date: '2026-09-30',
     entries:['OPS Cash Flow: flipping a Scenario’s on/off switch no longer rebuilds the whole cash table — that full rebuild was the cause of both the AR Expected subtitle briefly reverting to its placeholder text and the general screen flash, since every cell went blank for an instant before the real figures repainted. The switch now just updates its own cell and the Net Position math directly.'],
   },
@@ -21080,14 +21084,21 @@ function opsRenderInto(root){
   root.querySelector('#opsDataSrcHd')?.addEventListener('keydown',e=>{
     if(e.key==='Enter'||e.key===' '){ e.preventDefault(); root.querySelector('#opsDataSrcHd').click(); }
   });
-  // v1145: "Beyond four weeks" collapse — delegated on root since one copy of this
+  // v1147: "Beyond four weeks" collapse — delegated on root since one copy of this
   // group lives in #opsBtInv, filled in later by arApply, after this listener binds.
-  root.addEventListener('click',e=>{
-    if(!e.target.closest('.ops-beyond-hd')) return;
-    _opsBeyondOpen=!_opsBeyondOpen;
-    root.querySelectorAll('.ops-beyond-hd .ops-collapse-caret').forEach(c=>c.classList.toggle('open',_opsBeyondOpen));
-    root.querySelectorAll('.ops-beyond-body').forEach(b=>b.classList.toggle('open',_opsBeyondOpen));
-  });
+  // Bound once per root (guarded), not once per render: opsRenderInto reruns on every
+  // scenario add/delete and CA acknowledge, and root itself is never recreated, so an
+  // unguarded addEventListener here stacked up one listener per render — a second
+  // click cycle canceled the first, which is why toggling looked like it did nothing.
+  if(!root._opsBeyondBound){
+    root._opsBeyondBound=true;
+    root.addEventListener('click',e=>{
+      if(!e.target.closest('.ops-beyond-hd')) return;
+      _opsBeyondOpen=!_opsBeyondOpen;
+      root.querySelectorAll('.ops-beyond-hd .ops-collapse-caret').forEach(c=>c.classList.toggle('open',_opsBeyondOpen));
+      root.querySelectorAll('.ops-beyond-body').forEach(b=>b.classList.toggle('open',_opsBeyondOpen));
+    });
+  }
   setTimeout(()=>qbApply(root),0); // v1035: after the DOM settles — was querying an empty container
   setTimeout(()=>arApply(root),0); // v1075: AR Two-Week Reports — after DOM settles
   // v1078+v1085: scenario toggle/delete in table, then derivation tip
@@ -21297,17 +21308,34 @@ function opsRenderInto(root){
     if(ca){ repaint('sc'); return; }
     const db=e.target.closest('.ctp-edit-dir button');
     if(db){ _editDir=db.dataset.d; el.querySelectorAll('.ctp-edit-dir button').forEach(z=>z.classList.toggle('on',z===db)); return; }
+    // v1147: week picker — same open/select behavior as the Add form's copy
+    const wkBtn=e.target.closest('#ctpEditWkBtn');
+    if(wkBtn){ el.querySelector('#ctpEditWkMenu')?.classList.toggle('on'); return; }
+    const wkOpt=e.target.closest('#ctpEditWkMenu .ops-wkopt');
+    if(wkOpt){
+      const btn=el.querySelector('#ctpEditWkBtn');
+      if(btn){ btn.dataset.wk=wkOpt.dataset.wk; btn.querySelector('span').textContent=wkOpt.textContent; }
+      el.querySelectorAll('#ctpEditWkMenu .ops-wkopt').forEach(z=>z.classList.toggle('on',z===wkOpt));
+      el.querySelector('#ctpEditWkMenu')?.classList.remove('on');
+      return;
+    }
+    if(!e.target.closest('#ctpEditWkBtn')) el.querySelector('#ctpEditWkMenu')?.classList.remove('on'); // any other click inside closes the open menu
     const sv=e.target.closest('[data-sc-save]');
     if(sv){
       const sc=OPS_SCENARIOS.find(x=>x.id===sv.dataset.scSave); if(!sc) return;
       const t=(el.querySelector('#ctpEditT')||{}).value;
       const amtRaw=(el.querySelector('#ctpEditAmt')||{}).value;
       const m=(el.querySelector('#ctpEditM')||{}).value;
+      const wk=parseInt((el.querySelector('#ctpEditWkBtn')||{}).dataset?.wk,10);
       const amt=parseInt(String(amtRaw||'').replace(/[^0-9]/g,''),10);
       if(t!=null&&t.trim()) sc.t=t.trim();
       if(!isNaN(amt)&&amt>0) sc.amt=amt;
       if(m!=null) sc.m=m.trim();
       if(_editDir) sc.dir=_editDir;
+      if(!isNaN(wk)){
+        const W13=opsWeeks(13), mon=W13[wk].start;
+        sc.weekOf=mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
+      }
       el.classList.remove('on'); _curCell=null; _curScId='';
       opsSaveScenarios().catch(err=>showToast('Scenario not saved: '+err.message));
       const r=document.querySelector('.ops-root'); if(r) opsRenderInto(r);
@@ -21317,6 +21345,15 @@ function opsRenderInto(root){
   document.addEventListener('click',e=>{ if(!e.target.closest('[data-ops-row]')&&!e.target.closest('#opsCellTip')){ el.classList.remove('on'); _curCell=null; } });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ el.classList.remove('on'); _curCell=null; } });
 })();
+// v1147: which of the 13 weeks a scenario's weekOf date falls in — shared by the edit
+// popup's week picker (both for its initial selection and for repainting the button).
+function opsScWeekIndex(sc){
+  const W13=opsWeeks(13);
+  const d=opsIsoToDate(sc.weekOf);
+  let i=d?Math.round((d-W13[0].start)/(7*24*3600*1000)):0;
+  if(isNaN(i)||i<0||i>=13) i=0;
+  return i;
+}
 function opsCellTipHtml(rk,wk,scId){
   const W=opsWeeks();
   const fmtV=v=>v!=null?opsMoney(v):'\u2014';
@@ -21388,6 +21425,9 @@ function opsCellTipHtml(rk,wk,scId){
   if(rk==='sc-edit'){
     const sc=OPS_SCENARIOS.find(x=>x.id===scId);
     if(!sc) return '<h4>Scenario</h4>'+note('Not found.');
+    const W13=opsWeeks(13);
+    const zoneOf=i=>i<2?'acc':i<4?'proj':'beyond';
+    const curWk=opsScWeekIndex(sc);
     let b='<h4>'+(sc._num?'Edit Scenario #'+sc._num:'Edit scenario')+'</h4>'; // v1092: out-of-window rows have no number
     b+='<div class="ctp-edit">';
     b+='<input type="text" id="ctpEditT" value="'+escH(sc.t||'')+'" placeholder="What is it?">';
@@ -21395,6 +21435,9 @@ function opsCellTipHtml(rk,wk,scId){
       +'<button type="button" class="'+(sc.dir==='out'?'on':'')+'" data-d="out">Money out</button>'
       +'<button type="button" class="'+(sc.dir==='in'?'on':'')+'" data-d="in">Money in</button></div>';
     b+='<input type="text" id="ctpEditAmt" value="'+(sc.amt||'')+'" placeholder="Amount" inputmode="numeric">';
+    // v1147: week picker — was missing from Edit though Add has always had one
+    b+='<div class="ops-wkpick" id="ctpEditWkPick"><button type="button" class="ops-wkbtn" id="ctpEditWkBtn" data-wk="'+curWk+'"><span>'+escH(W13[curWk].sub)+'</span><span class="ops-wkcar">▾</span></button>'
+      +'<div class="ops-wkmenu" id="ctpEditWkMenu">'+W13.map((w,i)=>'<div class="ops-wkopt z-'+zoneOf(i)+(i===2?' z-first-proj':'')+(i===4?' z-first-beyond':'')+(i===curWk?' on':'')+'" data-wk="'+i+'">'+escH(w.sub)+'</div>').join('')+'</div></div>';
     b+='<textarea id="ctpEditM" placeholder="Note">'+escH(sc.m||'')+'</textarea>';
     b+='<div class="ctp-edit-act"><button type="button" data-sc-cancel="'+sc.id+'">Cancel</button>'
       +'<button type="button" class="save" data-sc-save="'+sc.id+'">Save</button></div>';
