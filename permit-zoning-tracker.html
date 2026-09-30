@@ -177,6 +177,12 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .stat-band{display:flex;flex-direction:column;justify-content:center;gap:1px;}
 .stat-band>div:first-child{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
 .stat-band-sub{font-size:8.5px;font-weight:600;letter-spacing:.02em;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* v94: the real dates, listed — not a hover anymore. Abbreviated (CA/DD/CS)
+   to fit this 100px column; hovering the band still gives the spelled-out
+   version. Own small color, not the roll-* status color, on purpose — these
+   are FACTS (the same regardless of verdict), not part of the on/off-track
+   signal itself. */
+.stat-dates{margin-top:4px;padding-top:4px;border-top:1px solid rgba(0,0,0,.12);font-size:7.5px;font-weight:700;letter-spacing:.03em;line-height:1.5;opacity:.75;}
 .stat-band.roll-ok{background:#e5f4e8;color:var(--st-done);}
 .stat-band.roll-warn{background:#faf2e9;color:var(--st-warn);}
 .stat-band.roll-over{background:#f7eaea;color:var(--st-over);}
@@ -215,6 +221,11 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    leading into a dot matches that dot's own color (--dc/--dg set inline per step) */
 .ph-step.done::before,.ph-step.active::before{background:var(--dc,var(--gold));}
 .ph-dot{width:11px;height:11px;border-radius:50%;background:var(--sfc);border:2px solid var(--bdr);z-index:1;}
+/* v94: marks the Approved dot as the one the stat-band's date list is actually
+   measured against — see phaseTrackHtml. Small and out of the way; the real
+   information lives in the hover and the stat-band list, this just draws the
+   eye to which dot they're both about. */
+.ph-target{position:absolute;top:-3px;left:calc(50% + 4px);width:7px;height:7px;border-radius:50%;background:var(--gold);border:1.5px solid var(--sfc);z-index:4;}
 .ph-step.done .ph-dot{background:var(--dc,var(--gold));border-color:var(--dc,var(--gold));}
 .ph-step.active .ph-dot{border-color:var(--dc,var(--gold));background:#fff;box-shadow:0 0 0 2.1px var(--dg,rgba(216,182,79,.25));} /* v81: 30% smaller than the v76 baseline (3px) — this is now specifically the NO-checklist glow, since .clickable overrides it below when a checklist exists */
 /* v75: the active dot doubles as a checklist button when the card actually has one —
@@ -544,7 +555,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v93';
+const CORE_VERSION = 'v94';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
@@ -1037,6 +1048,23 @@ function keyDatesDetail(a){
   if(!cs||!cs.date) return caTxt+' · Construction start — not in Pipeline yet';
   const deadline=new Date(cs.date.getTime()-CONSTRUCTION_BUFFER_DAYS*24*3600*1000);
   return caTxt+' · Drop-dead (3wk before Construction) '+fmtDate(deadline)+' · Construction start '+fmtDate(cs.date);
+}
+/* v94: same data as keyDatesDetail, but as short always-visible lines instead
+   of buried in a hover — "list them, not bury as hover," directly. Abbreviated
+   labels (CA/DD/CS) to fit the 100px stat-band column; the full spelled-out
+   version is still there on hover (keyDatesDetail, unchanged) for anyone who
+   wants the complete picture. */
+function keyDatesCompact(a){
+  const ca=CA_BY_PROJECT[normName(a.project)];
+  const out=['CA '+(ca&&ca.date?fmtShortDate(ca.date):'—')];
+  if(String(a.track).toLowerCase().indexOf('permit')>-1){
+    const cs=CONSTRUCTION_BY_PROJECT[normName(a.project)];
+    if(cs&&cs.date){
+      out.push('DD '+fmtShortDate(new Date(cs.date.getTime()-CONSTRUCTION_BUFFER_DAYS*24*3600*1000)));
+      out.push('CS '+fmtShortDate(cs.date));
+    }else out.push('CS —');
+  }
+  return out;
 }
 
 /* v90: Permit's ideal, City jobs only — permits in hand at CA signing (per
@@ -1587,6 +1615,14 @@ function phaseTrackHtml(a){
       if(prevName.toLowerCase()==='submitted'&&a.reviewDays!=null) seg='<div class="ph-seg fixed"><span class="txt">'+a.reviewDays+'D REVIEW</span></div>';
       else if(LEAD_WEEKS[prevName]!=null) seg='<div class="ph-seg est"><span class="txt">EST. '+LEAD_WEEKS[prevName]+'WK</span></div>';
     }
+    // v94: "visually tied to the timeline" — Approved is the actual dot every
+    // key date in the stat-band is measured against (CA-lead and Construction-
+    // lead both ask "will this reach Approved in time?"), so it gets a small
+    // marker of its own, same muted color as the stat-band's date list, tying
+    // the two together without drawing an actual line across the row. Only
+    // rendered when there's real date data to point at — no data, no marker.
+    const targetTip=(s.name==='Approved'&&(CA_BY_PROJECT[normName(a.project)]||CONSTRUCTION_BY_PROJECT[normName(a.project)]))?keyDatesDetail(a):null;
+    const target=targetTip?'<div class="ph-target" data-tip="Key dates" data-tip-d="'+esc(targetTip)+'"></div>':'';
     // v80: live clock text moves below the label now, in its own slot (was merged
     // onto one line with segInfo above) — only the active step ever shows one,
     // but that slot always renders, empty/invisible when there's no clock text
@@ -1600,7 +1636,7 @@ function phaseTrackHtml(a){
     const dot=(active&&hasChecklist)
       ? '<div class="ph-dot clickable" onclick="event.stopPropagation();openChecklist(\''+esc(a.cardId)+'\',this)" data-tip="View checklist"></div>'
       : (active?'<div class="ph-dot" data-tip="No checklist available"></div>':'<div class="ph-dot"></div>');
-    return '<div class="ph-step '+(done?'done':'')+(active?' active':'')+'"'+style+'>'+seg+dot+'<div class="ph-lbl">'+esc(shortLbl)+'</div>'+timer+'</div>';
+    return '<div class="ph-step '+(done?'done':'')+(active?' active':'')+'"'+style+'>'+seg+dot+target+'<div class="ph-lbl">'+esc(shortLbl)+'</div>'+timer+'</div>';
   }).join('')+'</div>';
 }
 // v63: bare bubble icon, no pill — body is a rect from (2,3) to (14,11); the tail
@@ -1632,7 +1668,11 @@ function appRowHtml(a){
       sub=a.state==='over'?(ds+', '+Math.abs(a.daysLeft)+'d delay'):('for '+ds);
     }
     // v93: the actual dates behind this verdict, on hover — see keyDatesDetail
-    statBand='<div class="stat-band '+(ROLL_CLS[a.state]||'roll-warn')+'" data-tip="Key dates" data-tip-d="'+esc(keyDatesDetail(a))+'"><div>'+esc(ROLL_LBL[a.state]||'')+'</div>'+(sub?'<div class="stat-band-sub">'+esc(sub)+'</div>':'')+'</div>';
+    // v94: dates are listed now, not just a hover — "Let's list them, not bury
+    // as hover. Beneath the ON/OFF Track" — the hover (data-tip-d) still carries
+    // the full spelled-out version for anyone who wants it.
+    statBand='<div class="stat-band '+(ROLL_CLS[a.state]||'roll-warn')+'" data-tip="Key dates" data-tip-d="'+esc(keyDatesDetail(a))+'"><div>'+esc(ROLL_LBL[a.state]||'')+'</div>'+(sub?'<div class="stat-band-sub">'+esc(sub)+'</div>':'')
+      +'<div class="stat-dates">'+keyDatesCompact(a).map(d=>'<div>'+esc(d)+'</div>').join('')+'</div></div>';
   }
   const _n=a.comments?a.comments.length:0; // v38: the slot always renders — invisible when empty — so rows align
   const cmt='<span class="cmt-icon'+(_n?'':' none')+'"'+(_n?' onclick="event.stopPropagation();openQuickComments(\''+esc(a.cardId)+'\',this)"':'')+'>'
