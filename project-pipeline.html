@@ -3533,7 +3533,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1145';
+const CORE_VERSION = 'v1146';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -16812,6 +16812,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1146', date: '2026-09-30',
+    entries:['OPS Cash Flow: flipping a Scenario’s on/off switch no longer rebuilds the whole cash table — that full rebuild was the cause of both the AR Expected subtitle briefly reverting to its placeholder text and the general screen flash, since every cell went blank for an instant before the real figures repainted. The switch now just updates its own cell and the Net Position math directly.'],
+  },
+  {
     version: 'v1145', date: '2026-09-30',
     entries:['OPS Cash Flow: the AR Expected caret was disappearing because the async refresh that fills in the real BT+design total was overwriting the whole cell as plain text, caret included — it now rebuilds the same markup instead of wiping it. Fixed both carets (Data sources, AR Expected) pointing the wrong way — collapsed now points up, expanded points down. The line after "Data sources" now runs beneath the title as a separator instead of trailing after it on the same row. "Beyond four weeks" in both invoice lists is now collapsible with the same caret, collapsed by default. The CA alert now says "review and acknowledge," matching the button.'],
   },
@@ -20241,6 +20245,30 @@ async function opsSaveScenarios(){
   if(!_opsScenarioRowId) throw new Error('scenarios row not loaded');
   await graphPatch(BWC_SITE+'/CORE_Config/items/'+_opsScenarioRowId+'/fields',{Value:JSON.stringify(OPS_SCENARIOS)});
 }
+// v1146: flipping the in-window on/off switch used to run a full opsRenderInto(), which
+// wipes and rebuilds the whole cash table — every figure went briefly blank before
+// qbApply/arApply repainted them a moment later, and the AR subtitle in particular
+// dropped back to its placeholder text until arApply caught up. All the switch itself
+// changes is one cell's on/off state and the Net Position running total from that week
+// on, so do just that: patch the switch, the cell, and the affected net cell in place,
+// then let qbApply (which never touches the AR row) redo the running-balance math.
+function opsToggleScenarioLive(root,scId){
+  const sc=OPS_SCENARIOS.find(z=>z.id===scId); if(!sc) return;
+  sc.on=!sc.on;
+  opsSaveScenarios().catch(e=>showToast('Scenario not saved: '+e.message));
+  const cell=root.querySelector('[data-ops-sc-id="'+scId+'"]'); if(!cell) return;
+  const amt=(sc.dir==='in'?1:-1)*(sc.amt||0);
+  cell.classList.toggle('pos',sc.on&&amt>0);
+  cell.classList.toggle('negv',sc.on&&amt<0);
+  cell.classList.toggle('ops-sc-off-amt',!sc.on);
+  const btn=cell.querySelector('[data-sc-toggle]');
+  if(btn){ btn.classList.toggle('on',sc.on); btn.setAttribute('aria-checked',sc.on); }
+  const wk=parseInt(cell.dataset.opsWk,10);
+  root.querySelectorAll('[data-ops-net]').forEach(td=>{
+    if(parseInt(td.dataset.opsNet,10)===wk) td.dataset.opsSc=(parseFloat(td.dataset.opsSc)||0)+(sc.on?amt:-amt);
+  });
+  qbApply(root);
+}
 // Week-2 Payables override persists in CORE_Config (row key ops_payables_w2), shared by
 // everyone with the OPS role — same last-write-wins pattern as Scenarios.
 async function opsSavePayablesOverride(){
@@ -21066,7 +21094,7 @@ function opsRenderInto(root){
   root.querySelector('.ops-table')?.addEventListener('click',e=>{
     const tog=e.target.closest('[data-sc-toggle]');
     const del=e.target.closest('[data-del]');
-    if(tog){ e.stopPropagation(); const _sc=OPS_SCENARIOS.find(z=>z.id===tog.dataset.scToggle); if(_sc){ _sc.on=!_sc.on; persist(); opsRenderInto(root); } return; }
+    if(tog){ e.stopPropagation(); opsToggleScenarioLive(root,tog.dataset.scToggle); return; }
     if(del){ e.stopPropagation(); OPS_SCENARIOS=OPS_SCENARIOS.filter(z=>z.id!==del.dataset.del); persist(); opsRenderInto(root); return; }
     const arCell=e.target.closest('[data-ops-row="ar"]');
     if(arCell){
