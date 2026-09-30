@@ -409,6 +409,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
 .bin-off{background:var(--st-over);}
 .bin-na{background:none;color:var(--tm);border:1px solid var(--bdr);}
 .bin-warn{background:var(--st-warn);} /* v88: "Due Soon" — was falling through to ON TRACK with no distinct look before the two absolute-deadline checks could ever push a project here */
+.bin-goal{background:var(--gold);color:var(--navy);} /* v90: "Behind Goal" — softer than Due Soon on purpose: no hard deadline is at risk yet, just the "as soon as practical" target (CA-signing for City permits, pace budget for Zoning) */
 .abs-note-pending{font-size:10.5px;color:var(--tm);font-style:italic;}
 /* v39: check-in notes — the Absolutes ritual's written trace */
 .abs-note-cell{position:relative;min-width:220px;padding-right:34px!important;}
@@ -543,7 +544,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--bg);-webkit-font-smo
    the sync agent (sync-on-view). Nobody edits permit status here; the fix
    for wrong data is moving the card.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v91';
+const CORE_VERSION = 'v92';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const MSAL_CLIENT_ID = '84b37f0e-b149-4089-9bdc-fc654715db23';
@@ -1006,6 +1007,52 @@ function _reconcileCheckins(local,remote){
   });
   return merged;
 }
+
+/* v90: "on track" isn't just "hasn't blown the absolute deadline" — Byron's
+   framing: getting Zoning and Permit done as soon as practical is its own
+   goal, ahead of and separate from the hard deadlines above. Two goal checks,
+   each track-specific:
+
+   isCityJurisdiction — ASSUMPTION pending real data: matches the Jurisdiction
+   Trello field (CF.jur, read into a.jur) loosely for "city" (e.g. "City of
+   Springfield"), same convention as trackChipCls's substring matching
+   elsewhere in this file. Verify against a real board before trusting this —
+   if City jobs aren't lighting up, the actual field values don't say "city"
+   the way this expects. */
+function isCityJurisdiction(a){ return String(a.jur||'').toLowerCase().indexOf('city')>-1; }
+
+/* v90: Permit's ideal, City jobs only — permits in hand at CA signing (per
+   Byron: city permits are the least predictable, so getting ahead of them
+   costs less than catching up later). Non-city jobs skip this entirely — a
+   signed contract has to come BEFORE a permit can even be pulled there, so
+   "ahead of CA signing" isn't a coherent target. Reuses computeCALead's own
+   math (it already asks "will this reach Approved by the CA date?") — no new
+   computation needed, just a new, softer way of reading the same answer. */
+function computePermitGoal(a){
+  if(String(a.track).toLowerCase().indexOf('permit')===-1) return {state:'n-a'};
+  if(!isCityJurisdiction(a)) return {state:'n-a', why:'not a City job — CA-signing goal does not apply'};
+  return computeCALead(a);
+}
+
+/* v90: Zoning's ideal — always "as soon as practical," every job, no target
+   date. Zoning is usually the simplest track and everything downstream
+   depends on it, so time spent past its own LEAD_WEEKS budget in an
+   age-clock stage is a leading indicator worth surfacing on its own, well
+   before it could ever threaten the CA date (the existing hard trigger).
+   Review-clock stages (Submitted, In Review) are excluded — those already
+   carry a more precise clock (the real jurisdiction deadline) than this
+   rough estimate-vs-actual check would add. */
+function computeZoningPace(a){
+  if(String(a.track).toLowerCase().indexOf('zon')===-1) return {state:'n-a'};
+  const meta=stageMeta(a.stage);
+  if(!meta||meta.clock!=='age'||meta.hold||meta.terminal) return {state:'n-a'};
+  const budgetDays=(LEAD_WEEKS[meta.name]||0)*7;
+  if(!budgetDays) return {state:'n-a', why:'no lead-time estimate for "'+meta.name+'"'};
+  const daysOver=a.ageDays-budgetDays;
+  return daysOver>0
+    ? {state:'behind', daysOver, budgetDays, stage:meta.name}
+    : {state:'on-pace', daysOver:0, budgetDays, stage:meta.name};
+}
 async function saveCheckins(){ // v39
   setSave('syncing','Saving note…');
   try{
@@ -1353,25 +1400,46 @@ async function _reconcileCardDue(a){
 }
 
 /* ═══ Rendering ═══ */
-const STATE_RANK={over:0,warn:1,unknown:2,hold:3,ok:4,done:5,closed:6};
-/* v88: the two "absolute" deadlines (CA signing date; permit ready 3 calendar
-   weeks before Construction start, Permit-track only) are real external dates
-   that must never slip — they now override whatever the ordinary per-stage
-   review/age clock alone would say, everywhere this function's result is used
-   (the Absolutes table AND the two project-sort call sites). A card can be
-   comfortably "3d left" on its own review clock and still be the thing about
-   to blow the CA date or the Construction-start buffer — that risk has to win.
+const STATE_RANK={over:0,warn:1,goal:1.5,unknown:2,hold:3,ok:4,done:5,closed:6}; // v90: 'goal' is project-rollup-only (see projectRollup) — no card's own a.state is ever 'goal', so this fractional rank never needs to slot between real per-card states, just between warn and unknown for the rollup's own comparisons
+/* v88: the two "absolute" deadlines are real external dates that must never
+   slip — they override whatever the ordinary per-stage review/age clock
+   alone would say, everywhere this function's result is used (the Absolutes
+   table AND the two project-sort call sites). A card can be comfortably
+   "3d left" on its own review clock and still be the thing about to blow the
+   CA date or the Construction-start buffer — that risk has to win.
+   v90: CA-protection is Zoning's hard trigger (Zoning is what actually gates
+   the deal, so its own delay is what could really force the CA date to
+   move) — Permit's hard trigger is Construction-minus-3-weeks ONLY. This
+   split matters, not just tidiness: computePermitGoal (below) reuses
+   computeCALead's own numbers for Permit's City-only soft goal, and if
+   computeCALead also sat in Permit's hard tier here, the hard check would
+   always fire first on the identical condition — the soft goal tier could
+   never be reached at all. Confirmed by testing this against exactly that
+   scenario before catching it.
    See projectOffTrackDetail below for the why/how-much/impact explanation,
    used by the Absolutes table's tooltip. */
 function projectAbsoluteState(apps){
   let worst=null;
   apps.forEach(a=>{
-    [computeCALead(a), computeConstructionLead(a)].forEach(r=>{
+    const isPermit=String(a.track).toLowerCase().indexOf('permit')>-1;
+    const hard=isPermit?[computeConstructionLead(a)]:[computeCALead(a)];
+    hard.forEach(r=>{
       if(r.state==='critical') worst='over';
       else if(r.state==='at-risk'&&worst!=='over') worst='warn';
     });
   });
-  return worst;
+  if(worst) return worst;
+  // v90: nothing hard is in play — check the softer "as soon as practical" goal.
+  // Only reached when neither absolute above fired, so this can only ever pull
+  // a project DOWN from 'ok' to 'goal', never override a real 'over'/'warn'.
+  let behindGoal=false;
+  apps.forEach(a=>{
+    const pg=computePermitGoal(a);
+    if(pg.state==='critical'||pg.state==='at-risk') behindGoal=true;
+    const zp=computeZoningPace(a);
+    if(zp.state==='behind') behindGoal=true;
+  });
+  return behindGoal?'goal':null;
 }
 /* v89: replaces the old one-line projectAbsoluteWhy — an OFF TRACK (or DUE SOON)
    bin needs to say WHY, HOW MUCH, and what the PROJECT IMPACT is, not just name
@@ -1380,12 +1448,17 @@ function projectAbsoluteState(apps){
    (shouldn't happen, but bin() falls back to no tooltip rather than a broken one).
    Priority mirrors projectAbsoluteState above: any critical absolute wins over
    an at-risk one, which wins over a plain overdue review clock — same ordering,
-   just keeping the numbers this time instead of collapsing to a state name. */
+   just keeping the numbers this time instead of collapsing to a state name.
+   v90: the "goal" tier (Permit behind the CA-signing target on a City job;
+   Zoning behind its own pace budget) only gets checked once nothing harder
+   explains the bin — same ordering projectAbsoluteState uses. */
 function projectOffTrackDetail(apps){
   let best=null;
   const consider=(rank,tip,tipD)=>{ if(!best||rank<best.rank) best={rank,tip,tipD}; };
   apps.forEach(a=>{
-    const ca=computeCALead(a);
+    // v90: CA-protection is the hard trigger for Zoning only now — see
+    // projectAbsoluteState for why Permit can't share it.
+    const ca=String(a.track).toLowerCase().indexOf('permit')>-1 ? {state:'n-a'} : computeCALead(a);
     if(ca.state==='critical'){
       const n=Math.abs(ca.slack);
       consider(0, 'CA signing date at risk ('+a.project+')',
@@ -1405,8 +1478,25 @@ function projectOffTrackDetail(apps){
     }
   });
   if(best) return {tip:best.tip, tipD:best.tipD};
-  // No absolute is in play — an OFF TRACK bin at this point is a plain overdue
-  // review clock (Submitted → In Review) on some card. Name the worst one.
+  // v90: the goal tier — nothing hard is at risk, but the project isn't hitting
+  // the "as soon as practical" target either.
+  apps.forEach(a=>{
+    const pg=computePermitGoal(a);
+    if(pg.state==='critical'||pg.state==='at-risk'){
+      const n=Math.abs(pg.slack);
+      consider(4, 'Behind the CA-signing goal ('+a.project+')',
+        (pg.state==='critical'?n+' week'+(n===1?'':'s')+' behind pace to have this permit in hand by CA signing':'Only '+pg.slack+' week'+(pg.slack===1?'':'s')+' of cushion left to still make CA signing')
+        +' — still well inside the 3-week Construction deadline, but City permits are the least predictable, so falling behind here costs more to recover later.');
+    }
+    const zp=computeZoningPace(a);
+    if(zp.state==='behind'){
+      consider(5, 'Zoning behind pace ('+a.project+')',
+        zp.daysOver+' day'+(zp.daysOver===1?'':'s')+' past the '+zp.budgetDays+'-day estimate for '+zp.stage+' — Zoning comes first and everything else depends on it, so a delay here risks pushing Permit and Construction back too.');
+    }
+  });
+  if(best) return {tip:best.tip, tipD:best.tipD};
+  // No absolute or goal is in play — an OFF TRACK bin at this point is a plain
+  // overdue review clock (Submitted → In Review) on some card. Name the worst one.
   const overdue=apps.filter(a=>a.state==='over').sort((a,b)=>(a.daysLeft||0)-(b.daysLeft||0))[0];
   if(overdue) return {tip:overdue.project+' — '+overdue.stage+' is past its own deadline',
     tipD:(overdue.clockText||'overdue')+' on the jurisdiction review clock — every day it sits here pushes every stage after it back by the same amount.'};
@@ -1421,6 +1511,7 @@ function projectRollup(apps){
   const absolute=projectAbsoluteState(active);
   if(absolute==='over') return 'over';
   if(absolute==='warn'&&STATE_RANK[base]>STATE_RANK['warn']) return 'warn';
+  if(absolute==='goal'&&STATE_RANK[base]>STATE_RANK['goal']) return 'goal';
   return base;
 }
 const ROLL_LBL={ok:'On Track',warn:'Due Soon',over:'Overdue',hold:'On Hold',done:'Complete',unknown:'Check'};
@@ -1916,13 +2007,14 @@ function renderAbsolutes(){
     // much, and what it means for the project — not just carry the label. ON
     // TRACK/DONE/HOLD don't get a tooltip; there's nothing to explain.
     let tip='';
-    if(r==='over'||r==='unknown'||r==='warn'){
+    if(r==='over'||r==='unknown'||r==='warn'||r==='goal'){
       const d=projectOffTrackDetail(apps.filter(a=>a.state!=='done'&&a.state!=='closed'));
       if(d) tip=' data-tip="'+esc(d.tip)+'" data-tip-d="'+esc(d.tipD)+'"';
     }
     if(r==='done') return '<span class="bin bin-on">DONE</span>';
     if(r==='over'||r==='unknown') return '<span class="bin bin-off"'+tip+'>OFF TRACK</span>';
     if(r==='warn') return '<span class="bin bin-warn"'+tip+'>DUE SOON</span>';
+    if(r==='goal') return '<span class="bin bin-goal"'+tip+'>BEHIND GOAL</span>'; // v90: hasn't blown a hard deadline, but isn't hitting the "as soon as practical" target either
     if(r==='hold') return '<span class="bin bin-na">HOLD</span>';
     return '<span class="bin bin-on">ON TRACK</span>';
   };
@@ -2077,8 +2169,7 @@ async function boot(){
 })();
 
 (function(){
-  const vb=document.getElementById('versionBadge'); if(vb) vb.textContent=CORE_VERSION;
-  const ab=document.getElementById('authVersionBadge'); if(ab) ab.textContent=CORE_VERSION;
+  // v92: badge stamping moved to the IIFE right after CORE_VERSION (no stale flash) — removed the duplicate stamp that used to happen here
   // v43: state the lead-time assumptions on the page itself — visible, adjustable, never hidden
   const ra=document.getElementById('leadAssumptions');
   if(ra) ra.textContent='Lead time estimates (weeks a permit typically spends in each list — placeholder values, adjust in LEAD_WEEKS): '
