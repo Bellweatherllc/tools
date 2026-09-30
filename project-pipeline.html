@@ -2930,20 +2930,23 @@ body.admin-mode .ps-chip-del{display:flex;align-items:center;}
    the side panel couldn't show a "no BT match yet" figure at all (see arApply). */
 .ops-table td[data-ops-row="ar"]{cursor:pointer;}
 .ops-ar-caret{display:inline-block;margin-right:6px;font-size:9px;color:#a3a3a3;transition:transform .15s;}
-/* v1140: a 3-sided overlay, not outline (always 4-sided) — the active cell's bottom
-   stays open so it reads as one connected shape with the expanded area below it. */
-.ops-table td.ops-ar-active{position:relative;z-index:2;}
-.ops-table td.ops-ar-active::after{content:'';position:absolute;inset:0;border:2.5px solid #d8b64f;border-bottom:none;pointer-events:none;}
+/* v1143: the gold outline as real cell borders, not an overlay — an absolutely
+   positioned overlay border sits at the padding edge, slightly inside the cell's own
+   real border, which was rendering as two adjacent gold lines a couple pixels apart.
+   The shape: the active cell gets gold top + center-side + its already-gold outer
+   side, with the bottom open; its sibling (the OTHER visible week) gets a gold
+   bottom only, closing off its own box; the panel below gets gold left/right/bottom
+   and no top at all, since the "open" side already reads as continuous from the
+   active cell above and the sibling's own bottom border closes the other side. */
+.ops-table td.ops-ar-active{border-top:2.5px solid #d8b64f !important;border-bottom:1px solid transparent !important;}
+.ops-table td.ops-ar-active[data-ops-wk="0"]{border-right:2.5px solid #d8b64f !important;}
+.ops-table td.ops-ar-active[data-ops-wk="1"]{border-left:2.5px solid #d8b64f !important;}
+.ops-table td.ops-ar-adjacent{border-bottom:2.5px solid #d8b64f !important;}
 .ops-table td.ops-ar-active .ops-ar-caret{transform:rotate(180deg);color:#1f2e3e;}
 tr.ops-ar-detail{display:none;}
 tr.ops-ar-detail.open{display:table-row;}
 tr.ops-ar-detail>td.rl{background:transparent;}
-tr.ops-ar-detail>td.ops-ar-detail-td{padding:0;background:#fff;border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;border-bottom:2.5px solid #d8b64f;position:relative;}
-/* The top border is split so the half under the open-bottomed active cell can go
-   missing — that gap is what ties the cell and the panel into one connected shape. */
-tr.ops-ar-detail>td.ops-ar-detail-td::before{content:'';position:absolute;top:0;height:2.5px;background:#d8b64f;}
-tr.ops-ar-detail.notch-l>td.ops-ar-detail-td::before{left:50%;right:0;}
-tr.ops-ar-detail.notch-r>td.ops-ar-detail-td::before{left:0;right:50%;}
+tr.ops-ar-detail>td.ops-ar-detail-td{padding:0;background:#fff;border-top:none;border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;border-bottom:2.5px solid #d8b64f;position:relative;}
 .ops-ar-detail-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 12px;font-size:10px;font-weight:700;color:#1f2e3e;text-transform:uppercase;letter-spacing:.03em;background:#faf8f3;border-bottom:1px solid #f0ece2;}
 .ops-ar-detail-note{font-size:8.5px;font-weight:600;text-transform:none;letter-spacing:0;color:#9b6127;}
 .ops-ar-detail-body{max-height:340px;overflow:auto;font-size:11px;}
@@ -3525,7 +3528,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1142';
+const CORE_VERSION = 'v1143';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -16804,6 +16807,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1143', date: '2026-09-30',
+    entries:['OPS Cash Flow: rebuilt the AR Expected outline as real cell borders instead of an overlay box — the overlay drew its own border slightly inside the cell’s real one, showing as two close gold lines instead of one. Now: the clicked week gets gold top, its center-facing side, and its already-gold outer side, with the bottom open into the panel; the other week gets a gold bottom that closes off its own box; the panel keeps gold left/right/bottom with no top border at all. One continuous outline, no gaps, no doubled lines.'],
+  },
+  {
     version: 'v1142', date: '2026-09-30',
     entries:['OPS Cash Flow: week-2 Payables editing is now inline in the cell itself — click, type, Enter — instead of the v1140 expand panel, which took up too much room for a single number. An edited week shows "Original $X" beneath the figure, in the same amber as the changed indicators elsewhere; click it to restore. Fixed a layout bug where opening a scenario’s editor could visibly squeeze the cash table narrower — the two lived in the same CSS grid row, and the table’s column had no fixed width to hold its ground. The "design & construction schedule" list no longer repeats weeks one and two, since that’s exactly what AR Expected’s click-to-expand now shows — it starts at week three.'],
   },
@@ -20703,8 +20710,13 @@ function opsOpenArDetail(root,wk){
   const body=row.querySelector('#opsArDetailBody');
   if(body) body.innerHTML=opsArDetailHtml(wk);
   row.classList.add('open');
-  row.classList.toggle('notch-l',wk===0); row.classList.toggle('notch-r',wk===1); // v1140: which half of the top border goes missing
-  root.querySelectorAll('[data-ops-row="ar"]').forEach(td=>td.classList.toggle('ops-ar-active',parseInt(td.dataset.opsWk,10)===wk));
+  // v1143: the active cell (top/center-side/outer-side, open bottom) and its sibling
+  // (gold bottom only, closing off its own box) — see the CSS for the full shape.
+  root.querySelectorAll('[data-ops-row="ar"]').forEach(td=>{
+    const isActive=parseInt(td.dataset.opsWk,10)===wk;
+    td.classList.toggle('ops-ar-active',isActive);
+    td.classList.toggle('ops-ar-adjacent',!isActive);
+  });
   // CA-moved Acknowledge buttons can appear fresh here (not just in the schedule list
   // below, which binds once at render time) — wire any that aren't bound yet.
   row.querySelectorAll('[data-ops-ack]').forEach(b=>{ if(b._opsAckBound) return; b._opsAckBound=true;
@@ -20713,8 +20725,8 @@ function opsOpenArDetail(root,wk){
 function opsCloseArDetail(root){
   _arRevealWk=null;
   const row=root&&root.querySelector('#opsArDetailRow'); if(!row) return;
-  row.classList.remove('open'); row.classList.remove('notch-l'); row.classList.remove('notch-r');
-  root.querySelectorAll('[data-ops-row="ar"]').forEach(td=>td.classList.remove('ops-ar-active'));
+  row.classList.remove('open');
+  root.querySelectorAll('[data-ops-row="ar"]').forEach(td=>{ td.classList.remove('ops-ar-active'); td.classList.remove('ops-ar-adjacent'); });
 }
 // ── v1142: week-2 Payables edit — inline, in the cell itself. The expand-below-the-row
 // version (v1140) took up far more room than a single number needed.
