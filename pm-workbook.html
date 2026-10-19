@@ -327,7 +327,7 @@ body.delete-mode .log-trash-btn{display:flex;}
 <script>
 'use strict';
 
-const CORE_VERSION='v82';
+const CORE_VERSION='v83';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 // ── Styled tooltips via data-tip (replaces native title everywhere) ──
@@ -447,6 +447,17 @@ async function graphPost(url,body){
   if(!r.ok) throw new Error('POST '+r.status+': '+(await r.text()).slice(0,100));
   return r.json();
 }
+// A single $top=500 page silently drops anything past the 500th row — CORE_Projects
+// has long since grown past that. Follow @odata.nextLink so every project is seen.
+async function fetchAllItems(url,extra={}){
+  let out=[];
+  while(url){
+    const d=await graphGet(url,extra);
+    out=out.concat(d.value||[]);
+    url=d['@odata.nextLink']||null;
+  }
+  return out;
+}
 
 // ── Load ──────────────────────────────────────────────────────────────────
 function buildProjectsList(items){
@@ -496,8 +507,7 @@ function buildProjectsList(items){
 
 async function loadAll(){
   try{
-    const td=await graphGet(SP+'/CORE_TeamMembers/items?$expand=fields&$select=id,fields&$top=200');
-    const teamMembers=td.value||[];
+    const teamMembers=await fetchAllItems(SP+'/CORE_TeamMembers/items?$expand=fields&$select=id,fields&$top=200');
     const me=teamMembers.find(m=>{
       const f=m.fields||{};
       const email=(f.WorkEmail||f.Email||f.UserEmail||f.EMail||'').trim().toLowerCase();
@@ -531,8 +541,8 @@ async function loadAll(){
       window._tmFirstToFull[firstName.toLowerCase()]=name;
     });
 
-    const pd=await graphGet(SP+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
-    projects=buildProjectsList(pd.value||[]);
+    const projectItems=await fetchAllItems(SP+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
+    projects=buildProjectsList(projectItems);
 
     try{ await loadReviews(); }
     catch(e){ console.warn('[loadReviews] non-fatal:',e.message); reviews=[]; }
@@ -553,9 +563,9 @@ async function loadAll(){
 
 async function loadReviews(){
   try{
-    const rd=await graphGet(SP+'/CORE_ProjectReviews/items?$expand=fields&$select=id,fields&$top=500',
+    const items=await fetchAllItems(SP+'/CORE_ProjectReviews/items?$expand=fields&$select=id,fields&$top=500',
       {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
-    reviews=(rd.value||[]).map(item=>({spItemId:item.id,_fieldsId:item.fields?.id,...item.fields}));
+    reviews=items.map(item=>({spItemId:item.id,_fieldsId:item.fields?.id,...item.fields}));
   }catch(e){
     console.warn('[loadReviews]',e.message);
     // List may not exist yet — continue with empty reviews
@@ -568,9 +578,9 @@ async function loadReviews(){
 // the Budget Planner button can show it (same three-field logic as the Planner).
 async function loadBudgetStatuses(){
   try{
-    const cd=await graphGet(SP+'/CORE_Budget_Config/items?$expand=fields&$select=id,fields&$top=500');
+    const items=await fetchAllItems(SP+'/CORE_Budget_Config/items?$expand=fields&$select=id,fields&$top=500');
     budgetStatusMap=new Map();
-    (cd.value||[]).forEach(it=>{
+    items.forEach(it=>{
       const key=it.fields&&it.fields.ProjectKey;
       if(key) budgetStatusMap.set(key, computeBudgetStatus(it.fields));
     });
@@ -1169,9 +1179,9 @@ function _startRefresh(){
   _refreshTimer=setInterval(async()=>{
     if(document.hidden||!accessToken) return;
     try{
-      const pd=await graphGet(SP+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
+      const projectItems=await fetchAllItems(SP+'/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500');
       // Rebuild projects array preserving existing reviews
-      const newProjects=buildProjectsList(pd.value||[]);
+      const newProjects=buildProjectsList(projectItems);
       if(newProjects.length) projects=newProjects;
       renderAll();
     }catch(e){ console.warn('[refresh]',e); }
