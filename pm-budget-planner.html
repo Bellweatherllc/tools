@@ -378,10 +378,11 @@ tr.col-hdr td.fx{text-align:center;}
    parse (values + threaded comments), verification view,
    SharePoint list provisioning.
    ========================================================= */
-const CORE_VERSION = 'v67';
+const CORE_VERSION = 'v68';
 (function(){const b=document.getElementById('versionBadge'),a=document.getElementById('authVersionBadge');if(b)b.textContent=CORE_VERSION;if(a)a.textContent=CORE_VERSION;})();
 
 const BUDGET_CHANGELOG = [
+  { v:'v68', date:'2026-10-19', notes:'Minkoff still missing after the pagination fix, with caching, stage value, and PM-scoping all ruled out — added a reusable diagnostic: load with ?debugProject=<name substring> to log exactly what CORE_Projects handed back for it (raw item count, whether any title matched, and the full fields object) before any filtering runs. No functional change otherwise.' },
   { v:'v67', date:'2026-10-19', notes:'Fixed projects silently missing from the picker (e.g. Minkoff) — loadProjects() and loadRole() fetched CORE_Projects/CORE_TeamMembers with a single $top page and no @odata.nextLink follow-up, so anything past the 500th (200th for team members) row never loaded. Both now page through the full list via fetchAllItems().' },
   { v:'v65', date:'2026-09-26', notes:'File renamed to pm-budget-planner.html so the address matches the tool name. The old pm-budget-workbook.html address no longer exists.' },
   { v:'v64', date:'2026-09-25', notes:'Fixed Estimate Markup on newer (V5) COMP Estimating files. They carry extra markup points in an "Increase" column (C8) on top of the base markup in B8, and the file\u2019s sale price is built on both, but only B8 was read. That made the cost basis, and so Available for Construction, come out too high. Markup now reads B8 + C8 when the Increase column is present; older files are unchanged. Projects already set up from a V5 file keep the old figure until an admin reimports the estimate (or sets a Contract Markup).' },
@@ -681,6 +682,17 @@ async function loadProjects(){
       fetchAllItems('CORE_Projects'),
       loadBudgetConfigStatus()
     ]);
+    // Diagnostic: load with ?debugProject=<name substring> to see exactly what
+    // CORE_Projects handed back for a project that isn't showing up in the picker,
+    // before any filtering touches it — reusable for the next "X is missing" report.
+    const debugTerm = new URLSearchParams(location.search).get('debugProject');
+    if(debugTerm){
+      const needle = debugTerm.toLowerCase();
+      const matches = projectItems.filter(it => ((it.fields && it.fields.Title) || '').toLowerCase().includes(needle));
+      console.log('[budget-planner] CORE_Projects fetched:', projectItems.length, 'items total. Matches for "' + debugTerm + '":', matches.length);
+      if(matches.length) matches.forEach(it => console.log('[budget-planner] match ->', JSON.stringify({ id: it.id, fields: it.fields })));
+      else console.log('[budget-planner] No item with that title substring came back from CORE_Projects at all.');
+    }
     let items = projectItems.map(it => {
       const f = it.fields || {};
       let gantt = {}; try{ gantt = JSON.parse(f.GanttData || '{}'); }catch(e){}
