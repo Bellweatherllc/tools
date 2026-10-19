@@ -3533,7 +3533,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1148';
+const CORE_VERSION = 'v1149';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -8139,10 +8139,17 @@ function setStatus(projId,ns){
   markDirty(proj); triggerSave();
   if(ns==='da-signed'&&!_diWasSigned) setTimeout(()=>diAutoSeed(proj),400); // v981: read the signed DA for invoice dates
   // Persist status to PipelineStage — GanttData intentionally excludes status field
-  if(proj._spItemId){
+  {
     const _stageMap={'da-signed':'DA Signed','ca-signed':'CA Signed','paused':'Paused','projected':'','cancelled':'Cancelled','archived':'Archive','lost':'Lost'};
-    graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{PipelineStage:_stageMap[ns]??''})
-      .catch(e=>console.warn('[pipeline] PipelineStage patch failed:',e));
+    if(proj._spItemId){
+      graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{PipelineStage:_stageMap[ns]??''})
+        .catch(e=>console.warn('[pipeline] PipelineStage patch failed:',e));
+    }else if(_stageMap[ns]){
+      // No CORE_Projects row exists at all — a prior creation attempt likely failed
+      // silently. Create it now instead of leaving the project permanently invisible
+      // to every other tool (Budget Planner, Updater) that reads CORE_Projects.
+      _persistNewProject(proj,_stageMap[ns]).catch(e=>console.warn('[pipeline] recovery create failed:',proj.name,e));
+    }
   }
 }
 // Auto-advance: da-signed → ca-signed when CA milestone date has arrived
@@ -8161,6 +8168,7 @@ function autoAdvanceStatus(){
       // v838 audit: persist the advance — SharePoint stage otherwise stayed stale for the Manager and reports
       if(proj._spItemId) graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{PipelineStage:'CA Signed'})
         .catch(e=>console.warn('[autoAdvance] stage patch failed:',proj.name,e));
+      else _persistNewProject(proj,'CA Signed').catch(e=>console.warn('[autoAdvance] recovery create failed:',proj.name,e));
     }
   });
   return changed;
@@ -12295,10 +12303,13 @@ function spStageToStatus(stage){
 }
 
 // ── v838: persist a newly promoted project that has no CORE_Projects row yet ──
-async function _persistNewProject(proj){
+// stage defaults to 'DA Signed' (the original call sites always promote into that
+// stage); pass the project's actual current stage when recovering one that's already
+// further along (e.g. self-healing a CA Signed project found with no row at all).
+async function _persistNewProject(proj,stage){
   try{
     const data=await graphPost(BWC_SITE+'/CORE_Projects/items',{fields:{
-      Title:proj.name, ClientName:proj.name, PipelineStage:'DA Signed',
+      Title:proj.name, ClientName:proj.name, PipelineStage:stage||'DA Signed',
       GanttData:JSON.stringify(projectGanttPayload(proj))
     }});
     if(data?.id){ proj._spItemId=data.id; _baseGd.set(data.id,JSON.stringify(projectGanttPayload(proj))); }
@@ -12308,6 +12319,21 @@ async function _persistNewProject(proj){
     if(typeof _showSaveError==='function') _showSaveError(['Could not create a project record for \u201c'+proj.name+'\u201d \u2014 it exists on the board only and will not survive a reload. Try confirming again.']);
   }
 }
+
+// One-time console utility: scan every loaded project for one that's past Lead stage
+// but has no CORE_Projects row at all (a prior creation attempt failed silently and
+// nothing since has retried it, since every later status-change write only PATCHes an
+// existing row) and create the missing row now. Run from the browser console:
+//   repairMissingProjectRows()
+async function repairMissingProjectRows(){
+  const stageMap={'da-signed':'DA Signed','ca-signed':'CA Signed','paused':'Paused'};
+  const orphans=PROJECTS.filter(p=>!p._spItemId&&stageMap[p.status]);
+  if(!orphans.length){ console.log('[repair] No orphaned projects found — every signed/paused project already has a CORE_Projects row.'); return; }
+  console.log('[repair] Found',orphans.length,'project(s) with no CORE_Projects row:',orphans.map(p=>p.name));
+  for(const p of orphans){ await _persistNewProject(p,stageMap[p.status]); }
+  console.log('[repair] Done — reload the Budget Planner / Updater to confirm.');
+}
+window.repairMissingProjectRows=repairMissingProjectRows;
 
 // ── Create a new open slot in CORE_Projects so it persists across sessions ──
 async function createSlotInSP(proj){
@@ -16811,6 +16837,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1149', date: '2026-10-19',
+    entries:['Fixed projects that silently never get a CORE_Projects row created at all (invisible to the Budget Planner, the Updater, and every other tool that reads that list, while looking completely normal here) — a status change now creates the missing row if one never got made, instead of only ever patching one that already exists. Added a console utility, repairMissingProjectRows(), to fix any project already stuck that way right now.'],
+  },
   {
     version: 'v1148', date: '2026-09-30',
     entries:['OPS Cash Flow: an edited week-2 Payables figure (and its "Original $X" note) now shows in bright blue, so an edit is obvious at a glance. Untouched, it still matches week 1.'],
