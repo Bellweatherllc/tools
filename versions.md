@@ -13,7 +13,7 @@ Last updated: 2026-10-20
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Project Basis | `project-basis.html` | v36 |
+| Project Basis | `project-basis.html` | v37 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -66,6 +66,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-10-20** — Project Basis v36 → v37: Assess project list narrowed to the sample project only, matching Raw Results/Analysis (which already only show projects with submitted assessments — currently just the sample). Will widen back to real Lead-stage projects once real assessments are in use.
 - **2026-10-20** — Project Basis v35 → v36: fixed the sample project disappearing once SharePoint sign-in succeeded — `fetchProjects()` was overwriting the project list wholesale, dropping the sample. It's now always present alongside the real list.
 - **2026-10-20** — Project Basis v23 → v35: ternary rating control redesigned as a colored circular 1/2/3 popup; sample "Hartwell Residence" project wired into Assess/Raw Results/Analysis for demoing without SharePoint sign-in; Results renamed to Raw Results and stripped to unprocessed data only; Summary renamed to Analysis with an inline-pie layout, phase timeline bars, and a tagged Key Conclusions library; Assess panel gained Scope-of-Work bullets.
 - **2026-09-29** — Team Members v23: Access screen renames PM Updater → PM Workbook and PM Budget Worksheet → PM Budget Planner (manual updated to match); sign-in footer badge was stuck on v21 in the old red, now stamped current and `#ef4444`.
