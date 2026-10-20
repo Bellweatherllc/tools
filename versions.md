@@ -13,7 +13,7 @@ Last updated: 2026-10-20
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Project Basis | `project-basis.html` | v41 |
+| Project Basis | `project-basis.html` | v42 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -66,6 +66,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
 - **2026-10-20** — Project Basis v40 → v41: all four sample assessments (Alex Rivera/Design, Sam Chen/PM, Jordan Blake/Estimating, Priya Nair/Structural Eng.) now have a score and comment on all twelve dimensions — Priya's previously covered only Engineering, with the other eleven silently missing rather than blank. Confirmed Raw Results and Analysis both show all four respondents fully on every dimension, and the Assess-tab prefill has no blank notes.
 - **2026-10-20** — Project Basis v39 → v40: project selection now persists across Assess/Raw Results/Analysis — pick a project in one tab and it stays selected (with content auto-loaded) when you switch to the others, instead of resetting to "Select a project..." every time.
 - **2026-10-20** — Project Basis v38 → v39: guide-box 1/2/3 badges now colorize legacy "LOW/MED/HIGH" wording too, not just literal digits — fixes stale-looking plain-bold guide text on block configs saved before the ternary redesign, without needing to hand-edit the SharePoint config. Also: selecting the sample project in Assess now prefills ratings/notes from a mock assessment instead of staying blank, matching what Raw Results/Analysis already show for it.
