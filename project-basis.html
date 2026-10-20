@@ -334,7 +334,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v39</span>
+      <span class="header-version">v40</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -564,7 +564,7 @@ const TABS=['assess','results','summary'];
 function switchTab(name){
   TABS.forEach(t=>document.getElementById('tab-'+t).style.display=(t===name)?'block':'none');
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',TABS[i]===name));
-  if(name==='assess')  { populateAssessSelects(); renderAssessBlocks(); }
+  if(name==='assess')  { renderAssessBlocks(); populateAssessSelects(); }
   if(name==='results') populateResultsSelect();
   if(name==='summary') populateSummarySelect();
 }
@@ -667,6 +667,7 @@ let graphToken   = null;
 let spProjects   = [MOCK_PROJECT];   // live list from SharePoint — sample project until a real fetch replaces it
 let spLoaded     = false;
 let currentUser  = {name:'', dept:'', email:''};
+let currentProjectId = ''; // shared across Assess/Raw Results/Analysis so switching tabs keeps the project selected
 
 async function initMsal() {
   if (msalInstance) return;
@@ -1061,11 +1062,17 @@ function populateAssessSelects(){
   const noProjects = !spLoaded
     ? '<option value="" disabled>Sign in to load projects</option>'
     : filtered.length === 0 ? '<option value="" disabled>No Lead projects found</option>' : '';
-  document.getElementById('assess-project').innerHTML = '<option value="">Select a project...</option>' + noProjects + opts;
+  const sel = document.getElementById('assess-project');
+  sel.innerHTML = '<option value="">Select a project...</option>' + noProjects + opts;
+  if(currentProjectId && filtered.some(p=>p.id===currentProjectId)){
+    sel.value = currentProjectId;
+    onProjectSelected();
+  }
 }
 
 function onProjectSelected(){
   const id = document.getElementById('assess-project').value;
+  currentProjectId = id;
   const panel = document.getElementById('project-meta-panel');
   if(!id){ panel.style.display='none'; return; }
   const proj = spProjects.find(p => p.id === id);
@@ -1271,12 +1278,16 @@ async function populateProjectsWithResults(el){
       const label=p.shortDesc?`${esc(p.name)} — ${esc(p.shortDesc)}`:esc(p.name);
       return `<option value="${p.id}">${label}</option>`;
     }).join('');
+  if(currentProjectId && withResults.some(p=>p.id===currentProjectId)) el.value=currentProjectId;
 }
 async function populateResultsSelect(){
-  await populateProjectsWithResults(document.getElementById('results-project'));
+  const el=document.getElementById('results-project');
+  await populateProjectsWithResults(el);
+  if(el.value) loadResults();
 }
 async function loadResults(){
   const pid=document.getElementById('results-project').value;
+  currentProjectId = pid;
   const el=document.getElementById('results-content');
   if(!pid){el.innerHTML='';return;}
   el.innerHTML='<div class="card"><div class="empty-state"><div class="empty-state-icon">⏳</div><p>Loading assessments…</p></div></div>';
@@ -1703,11 +1714,14 @@ function renderSummaryContent(pid, asmts){
 }
 
 async function populateSummarySelect(){
-  await populateProjectsWithResults(document.getElementById('summary-project'));
+  const el=document.getElementById('summary-project');
+  await populateProjectsWithResults(el);
+  if(el.value) loadSummary();
 }
 
 async function loadSummary(){
   const pid=document.getElementById('summary-project').value;
+  currentProjectId = pid;
   const content=document.getElementById('summary-content');
   const empty=document.getElementById('summary-empty');
   if(!pid){ content.style.display='none'; empty.style.display=''; return; }
