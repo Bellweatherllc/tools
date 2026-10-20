@@ -982,7 +982,12 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
     <div class="modal-body">
       <div class="modal-field">
         <label>Client Name <span class="req">*</span></label>
-        <input type="text" id="np-ClientName" class="edit-input" placeholder="e.g. Smith">
+        <input type="text" id="np-ClientName" class="edit-input" placeholder="e.g. Smith" oninput="suggestNewProjectTitle()">
+      </div>
+      <div class="modal-field">
+        <label>Title <span class="req">*</span></label>
+        <input type="text" id="np-Title" class="edit-input" placeholder="e.g. SMITH - Kitchen+Bath" oninput="this.dataset.touched='1'">
+        <p style="font-size:10.5px;color:var(--teak);margin-top:4px;">What the Pipeline, Budget Planner, and Updater all display and search by — keep it consistent with existing projects: SURNAME - Scope.</p>
       </div>
       <div class="modal-field">
         <label>Pipeline Stage</label>
@@ -1009,7 +1014,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
       </div>
       <div class="modal-field">
         <label>Short Description</label>
-        <input type="text" id="np-ShortDescription" class="edit-input" placeholder="e.g. Kitchen + bath renovation">
+        <input type="text" id="np-ShortDescription" class="edit-input" placeholder="e.g. Kitchen + bath renovation" oninput="suggestNewProjectTitle()">
       </div>
       <p style="font-size:11px;color:var(--teak);line-height:1.6;margin-top:4px">All other fields can be filled in via the detail panel after the project is created.</p>
     </div>
@@ -1040,7 +1045,7 @@ const SP_CONFIG = {
 // v59 — single version constant stamps both badges (header + splash overlay)
 // so they can never drift apart. The splash badge matters: the overlay blocks
 // the header when testing locally before sign-in.
-const MGR_VERSION='v61';
+const MGR_VERSION='v62';
 (()=>{ const h=document.getElementById('mgrVerBadge'); if(h) h.textContent=MGR_VERSION;
        const p=document.getElementById('mgrVerSplash'); if(p) p.textContent=MGR_VERSION; })();
 const CORE_COLUMNS = [
@@ -2064,6 +2069,18 @@ function goToImport(){
       const{fields,df}=cardToFields(c);
       const mergedFields=mergeClaudeFields(fields,c.id);
       const dupeInfo=getDupeInfo(c);
+      // Title is SharePoint's own display-name column — every other CORE tool
+      // (Pipeline, Budget Planner, Updater) keys off it, but this importer never
+      // wrote it, so cards imported straight here (bypassing the Pipeline's own
+      // promotion flow, which does set Title) ended up permanently invisible
+      // everywhere else. Fill it from the card's own name — which already follows
+      // the "SURNAME - Scope" convention every other project uses — but only for a
+      // new record, or an existing one that's missing Title too; never clobber a
+      // Title someone's already set or refined by hand.
+      if(!mergedFields.Title&&!(dupeInfo.existing&&dupeInfo.existing.Title)){
+        const cardTitle=(c.name||'').trim();
+        if(cardTitle) mergedFields.Title=cardTitle;
+      }
       return{
         _skip:dupeInfo.type==='protected',
         _dupeType:dupeInfo.type,
@@ -2357,8 +2374,8 @@ function dismissNewBanner(){
 // ══════════════════════════════════ NEW PROJECT MODAL
 function openNewProjectModal(){
   if(!graphToken){showToast('Sign in to SharePoint first.');return;}
-  ['np-ClientName','np-Address','np-ShortDescription'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.value='';
+  ['np-ClientName','np-Title','np-Address','np-ShortDescription'].forEach(id=>{
+    const el=document.getElementById(id);if(el){el.value='';delete el.dataset.touched;}
   });
   document.getElementById('np-PipelineStage').value='Lead';
   document.getElementById('np-status').style.display='none';
@@ -2366,6 +2383,18 @@ function openNewProjectModal(){
   document.getElementById('np-save-btn').textContent='Create Project';
   document.getElementById('new-project-modal').classList.add('open');
   setTimeout(()=>document.getElementById('np-ClientName').focus(),50);
+}
+// Keeps Title in sync with Client Name + Short Description, following the
+// SURNAME - Scope convention every other project uses — but only until the admin
+// edits Title directly (dataset.touched), so it never overwrites a deliberate choice.
+function suggestNewProjectTitle(){
+  const titleEl=document.getElementById('np-Title');
+  if(!titleEl||titleEl.dataset.touched==='1')return;
+  const name=(document.getElementById('np-ClientName').value||'').trim();
+  const desc=(document.getElementById('np-ShortDescription').value||'').trim();
+  if(!name){titleEl.value='';return;}
+  const surname=name.split(/\s+/).pop().toUpperCase();
+  titleEl.value=desc?`${surname} - ${desc}`:surname;
 }
 
 function closeNewProjectModal(){
@@ -2375,7 +2404,9 @@ function closeNewProjectModal(){
 async function createNewProject(){
   const clientName=document.getElementById('np-ClientName').value.trim();
   if(!clientName){showToast('Client Name is required.');document.getElementById('np-ClientName').focus();return;}
-  const fields={ClientName:clientName};
+  const title=document.getElementById('np-Title').value.trim();
+  if(!title){showToast('Title is required.');document.getElementById('np-Title').focus();return;}
+  const fields={ClientName:clientName,Title:title};
   const stage=document.getElementById('np-PipelineStage').value;
   fields.PipelineStage=stage||'Lead';
   const addr=document.getElementById('np-Address').value.trim();
@@ -2401,6 +2432,30 @@ async function createNewProject(){
     statusEl.textContent='Failed: '+e.message; statusEl.style.color='var(--red)'; statusEl.style.display='';
   }
 }
+
+// One-time console utility: find every CORE_Projects row with a ClientName but no
+// Title at all — the gap both the Trello importer and this modal used to have — and
+// backfill it using the same SURNAME - Scope convention every other project already
+// uses. Run from the browser console: backfillMissingTitles()
+async function backfillMissingTitles(){
+  const orphans=allProjects.filter(p=>p.ClientName&&!p.Title);
+  if(!orphans.length){ console.log('[backfill] No projects with a blank Title found.'); return; }
+  console.log('[backfill] Found',orphans.length,'project(s) missing Title:',orphans.map(p=>p.ClientName));
+  for(const p of orphans){
+    const surname=(p.ClientName||'').trim().split(/\s+/).pop().toUpperCase();
+    const scope=(p.ShortDescription||p.ProjectDescription||'').trim();
+    const title=scope?`${surname} - ${scope}`:surname;
+    try{
+      await graphFetch(`${SP_CONFIG.itemBaseUrl}/${p._id}`,{method:'PATCH',body:JSON.stringify({fields:{Title:title}})});
+      p.Title=title;
+      console.log('[backfill] Set Title for',p.ClientName,'->',title);
+    }catch(e){
+      console.error('[backfill] Failed for',p.ClientName,e.message);
+    }
+  }
+  console.log('[backfill] Done — reload the Pipeline / Budget Planner / Updater to confirm.');
+}
+window.backfillMissingTitles=backfillMissingTitles;
 
 (async()=>{
   try{await initMsal();}
