@@ -334,7 +334,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v38</span>
+      <span class="header-version">v39</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -915,8 +915,10 @@ function formatGuideText(text){
   return text.split('\n').filter(Boolean).map(line=>{
     const m=line.match(/^(\d+|LOW|MED|HIGH|[+\-\/]+)\s*[—\-–]\s*(.+)/i);
     if(!m) return `<div class="guide-line">${line}</div>`;
-    const token=m[1], rest=m[2];
-    if(['1','2','3'].includes(token)) return `<div class="guide-line"><span class="guide-num-badge gn-${token}">${token}</span>${rest}</div>`;
+    const token=m[1];
+    const num = {1:'1','2':'2','3':'3',low:'1',med:'2',high:'3'}[token.toLowerCase()];
+    const rest=m[2];
+    if(num) return `<div class="guide-line"><span class="guide-num-badge gn-${num}">${num}</span>${rest}</div>`;
     return `<div class="guide-line"><strong>${token}</strong> — ${rest}</div>`;
   }).join('');
 }
@@ -1095,6 +1097,31 @@ function onProjectSelected(){
   }
   panel.style.display = 'flex';
   panel.style.display = '';
+  clearRatingsAndNotes();
+  if(id === MOCK_PROJECT_ID){
+    applySampleAssessment();
+    showToast('Sample ratings loaded — nothing is saved.');
+  }
+}
+
+function applySampleAssessment(){
+  const asmt = MOCK_ASSESSMENTS[0];
+  document.getElementById('open-notes').value = asmt.openNotes || '';
+  Object.keys(asmt.scores).forEach(blockId=>{
+    Object.keys(asmt.scores[blockId]).forEach(dimId=>{
+      const {score,note} = asmt.scores[blockId][dimId];
+      const btn = document.getElementById(`ratebtn-${blockId}-${dimId}`);
+      if(btn && score){
+        btn.classList.remove('rate-unset','set-low','set-med','set-high');
+        btn.classList.add('set-'+score);
+        btn.dataset.val = score;
+        const num = score==='low'?'1':score==='med'?'2':'3';
+        btn.innerHTML = `<span class="rate-num">${num}</span>`;
+      }
+      const noteEl = document.getElementById(`note-${blockId}-${dimId}`);
+      if(noteEl) noteEl.value = note || '';
+    });
+  });
 }
 
 // ══════════════════════════════════════════════════ SUBMIT ═════
@@ -1139,14 +1166,17 @@ async function submitAssessment(){
     showToast('Submission failed — ' + e.message);
   }
 }
-function clearAssessForm(){
-  document.getElementById('assess-project').value='';
+function clearRatingsAndNotes(){
   document.getElementById('open-notes').value='';
-  document.getElementById('project-meta-panel').style.display='none';
   document.querySelectorAll('.lod-btn').forEach(b=>b.className='lod-btn');
   document.querySelectorAll('.rate-btn').forEach(b=>{b.className='rate-btn rate-unset';b.removeAttribute('data-val');b.textContent='–';});
   closeAllRatePopups();
   document.querySelectorAll('.dim-note').forEach(b=>b.value='');
+}
+function clearAssessForm(){
+  document.getElementById('assess-project').value='';
+  document.getElementById('project-meta-panel').style.display='none';
+  clearRatingsAndNotes();
 }
 
 // ══════════════════════════════════════════════════ DRAG ═══════
