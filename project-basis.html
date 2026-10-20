@@ -334,7 +334,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v41</span>
+      <span class="header-version">v42</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -676,6 +676,76 @@ const MOCK_ASSESSMENTS = [
       } } },
 ];
 
+// Hand-written sample content for dimensions added to the live config via Admin mode,
+// keyed by label (not id — admin-added dims get a 'd_'+timestamp id we can't predict).
+const SAMPLE_DIM_CONTENT = {
+  'Presentation expectations': {
+    'Design':          {score:'high', note:'Client will expect polished renderings at each milestone, not just redlines — budget extra time for presentation-quality output.'},
+    'PM':              {score:'med',  note:'Standard milestone presentations should cover it; nothing beyond our usual deck.'},
+    'Estimating':      {score:'low',  note:"Doesn't affect pricing either way."},
+    'Structural Eng.': {score:'low',  note:'Not something I weigh in on from a structural standpoint.'},
+  },
+  'Sales Strategy': {
+    'Design':          {score:'med',  note:'A handful of massing options were discussed during the walkthrough; nothing exotic.'},
+    'PM':              {score:'low',  note:"Scope seems settled coming out of sales — shouldn't need much reworking."},
+    'Estimating':      {score:'med',  note:'A couple of pricing scenarios were floated during the sale; worth confirming which one the client actually committed to.'},
+    'Structural Eng.': {score:'low',  note:'No structural options were part of the sales conversation as far as I\'m aware.'},
+  },
+  'Quality': {
+    'Design':          {score:'high', note:'Client has been explicit about wanting a high-end, fully custom finish throughout.'},
+    'PM':              {score:'high', note:"Agree with Design — this isn't a builder-grade finish job, budget the extra QC time."},
+    'Estimating':      {score:'high', note:'Finish-level expectations here are above our typical allowance; already reflected in the estimate.'},
+    'Structural Eng.': {score:'low',  note:'No structural implications from finish quality expectations.'},
+  },
+  'Timeline': {
+    'Design':          {score:'med',  note:"No hard external deadline from the client yet, but they've mentioned wanting to be in before next winter."},
+    'PM':              {score:'med',  note:'Workable timeline as scoped, but selections delays could compress it.'},
+    'Estimating':      {score:'low',  note:"Timeline as discussed doesn't put unusual pressure on pricing."},
+    'Structural Eng.': {score:'med',  note:'Foundation evaluation could add time up front if test pits turn up anything unexpected.'},
+  },
+  'Contract Scrutiny': {
+    'Design':          {score:'low',  note:'Client has been straightforward and trusting through the process so far.'},
+    'PM':              {score:'low',  note:'No signals of a heavily lawyered review process.'},
+    'Estimating':      {score:'med',  note:'Client has asked detailed questions about how the estimate was built — expect similar scrutiny on the contract.'},
+    'Structural Eng.': {score:'low',  note:'Not in a position to speak to this one.'},
+  },
+  'Neighbor Relationship': {
+    'Design':          {score:'med',  note:"Addition will be visible from the adjacent property — worth a heads-up letter before construction starts."},
+    'PM':              {score:'med',  note:"Agree with Design — a neighbor notification is probably a good idea given the addition's visibility."},
+    'Estimating':      {score:'low',  note:'No pricing impact from neighbor considerations.'},
+    'Structural Eng.': {score:'low',  note:'No structural concerns related to neighboring properties.'},
+  },
+};
+// Last-resort fallback for any dimension not in SAMPLE_DIM_CONTENT either —
+// keeps the sample fully filled no matter what gets added in Admin mode later.
+const GENERIC_SAMPLE_FALLBACK = {
+  'Design':          {score:'med', note:'No specific concerns here — reads as a standard part of the scope.'},
+  'PM':              {score:'med', note:'Nothing here that should affect sequencing or coordination.'},
+  'Estimating':      {score:'low', note:"Doesn't look like it should move the price in either direction."},
+  'Structural Eng.': {score:'low', note:'Outside core structural scope — no concerns from an engineering standpoint.'},
+};
+
+// Backfills any dimension present in the live block config but missing from a mock
+// assessment (e.g. custom dims added via Admin mode) so the sample never shows blank.
+function getCompletedMockAssessments(){
+  const blocks = getBlocks();
+  return MOCK_ASSESSMENTS.map(asmt=>{
+    const scores = JSON.parse(JSON.stringify(asmt.scores||{}));
+    blocks.forEach(b=>{
+      scores[b.id] = scores[b.id] || {};
+      b.dims.forEach(d=>{
+        if(!scores[b.id][d.id] || !scores[b.id][d.id].score){
+          const fill = (SAMPLE_DIM_CONTENT[d.label] && SAMPLE_DIM_CONTENT[d.label][asmt.assessorDept])
+            || GENERIC_SAMPLE_FALLBACK[asmt.assessorDept]
+            || {score:'med', note:'No specific concerns flagged here.'};
+          scores[b.id][d.id] = {...fill};
+        }
+      });
+    });
+    return {...asmt, scores};
+  });
+}
+
 let msalInstance = null;
 let graphToken   = null;
 let spProjects   = [MOCK_PROJECT];   // live list from SharePoint — sample project until a real fetch replaces it
@@ -779,7 +849,7 @@ async function graphDelete(url) {
 
 // Shared by Results and Summary so both read the exact same records.
 async function fetchAssessmentsForProject(pid){
-  if(pid===MOCK_PROJECT_ID) return MOCK_ASSESSMENTS;
+  if(pid===MOCK_PROJECT_ID) return getCompletedMockAssessments();
   const url=`${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$filter=fields/ProjectId eq '${pid}'&$top=100`;
   const data=await graphFetch(url, {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
   return (data.value||[]).map(item=>{
@@ -1126,7 +1196,7 @@ function onProjectSelected(){
 }
 
 function applySampleAssessment(){
-  const asmt = MOCK_ASSESSMENTS[0];
+  const asmt = getCompletedMockAssessments()[0];
   document.getElementById('open-notes').value = asmt.openNotes || '';
   Object.keys(asmt.scores).forEach(blockId=>{
     Object.keys(asmt.scores[blockId]).forEach(dimId=>{
