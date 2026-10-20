@@ -13,7 +13,7 @@ Last updated: 2026-10-20
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Project Basis | `project-basis.html` | v38 |
+| Project Basis | `project-basis.html` | v39 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -66,6 +66,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-10-20** — Project Basis v38 → v39: guide-box 1/2/3 badges now colorize legacy "LOW/MED/HIGH" wording too, not just literal digits — fixes stale-looking plain-bold guide text on block configs saved before the ternary redesign, without needing to hand-edit the SharePoint config. Also: selecting the sample project in Assess now prefills ratings/notes from a mock assessment instead of staying blank, matching what Raw Results/Analysis already show for it.
 - **2026-10-20** — Project Basis v37 → v38: reverted v37's demo-only restriction — Assess lists Lead-stage projects plus the sample again. The three-tab mismatch (Assess shows all submittable projects, Raw Results/Analysis show only assessed ones) is understood behavior, not a bug; it'll resolve naturally as real assessments get submitted.
 - **2026-10-20** — Project Basis v36 → v37: Assess project list narrowed to the sample project only, matching Raw Results/Analysis (which already only show projects with submitted assessments — currently just the sample). Will widen back to real Lead-stage projects once real assessments are in use.
 - **2026-10-20** — Project Basis v35 → v36: fixed the sample project disappearing once SharePoint sign-in succeeded — `fetchProjects()` was overwriting the project list wholesale, dropping the sample. It's now always present alongside the real list.
