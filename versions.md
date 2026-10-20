@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-09-29
+Last updated: 2026-10-20
 
 ## Live tools
 
@@ -13,7 +13,7 @@ Last updated: 2026-09-29
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Project Basis | `project-basis.html` | v23 |
+| Project Basis | `project-basis.html` | v35 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -66,6 +66,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-10-20** — Project Basis v23 → v35: ternary rating control redesigned as a colored circular 1/2/3 popup; sample "Hartwell Residence" project wired into Assess/Raw Results/Analysis for demoing without SharePoint sign-in; Results renamed to Raw Results and stripped to unprocessed data only; Summary renamed to Analysis with an inline-pie layout, phase timeline bars, and a tagged Key Conclusions library; Assess panel gained Scope-of-Work bullets.
 - **2026-09-29** — Team Members v23: Access screen renames PM Updater → PM Workbook and PM Budget Worksheet → PM Budget Planner (manual updated to match); sign-in footer badge was stuck on v21 in the old red, now stamped current and `#ef4444`.
 - **2026-09-28** — Core Roadmap v57: moved from decimal versions (v0.56) to whole numbers; the build count carries on.
 - **2026-09-28** — All version badges set to red `#ef4444`; every tool above bumped one version. New badges on People Analyzer (v1) and Sherpa Lookup Tester (v1). Revenue Tracker's tab title no longer carries the version. Permit & Zoning Tracker, Core Roadmap and FBA Matrix badges no longer show a stale hard-coded number before the script stamps them.
