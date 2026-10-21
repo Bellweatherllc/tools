@@ -3533,7 +3533,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1149';
+const CORE_VERSION = 'v1150';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -16838,6 +16838,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1150', date: '2026-10-21',
+    entries:['OPS Cash Flow: weeks now run Thursday–Wednesday instead of Monday–Sunday throughout. Week 2’s Bank Balance is no longer a repeat of the QuickBooks snapshot — it’s week 1’s own forecasted ending balance (bank minus payroll/payables, plus week 1’s AR and scenarios) carried forward automatically. The design & construction schedule list now projects a month out (through week six) instead of stopping at week four.'],
+  },
+  {
     version: 'v1149', date: '2026-10-19',
     entries:['Fixed projects that silently never get a CORE_Projects row created at all (invisible to the Budget Planner, the Updater, and every other tool that reads that list, while looking completely normal here) — a status change now creates the missing row if one never got made, instead of only ever patching one that already exists. Added a console utility, repairMissingProjectRows(), to fix any project already stuck that way right now.'],
   },
@@ -20325,8 +20329,10 @@ function opsBuildPayablesOverride(newAbsAmount){
 function opsMoney(n){ const neg=n<0; n=Math.abs(Math.round(n)); return (neg?'\u2212$':'$')+n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 function opsWeeks(n){
   n=n||4;
-  const t=new Date(); t.setHours(0,0,0,0); const mon=new Date(t); mon.setDate(t.getDate()-((t.getDay()+6)%7));
-  const w=[]; for(let i=0;i<n;i++){ const s=new Date(mon); s.setDate(mon.getDate()+i*7); const e=new Date(s); e.setDate(s.getDate()+6);
+  // v1150: weeks run Thursday\u2013Wednesday now, not Monday\u2013Sunday \u2014 anchor to the most
+  // recent Thursday (today counts if today is one) instead of the most recent Monday.
+  const t=new Date(); t.setHours(0,0,0,0); const thu=new Date(t); thu.setDate(t.getDate()-((t.getDay()+3)%7));
+  const w=[]; for(let i=0;i<n;i++){ const s=new Date(thu); s.setDate(thu.getDate()+i*7); const e=new Date(s); e.setDate(s.getDate()+6);
     const f=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
     w.push({start:s,end:e,lab:f(s),sub:f(s)+' \u2013 '+(s.getMonth()===e.getMonth()?e.getDate():f(e)),accurate:i<2}); }
   return w;
@@ -20559,7 +20565,26 @@ async function qbApply(root){
       opsSavePayablesOverride().catch(e=>console.warn(APP_VER+' Operations: payables override reset failed to save',e));
     }
     let n=0;
-    if(d.bank!=null) n+=put(/^BANK BALANCE$/i,d.bank);
+    // v1150: week 2's Bank Balance is no longer a repeat of the QB snapshot — it's
+    // week 1's own ending Net Position carried forward (set below, once that's known).
+    let bankW2Cell=null;
+    if(d.bank!=null){
+      root.querySelectorAll('.ops-table tbody tr').forEach(tr=>{
+        const lbl=tr.querySelector('td.rl'); if(!lbl) return;
+        const name=(lbl.childNodes[0]&&lbl.childNodes[0].nodeValue||'').trim();
+        if(!/^BANK BALANCE$/i.test(name)) return;
+        n++;
+        const cells=tr.querySelectorAll('td:not(.rl)');
+        if(cells[0]){
+          cells[0].textContent=opsMoney(d.bank);
+          cells[0].classList.remove('nodata');
+          cells[0].classList.toggle('pos',d.bank>0); cells[0].classList.toggle('negv',d.bank<0);
+        }
+        bankW2Cell=cells[1]||null;
+        const src=lbl.querySelector('.ops-src');
+        if(src) src.textContent='Week 1: QuickBooks weekly drop · week 2: week 1’s forecast carried forward';
+      });
+    }
     if(d.payroll!=null) n+=put(/^PAYROLL$/i,-Math.abs(d.payroll));
     if(d.payables!=null){
       const rawPayables=-Math.abs(d.payables);
@@ -20598,13 +20623,19 @@ async function qbApply(root){
       const payOverrideActive=_opsPayablesOverride&&_opsPayablesOverride.qbFile===d.file&&_opsPayablesOverride.qbModified===d.modified;
       let bal=d.bank-Math.abs(d.payroll||0)-rawPayablesAbs;
       root.querySelectorAll('[data-ops-net]').forEach(td=>{
-        if(parseInt(td.dataset.opsNet,10)===1&&payOverrideActive){
+        const i=parseInt(td.dataset.opsNet,10);
+        if(i===1&&payOverrideActive){
           bal += rawPayablesAbs-Math.abs(_opsPayablesOverride.amount);
         }
         bal += (parseFloat(td.dataset.opsAr)||0) + (parseFloat(td.dataset.opsSc)||0);
         td.textContent=opsMoney(bal);
         td.classList.remove('nodata');
         td.classList.add(bal<0?'negv':'pos');
+        if(i===0&&bankW2Cell){ // v1150: week 1's ending balance IS week 2's starting Bank Balance
+          bankW2Cell.textContent=opsMoney(bal);
+          bankW2Cell.classList.remove('nodata');
+          bankW2Cell.classList.toggle('pos',bal>0); bankW2Cell.classList.toggle('negv',bal<0);
+        }
       });
     }
     note(n?(d.file||'file'):(d.file||'file')+' \u00b7 parsed but no rows matched \u2014 see console');
@@ -20971,13 +21002,16 @@ function opsRenderInto(root){
     root.innerHTML='<div class="ops-noaccess"><h2>Cashflow requires access</h2><p>The Operations screen shows cash and invoicing figures and is limited to the people who work with them. Contact Byron for permission.</p></div>';
     return;
   }
-  const W=opsWeeks(), W13=opsWeeks(13), inv=opsDesignInvoices();
+  const W=opsWeeks(6), W13=opsWeeks(13), inv=opsDesignInvoices();
   const zoneOf=i=>i<2?'acc':i<4?'proj':'beyond';
-  // scenarios are anchored to a Monday; derive the week index against this window each render
+  // scenarios are anchored to a Thursday; derive the week index against this window each render
   const scNet=[0,0,0,0];
   OPS_SCENARIOS.forEach(sc=>{ const d=opsIsoToDate(sc.weekOf); sc.wk=d?Math.round((d-W13[0].start)/(7*24*3600*1000)):-1; if(sc.on&&sc.wk>=0&&sc.wk<4) scNet[sc.wk]+=(sc.dir==='in'?1:-1)*(sc.amt||0); });
   const today=new Date(); today.setHours(0,0,0,0);
-  const wkOf=d=>{ if(!d) return -1; for(let i=0;i<4;i++) if(d>=W[i].start&&d<=W[i].end) return i; return d>W[3].end?4:-2; };
+  // v1150: widened from 4 to 6 weeks (≈ a month) so the invoice list below can project
+  // further out — W itself only needed indices 0/1/2/3 elsewhere in this function, all
+  // still valid; this wkOf is used only by that invoice list, not by the cash view or AR.
+  const wkOf=d=>{ if(!d) return -1; for(let i=0;i<6;i++) if(d>=W[i].start&&d<=W[i].end) return i; return d>W[5].end?6:-2; };
   // v1138: same combined-total logic arApply uses, so the figure painted before BT
   // data has loaded already matches whatever's cached in AR_DATA from an earlier load.
   const ar=opsArWeekBreakdown().ar;
@@ -21015,7 +21049,7 @@ function opsRenderInto(root){
   if(!rowSc) rowSc='<tr><td class="rl">Scenarios<span class="ops-src">none in this window</span></td>'
     +Array.from({length:OPS_VISIBLE_WEEKS},(_,i)=>i).map(i=>'<td class="'+cls(i)+' nodata">\u2014</td>').join('')+'</tr>';
   // v1035: Operating Cash and Bank Balance were the same Meridian figure under two names.
-  const body=rowNo('Bank Balance','QuickBooks weekly drop','bank')
+  const body=rowNo('Bank Balance','Week 1: QuickBooks weekly drop · week 2: week 1’s forecast carried forward','bank')
     +rowNo('Payroll','QuickBooks drop \u00b7 owed now, paid once','payroll')
     +rowNo('Payables','QuickBooks drop \u00b7 owed now, paid once','payables')
     +rowAr+arDetailRow+rowSc;
@@ -21046,7 +21080,7 @@ function opsRenderInto(root){
     +'</div><div class="ops-card">'+caRows+'</div></div>'):'';
   // what's expected
   const dated=inv.filter(x=>x.date&&x.date>=today).sort((a,b)=>a.date-b.date);
-  const inWin=dated.filter(x=>wkOf(x.date)<4), beyond=dated.filter(x=>wkOf(x.date)===4);
+  const inWin=dated.filter(x=>wkOf(x.date)<6), beyond=dated.filter(x=>wkOf(x.date)===6);
   const undated=inv.filter(x=>!x.date&&x.amount!==0);
   const past=inv.filter(x=>x.date&&x.date<today).length;
   const invRow=opsDesignInvRowHtml; // v1138: extracted standalone so the AR breakdown can reuse it too
@@ -21055,8 +21089,8 @@ function opsRenderInto(root){
   // v1142: the "now \u00b7 two weeks" group is dropped \u2014 that's exactly what the AR
   // Expected click-to-expand on the cash view shows now, so this list starts at week 3.
   const prj=inWin.filter(x=>wkOf(x.date)>=2);
-  invHtml+='<div class="ops-group zone-proj">Projected \u00b7 weeks three and four \u00b7 '+W[2].lab+' \u2013 '+W[3].sub.split(' \u2013 ')[1]+'</div>'+(prj.length?prj.map(x=>invRow(x,' zone-proj')).join(''):'<div class="ops-empty">Nothing due.</div>');
-  if(beyond.length) invHtml+='<div class="ops-group zone-beyond ops-group-collapsible ops-beyond-hd"><span class="ops-collapse-caret'+(_opsBeyondOpen?' open':'')+'">▾</span>Beyond four weeks</div>'
+  invHtml+='<div class="ops-group zone-proj">Projected \u00b7 the next month \u00b7 '+W[2].lab+' \u2013 '+W[5].sub.split(' \u2013 ')[1]+'</div>'+(prj.length?prj.map(x=>invRow(x,' zone-proj')).join(''):'<div class="ops-empty">Nothing due.</div>');
+  if(beyond.length) invHtml+='<div class="ops-group zone-beyond ops-group-collapsible ops-beyond-hd"><span class="ops-collapse-caret'+(_opsBeyondOpen?' open':'')+'">▾</span>Beyond a month</div>'
     +'<div class="ops-beyond-body'+(_opsBeyondOpen?' open':'')+'">'+beyond.map(x=>invRow(x,' zone-beyond')).join('')+'</div>';
   if(undated.length) invHtml+='<div class="ops-group zone-beyond">Awaiting a date</div>'+undated.map(x=>invRow(x,' zone-beyond')).join('');
   const seededN=PROJECTS.filter(p=>p.status==='da-signed'&&p.designInvoices).length;
@@ -21102,7 +21136,7 @@ function opsRenderInto(root){
     // v1137: CA-moved section moved to the standing banner at the top of the page
     +'<div class="ops-h"><h2>What\u2019s expected \u2014 invoices outstanding</h2><span class="ops-sub ops-ar-sub">AR Two-Week Report \u00b7 reading\u2026</span><div class="ops-rule"></div></div>'
     +'<div class="ops-card ops-expected"><div id="opsBtInv"><div class="ops-empty">Loading AR Two-Week Report\u2026</div></div></div>'
-    +'<div class="ops-h"><h2>What\u2019s expected \u2014 design &amp; construction schedule</h2><span class="ops-sub">Weeks three and beyond \u2014 the two-week cash view above covers what\u2019s due sooner \u00b7 construction schedule via CA and LC entries'+(past?' \u00b7 '+past+' past-dated not shown':'')+'</span><div class="ops-rule"></div></div>'
+    +'<div class="ops-h"><h2>What\u2019s expected \u2014 design &amp; construction schedule</h2><span class="ops-sub">Week three on, out to about a month \u2014 the two-week cash view above covers what\u2019s due sooner \u00b7 construction schedule via CA and LC entries'+(past?' \u00b7 '+past+' past-dated not shown':'')+'</span><div class="ops-rule"></div></div>'
     +'<div class="ops-card ops-expected">'+invHtml+'</div>'
     +'</div>';
   opsDrawScenarios(W13,root);
@@ -21184,7 +21218,7 @@ function opsRenderInto(root){
     const err=root.querySelector('#opsAfErr');
     if(!what){ err.textContent='Give it a name first.'; root.querySelector('#opsAfWhat').focus(); return; }
     if(isNaN(amt)||amt<=0){ err.textContent='Enter an amount in whole dollars.'; root.querySelector('#opsAfAmt').focus(); return; }
-    // anchor to a real Monday so the row stays put when the window rolls forward
+    // anchor to a real Thursday so the row stays put when the window rolls forward
     const mon=W13[wk].start; const iso=mon.getFullYear()+'-'+String(mon.getMonth()+1).padStart(2,'0')+'-'+String(mon.getDate()).padStart(2,'0');
     OPS_SCENARIOS.push({id:'sc'+Date.now().toString(36),on:true,t:what,m:note,amt:amt,dir:dir,weekOf:iso,by:opsWho(),at:new Date().toISOString()});
     persist(); opsRenderInto(root);
@@ -21402,9 +21436,23 @@ function opsCellTipHtml(rk,wk,scId){
   if(rk==='bank'){
     let b=head('Bank Balance');
     if(QB_DATA&&QB_DATA.bank!=null){
-      b+=src(QB_DATA.file||'QB weekly drop');
-      b+=row('Account x7490',fmtV(QB_DATA.bank));
-      b+=note('Same figure shown across all weeks. Payroll and payables are deducted from the week\u00a01 net only.');
+      if(wk===0){
+        b+=src(QB_DATA.file||'QB weekly drop');
+        b+=row('Account x7490',fmtV(QB_DATA.bank));
+        b+=note('Payroll and payables are deducted from this week\u2019s net only.');
+      } else {
+        // v1150: week 2 carries week 1's own ending Net Position forward \u2014 same math
+        // qbApply uses to paint the cell, recomputed here for the tooltip.
+        const rawPayablesAbs=Math.abs(QB_DATA.payables||0);
+        const overrideActive=_opsPayablesOverride&&_opsPayablesOverride.qbFile===QB_DATA.file&&_opsPayablesOverride.qbModified===QB_DATA.modified;
+        let bal=QB_DATA.bank-Math.abs(QB_DATA.payroll||0)-rawPayablesAbs;
+        if(overrideActive) bal+=rawPayablesAbs-Math.abs(_opsPayablesOverride.amount);
+        const arAmt=AR_DATA&&AR_DATA.invoices?AR_DATA.invoices.filter(x=>wkOf(x.deadline)===0).reduce((s,x)=>s+x.balance,0):opsDesignInvoices().filter(x=>wkOf(x.date)===0&&x.amount!=null).reduce((s,x)=>s+(x.amount||0),0);
+        const scAmt=OPS_SCENARIOS.filter(sc=>sc.on).reduce((sum,sc)=>{ const d=opsIsoToDate(sc.weekOf); return d&&wkOf(d)===0?sum+(sc.dir==='in'?1:-1)*(sc.amt||0):sum; },0);
+        bal+=arAmt+scAmt;
+        b+=row('Week 1 ending balance',fmtV(bal));
+        b+=note('Week 2 opens where week 1 is forecast to close \u2014 bank minus payroll/payables, plus week 1\u2019s AR and scenarios.');
+      }
     } else b+=note('Load the QuickBooks weekly drop to see the figure.');
     return b;
   }
