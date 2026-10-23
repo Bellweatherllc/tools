@@ -25,7 +25,7 @@ Last updated: 2026-10-23
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v3 |
+| People Analyzer | `people-analyzer.html` | v5 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -33,11 +33,11 @@ Last updated: 2026-10-23
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v23 |
+| Team Members | `team-members.html` | v25 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v4 |
-| CORE System Map | `core-system-map.html` | v12 |
+| CORE System Map | `core-system-map.html` | v13 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -68,6 +68,9 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-10-23** — People Analyzer v3 → v5. v4: header rebuilt on the Pipeline's app-header pattern — Linen monogram, Swear title, Admin switch and gear, red badge, signed-in name chip, uppercase tabs with the gold underline, **?** manual link. v5: admin gating. A new `PeopleAnalyzerRole` column on `CORE_TeamMembers` (set on the Team Members Access tab) decides who is an admin. Non-admins get a self-evaluation: Evaluate locked to themselves with their name fixed, one per session, plus a **My Self-Evaluations** tab; Summaries, Admin and Manage are hidden and their actions refuse. The signed-in user is matched to the roster by email (any address in the Email column), then by exact name. Admins see a **self** tag on self-evaluations. Until the column exists, everyone is treated as admin and Admin says so. Manual updated, including item-level permissions for `PA_Evaluations`.
+- **2026-10-23** — Team Members v24 → v25: Access tab lists **People Analyzer** (Member: own self-evaluations; Admin: everything) once the `PeopleAnalyzerRole` column exists.
+- **2026-10-23** — CORE System Map v12 → v13: People Analyzer entry notes the `PeopleAnalyzerRole` gate.
 - **2026-10-23** — People Analyzer Manual added (`people-analyzer-manual.html` / `.md`): using, admin, repair, and a data reference. People Analyzer v2 → v3: **?** link in the header opens it. BW Tool Index v3 → v4 and CORE System Map v11 → v12 list the manual.
 - **2026-10-23** — People Analyzer v1 → v2: Admin panel no longer throws on open. Dead roster code removed — the tool no longer has any path that writes to or deletes from `CORE_TeamMembers`. Session on/off and drag order now save to SharePoint (new `PA_Sessions` columns `IsActive` Yes/No and `SortOrder` Number). Evaluations tie to people by team member Id (new `PA_Evaluations` column `EmployeeId` Number); older rows still match by name, and Admin has a one-click "Link" to write the Id onto them. Columns are probed on load, so the tool runs unchanged until they're added, and Admin lists what's missing. Evaluate lists active team members only; inactive people keep their history in Summaries. "Evals" shows "N of M" against the session's actual evaluators instead of a hard-coded 5. Tied votes resolve to the lower rating and show a dashed "split" chip with the vote breakdown (also noted in text and Excel exports). Names, comments and session names are HTML-escaped. Department filters come from the roster. `title=` tooltips replaced with `data-tip`. Unused detail modal and legacy export removed.
 - **2026-10-23** — CORE System Map v10 → v11: People Analyzer no longer listed as writing `CORE_TeamMembers`; `PA_Sessions` / `PA_Evaluations` notes name the new columns.
