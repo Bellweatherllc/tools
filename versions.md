@@ -25,7 +25,7 @@ Last updated: 2026-10-23
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v2 |
+| People Analyzer | `people-analyzer.html` | v3 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -36,8 +36,8 @@ Last updated: 2026-10-23
 | Team Members | `team-members.html` | v23 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v3 |
-| CORE System Map | `core-system-map.html` | v11 |
+| BW Tool Index | `bw-tool-index.html` | v4 |
+| CORE System Map | `core-system-map.html` | v12 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -51,6 +51,7 @@ Each HTML manual is built from the `.md` file of the same name. The manuals have
 | Revenue Tracker Manual | `revenue-tracker-manual.html` / `.md` |
 | WIP Tracker Manual | `wip-tracker-manual.html` / `.md` |
 | Team Members Manual | `team-members-manual.html` / `.md` |
+| People Analyzer Manual | `people-analyzer-manual.html` / `.md` |
 
 ## Retired
 
@@ -67,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-10-23** — People Analyzer Manual added (`people-analyzer-manual.html` / `.md`): using, admin, repair, and a data reference. People Analyzer v2 → v3: **?** link in the header opens it. BW Tool Index v3 → v4 and CORE System Map v11 → v12 list the manual.
 - **2026-10-23** — People Analyzer v1 → v2: Admin panel no longer throws on open. Dead roster code removed — the tool no longer has any path that writes to or deletes from `CORE_TeamMembers`. Session on/off and drag order now save to SharePoint (new `PA_Sessions` columns `IsActive` Yes/No and `SortOrder` Number). Evaluations tie to people by team member Id (new `PA_Evaluations` column `EmployeeId` Number); older rows still match by name, and Admin has a one-click "Link" to write the Id onto them. Columns are probed on load, so the tool runs unchanged until they're added, and Admin lists what's missing. Evaluate lists active team members only; inactive people keep their history in Summaries. "Evals" shows "N of M" against the session's actual evaluators instead of a hard-coded 5. Tied votes resolve to the lower rating and show a dashed "split" chip with the vote breakdown (also noted in text and Excel exports). Names, comments and session names are HTML-escaped. Department filters come from the roster. `title=` tooltips replaced with `data-tip`. Unused detail modal and legacy export removed.
 - **2026-10-23** — CORE System Map v10 → v11: People Analyzer no longer listed as writing `CORE_TeamMembers`; `PA_Sessions` / `PA_Evaluations` notes name the new columns.
 - **2026-10-20** — Project Basis v40 → v41: all four sample assessments (Alex Rivera/Design, Sam Chen/PM, Jordan Blake/Estimating, Priya Nair/Structural Eng.) now have a score and comment on all twelve dimensions — Priya's previously covered only Engineering, with the other eleven silently missing rather than blank. Confirmed Raw Results and Analysis both show all four respondents fully on every dimension, and the Assess-tab prefill has no blank notes.
