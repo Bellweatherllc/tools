@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v5*
+*late-October 2026 edition · People Analyzer v6*
 
 ## Part I — Using People Analyzer
 
@@ -66,7 +66,7 @@ If you're not an admin, Evaluate is set up for your self-evaluation: you're alre
 - You can submit **one self-evaluation per session**. If you need to change it, ask an admin to delete it, then submit again.
 - Afterwards, **My Self-Evaluations** shows what you submitted for each session, with your comments. It doesn't show how anyone else rated you.
 
-Admins see self-evaluations in Summaries alongside everyone else's, with a small **self** tag on the evaluator's name. They count toward the consensus like any other evaluation.
+Admins see self-evaluations in Summaries, kept **separate**: they never count toward the consensus, the status, or the "N of M" count. In a person's view, the self-evaluation sits in a shaded column to the right of **Consensus**, with a **self** tag, so the two are easy to compare. The **Self** column in the summary tables shows ✓ when someone has submitted one.
 
 ### Step by step
 
@@ -128,6 +128,8 @@ The status is worked out fresh every time the page loads. It's never stored, so 
 - **With a session picked**, it reads **N of M**. *M* is everyone who has evaluated *anyone* in that session; *N* is how many of them have rated this person. "2 of 4" means two evaluators haven't rated this person yet.
 - **With All Sessions picked**, it's just the total number of evaluations across every round.
 
+Self-evaluations aren't counted in either number. The **Self** column next to it shows ✓ when the person has submitted one (with All Sessions picked, how many sessions).
+
 ### One person's view
 
 The top of the individual view is the **Trajectory**: a grid with one column per session, showing the consensus and status each round. Sessions appear in the order set in Admin.
@@ -142,8 +144,8 @@ Below that, each session has its own block. The block shows:
 
 Each session block has two export buttons:
 
-- **📋 Copy as Text** copies a plain summary to paste into an email or document. Split votes are spelled out.
-- **📥 Excel** downloads the Core Values consensus laid out to match the Bellweather EOS form. Evaluator comments, and a note on any split vote, are attached as cell comments on the rating.
+- **📋 Copy as Text** copies a plain summary to paste into an email or document. Split votes are spelled out, and the self-rating is listed under each value, marked as not counted.
+- **📥 Excel** downloads the Core Values consensus laid out to match the Bellweather EOS form. Evaluator comments, a note on any split vote, and the self-rating are attached as cell comments on the rating. The rating itself never includes the self-evaluation.
 
 **📥 Download All Sessions** in the Trajectory header gives one Excel file with a sheet per session. It only appears once the person has been evaluated in more than one session.
 
