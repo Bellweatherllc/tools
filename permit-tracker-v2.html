@@ -290,7 +290,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
    Byron). Board data is still the prototype's mock Trello-shaped data —
    live Trello sync is the next phase. See CLAUDE.md.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v5';
+const CORE_VERSION = 'v6';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -463,7 +463,11 @@ function renderCombinedTrack({ project, isCity, zoningStages, permitStages }){
   const VW=lastWeek*PX_PER_WEEK;
 
   const chipY=10, chipH=38;
-  const laneTop=chipY+chipH+26, laneH=50;
+  // was chipH+26 (VH=171); bumped +19 so full gantt height is 190 while the
+  // gap after the band stays 14px (VH is still bandTop+bandH+14 below) — the
+  // extra room lands above the lane, so the stage bars' own centering within
+  // laneH is untouched.
+  const laneTop=chipY+chipH+45, laneH=50;
   const TRACK_BAND_H=32; // stage bars and the on/off-track band share this height, per Byron
   const barH=TRACK_BAND_H, barY=laneTop+(laneH-barH)/2+1;
   const laneBottom=laneTop+laneH;
@@ -517,12 +521,13 @@ function renderCombinedTrack({ project, isCity, zoningStages, permitStages }){
     +`<text x="${todayX0+todayW/2}" y="${todayPillTop+pillH/2+3.3}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fff" font-family="${FONT}">Today</text>`;
 
   // CA Signing / Construction Start: a raised, one-week-wide column standing
-  // taller than the Design Phase lane, fading from the Pipeline's own CA
-  // Signed green (#127432, project-pipeline.html's .ms-tall.ca-signed) at
-  // the top down into the lane's own phase-blue at the bottom, so it reads
-  // as part of the timeline rather than a floating chip. Per Byron, Con
-  // Start gets the identical treatment.
-  const CA_GREEN='#127432', MARKER_RISE=28;
+  // taller than the Design Phase lane. The raised 20px cap is solid CA-green
+  // (#127432, project-pipeline.html's own .ms-tall.ca-signed) — no gradient
+  // in that zone, per Byron — and only the portion overlapping the lane
+  // itself (laneTop to laneBottom) fades from that same green down into the
+  // lane's own phase-blue, so it reads as part of the timeline rather than a
+  // floating chip. Con Start gets the identical treatment.
+  const CA_GREEN='#127432', MARKER_RISE=20;
   const markerTop=laneTop-MARKER_RISE;
   function milestoneColumn(week, label, idSuffix){
     const gradId='msgrad-'+idSuffix+'-'+project.replace(/[^a-z0-9]+/gi,'-');
@@ -531,12 +536,13 @@ function renderCombinedTrack({ project, isCity, zoningStages, permitStages }){
       `<stop offset="0" stop-color="${CA_GREEN}"/>`+
       `<stop offset="1" stop-color="var(--phase-blue)"/>`+
       `</linearGradient>`;
-    const rect=`<rect x="${x}" y="${markerTop}" width="${w}" height="${laneBottom-markerTop}" rx="3" fill="url(#${gradId})"/>`;
+    const cap=`<rect x="${x}" y="${markerTop}" width="${w}" height="${MARKER_RISE}" fill="${CA_GREEN}"/>`;
+    const fade=`<rect x="${x}" y="${laneTop}" width="${w}" height="${laneBottom-laneTop}" fill="url(#${gradId})"/>`;
     const lbl=`<text x="${x+w/2}" y="${markerTop+13}" text-anchor="middle" font-size="8.5" font-weight="700" letter-spacing=".02em" fill="#fff" font-family="${FONT}">${esc(label)}</text>`;
-    return { def:grad, html:rect+lbl };
+    return { def:grad, html:cap+fade+lbl };
   }
   const caMarker=milestoneColumn(caWeek, 'CA', 'ca');
-  const consMarker=milestoneColumn(consWeek, 'CON START', 'cons');
+  const consMarker=milestoneColumn(consWeek, 'CON', 'cons');
   const milestoneDefs=caMarker.def+consMarker.def;
   const milestoneColumnsHtml=caMarker.html+consMarker.html;
 
