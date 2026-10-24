@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Permit &amp; Zoning Tracker v2</title>
+<!-- Favicon — canonical CORE head block (see project-pipeline.html for rationale). -->
+<link rel="icon" type="image/png" sizes="32x32" href="https://bellweatherllc.github.io/tools/logos/favicon-32.png?v=6">
+<link rel="icon" type="image/x-icon" href="https://bellweatherllc.github.io/tools/logos/favicon.ico?v=6">
+<link rel="icon" type="image/svg+xml" sizes="any" href="https://bellweatherllc.github.io/tools/logos/favicon.svg?v=6">
+<link rel="apple-touch-icon" href="https://bellweatherllc.github.io/tools/logos/apple-touch-icon.png?v=6">
+<style>
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_DemiBold.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap;}
+@font-face{font-family:'TT Norms Pro';src:url('https://bellweatherllc.github.io/tools/fonts/TT_Norms_Pro_Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Medium.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+@font-face{font-family:'Swear Text';src:url('https://bellweatherllc.github.io/tools/fonts/SwearText-Bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap;}
+
+/* Tokens: the real Bellweather brand palette (Limestone/Cotton/Navy/Linen),
+   not the project-pipeline.html legacy "navy/gold" tokens the old permit
+   tracker carried — those are a separate, frozen track per CLAUDE.md. Track
+   visual tokens (phase blue, zoning/permit gray, gradient stops) are sampled
+   straight from the prototype, unchanged — Byron's own reference colors. */
+:root{
+  --app-h:44px;
+  --ink:#282828; --navy:#263860; --line:#E5E1D8; --bg:#F6F2EE; --card:#ffffff; --mut:#8b8579;
+  --accent:#E5E1D8; --accent-ink:#263860;
+  --phase-blue:#819AD1;
+  --zoning-gray:#c7c7c7; --permit-gray:#999999;
+  --today-chip:#ba7a00; --ca-chip:#009056; --cons-chip:#009056;
+  --grad-green:#016300; --grad-orange:#cf6d00; --grad-red:#af0908;
+  --font-tt:'TT Norms Pro', Arial, sans-serif; --font-swear:'Swear Text', serif;
+}
+*,*::before,*::after{box-sizing:border-box;}
+body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}
+@keyframes bw-spin{to{transform:rotate(360deg);}}
+
+/* shared floating-tooltip engine (ported from permit-zoning-tracker.html) —
+   every data-tip lives here, never native title=. */
+#tt{position:fixed;z-index:9999;background:var(--navy);color:#fff;font-size:11px;line-height:1.5;padding:6px 11px;border-radius:6px;pointer-events:none;opacity:0;transition:opacity .1s;box-shadow:0 4px 12px rgba(0,0,0,.22);max-width:220px;}
+#tt.show{opacity:1;}
+#tt .tt-n{font-weight:700;color:var(--accent);}
+#tt .tt-d{font-size:10px;color:rgba(255,255,255,.55);}
+
+/* week-hover rollover on the gantt track itself — distinct from #tt: a
+   fast-moving mousemove tracker, not a static data-tip. */
+.gantt-tip{position:fixed;z-index:9999;display:none;pointer-events:none;background:var(--navy);color:#fff;font-family:var(--font-tt);font-size:10.5px;line-height:1.6;padding:7px 10px;border-radius:7px;box-shadow:0 6px 18px rgba(0,0,0,.28);white-space:nowrap;text-align:center;}
+
+/* ── AUTH OVERLAY ── */
+#authOverlay{position:fixed;inset:0;background:var(--navy);z-index:1000;display:flex;align-items:center;justify-content:center;}
+#authOverlay.hidden{display:none;}
+.auth-card{display:flex;flex-direction:column;align-items:center;gap:18px;padding:40px 44px 36px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.40);min-width:320px;text-align:center;}
+.auth-logo{height:44px;width:auto;opacity:.90;}
+.auth-title{font-family:var(--font-swear);font-size:18px;font-weight:700;color:var(--line);letter-spacing:.02em;}
+.auth-subtitle{font-size:11px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.35);}
+.auth-version{font-size:9px;font-weight:700;letter-spacing:.10em;color:#ef4444;margin-top:-8px;}
+.auth-sign-in{font-family:var(--font-tt);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:rgba(229,225,216,.18);color:var(--line);border:1px solid rgba(229,225,216,.40);border-radius:6px;padding:10px 28px;cursor:pointer;transition:background .14s,border-color .14s,box-shadow .14s;margin-top:4px;}
+.auth-sign-in:hover{background:rgba(229,225,216,.28);border-color:rgba(229,225,216,.65);}
+.auth-sign-in:disabled{opacity:.4;cursor:default;pointer-events:none;}
+.auth-status{font-size:11px;color:rgba(255,255,255,.45);min-height:18px;}
+.auth-spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--line);border-radius:50%;animation:bw-spin .7s linear infinite;display:none;}
+
+/* ── APP HEADER ── */
+.app-header{background:var(--navy);padding:9px 0 11px;display:flex;flex-direction:column;gap:2px;position:fixed;top:0;left:0;right:0;z-index:400;}
+.app-header-top{display:flex;align-items:center;gap:11px;padding:0 18px;}
+.bw-logo{height:22px;width:auto;display:block;}
+.hd{width:1px;height:16px;background:rgba(255,255,255,.15);}
+.hdr-title{font-family:var(--font-swear);color:rgba(255,255,255,.55);font-size:13px;}
+.proto-badge{font-size:10px;font-weight:600;letter-spacing:.08em;color:#ef4444;}
+.hsp{flex:1;}
+.test-mode-pill{font-family:var(--font-tt);font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:rgba(255,255,255,.10);color:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.18);border-radius:20px;padding:5px 12px;cursor:pointer;transition:all .12s;}
+.test-mode-pill:hover{background:rgba(255,255,255,.18);color:#fff;}
+.test-mode-pill.active{background:rgba(223,145,15,.22);color:#f0a93a;border-color:rgba(240,169,58,.55);}
+.admin-btn{font-size:14px;background:none;border:none;color:rgba(255,255,255,.40);cursor:pointer;padding:2px 6px;margin-left:6px;}
+.admin-btn:hover{color:rgba(255,255,255,.85);}
+.test-banner{display:none;background:#f0a93a;color:#2a1c00;font-size:11px;font-weight:700;letter-spacing:.03em;text-align:center;padding:4px;position:fixed;top:var(--app-h);left:0;right:0;z-index:399;}
+.test-banner.show{display:block;}
+
+/* ── ADMIN / SETUP PANEL (position + shell from permit-zoning-tracker.html) ── */
+#adminPanel{display:none;position:fixed;top:calc(var(--app-h) + 8px);right:14px;z-index:450;background:var(--navy);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:16px 18px;width:320px;box-shadow:0 10px 32px rgba(0,0,0,.4);}
+#adminPanel.open{display:block;}
+.ap-title{font-family:var(--font-swear);color:var(--line);font-size:14px;font-weight:700;margin-bottom:12px;}
+.ap-section-title{font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.4);margin:14px 0 8px;padding-top:12px;border-top:1px solid rgba(255,255,255,.1);}
+.ap-section-title:first-of-type{margin-top:0;padding-top:0;border-top:none;}
+.ap-field{margin-bottom:9px;}
+.ap-lbl{display:block;font-size:10px;font-weight:600;letter-spacing:.03em;color:rgba(255,255,255,.5);margin-bottom:3px;}
+.ap-inp{width:100%;font-family:var(--font-tt);font-size:12px;padding:6px 9px;border:1px solid rgba(255,255,255,.18);border-radius:5px;background:rgba(255,255,255,.06);color:#fff;}
+.ap-inp:focus{outline:none;border-color:var(--line);}
+.ap-actions{display:flex;gap:8px;margin-top:10px;}
+.ap-btn{font-family:var(--font-tt);font-size:11px;font-weight:700;letter-spacing:.03em;padding:6px 14px;border-radius:5px;border:none;cursor:pointer;background:var(--line);color:var(--navy);}
+.ap-btn.secondary{background:rgba(255,255,255,.1);color:#fff;}
+.ap-status{font-size:10.5px;color:rgba(255,255,255,.55);margin-top:8px;min-height:14px;}
+.ap-status.err{color:#f29a9a;}
+.ap-status.ok{color:#9adfae;}
+.ap-note{font-size:10px;color:rgba(255,255,255,.4);line-height:1.5;margin-top:4px;}
+
+/* ── MAIN LAYOUT ── */
+.main{padding:calc(var(--app-h) + 22px) 26px 60px;max-width:1180px;margin:0 auto;}
+.main.test-active{padding-top:calc(var(--app-h) + 44px);}
+.sub{font-size:12px;color:var(--mut);margin:0 0 18px;max-width:80ch;line-height:1.55;}
+
+/* ── PROJECT CARDS — proj-hdr + a single combined app-row per project
+   (per Byron: one row per project, not split zoning/permit rows). Row
+   anatomy (meta band / mid content / icons / stat band) follows
+   permit-zoning-tracker.html's reserved-slot philosophy; the mid slot's
+   content is the prototype's own combined gantt track, unchanged. */
+.proj-group{background:var(--card);border:1.5px solid var(--ink);border-radius:9px;overflow:hidden;margin-bottom:18px;}
+.proj-hdr{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+.proj-name{font-family:var(--font-swear);font-size:14.5px;font-weight:700;}
+.chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.chip{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 7px;border-radius:20px;border:1px solid var(--line);color:var(--mut);}
+.chip.commercial{background:var(--navy);color:#fff;border-color:transparent;}
+.chip.tier{color:#fff;border-color:transparent;}
+.proj-hdr-sp{flex:1;}
+.gear-btn{background:none;border:1px solid var(--line);border-radius:6px;width:26px;height:26px;font-size:13px;cursor:pointer;color:var(--mut);line-height:1;}
+.gear-btn:hover{background:var(--bg);color:var(--ink);}
+
+.app-row{display:flex;align-items:stretch;}
+.meta-band{width:92px;flex-shrink:0;padding:10px 10px 10px 16px;display:flex;flex-direction:column;justify-content:center;gap:2px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink);background:var(--bg);border-right:1px solid var(--line);}
+.meta-band-sub{font-size:9px;font-weight:600;letter-spacing:.02em;opacity:.7;}
+.row-mid{flex:1;min-width:0;padding:14px 10px;overflow-x:auto;overflow-y:visible;}
+.row-icons{flex-shrink:0;display:flex;align-items:center;gap:10px;padding:10px 12px;border-left:1px solid var(--line);}
+.cmt-icon,.ext-icon{position:relative;display:inline-flex;flex-direction:column;align-items:center;gap:1px;flex-shrink:0;color:var(--mut);cursor:pointer;transition:color .12s;}
+.cmt-icon svg{width:19px;height:19px;}
+.ext-icon svg{width:15px;height:15px;}
+.cmt-icon:hover,.ext-icon:hover{color:var(--navy);}
+.cmt-icon .icon-lbl,.ext-icon .icon-lbl{font-size:6.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.55;line-height:1;}
+.cmt-count{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);color:inherit;font-size:7.5px;font-weight:700;line-height:1;pointer-events:none;}
+.stat-band{width:108px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;text-align:center;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-left:1px solid rgba(40,40,40,.14);}
+.stat-band.tier-on{background:#e5f4e8;color:var(--grad-green);}
+.stat-band.tier-risk{background:#faf2e9;color:var(--grad-orange);}
+.stat-band.tier-off{background:#f7eaea;color:var(--grad-red);}
+
+.note{font-size:10.5px;color:var(--mut);padding:0 16px 12px;line-height:1.4;}
+
+.settings-panel{margin:0 16px 14px;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:12px;}
+.settings-context{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line);}
+.settings-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.settings-cols h4{margin:0 0 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);}
+.stage-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--line);}
+.stage-row label{display:flex;align-items:center;gap:6px;font-size:11.5px;}
+.dur-inputs{display:flex;align-items:center;gap:3px;font-size:11px;color:var(--mut);white-space:nowrap;}
+.dur-inputs input{width:32px;font-size:11px;padding:2px 3px;border:1px solid var(--line);border-radius:4px;background:var(--card);color:var(--ink);font-family:var(--font-tt);}
+.settings-footer{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);}
+.settings-footer label{display:flex;align-items:center;gap:6px;font-size:11.5px;}
+
+.comments-section{margin:0 16px 14px;padding:12px 14px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:12px;}
+.comments-section h4{margin:0 0 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);}
+.comment{font-size:11.5px;margin-bottom:8px;line-height:1.4;}
+.comment .c-date{color:var(--mut);font-size:10px;margin-left:5px;}
+.comments-section textarea{width:100%;min-height:44px;font-size:11.5px;font-family:var(--font-tt);padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);resize:vertical;}
+.comments-section button{margin-top:6px;font-size:11px;font-weight:700;padding:5px 12px;border:none;border-radius:6px;background:var(--navy);color:#fff;cursor:pointer;}
+
+.empty-note{color:var(--mut);font-size:12px;padding:20px 0;}
+</style>
+</head>
+<body>
+
+<div id="tt"></div>
+<div id="ganttTip" class="gantt-tip"></div>
+
+<div id="authOverlay">
+  <div class="auth-card">
+    <img class="auth-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
+    <div>
+      <div class="auth-title">Permit &amp; Zoning Tracker</div>
+      <div class="auth-subtitle">Bellweather Design Build</div>
+    </div>
+    <div class="auth-version" id="authVersionBadge"></div>
+    <div class="auth-spinner" id="authSpinner"></div>
+    <button class="auth-sign-in" id="authSignInBtn">Sign in with Microsoft</button>
+    <div class="auth-status" id="authStatus"></div>
+  </div>
+</div>
+
+<div class="app-header">
+  <div class="app-header-top">
+    <img class="bw-logo" src="https://bellweatherllc.github.io/tools/logos/Monogram-Linen.svg" alt="Bellweather">
+    <div class="hd"></div>
+    <div class="hdr-title">Permit &amp; Zoning Tracker</div>
+    <div class="proto-badge" id="versionBadge"></div>
+    <div class="hsp"></div>
+    <button type="button" class="test-mode-pill" id="testModePill" onclick="toggleTestPanel()">Test Mode</button>
+    <button class="admin-btn" onclick="toggleAdmin()" data-tip="Setup" aria-label="Setup">&#9881;</button>
+  </div>
+</div>
+<div class="test-banner" id="testBanner"></div>
+
+<div id="adminPanel">
+  <div class="ap-title">Setup</div>
+
+  <div class="ap-section-title">Trello connection</div>
+  <div class="ap-field"><label class="ap-lbl">Trello API Key</label><input class="ap-inp" id="apKey" autocomplete="off"></div>
+  <div class="ap-field"><label class="ap-lbl">Trello Token</label><input class="ap-inp" id="apToken" type="password" autocomplete="off"></div>
+  <div class="ap-field"><label class="ap-lbl">Permit Tracking Board ID</label><input class="ap-inp" id="apBoard" autocomplete="off" placeholder="board id or short link id"></div>
+  <div class="ap-actions">
+    <button class="ap-btn secondary" onclick="testTrello()">Test</button>
+    <button class="ap-btn" onclick="saveAdmin()">Save to Config</button>
+  </div>
+  <div class="ap-status" id="apStatus"></div>
+  <div class="ap-note">Board still runs on mock data below — live Trello sync is the next phase, once this connection is confirmed.</div>
+
+  <div class="ap-section-title">Test-mode date override</div>
+  <div class="ap-field"><label class="ap-lbl">Treat "today" as</label><input class="ap-inp" id="testDateInp" type="date"></div>
+  <div class="ap-actions">
+    <button class="ap-btn secondary" onclick="clearTestDate()">Clear</button>
+    <button class="ap-btn" onclick="applyTestDate()">Apply</button>
+  </div>
+  <div class="ap-note">Dev-only. Overrides every clock/age/tier on this page for this browser tab only — never saved, never shared. Moving a real Trello card still logs its real timestamp; this just lets you fast-forward "now" past it during testing instead of waiting for real time to pass.</div>
+</div>
+
+<div class="main" id="main">
+  <p class="sub">Project-relative week axis. Design Phase I/II/III, stage bars, and the on/off-track gradient band are the prototype's own rendering, unchanged — see the gear icon on each project to adjust its stage configuration.</p>
+  <div id="cards"><div class="empty-note">Loading&hellip;</div></div>
+</div>
+
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="lib/sherpa-auth.js"></script>
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════════
+   PERMIT & ZONING TRACKER v2 — CORE tool (placeholder name/registration)
+   Real-page scaffold: auth (SherpaAuth), header/admin-panel chrome and
+   row layout adapted from permit-zoning-tracker.html's structure, with
+   the gantt track, gear-icon stage config and comments ported unchanged
+   from the Artifact prototype (combined one-row-per-project track, per
+   Byron). Board data is still the prototype's mock Trello-shaped data —
+   live Trello sync is the next phase. See CLAUDE.md.
+   ═══════════════════════════════════════════════════════════════════════ */
+const CORE_VERSION = 'v1';
+(()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
+
+const GRAPH='https://graph.microsoft.com/v1.0';
+const BWC_SITE=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ───────── shared floating-tooltip engine (data-tip/data-tip-d, never
+   native title=) — ported from permit-zoning-tracker.html's #tt. ───────── */
+(function(){
+  const tt=document.getElementById('tt');
+  let target=null;
+  document.addEventListener('mouseover',e=>{
+    const el=e.target.closest('[data-tip]');
+    if(!el||el===target) return;
+    target=el;
+    const d=el.getAttribute('data-tip-d');
+    tt.innerHTML='<div class="tt-n">'+esc(el.getAttribute('data-tip'))+'</div>'+(d?'<div class="tt-d">'+esc(d)+'</div>':'');
+    tt.classList.add('show');
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!target) return;
+    tt.style.left=Math.min(e.clientX+14, window.innerWidth-tt.offsetWidth-10)+'px';
+    tt.style.top=(e.clientY+16)+'px';
+  });
+  document.addEventListener('mouseout',e=>{
+    if(target && (!e.relatedTarget || !e.relatedTarget.closest('[data-tip]'))){ target=null; tt.classList.remove('show'); }
+  });
+})();
+
+/* ───────── test-mode date override — a dev-only "as of" date that stands
+   in for new Date() everywhere a clock/age/tier gets computed. Lives only
+   in this tab's memory (never persisted — see CLAUDE.md: clocks are
+   computed live, never stored), so it can't leak into another session or
+   survive a reload by accident. ───────── */
+let TEST_DATE_OVERRIDE=null;
+function now(){ return TEST_DATE_OVERRIDE ? new Date(TEST_DATE_OVERRIDE.getTime()) : new Date(); }
+function updateTestBanner(){
+  const pill=document.getElementById('testModePill'), banner=document.getElementById('testBanner'), main=document.getElementById('main');
+  if(TEST_DATE_OVERRIDE){
+    pill.classList.add('active'); pill.textContent='Test Mode: '+fmtShort(TEST_DATE_OVERRIDE);
+    banner.textContent='TEST MODE — "today" is being treated as '+fmtShort(TEST_DATE_OVERRIDE)+'. No real data is affected.';
+    banner.classList.add('show'); main.classList.add('test-active');
+  }else{
+    pill.classList.remove('active'); pill.textContent='Test Mode';
+    banner.classList.remove('show'); main.classList.remove('test-active');
+  }
+}
+function toggleTestPanel(){ toggleAdmin(true); document.getElementById('testDateInp').focus(); }
+function applyTestDate(){
+  const v=document.getElementById('testDateInp').value;
+  if(!v) return;
+  TEST_DATE_OVERRIDE=new Date(v+'T00:00:00');
+  updateTestBanner();
+  renderCards();
+}
+function clearTestDate(){
+  TEST_DATE_OVERRIDE=null;
+  document.getElementById('testDateInp').value='';
+  updateTestBanner();
+  renderCards();
+}
+
+/* ═══════════════════ gantt track rendering — ported unchanged from
+   permit-redesign-prototype.html (https://claude.ai/artifact/BZAZyCuH2uYJr6zcjYvQ7y),
+   except TODAY is now computed fresh on every render via now() instead of
+   a fixed mock constant, so the test-mode override (and real elapsed time)
+   both flow straight through without any stored snapshot. ═══════════════ */
+const DAY=86400000;
+const PX_PER_WEEK=28;
+const FONT="'TT Norms Pro', Arial, sans-serif";
+
+function fmtShort(dt){ return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function weeksBetween(a,b){ return Math.round((b-a)/(7*DAY)); }
+
+function buildLane(stages, cursorStart){
+  let cursor=cursorStart, todayWeek=null;
+  const positioned=stages.map(s=>{
+    const width=s.estMax;
+    const start=cursor; cursor+=width;
+    if(s.status==='active') todayWeek=start+(s.ageWeeks||0);
+    return {...s, start, width};
+  });
+  return { positioned, endWeek:cursor, todayWeek };
+}
+function zoneBounds(caWeek, consWeek, isCity){
+  const greenEnd = isCity ? caWeek-2 : caWeek;
+  return { greenEnd, redStart: caWeek+2 };
+}
+function tierInfo(approvedWeek, greenEnd, redStart){
+  if(approvedWeek>=redStart) return {label:'Off Track', color:'var(--grad-red)'};
+  if(approvedWeek>=greenEnd) return {label:'At Risk', color:'var(--grad-orange)'};
+  return {label:'On Track', color:'var(--grad-green)'};
+}
+
+function moveTip(evt){
+  const tip=document.getElementById('ganttTip');
+  tip.style.left=(evt.clientX+14)+'px';
+  tip.style.top=(evt.clientY+14)+'px';
+}
+function trackMove(evt, boxId, todayWeek, tref){
+  const svg = evt.target.closest('svg');
+  const box = document.getElementById(boxId);
+  if(!svg || !box) return;
+  const pt = svg.createSVGPoint();
+  pt.x = evt.clientX; pt.y = evt.clientY;
+  const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+  const weekIdx = Math.floor(loc.x/PX_PER_WEEK);
+  box.setAttribute('x', weekIdx*PX_PER_WEEK);
+  box.style.display='block';
+  const date=new Date(tref.getTime()+(weekIdx-todayWeek)*7*DAY);
+  const tip=document.getElementById('ganttTip');
+  tip.innerHTML=`<div>Wk ${weekIdx+1}</div><div>${esc(fmtShort(date))}</div>`;
+  tip.style.display='block';
+  moveTip(evt);
+}
+function trackLeave(boxId){
+  const box=document.getElementById(boxId);
+  if(box) box.style.display='none';
+  document.getElementById('ganttTip').style.display='none';
+}
+
+const BAR_GAP=2;
+function barRow(stages, y, barH, groupColor, insetFirst){
+  return stages.map((s,i)=>{
+    const xTrue=s.start*PX_PER_WEEK, trueW=Math.max(1,s.width*PX_PER_WEEK);
+    const extraInset=(insetFirst&&i===0)?2:0;
+    const x=xTrue+extraInset, w=Math.max(1,trueW-BAR_GAP-extraInset);
+    const fontSize=9.5;
+    const done=s.status==='done';
+    const early=done && s.actualWeeks!=null && s.actualWeeks<s.estMax;
+    const check=(done&&!early)?`<tspan fill="var(--grad-green)" stroke="#fff" stroke-width="1" paint-order="stroke" font-size="${fontSize*1.25}">✓ </tspan>`:'';
+    const star=early?`<tspan fill="#f5c518" stroke="#000" stroke-width="1" paint-order="stroke" font-size="${fontSize*1.25}"> ★</tspan>`:'';
+    const label = `<text x="${x+w/2}" y="${y+barH/2+3.5}" text-anchor="middle" font-size="${fontSize}" font-weight="700" letter-spacing=".02em" fill="var(--ink)" font-family="${FONT}">${check}${esc(s.name.toUpperCase())}${star}</text>`;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${barH}" fill="${groupColor}" stroke="#fff" stroke-width="1"/>`+label;
+  }).join('');
+}
+
+function dropArrow(x, topY, botY, color, w){
+  w = w||11;
+  const arrowH=8, lineBottom=botY-arrowH;
+  return `<line x1="${x}" y1="${topY}" x2="${x}" y2="${lineBottom}" stroke="${color}" stroke-width="1.5"/>`+
+    `<polygon points="${x-w/2},${lineBottom} ${x+w/2},${lineBottom} ${x},${botY}" fill="#fff" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>`;
+}
+
+function renderCombinedTrack({ project, isCity, zoningStages, permitStages }){
+  const TODAY=now();
+  const zoning=buildLane(zoningStages, 0);
+  const permit=buildLane(permitStages, zoning.endWeek);
+  const sequenceTotal=permit.endWeek;
+  const todayWeekInSeq = permit.todayWeek!=null ? permit.todayWeek : zoning.todayWeek;
+
+  const PHASE_I_WEEKS=6, PHASE_II_WEEKS=18, PHASE_III_WEEKS=6, PHASE_GAP=2;
+  const phaseIWidth=PHASE_I_WEEKS;
+  const phaseIIStart=phaseIWidth;
+  const phaseIIWidth=PHASE_II_WEEKS;
+  const phaseIIIStart=phaseIIStart+phaseIIWidth;
+  const seqOffset=phaseIIStart;
+  const todayWeek=seqOffset+todayWeekInSeq;
+
+  const caWeek = phaseIIStart+phaseIIWidth;
+  const consWeek = caWeek+6;
+  const {greenEnd, redStart} = zoneBounds(caWeek, consWeek, isCity);
+  const approvedWeek = seqOffset+sequenceTotal;
+  const tier = tierInfo(approvedWeek, greenEnd, redStart);
+
+  const padWeeks=2;
+  const lastWeek=Math.max(caWeek, approvedWeek, consWeek, phaseIIIStart+PHASE_III_WEEKS, redStart+6)+padWeeks;
+  const VW=lastWeek*PX_PER_WEEK;
+
+  const chipY=10, chipH=38;
+  const laneTop=chipY+chipH+26, laneH=50;
+  const barH=20, barY=laneTop+(laneH-barH)/2+1;
+  const laneBottom=laneTop+laneH;
+  const bandTop=laneBottom+1, bandH=32;
+  const VH=bandTop+bandH+14;
+
+  const phaseIRectW=phaseIWidth*PX_PER_WEEK-PHASE_GAP;
+  const phaseIIRectX=phaseIIStart*PX_PER_WEEK;
+  const phaseIIRectW=phaseIIWidth*PX_PER_WEEK-PHASE_GAP;
+  const phaseIIIRectX=phaseIIIStart*PX_PER_WEEK;
+  const phaseIIIRectW=PHASE_III_WEEKS*PX_PER_WEEK-PHASE_GAP;
+  const gradIdIII='phase3fade-'+project.replace(/[^a-z0-9]+/gi,'-');
+  const phase3GradDef=`<linearGradient id="${gradIdIII}" x1="0" y1="0" x2="1" y2="0">`+
+    `<stop offset="0" stop-color="var(--phase-blue)" stop-opacity="1"/>`+
+    `<stop offset="1" stop-color="var(--phase-blue)" stop-opacity="0"/>`+
+    `</linearGradient>`;
+  const laneFill=`<rect x="0" y="${laneTop}" width="${phaseIRectW}" height="${laneH}" rx="4" fill="var(--phase-blue)"/>`+
+    `<rect x="${phaseIIRectX}" y="${laneTop}" width="${phaseIIRectW}" height="${laneH}" rx="4" fill="var(--phase-blue)"/>`+
+    `<rect x="${phaseIIIRectX}" y="${laneTop}" width="${phaseIIIRectW}" height="${laneH}" rx="4" fill="url(#${gradIdIII})"/>`;
+  function weekGridLines(x0,x1){
+    let s='';
+    for(let wx=Math.ceil(x0/PX_PER_WEEK)*PX_PER_WEEK; wx<x1; wx+=PX_PER_WEEK){
+      if(wx<=x0) continue;
+      s+=`<line x1="${wx}" y1="${laneTop}" x2="${wx}" y2="${laneBottom}" stroke="rgba(255,255,255,.3)" stroke-width="1"/>`;
+    }
+    return s;
+  }
+  const weekGrid=weekGridLines(0,phaseIRectW)+weekGridLines(phaseIIRectX,phaseIIRectX+phaseIIRectW)+weekGridLines(phaseIIIRectX,phaseIIIRectX+phaseIIIRectW);
+  const phaseLabelY=laneTop+11;
+  const phaseLabels=`<text x="2" y="${phaseLabelY}" font-size="10" font-weight="700" letter-spacing=".02em" fill="#fff" fill-opacity=".9" font-family="${FONT}">DESIGN PHASE I</text>`+
+    `<text x="${phaseIIRectX+4}" y="${phaseLabelY}" font-size="10" font-weight="700" letter-spacing=".02em" fill="#fff" fill-opacity=".9" font-family="${FONT}">DESIGN PHASE II</text>`+
+    `<text x="${phaseIIIRectX+4}" y="${phaseLabelY}" font-size="10" font-weight="700" letter-spacing=".02em" fill="#fff" fill-opacity=".9" font-family="${FONT}">DESIGN PHASE III</text>`;
+
+  const shiftedZoning=zoning.positioned.map(s=>({...s,start:s.start+seqOffset}));
+  const shiftedPermit=permit.positioned.map(s=>({...s,start:s.start+seqOffset}));
+  const sequenceBars=barRow(shiftedZoning, barY, barH, 'var(--zoning-gray)', true)
+    + barRow(shiftedPermit, barY, barH, 'var(--permit-gray)', false);
+
+  const categoryLabels=
+    (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${laneBottom-4}" font-size="8" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning</text>`:'')+
+    (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${laneBottom-4}" font-size="8" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting</text>`:'');
+
+  const caColor='var(--ca-chip)';
+  const milestones=[
+    {x:todayWeek*PX_PER_WEEK, label:'Today', color:'var(--today-chip)'},
+    {x:caWeek*PX_PER_WEEK, label:'CA', color:caColor},
+    {x:consWeek*PX_PER_WEEK, label:'Con Start', color:'var(--cons-chip)'},
+  ].sort((a,b)=>a.x-b.x);
+  const pillH=chipH/2, oldBottom=chipY+chipH;
+  let arrowsHtml='', pillsHtml='', lastRightTop=-999, lastRightBottom=-999;
+  milestones.forEach(m=>{
+    const isToday=m.label==='Today';
+    const pillTop=isToday?chipY+4:oldBottom-pillH+5;
+    const w=Math.max(44, 14+m.label.length*6.2);
+    let x0=Math.max(2, Math.min(VW-w-2, m.x-w/2));
+    const lastRight=isToday?lastRightTop:lastRightBottom;
+    if(x0<lastRight+4) x0=lastRight+4;
+    if(isToday) lastRightTop=x0+w; else lastRightBottom=x0+w;
+    arrowsHtml+=dropArrow(m.x, pillTop+pillH, laneTop, m.color);
+    pillsHtml+=`<rect x="${x0}" y="${pillTop}" width="${w}" height="${pillH}" rx="6" fill="${m.color}"/>`+
+      `<text x="${x0+w/2}" y="${pillTop+pillH/2+3.3}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fff" font-family="${FONT}">${esc(m.label)}</text>`;
+  });
+  const chipsHtml=arrowsHtml+pillsHtml;
+
+  const bandCapWeeks=isCity?6:4;
+  const bandX0=Math.max(seqOffset*PX_PER_WEEK, (greenEnd-bandCapWeeks)*PX_PER_WEEK);
+  const bandX1=(redStart+bandCapWeeks)*PX_PER_WEEK;
+  const bandW=Math.max(1,bandX1-bandX0);
+  const gEndFrac=Math.max(0,Math.min(1,(greenEnd*PX_PER_WEEK-bandX0)/bandW));
+  const rStartFrac=Math.max(gEndFrac,Math.min(1,(redStart*PX_PER_WEEK-bandX0)/bandW));
+  const peakFrac=(gEndFrac+rStartFrac)/2;
+  const gradId='bandgrad-'+project.replace(/[^a-z0-9]+/gi,'-');
+  const gradientDef=`<linearGradient id="${gradId}" x1="0" y1="0" x2="1" y2="0">`+
+    `<stop offset="0" stop-color="var(--grad-green)"/>`+
+    `<stop offset="${gEndFrac}" stop-color="var(--grad-green)"/>`+
+    `<stop offset="${peakFrac}" stop-color="var(--grad-orange)"/>`+
+    `<stop offset="${rStartFrac}" stop-color="var(--grad-red)"/>`+
+    `<stop offset="1" stop-color="var(--grad-red)"/>`+
+    `</linearGradient>`;
+  const greenW=gEndFrac*bandW, amberW=(rStartFrac-gEndFrac)*bandW, redW=(1-rStartFrac)*bandW;
+  const band=`<rect x="${bandX0}" y="${bandTop}" width="${bandW}" height="${bandH}" rx="4" fill="url(#${gradId})"/>`+
+    `<g style="pointer-events:none;">`+
+    (greenW>=50?`<text x="${bandX0+greenW/2}" y="${bandTop+bandH/2+3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" fill-opacity=".8" font-family="${FONT}">ON TRACK</text>`:'')+
+    (amberW>=50?`<text x="${bandX0+gEndFrac*bandW+amberW/2}" y="${bandTop+bandH/2+3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" fill-opacity=".8" font-family="${FONT}">AT RISK</text>`:'')+
+    (redW>=50?`<text x="${bandX0+rStartFrac*bandW+redW/2}" y="${bandTop+bandH/2+3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" fill-opacity=".8" font-family="${FONT}">OFF TRACK</text>`:'')+
+    `</g>`;
+
+  const pLast=shiftedPermit[shiftedPermit.length-1];
+  const pLastBarLeft=pLast.start*PX_PER_WEEK;
+  const pLastBarRight=pLastBarLeft+Math.max(1,pLast.width*PX_PER_WEEK-BAR_GAP);
+  const arrowPoints=`${pLastBarRight-7},${bandTop+1.5} ${pLastBarRight+7},${bandTop+1.5} ${pLastBarRight},${bandTop+11.5}`;
+  const bandClipId='bandclip-'+project.replace(/[^a-z0-9]+/gi,'-');
+  const bandClipDef=`<clipPath id="${bandClipId}"><rect x="${bandX0}" y="${bandTop}" width="${bandW}" height="${bandH}" rx="4"/></clipPath>`;
+  const endMarker=`<polygon points="${arrowPoints}" fill="none" stroke="#000" stroke-width="1.5" stroke-linejoin="miter"/>`+
+    `<polygon points="${arrowPoints}" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="miter" clip-path="url(#${bandClipId})"/>`;
+  const gradIdSubmit='submitedge-'+project.replace(/[^a-z0-9]+/gi,'-');
+  const submitEdgeGrad=`<linearGradient id="${gradIdSubmit}" gradientUnits="userSpaceOnUse" x1="${pLastBarLeft}" y1="${barY+barH}" x2="${pLastBarRight}" y2="${barY+barH}">`+
+    `<stop offset="0" stop-color="#fff"/>`+
+    `<stop offset="1" stop-color="var(--grad-red)"/>`+
+    `</linearGradient>`;
+  const submitBottomEdge=`<line x1="${pLastBarLeft}" y1="${barY+barH}" x2="${pLastBarRight}" y2="${barY+barH}" stroke="url(#${gradIdSubmit})" stroke-width="2"/>`;
+  const submitConnector=`<line x1="${pLastBarRight}" y1="${barY+barH}" x2="${pLastBarRight}" y2="${bandTop+1.5}" stroke="var(--grad-red)" stroke-width="2"/>`;
+
+  const hoverId='whov-'+project.replace(/[^a-z0-9]+/gi,'-');
+  const hoverFrame=`<rect id="${hoverId}" x="0" y="${laneTop}" width="${PX_PER_WEEK}" height="${bandTop+bandH-laneTop}" fill="#fff" fill-opacity=".1" stroke="none" style="display:none;pointer-events:none;"/>`;
+
+  const html=`<svg class="track" width="${VW}" height="${VH}" viewBox="0 0 ${VW} ${VH}" xmlns="http://www.w3.org/2000/svg" onmousemove="trackMove(event,'${hoverId}',${todayWeek},window.__PZT_TODAY_REF)" onmouseleave="trackLeave('${hoverId}')">
+    <defs>${gradientDef}${phase3GradDef}${submitEdgeGrad}${bandClipDef}</defs>
+    ${laneFill}
+    ${weekGrid}
+    ${sequenceBars}
+    ${categoryLabels}
+    ${phaseLabels}
+    ${band}
+    ${submitBottomEdge}
+    ${submitConnector}
+    ${endMarker}
+    ${chipsHtml}
+    ${hoverFrame}
+  </svg>`;
+  window.__PZT_TODAY_REF=TODAY;
+  return { html, tier };
+}
+
+/* ═══════════════════ stage catalog, settings, comments — ported
+   unchanged from the prototype ═══════════════════ */
+const STAGE_CATALOG={
+  zoning:[
+    {key:'prep', fullName:'Prep', renderName:'Prep', estMin:2, estMax:2},
+    {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estMin:4, estMax:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estMin:4, estMax:4},
+  ],
+  permitting:[
+    {key:'prep', fullName:'Prep', renderName:'Prep', estMin:2, estMax:2},
+    {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estMin:4, estMax:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estMin:4, estMax:4},
+  ],
+};
+function pidOf(name){ return name.replace(/[^a-z0-9]+/gi,'-').toLowerCase(); }
+
+function seedStageState(p){
+  const state={zoning:{}, permitting:{}, locked:true};
+  function seed(category, sourceStages){
+    const claimed=new Set();
+    sourceStages.forEach(s=>{
+      const match=STAGE_CATALOG[category].find(c=>c.fullName===s.name && !claimed.has(c.key));
+      if(!match) return;
+      claimed.add(match.key);
+      state[category][match.key]={enabled:true, estMin:s.estMin, estMax:s.estMax, status:s.status, actualWeeks:s.actualWeeks, ageWeeks:s.ageWeeks};
+    });
+  }
+  seed('zoning', p.zoningStages);
+  seed('permitting', p.permitStages);
+  return state;
+}
+
+function deriveStages(p, category){
+  return STAGE_CATALOG[category].map(c=>{
+    const st=p.stageState[category][c.key];
+    if(!st||!st.enabled) return null;
+    return {name:c.renderName, estMin:st.estMin, estMax:st.estMax, status:st.status||'future', actualWeeks:st.actualWeeks, ageWeeks:st.ageWeeks};
+  }).filter(Boolean);
+}
+
+/* ───────── mock Trello-shaped board data (same scenarios as the
+   prototype) — real Trello sync is the next phase. ───────── */
+const PROJECTS=[
+  { proj:'Harrington Build', jur:'City', commercial:false,
+    zoningStages:[
+      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
+      {name:'With Arch/Eng', estMin:4, estMax:4, status:'done', actualWeeks:4},
+      {name:'Submitted / In Review', estMin:4, estMax:4, status:'done', actualWeeks:4},
+    ],
+    permitStages:[
+      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
+      {name:'With Arch/Eng', estMin:4, estMax:4, status:'done', actualWeeks:4},
+      {name:'Submitted / In Review', estMin:4, estMax:4, status:'active', ageWeeks:3},
+    ],
+    note:'Zoning fully done. Permitting is sitting In Review, 3 weeks in against a 4-week estimate.' },
+
+  { proj:'Castor Ave Shop', jur:'City', commercial:false,
+    zoningStages:[
+      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:1},
+      {name:'Submitted / In Review', estMin:4, estMax:4, status:'done', actualWeeks:4},
+    ],
+    permitStages:[
+      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
+      {name:'Submitted / In Review', estMin:4, estMax:4, status:'active', ageWeeks:1},
+    ],
+    note:'Simple project — With Arch/Eng toggled off entirely on both tracks (no architect/engineer involvement needed). Zoning Prep finished in 1 week against a 2-week estimate — that\'s the gold star. Permitting just moved into Submitted.' },
+
+  { proj:'Dunmore Cottage', jur:'Suburb', commercial:true,
+    zoningStages:[
+      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
+      {name:'Submitted / In Review', estMin:4, estMax:4, status:'done', actualWeeks:4},
+    ],
+    permitStages:[
+      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
+      {name:'Submitted / In Review', estMin:4, estMax:4, status:'active', ageWeeks:1},
+    ],
+    note:'Suburb — CA Signing is fixed at the end of Phase II, not an independent date. Submitted still needs to land before that week (CA has to be signed before Submit can happen).' },
+];
+PROJECTS.forEach(p=>{ p.stageState=seedStageState(p); });
+
+const OPEN_PANELS=new Set();
+const OPEN_COMMENTS=new Set();
+const COMMENTS={
+  'Harrington Build':[{author:'Byron', date:'Oct 9', text:'Engineer flagged a setback issue on the revisions — watching this one.'}],
+  'Castor Ave Shop':[{author:'Byron', date:'Sep 30', text:'Clean EZ permit, no surprises expected.'}],
+  'Dunmore Cottage':[{author:'Byron', date:'Oct 14', text:'Client still finalizing financing — CA signing could slip.'}],
+};
+
+function findProject(pid){ return PROJECTS.find(p=>pidOf(p.proj)===pid); }
+function toggleGear(pid){
+  if(OPEN_PANELS.has(pid)) OPEN_PANELS.delete(pid); else OPEN_PANELS.add(pid);
+  renderCards();
+}
+function toggleStage(pid, category, key, checked){
+  const p=findProject(pid), c=STAGE_CATALOG[category].find(x=>x.key===key);
+  if(!p.stageState[category][key]) p.stageState[category][key]={estMin:c.estMin, estMax:c.estMax, status:'future'};
+  p.stageState[category][key].enabled=checked;
+  renderCards();
+}
+function updateStageDur(pid, category, key, field, value){
+  const p=findProject(pid), c=STAGE_CATALOG[category].find(x=>x.key===key);
+  if(!p.stageState[category][key]) p.stageState[category][key]={enabled:false, estMin:c.estMin, estMax:c.estMax, status:'future'};
+  p.stageState[category][key][field]=Math.max(0, parseInt(value,10)||0);
+  renderCards();
+}
+function toggleLock(pid, checked){
+  findProject(pid).stageState.locked=checked;
+  renderCards();
+}
+function postComment(pid, projName){
+  const ta=document.getElementById('newc-'+pid), text=ta.value.trim();
+  if(!text) return;
+  if(!COMMENTS[projName]) COMMENTS[projName]=[];
+  COMMENTS[projName].push({author:'You', date:fmtShort(now()), text});
+  renderCards();
+}
+function toggleComments(pid){
+  if(OPEN_COMMENTS.has(pid)) OPEN_COMMENTS.delete(pid); else OPEN_COMMENTS.add(pid);
+  renderCards();
+}
+
+function renderSettingsPanel(p){
+  const pid=pidOf(p.proj), locked=p.stageState.locked, dis=locked?'disabled':'';
+  function stageRow(category, c){
+    const st=p.stageState[category][c.key]||{enabled:false, estMin:c.estMin, estMax:c.estMax};
+    return `<div class="stage-row">
+      <label><input type="checkbox" ${st.enabled?'checked':''} ${dis} onchange="toggleStage('${pid}','${category}','${c.key}',this.checked)"> ${esc(c.fullName)}</label>
+      <span class="dur-inputs">
+        <input type="number" min="0" value="${st.estMin}" ${dis} onchange="updateStageDur('${pid}','${category}','${c.key}','estMin',this.value)">–<input type="number" min="0" value="${st.estMax}" ${dis} onchange="updateStageDur('${pid}','${category}','${c.key}','estMax',this.value)"> wks
+      </span>
+    </div>`;
+  }
+  return `<div class="settings-panel" id="panel-${pid}" style="display:${OPEN_PANELS.has(pid)?'block':'none'};">
+    <div class="settings-context">
+      <span class="chip">${esc(p.jur)}</span>
+      <span class="chip${p.commercial?' commercial':''}">${p.commercial?'Commercial':'Residential'}</span>
+      <span style="color:var(--mut);font-size:10.5px;">— determines which stages apply and where they land (rule TBD)</span>
+    </div>
+    <div class="settings-cols">
+      <div><h4>Zoning stages</h4>${STAGE_CATALOG.zoning.map(c=>stageRow('zoning',c)).join('')}</div>
+      <div><h4>Permitting stages</h4>${STAGE_CATALOG.permitting.map(c=>stageRow('permitting',c)).join('')}</div>
+    </div>
+    <div class="settings-footer">
+      <label><input type="checkbox" ${locked?'checked':''} onchange="toggleLock('${pid}',this.checked)"> &#128274; Locked (discuss &rarr; set &rarr; lock)</label>
+    </div>
+  </div>`;
+}
+
+const EXT_ICON_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3H3v10h10V9.5"/><path d="M9 3h4v4"/><path d="M7 9l6-6"/></svg>';
+const CMT_ICON_SVG='<svg viewBox="0 0 16 16" fill="#fff" stroke="currentColor" stroke-width="0.7" stroke-linejoin="round"><path d="M14 3H2v8h8l4 3z"/></svg>';
+function cardIcons(p){
+  const pid=pidOf(p.proj), n=(COMMENTS[p.proj]||[]).length;
+  const cmt=`<span class="cmt-icon" onclick="toggleComments('${pid}')" data-tip="Comments" aria-label="Comments"><span class="cmt-glyph">${CMT_ICON_SVG}${n?`<span class="cmt-count">${n}</span>`:''}</span><span class="icon-lbl">Trello</span></span>`;
+  const ext=`<span class="ext-icon" data-tip="Open Trello card" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span><span class="icon-lbl">Trello</span></span>`;
+  return cmt+ext;
+}
+function renderCommentsPopover(p){
+  const pid=pidOf(p.proj);
+  const commentsHtml=(COMMENTS[p.proj]||[]).map(c=>`<div class="comment"><b>${esc(c.author)}</b><span class="c-date">${esc(c.date)}</span><div>${esc(c.text)}</div></div>`).join('')
+    || '<div class="comment" style="color:var(--mut);">No comments yet.</div>';
+  return `<div class="comments-section" id="comments-${pid}" style="display:${OPEN_COMMENTS.has(pid)?'block':'none'};">
+    <h4>Comments</h4>
+    ${commentsHtml}
+    <textarea id="newc-${pid}" placeholder="Add a comment…"></textarea>
+    <button onclick="postComment('${pid}','${esc(p.proj)}')">Post</button>
+  </div>`;
+}
+
+const TIER_CLS={'On Track':'tier-on','At Risk':'tier-risk','Off Track':'tier-off'};
+function renderCards(){
+  document.getElementById('cards').innerHTML=PROJECTS.map(p=>{
+    const isCity=p.jur==='City';
+    const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
+    const r=renderCombinedTrack({project:p.proj, isCity, zoningStages, permitStages});
+    const pid=pidOf(p.proj);
+    return `
+    <div class="proj-group">
+      <div class="proj-hdr">
+        <div class="proj-name">${esc(p.proj)}</div>
+        <div class="chips">
+          <span class="chip">${esc(p.jur)}</span>
+          ${p.commercial?'<span class="chip commercial">Commercial</span>':''}
+          <span class="chip tier" style="background:${r.tier.color};">${esc(r.tier.label)}</span>
+        </div>
+        <div class="proj-hdr-sp"></div>
+        ${cardIcons(p)}
+        <button class="gear-btn" onclick="toggleGear('${pid}')" data-tip="Stage settings" aria-label="Stage settings">&#9881;</button>
+      </div>
+      <div class="app-row">
+        <div class="meta-band">
+          <div>${esc(p.jur)}</div>
+          <div class="meta-band-sub">${p.commercial?'Commercial':'Residential'}</div>
+        </div>
+        <div class="row-mid">${r.html}</div>
+      </div>
+      <div class="note">${esc(p.note)}</div>
+      ${renderCommentsPopover(p)}
+      ${renderSettingsPanel(p)}
+    </div>`;
+  }).join('');
+}
+
+/* ═══════════════════ CORE_Config — shared key/value store (same
+   {Title,Key,Value} shape the Pipeline and other CORE tools already use) ═══════════════════ */
+let _cfgCache=null, _cfgPromise=null;
+async function graphGetAll(url){
+  let out=[], next=url;
+  while(next){ const j=await SherpaAuth.graph(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; }
+  return out;
+}
+async function cfgAll(){
+  if(_cfgCache) return _cfgCache;
+  if(!_cfgPromise) _cfgPromise=graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields').then(items=>{ _cfgCache=items; return items; });
+  return _cfgPromise;
+}
+async function cfgGet(key){
+  const items=await cfgAll();
+  const row=items.find(it=>(it.fields||{}).Key===key);
+  return row?row.fields.Value:null;
+}
+async function cfgSet(key,value){
+  const items=await cfgAll();
+  const row=items.find(it=>(it.fields||{}).Key===key);
+  if(row){
+    await SherpaAuth.graph(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{method:'PATCH',body:JSON.stringify({Value:value})});
+    row.fields.Value=value;
+  }else{
+    const created=await SherpaAuth.graph(BWC_SITE+'/CORE_Config/items',{method:'POST',body:JSON.stringify({fields:{Title:key,Key:key,Value:value}})});
+    items.push({id:created.id,fields:{Key:key,Value:value}});
+  }
+}
+
+function toggleAdmin(forceOpen){
+  const panel=document.getElementById('adminPanel');
+  if(forceOpen) panel.classList.add('open');
+  else panel.classList.toggle('open');
+}
+async function loadAdminFields(){
+  try{
+    const [key,token,board]=await Promise.all([cfgGet('permit_trello_key'),cfgGet('permit_trello_token'),cfgGet('permit_trello_board')]);
+    if(key) document.getElementById('apKey').value=key;
+    if(token) document.getElementById('apToken').value=token;
+    if(board) document.getElementById('apBoard').value=board;
+  }catch(e){ console.error('loadAdminFields failed', e); }
+}
+async function saveAdmin(){
+  const status=document.getElementById('apStatus');
+  status.className='ap-status'; status.textContent='Saving…';
+  try{
+    await Promise.all([
+      cfgSet('permit_trello_key', document.getElementById('apKey').value.trim()),
+      cfgSet('permit_trello_token', document.getElementById('apToken').value.trim()),
+      cfgSet('permit_trello_board', document.getElementById('apBoard').value.trim()),
+    ]);
+    status.className='ap-status ok'; status.textContent='Saved to CORE_Config.';
+  }catch(e){
+    status.className='ap-status err'; status.textContent='Save failed: '+e.message;
+  }
+}
+async function testTrello(){
+  const status=document.getElementById('apStatus');
+  const key=document.getElementById('apKey').value.trim(), token=document.getElementById('apToken').value.trim(), board=document.getElementById('apBoard').value.trim();
+  if(!key||!token||!board){ status.className='ap-status err'; status.textContent='Fill in all three fields first.'; return; }
+  status.className='ap-status'; status.textContent='Testing…';
+  try{
+    const url='https://api.trello.com/1/boards/'+encodeURIComponent(board)+'?fields=name,url&key='+encodeURIComponent(key)+'&token='+encodeURIComponent(token);
+    const resp=await fetch(url);
+    if(!resp.ok) throw new Error('Trello API HTTP '+resp.status);
+    const data=await resp.json();
+    status.className='ap-status ok'; status.textContent='Connected — "'+data.name+'".';
+  }catch(e){
+    status.className='ap-status err'; status.textContent='Connection failed: '+e.message;
+  }
+}
+
+/* ═══════════════════ boot / auth (SherpaAuth) ═══════════════════ */
+function setAuthStatus(msg,isErr){ const el=document.getElementById('authStatus'); el.textContent=msg||''; el.style.color=isErr?'#f29a9a':''; }
+document.getElementById('authSignInBtn').addEventListener('click',()=>{
+  const btn=document.getElementById('authSignInBtn'); btn.disabled=true;
+  setAuthStatus('Signing in…');
+  SherpaAuth.signIn().catch(e=>{ setAuthStatus('Sign-in failed: '+e.message, true); btn.disabled=false; });
+});
+
+async function boot(){
+  renderCards();
+  updateTestBanner();
+  try{ await loadAdminFields(); }catch(e){ console.error(e); }
+}
+
+async function main(){
+  await SherpaAuth.init();
+  if(!SherpaAuth.isSignedIn()){
+    document.getElementById('authOverlay').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('authOverlay').classList.add('hidden');
+  await boot();
+}
+main().catch(e=>{ console.error(e); setAuthStatus('Error: '+e.message, true); });
+</script>
+</body>
+</html>
