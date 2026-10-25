@@ -374,7 +374,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
    still the prototype's mock Trello-shaped data — live Trello sync is the
    next phase. See CLAUDE.md.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v11';
+const CORE_VERSION = 'v12';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -491,7 +491,7 @@ function tierInfo(approvedWeek, greenEnd, redStart){
 // Hovering a week highlights its column (boxId) AND draws a soft wash over
 // that same week's date in the ruler (dateFrameId) — a direct visual tie
 // instead of a popup.
-function trackMove(evt, boxId, dateFrameId){
+function trackMove(evt, boxId, dateFrameId, cornerIds, lastWeekIdx){
   const svg = evt.target.closest('svg');
   const box = document.getElementById(boxId);
   if(!svg || !box) return;
@@ -509,12 +509,28 @@ function trackMove(evt, boxId, dateFrameId){
     dateFrame.setAttribute('x', weekX+PX_PER_WEEK/2-CFG.hlW/2);
     dateFrame.style.display='block';
   }
+  // The lane/band's rounded outer corners (week 0's left edge, the last
+  // week's right edge) leave a sliver of bare card background that the
+  // highlight wash above can't tint — a translucent white wash over white
+  // background is invisible. These small, color-matched patches sit right
+  // on top of that sliver, hidden except while hovering the exact edge
+  // week they belong to, so the highlight reads as filling the corner
+  // completely instead of leaving a gap — the lane stays visibly rounded
+  // the rest of the time.
+  if(cornerIds){
+    const showLeft = weekIdx===0, showRight = weekIdx===lastWeekIdx;
+    cornerIds.left.forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = showLeft?'block':'none'; });
+    cornerIds.right.forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = showRight?'block':'none'; });
+  }
 }
-function trackLeave(boxId, dateFrameId){
+function trackLeave(boxId, dateFrameId, cornerIds){
   const box=document.getElementById(boxId);
   if(box) box.style.display='none';
   const dateFrame=dateFrameId ? document.getElementById(dateFrameId) : null;
   if(dateFrame) dateFrame.style.display='none';
+  if(cornerIds){
+    cornerIds.left.concat(cornerIds.right).forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
+  }
 }
 
 const BAR_GAP=2;
@@ -619,11 +635,12 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const phaseIIRectX=phaseIIStart*PX_PER_WEEK;
   const phaseIIRectW=phaseIIWidth*PX_PER_WEEK-PHASE_GAP;
   const phaseIIIRectX=phaseIIIStart*PX_PER_WEEK;
-  // 1px wider than the other phases' own PHASE_GAP trim — Pre-Con has no
-  // following phase to visually separate from, so trimming it the same
-  // amount left its right edge short of the gradient band's own right edge
-  // below it (which runs to preConEndWeek*PX_PER_WEEK), per Byron.
-  const phaseIIIRectW=PHASE_III_WEEKS*PX_PER_WEEK-PHASE_GAP+1;
+  // Full width, no PHASE_GAP trim at all — unlike I and II, Pre-Con has no
+  // following phase to visually separate from, so trimming it left its
+  // right edge short of the gradient band's and the date-highlight's own
+  // right edge below/at it (both run to preConEndWeek*PX_PER_WEEK). Flush
+  // all three to the same edge, per Byron.
+  const phaseIIIRectW=PHASE_III_WEEKS*PX_PER_WEEK;
   // Pre-Con (ex "Design Phase III"): blue at week 1, fading to CA-green by
   // week 6 — a visual handoff into the green CA marker right after it.
   const gradIdIII='precon-fade-'+project.replace(/[^a-z0-9]+/gi,'-');
@@ -762,6 +779,26 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const hoverId='whov-'+project.replace(/[^a-z0-9]+/gi,'-');
   const hoverFrame=`<rect id="${hoverId}" x="0" y="${laneTop}" width="${PX_PER_WEEK}" height="${bandTop+bandH-laneTop}" fill="#fff" fill-opacity=".2" stroke="none" style="display:none;pointer-events:none;"/>`;
 
+  // Corner-fill patches — see trackMove. Sized to the lane/band's own rx
+  // (4px) and colored to match what's actually there (Design Phase I's
+  // solid blue at week 0; the Pre-Con gradient's CA-green endpoint and the
+  // band's own red endpoint at the last week), so once the highlight wash
+  // tints them they read as part of the same filled column, not a patch.
+  // Lane patches sit right after laneFill (below); the band patch waits
+  // until after ${band} is drawn further down, or band's own opaque fill
+  // (drawn later) would paint right over it.
+  const slug=project.replace(/[^a-z0-9]+/gi,'-');
+  const cornerFillLeftLaneId='cfll-'+slug;
+  const cornerFillRightLaneId='cfrl-'+slug;
+  const cornerFillRightBandId='cfrb-'+slug;
+  const CORNER_FILL_W=4;
+  const cornerFillsLane=
+    `<rect id="${cornerFillLeftLaneId}" x="0" y="${laneTop}" width="${CORNER_FILL_W}" height="${laneH}" fill="var(--phase-blue)" style="display:none;pointer-events:none;"/>`+
+    `<rect id="${cornerFillRightLaneId}" x="${VW-CORNER_FILL_W}" y="${laneTop}" width="${CORNER_FILL_W}" height="${laneH}" fill="${CA_GREEN}" style="display:none;pointer-events:none;"/>`;
+  const cornerFillBand=`<rect id="${cornerFillRightBandId}" x="${VW-CORNER_FILL_W}" y="${bandTop}" width="${CORNER_FILL_W}" height="${bandH}" fill="var(--grad-red)" style="display:none;pointer-events:none;"/>`;
+  const cornerIdsJs=`{left:['${cornerFillLeftLaneId}'],right:['${cornerFillRightLaneId}','${cornerFillRightBandId}']}`;
+  const lastWeekIdx=lastWeek-1;
+
   const rulerTop = DATE_LABEL_MODE==='above' ? nowHeadroom : bandTop+bandH+rulerGap;
   // the date-number baseline — same formula for every week including
   // Today's, so Today's own date doesn't sit lower than its neighbors.
@@ -816,15 +853,17 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const dateFrameId='dfrm-'+project.replace(/[^a-z0-9]+/gi,'-');
   const dateFrame=`<rect id="${dateFrameId}" x="0" y="${hlBoxY}" width="${CFG.hlW}" height="${CFG.hlH}" fill="#000" fill-opacity=".05" stroke="none" style="display:none;pointer-events:none;"/>`;
 
-  const html=`<svg class="track" width="${VW}" height="${VH}" viewBox="0 0 ${VW} ${VH}" xmlns="http://www.w3.org/2000/svg" onmousemove="trackMove(event,'${hoverId}','${dateFrameId}')" onmouseleave="trackLeave('${hoverId}','${dateFrameId}')">
+  const html=`<svg class="track" width="${VW}" height="${VH}" viewBox="0 0 ${VW} ${VH}" xmlns="http://www.w3.org/2000/svg" onmousemove="trackMove(event,'${hoverId}','${dateFrameId}',${cornerIdsJs},${lastWeekIdx})" onmouseleave="trackLeave('${hoverId}','${dateFrameId}',${cornerIdsJs})">
     <defs>${gradientDef}${phase3GradDef}${submitEdgeGrad}${bandClipDef}</defs>
     ${laneFill}
+    ${cornerFillsLane}
     ${weekGrid}
     ${milestoneColumnsHtml}
     ${sequenceBars}
     ${categoryLabels}
     ${phaseLabels}
     ${band}
+    ${cornerFillBand}
     ${submitEdgePath}
     ${endMarker}
     ${dateRulerHtml}
