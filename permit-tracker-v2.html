@@ -48,10 +48,6 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 #tt .tt-n{font-weight:700;color:var(--accent);}
 #tt .tt-d{font-size:10px;color:rgba(255,255,255,.55);}
 
-/* week-hover rollover on the gantt track itself — distinct from #tt: a
-   fast-moving mousemove tracker, not a static data-tip. */
-.gantt-tip{position:fixed;z-index:9999;display:none;pointer-events:none;background:#000;color:#fff;font-family:var(--font-tt);font-size:10.5px;line-height:1.6;padding:7px 10px;border-radius:7px;box-shadow:0 6px 18px rgba(0,0,0,.28);white-space:nowrap;text-align:center;}
-
 /* ── AUTH OVERLAY ── */
 #authOverlay{position:fixed;inset:0;background:var(--hdr-bg);z-index:1000;display:flex;align-items:center;justify-content:center;}
 #authOverlay.hidden{display:none;}
@@ -140,30 +136,62 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 /* min-height (not padding + negative-margin bleed) is what makes the row's
    height unambiguous for every child's align-self:stretch — see .trello-group
    / .gear-group below. 54px is Byron's confirmed final header height. */
-.proj-hdr{display:flex;align-items:center;gap:10px;padding:0 0 0 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;min-height:54px;}
+.proj-hdr{position:relative;display:flex;align-items:center;gap:10px;padding:0 0 0 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;min-height:55px;}
 .proj-hdr-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
 .proj-name{font-family:var(--font-swear);font-size:14.5px;font-weight:700;}
 .proj-address{font-size:11.5px;color:var(--mut);}
-.proj-classification{font-family:var(--font-tt);font-weight:400;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);}
+/* centered in the header bar as a whole (both axes), independent of the
+   left-aligned name/address and right-aligned owners/Trello/Stages groups
+   around it — not just centered within the title's own flex row. */
+.proj-classification{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-family:var(--font-tt);font-weight:400;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);white-space:nowrap;}
 .proj-hdr-sp{flex:1;}
+/* Zoning / Permit / Arch-Eng Owner — pulled from the Trello card, sitting
+   just left of the Trello buttons. Two-column grid: labels right-justify
+   into their own column (so they all end flush regardless of label length)
+   and names left-justify into theirs, so every name starts at the same x.
+   display:contents on .owner-row lets its two spans join the grid directly
+   instead of boxing them as a nested row. When two or more roles are held
+   by the same person, ownersInfo() combines them onto a single row. */
+.owners-info{display:grid;grid-template-columns:auto auto;align-items:baseline;column-gap:5px;row-gap:1.2px;margin-right:2px;transform:translateX(-8px);}
+.owner-row{display:contents;}
+.owner-lbl{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);line-height:1;white-space:nowrap;text-align:right;}
+.owner-name{font-size:11px;font-weight:700;color:var(--ink);line-height:1;white-space:nowrap;text-align:left;}
 .gear-btn{background:none;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--mut);padding:0;transform:translateY(-10px);}
 .gear-btn svg{width:15px;height:15px;}
 .gear-btn:hover{color:var(--ink);}
 
 .app-row{display:flex;align-items:stretch;}
-.row-mid{flex:1;min-width:0;padding:0 10px;overflow-x:auto;overflow-y:visible;}
+/* Centered when the track fits the available width (so shrinking the card
+   shrinks both margins symmetrically instead of leaving the track flush
+   left with a growing gap on the right) and still horizontally scrollable
+   when it doesn't — "safe center" keeps the START of an overflowing track
+   from being clipped off-screen, which plain "center" would otherwise do. */
+.row-mid{position:relative;flex:1;min-width:0;padding:0 10px;padding-top:20px;overflow-x:auto;overflow-y:visible;display:flex;justify-content:center;justify-content:safe center;}
 /* inline SVG is baseline-aligned by default, which leaves a few px of
-   "descender" whitespace below it inside its container. */
-.row-mid svg.track{display:block;}
+   "descender" whitespace below it inside its container — display:block
+   removes that. flex-shrink:0 stops the flex row from squeezing the SVG
+   itself when it doesn't fit, so overflow-x:auto governs instead of the
+   track getting squashed. */
+.row-mid svg.track{display:block;flex-shrink:0;}
+/* scroll-shadow affordance: a soft fade at whichever edge still has more
+   track to scroll to, toggled by JS (updateScrollShadows) off scrollLeft —
+   gone at both ends once everything's in view. */
+.row-mid::before,.row-mid::after{content:'';position:absolute;top:0;bottom:0;width:22px;pointer-events:none;opacity:0;transition:opacity .15s;z-index:2;}
+.row-mid::before{left:0;background:linear-gradient(to right, var(--card), transparent);}
+.row-mid::after{right:0;background:linear-gradient(to left, var(--card), transparent);}
+.row-mid.can-scroll-left::before{opacity:1;}
+.row-mid.can-scroll-right::after{opacity:1;}
 /* align-self:stretch + justify-content:flex-end (matching .gear-group) so
    the "Trello"/"Stages" labels both bottom-anchor at the same v, regardless
    of their icons' differing heights above. */
-.trello-group{align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;}
+.trello-group{align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;transform:translateX(-4px);}
 .trello-icons{display:flex;align-items:center;gap:10px;transform:translateY(-6px);}
 .trello-lbl{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.6;color:var(--mut);line-height:1;transform:translateY(-5px);}
 /* fixed-width, full-height block flush with the card's right edge — same
-   80px width as .stat-band below it, so the two read as one aligned column. */
-.gear-group{width:80px;align-self:stretch;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;background:var(--bg);}
+   80px width as .stat-band below it, so the two read as one aligned column.
+   Same left border as .stat-band too, so the divider reads as one
+   continuous line down the whole card. */
+.gear-group{width:80px;align-self:stretch;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;background:var(--bg);border-left:1px solid rgba(40,40,40,.14);}
 .gear-lbl{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.6;color:var(--mut);line-height:1;transform:translateY(-5px);}
 .cmt-icon,.ext-icon{position:relative;display:inline-flex;flex-shrink:0;color:var(--mut);cursor:pointer;transition:color .12s;}
 .cmt-glyph,.ext-icon .icon-glyph{position:relative;display:inline-flex;}
@@ -206,6 +234,19 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 
 .empty-note{color:var(--mut);font-size:12px;padding:20px 0;}
 
+/* static key explaining the on/off-track colors and the check/star glyphs
+   — replaces the per-stage hover tooltip, per Byron's own "simple key at
+   the top of the page" suggestion. */
+.legend-key{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:10px 16px;background:var(--card);border:1px solid var(--line);border-radius:8px;margin-bottom:10px;font-size:11.5px;color:var(--ink);}
+.legend-item{display:flex;align-items:center;gap:6px;white-space:nowrap;}
+.legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.legend-dot.tier-on{background:var(--grad-green);}
+.legend-dot.tier-risk{background:var(--grad-orange);}
+.legend-dot.tier-off{background:var(--grad-red);}
+.legend-glyph{font-weight:700;}
+.legend-glyph.check{color:var(--grad-green);}
+.legend-glyph.star{color:#f5c518;text-shadow:0 0 1px rgba(0,0,0,.35);}
+
 /* ── quick-comments floating popover (ported from permit-zoning-
    tracker.html's #cmtPop) — a single shared panel, positioned on open,
    tail-up/tail-down depending on available room. ── */
@@ -227,7 +268,6 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 <body>
 
 <div id="tt"></div>
-<div id="ganttTip" class="gantt-tip"></div>
 <div id="cmtPop"><div id="cmtPopInner"></div></div>
 
 <div id="authOverlay">
@@ -300,6 +340,13 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 
 <div class="main" id="main">
   <p class="sub">Project-relative week axis. Design Phase I/II/III, stage bars, and the on/off-track gradient band are the prototype's own rendering, unchanged — see the gear icon on each project to adjust its stage configuration.</p>
+  <div class="legend-key">
+    <span class="legend-item"><span class="legend-dot tier-on"></span><b>On Track</b> — on pace to clear the deadline</span>
+    <span class="legend-item"><span class="legend-dot tier-risk"></span><b>At Risk</b> — inside the risk window before it</span>
+    <span class="legend-item"><span class="legend-dot tier-off"></span><b>Off Track</b> — past the deadline</span>
+    <span class="legend-item"><span class="legend-glyph check">✓</span> Stage complete</span>
+    <span class="legend-item"><span class="legend-glyph star">★</span> Completed early</span>
+  </div>
   <div id="cards"><div class="empty-note">Loading&hellip;</div></div>
 </div>
 
@@ -311,12 +358,23 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
    PERMIT & ZONING TRACKER v2 — CORE tool (placeholder name/registration)
    Real-page scaffold: auth (SherpaAuth), header/admin-panel chrome and
    row layout adapted from permit-zoning-tracker.html's structure, with
-   the gantt track, gear-icon stage config and comments ported unchanged
-   from the Artifact prototype (combined one-row-per-project track, per
-   Byron). Board data is still the prototype's mock Trello-shaped data —
-   live Trello sync is the next phase. See CLAUDE.md.
+   the gantt track, gear-icon stage config and comments ported from the
+   Artifact prototype (combined one-row-per-project track, per Byron).
+   v11 catches this page up to the prototype's full redesign since v10:
+   always-visible date ruler (replaces the old hover tooltip/Today pill),
+   NOW cell + on-hover date highlight, CA marker moved inside the lane,
+   Zoning/Permit/Arch-Eng owner info in the header, the static legend key,
+   and two correctness fixes — a done stage's width is its fixed actual
+   duration (not its editable estimate), and the canvas/date axis size off
+   fixed milestone weeks only, never off the sum of stage durations — so
+   NOW, CA, and every date stay put no matter what duration gets edited.
+   Phase lengths (Design Phase I/II/III week-counts) are now a per-project
+   field too, not a shared global, since real projects won't all run the
+   same 6/18/6 weeks once the Pipeline is assigning them. Board data is
+   still the prototype's mock Trello-shaped data — live Trello sync is the
+   next phase. See CLAUDE.md.
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v10';
+const CORE_VERSION = 'v11';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -387,15 +445,27 @@ const PX_PER_WEEK=28;
 const FONT="'TT Norms Pro', Arial, sans-serif";
 // final agreed layout numbers from the Artifact tuning session — VH is a
 // RESULT of these (topPad + lane + 1 + band + bottomPad), not an input.
-const CFG={ topPad:46, laneH:70, bandH:30, bottomPad:49, markerRise:20 };
+const CFG={ topPad:7, laneH:82, bandH:30, bottomPad:32, markerRise:19, rulerH:21,
+  nowW:28, nowH:29, nowYOff:1, hlW:28, hlH:29, hlYOff:1, nowLabelY:-3 };
+// 'above' is the only placement the tuning session settled on — no dropdown
+// in production, just the agreed mode baked in.
+const DATE_LABEL_MODE='above';
 
 function fmtShort(dt){ return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
 function weeksBetween(a,b){ return Math.round((b-a)/(7*DAY)); }
 
 function buildLane(stages, cursorStart){
+  // A done stage's width is its fixed, already-happened ACTUAL duration —
+  // not its estimate. estMax stays editable (for tuning/future planning)
+  // but a finished stage's real-world position can't move just because
+  // someone nudges its estimate afterward; only estMax still drives width
+  // for the active/future stages, where no actual exists yet. This is what
+  // keeps NOW (and every calendar date up to it) fixed when a past stage's
+  // duration is edited — only stages at/after the point of a real change
+  // should expand or contract.
   let cursor=cursorStart, todayWeek=null;
   const positioned=stages.map(s=>{
-    const width=s.estMax;
+    const width=(s.status==='done' && s.actualWeeks!=null) ? s.actualWeeks : s.estMax;
     const start=cursor; cursor+=width;
     if(s.status==='active') todayWeek=start+(s.ageWeeks||0);
     return {...s, start, width};
@@ -417,12 +487,11 @@ function tierInfo(approvedWeek, greenEnd, redStart){
   return {label:'On Track', color:'var(--grad-green)'};
 }
 
-function moveTip(evt){
-  const tip=document.getElementById('ganttTip');
-  tip.style.left=(evt.clientX+14)+'px';
-  tip.style.top=(evt.clientY+14)+'px';
-}
-function trackMove(evt, boxId, todayWeek, tref){
+// Hover tooltip is retired — the always-visible ruler shows the date now.
+// Hovering a week highlights its column (boxId) AND draws a soft wash over
+// that same week's date in the ruler (dateFrameId) — a direct visual tie
+// instead of a popup.
+function trackMove(evt, boxId, dateFrameId){
   const svg = evt.target.closest('svg');
   const box = document.getElementById(boxId);
   if(!svg || !box) return;
@@ -430,18 +499,22 @@ function trackMove(evt, boxId, todayWeek, tref){
   pt.x = evt.clientX; pt.y = evt.clientY;
   const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
   const weekIdx = Math.floor(loc.x/PX_PER_WEEK);
-  box.setAttribute('x', weekIdx*PX_PER_WEEK);
+  const weekX = weekIdx*PX_PER_WEEK;
+  box.setAttribute('x', weekX);
   box.style.display='block';
-  const date=new Date(tref.getTime()+(weekIdx-todayWeek)*7*DAY);
-  const tip=document.getElementById('ganttTip');
-  tip.innerHTML=`<div>Wk ${weekIdx+1}</div><div>${esc(fmtShort(date))}</div>`;
-  tip.style.display='block';
-  moveTip(evt);
+  const dateFrame = dateFrameId ? document.getElementById(dateFrameId) : null;
+  if(dateFrame){
+    // centered on the hovered week, same as the NOW cell — CFG.hlW can
+    // differ from PX_PER_WEEK.
+    dateFrame.setAttribute('x', weekX+PX_PER_WEEK/2-CFG.hlW/2);
+    dateFrame.style.display='block';
+  }
 }
-function trackLeave(boxId){
+function trackLeave(boxId, dateFrameId){
   const box=document.getElementById(boxId);
   if(box) box.style.display='none';
-  document.getElementById('ganttTip').style.display='none';
+  const dateFrame=dateFrameId ? document.getElementById(dateFrameId) : null;
+  if(dateFrame) dateFrame.style.display='none';
 }
 
 const BAR_GAP=2;
@@ -465,18 +538,18 @@ function barRow(stages, y, barH, groupColor, insetFirst){
   }).join('');
 }
 
-function dropLine(x, topY, botY, color){
-  return `<line x1="${x}" y1="${topY}" x2="${x}" y2="${botY}" stroke="${color}" stroke-width="1.5"/>`;
-}
-
-function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset }){
+function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset, phaseWeeks }){
   const TODAY=now();
   const zoning=buildLane(zoningStages, 0);
   const permit=buildLane(permitStages, zoning.endWeek);
   const sequenceTotal=permit.endWeek;
   const todayWeekInSeq = permit.todayWeek!=null ? permit.todayWeek : zoning.todayWeek;
 
-  const PHASE_I_WEEKS=6, PHASE_II_WEEKS=18, PHASE_III_WEEKS=6, PHASE_GAP=2;
+  // Phase lengths are PER-PROJECT (Pipeline-assigned), not a shared global —
+  // real projects won't all run 6/18/6 weeks. Falls back to that only when a
+  // project hasn't got the field yet. PHASE_GAP stays global: it's a fixed
+  // visual spacing constant between phase blocks, not scheduling data.
+  const PHASE_I_WEEKS=(phaseWeeks&&phaseWeeks.I)||6, PHASE_II_WEEKS=(phaseWeeks&&phaseWeeks.II)||18, PHASE_III_WEEKS=(phaseWeeks&&phaseWeeks.III)||6, PHASE_GAP=2;
   const CA_GREEN='#127432'; // Pipeline's own CA Signed green (.ms-tall.ca-signed) — reused here for continuity
   const phaseIWidth=PHASE_I_WEEKS;
   const phaseIIStart=phaseIWidth;
@@ -508,14 +581,33 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // Byron, since Construction is now outside what the gantt depicts.
   const preConEndWeek = phaseIIIStart+PHASE_III_WEEKS;
 
-  const padWeeks=2;
-  const lastWeek=Math.max(caWeek, approvedWeek, preConEndWeek)+padWeeks;
+  // approvedWeek deliberately left OUT of this — it's driven by the sum of
+  // (editable) stage durations, and including it here meant lengthening a
+  // stage could grow the canvas itself. Since the track is horizontally
+  // centered, a wider canvas shifts every fixed element's SCREEN position
+  // (NOW, CA, the whole date ruler) even though none of their own
+  // coordinates changed, which reads as "the dates reset." caWeek and
+  // preConEndWeek are both fixed (derived from the PHASE_* weeks, assigned
+  // by the Pipeline, never from stage durations), so the canvas width is
+  // fixed too. A stage overrunning this far gets visually clipped at the
+  // fixed edge rather than growing the frame.
+  const lastWeek=Math.max(caWeek, preConEndWeek);
   const VW=lastWeek*PX_PER_WEEK;
 
-  // VH is a RESULT of CFG (topPad + lane + 1 + band + bottomPad), not an
-  // independent input — compressing topPad/bottomPad shrinks the canvas
-  // instead of leaving dead space.
-  const laneTop=CFG.topPad;
+  // "above" ruler mode adds its own strip ABOVE everything else (NOW/CA
+  // included) by growing topPad itself — NOW/CA are both positioned
+  // relative to laneTop, so they shift down with it automatically.
+  const rulerGap=2;
+  // fixed headroom reserved ABOVE the ruler row itself, so "NOW" (which sits
+  // above that row) has room to render without its own glyph clipping
+  // against the canvas's hard top edge (y=0).
+  const nowHeadroom = DATE_LABEL_MODE==='above' ? 8 : 0;
+  const rulerSpace = DATE_LABEL_MODE==='above' ? nowHeadroom+CFG.rulerH+rulerGap : 0;
+
+  // VH is a RESULT of CFG (topPad + ruler + lane + 1 + band + bottomPad),
+  // not an independent input — compressing topPad/bottomPad shrinks the
+  // canvas instead of leaving dead space.
+  const laneTop=CFG.topPad+rulerSpace;
   const laneH=CFG.laneH;
   const TRACK_BAND_H=CFG.bandH;
   const barH=Math.min(TRACK_BAND_H, laneH-4), barY=laneTop+(laneH-barH)/2+1;
@@ -527,7 +619,11 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const phaseIIRectX=phaseIIStart*PX_PER_WEEK;
   const phaseIIRectW=phaseIIWidth*PX_PER_WEEK-PHASE_GAP;
   const phaseIIIRectX=phaseIIIStart*PX_PER_WEEK;
-  const phaseIIIRectW=PHASE_III_WEEKS*PX_PER_WEEK-PHASE_GAP;
+  // 1px wider than the other phases' own PHASE_GAP trim — Pre-Con has no
+  // following phase to visually separate from, so trimming it the same
+  // amount left its right edge short of the gradient band's own right edge
+  // below it (which runs to preConEndWeek*PX_PER_WEEK), per Byron.
+  const phaseIIIRectW=PHASE_III_WEEKS*PX_PER_WEEK-PHASE_GAP+1;
   // Pre-Con (ex "Design Phase III"): blue at week 1, fading to CA-green by
   // week 6 — a visual handoff into the green CA marker right after it.
   const gradIdIII='precon-fade-'+project.replace(/[^a-z0-9]+/gi,'-');
@@ -557,38 +653,30 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const sequenceBars=barRow(shiftedZoning, barY, barH, 'var(--zoning-gray)', true)
     + barRow(shiftedPermit, barY, barH, 'var(--permit-gray)', false);
 
+  // vertically centered within the strip below the stage bars (same
+  // centering treatment as CITY/RESIDENTIAL gets in the header), instead of
+  // sitting bottom-anchored against the lane edge.
+  const catLabelY=barY+barH+(laneBottom-(barY+barH))/2+3.5;
   const categoryLabels=
-    (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${laneBottom-6}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning</text>`:'')+
-    (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${laneBottom-6}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting</text>`:'');
+    (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning</text>`:'')+
+    (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting</text>`:'');
 
   const MARKER_RISE=CFG.markerRise, PILL_RX=5;
-  // raised 1px per Byron: the body (markerTop to laneBottom) grows by that
-  // same 1px since laneBottom doesn't move.
-  const markerTop=laneTop-MARKER_RISE-1;
-
-  // Today: fixed 20px tall, sitting exactly 1px above the top of the
-  // CA marker (markerTop) — no longer an independent chipY/chipH position.
-  // Just a plain line down to the lane now, no arrowhead.
-  const pillH=20;
-  const todayX=todayWeek*PX_PER_WEEK, todayW=Math.max(44, 14+'Today'.length*6.2);
-  const todayX0=Math.max(2, Math.min(VW-todayW-2, todayX-todayW/2));
-  const todayPillBottom=markerTop-1;
-  const todayPillTop=todayPillBottom-pillH;
-  const chipsHtml=dropLine(todayX, todayPillBottom, laneTop, 'var(--today-chip)')
-    +`<circle cx="${todayX}" cy="${laneTop}" r="3" fill="#fff" stroke="var(--today-chip)" stroke-width="1"/>`
-    +`<rect x="${todayX0}" y="${todayPillTop}" width="${todayW}" height="${pillH}" rx="6" fill="var(--today-chip)"/>`
-    +`<text x="${todayX0+todayW/2}" y="${todayPillTop+pillH/2+3.3}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fff" font-family="${FONT}">Today</text>`;
+  // CA's pill sits INSIDE the gantt, overlapping the top of the lane,
+  // instead of floating above it — top edge is 2px below the lane's own
+  // top edge, per Byron. The old "Today" pill/dropline/circle marker above
+  // the lane is gone — NOW is the always-visible date ruler's own gold cell
+  // now (see dateRuler() below), not a separate marker here.
+  const markerTop=laneTop+2;
   function milestoneColumn(week, label){
-    // Cap only now — no body dropping into the lane. A white hairline
-    // borders both the top (separating it from Today) and the bottom
-    // (separating it from the gantt/lane) per Byron, which also makes the
-    // 1px raise above actually visible against a fixed reference line.
-    const x=week*PX_PER_WEEK, w=PX_PER_WEEK-BAR_GAP, capBottom=markerTop+MARKER_RISE;
-    const head=`<rect x="${x}" y="${markerTop}" width="${w}" height="${MARKER_RISE}" rx="${PILL_RX}" fill="${CA_GREEN}"/>`;
-    const sepTop=`<line x1="${x}" y1="${markerTop}" x2="${x+w}" y2="${markerTop}" stroke="#fff" stroke-width="1.5"/>`;
-    const sepBottom=`<line x1="${x}" y1="${capBottom}" x2="${x+w}" y2="${capBottom}" stroke="#fff" stroke-width="1.5"/>`;
+    // left/right edges brought in 2px each total, per Byron.
+    const x=week*PX_PER_WEEK+2, w=PX_PER_WEEK-BAR_GAP-4;
+    // thin white outline on the cap itself, same treatment as the stage
+    // bars below (stroke="#fff" stroke-width="1"), instead of separate
+    // hairlines above/below it.
+    const head=`<rect x="${x}" y="${markerTop}" width="${w}" height="${MARKER_RISE}" rx="${PILL_RX}" fill="${CA_GREEN}" stroke="#fff" stroke-width="1"/>`;
     const lbl=`<text x="${x+w/2}" y="${markerTop+13}" text-anchor="middle" font-size="8.5" font-weight="700" letter-spacing=".02em" fill="#fff" font-family="${FONT}">${esc(label)}</text>`;
-    return head+sepTop+sepBottom+lbl;
+    return head+lbl;
   }
   const milestoneColumnsHtml=milestoneColumn(caWeek, 'CA');
 
@@ -635,7 +723,10 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const arrowPoints=`${submitEdgeX-7},${bandTop+1.5} ${submitEdgeX+7},${bandTop+1.5} ${submitEdgeX},${bandTop+9.5}`;
   const bandClipId='bandclip-'+project.replace(/[^a-z0-9]+/gi,'-');
   const bandClipDef=`<clipPath id="${bandClipId}"><rect x="${bandX0}" y="${bandTop}" width="${bandW}" height="${bandH}" rx="4"/></clipPath>`;
-  const endMarker=`<polygon points="${arrowPoints}" fill="none" stroke="#000" stroke-width="1.5" stroke-linejoin="miter"/>`+
+  // red outline by default (the part NOT over the gradient band); the part
+  // that IS over the band gets painted white on top, clipped to the band's
+  // own shape, per Byron.
+  const endMarker=`<polygon points="${arrowPoints}" fill="none" stroke="var(--grad-red)" stroke-width="1.5" stroke-linejoin="miter"/>`+
     `<polygon points="${arrowPoints}" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="miter" clip-path="url(#${bandClipId})"/>`;
   // dropped 2px below the bar's own bottom edge so that edge (the bar's own
   // 1px white stroke) stays visible on its own, with the bar's own stroke
@@ -671,7 +762,61 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const hoverId='whov-'+project.replace(/[^a-z0-9]+/gi,'-');
   const hoverFrame=`<rect id="${hoverId}" x="0" y="${laneTop}" width="${PX_PER_WEEK}" height="${bandTop+bandH-laneTop}" fill="#fff" fill-opacity=".2" stroke="none" style="display:none;pointer-events:none;"/>`;
 
-  const html=`<svg class="track" width="${VW}" height="${VH}" viewBox="0 0 ${VW} ${VH}" xmlns="http://www.w3.org/2000/svg" onmousemove="trackMove(event,'${hoverId}',${todayWeek},window.__PZT_TODAY_REF)" onmouseleave="trackLeave('${hoverId}')">
+  const rulerTop = DATE_LABEL_MODE==='above' ? nowHeadroom : bandTop+bandH+rulerGap;
+  // the date-number baseline — same formula for every week including
+  // Today's, so Today's own date doesn't sit lower than its neighbors.
+  const dateBaselineY = rulerTop+CFG.rulerH-3;
+
+  // NOW cell (always-on, today's date) and the on-hover date highlight are
+  // independently sized/positioned, not forced to share one box.
+  const nowBoxY = rulerTop+CFG.nowYOff;
+  const hlBoxY = rulerTop+CFG.hlYOff;
+
+  // Always-visible date ruler — replaces the old hover tooltip/Today pill
+  // entirely. One label per week: just the day number, except at a month
+  // boundary (which spells out the month too) or Today's own week, which
+  // gets a solid gold cell (no outline, no surrounding frame) with "NOW"
+  // sitting above it, not inside it.
+  function dateRuler(){
+    let s='', seenMonth=null;
+    // stop at the end of Pre-Con even if lastWeek runs past it — no bars/
+    // lane exist out there to label.
+    const rulerLastWeek=Math.min(lastWeek, preConEndWeek);
+    for(let w=0; w<rulerLastWeek; w++){
+      const d=new Date(TODAY.getTime()+(w-todayWeek)*7*DAY);
+      const monthKey=d.getFullYear()+'-'+d.getMonth();
+      const isMonthStart=monthKey!==seenMonth;
+      seenMonth=monthKey;
+      const isToday=w===todayWeek, isCA=w===caWeek;
+      const x=w*PX_PER_WEEK+PX_PER_WEEK/2;
+      const dayLabel=isMonthStart
+        ? d.toLocaleDateString('en-US',{month:'short'}).toUpperCase()+' '+d.getDate()
+        : String(d.getDate());
+      if(isToday){
+        const nowBoxX=x-CFG.nowW/2;
+        s+=`<rect x="${nowBoxX}" y="${nowBoxY}" width="${CFG.nowW}" height="${CFG.nowH}" fill="var(--today-chip)"/>`
+          +`<text x="${x}" y="${nowBoxY+CFG.nowLabelY}" text-anchor="middle" font-size="7.5" font-weight="700" fill="var(--mut)" font-family="${FONT}">NOW</text>`
+          +`<text x="${x}" y="${dateBaselineY}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#fff" font-family="${FONT}">${esc(dayLabel)}</text>`;
+      }else{
+        const color=isCA?CA_GREEN:'var(--mut)';
+        const weight=(isMonthStart||isCA)?'700':'400';
+        s+=`<text x="${x}" y="${dateBaselineY}" text-anchor="middle" font-size="7.5" font-weight="${weight}" fill="${color}" font-family="${FONT}">${esc(dayLabel)}</text>`;
+      }
+    }
+    return s;
+  }
+  const dateRulerHtml = dateRuler();
+
+  // Solid light-gray wash drawn over the hovered week's date in the ruler
+  // (moved/shown by trackMove, same as the week-column highlight above) — a
+  // direct visual tie between the highlighted column and its date. Sharp
+  // corners, top and bottom: they share the same x/width as hoverFrame
+  // directly below, so with square corners on both they read as one
+  // continuous column with no gap.
+  const dateFrameId='dfrm-'+project.replace(/[^a-z0-9]+/gi,'-');
+  const dateFrame=`<rect id="${dateFrameId}" x="0" y="${hlBoxY}" width="${CFG.hlW}" height="${CFG.hlH}" fill="#000" fill-opacity=".05" stroke="none" style="display:none;pointer-events:none;"/>`;
+
+  const html=`<svg class="track" width="${VW}" height="${VH}" viewBox="0 0 ${VW} ${VH}" xmlns="http://www.w3.org/2000/svg" onmousemove="trackMove(event,'${hoverId}','${dateFrameId}')" onmouseleave="trackLeave('${hoverId}','${dateFrameId}')">
     <defs>${gradientDef}${phase3GradDef}${submitEdgeGrad}${bandClipDef}</defs>
     ${laneFill}
     ${weekGrid}
@@ -682,10 +827,10 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     ${band}
     ${submitEdgePath}
     ${endMarker}
-    ${chipsHtml}
+    ${dateRulerHtml}
     ${hoverFrame}
+    ${dateFrame}
   </svg>`;
-  window.__PZT_TODAY_REF=TODAY;
   return { html, tier, weekDelta };
 }
 
@@ -695,12 +840,12 @@ const STAGE_CATALOG={
   zoning:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estMin:2, estMax:2},
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estMin:4, estMax:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estMin:4, estMax:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit/Review', estMin:4, estMax:4},
   ],
   permitting:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estMin:2, estMax:2},
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estMin:4, estMax:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estMin:4, estMax:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit/Review', estMin:4, estMax:4},
   ],
 };
 function pidOf(name){ return name.replace(/[^a-z0-9]+/gi,'-').toLowerCase(); }
@@ -742,7 +887,7 @@ function deriveStages(p, category){
 /* ───────── mock Trello-shaped board data (same scenarios as the
    prototype) — real Trello sync is the next phase. ───────── */
 const PROJECTS=[
-  { proj:'Harrington Build', jur:'City', commercial:false, owner:'Byron', address:'214 Harrington Ave, Philadelphia PA', trelloCardId:null,
+  { proj:'Harrington Build', jur:'City', commercial:false, owner:'Byron', address:'214 Harrington Ave, Philadelphia PA', trelloCardId:null, permitOwner:'Marcus', archEngOwner:'Dana', zoningOwner:'Ashley', phaseWeeks:{I:6,II:18,III:6},
     zoningStages:[
       {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
       {name:'With Arch/Eng', estMin:4, estMax:4, status:'done', actualWeeks:4},
@@ -755,7 +900,7 @@ const PROJECTS=[
     ],
     note:'Zoning fully done. Permitting is sitting In Review, 3 weeks in against a 4-week estimate.' },
 
-  { proj:'Castor Ave Shop', jur:'City', commercial:false, owner:'Ashley', address:'88 Castor Ave, Philadelphia PA', trelloCardId:null,
+  { proj:'Castor Ave Shop', jur:'City', commercial:false, owner:'Ashley', address:'88 Castor Ave, Philadelphia PA', trelloCardId:null, permitOwner:'Ashley', archEngOwner:null, zoningOwner:'Marcus', phaseWeeks:{I:6,II:18,III:6},
     zoningStages:[
       {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:1},
       {name:'Submitted / In Review', estMin:4, estMax:4, status:'done', actualWeeks:4},
@@ -767,6 +912,8 @@ const PROJECTS=[
     note:'Simple project — With Arch/Eng toggled off entirely on both tracks (no architect/engineer involvement needed). Zoning Prep finished in 1 week against a 2-week estimate — that\'s the gold star. Permitting just moved into Submitted.' },
 
   { proj:'Dunmore Cottage', jur:'Suburb', commercial:true, historic:true, owner:'Byron', address:'12 Dunmore Ln, Chester Springs PA', trelloCardId:null,
+    // Byron owns all three roles on this one.
+    permitOwner:'Byron', archEngOwner:'Byron', zoningOwner:'Byron', phaseWeeks:{I:6,II:18,III:6},
     zoningStages:[
       {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
       {name:'Submitted / In Review', estMin:4, estMax:4, status:'done', actualWeeks:4},
@@ -964,6 +1111,23 @@ const CMT_ICON_SVG='<svg viewBox="0 0 16 16" preserveAspectRatio="none" fill="#f
 // just getting swallowed by the body's own white fill. Matching the
 // circle's fill to the background instead makes it read as a punched hole.
 const GEAR_ICON_SVG='<svg viewBox="0 0 24 24" fill="#fff" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/><circle cx="12" cy="12" r="3" fill="var(--bg)"/></svg>';
+// Zoning / Permit / Arch-Eng Owner — pulled from the Trello card, sitting
+// just left of the Trello buttons. When one person holds two or more of
+// these roles, their roles combine onto a single row ("Zoning, Permit
+// Owner: Byron") instead of repeating their name on separate lines.
+function ownersInfo(p){
+  const roles=[['Zoning',p.zoningOwner],['Permit',p.permitOwner],['Arch/Eng',p.archEngOwner]];
+  const groups=[]; // [{key, roleNames:[], display}]
+  roles.forEach(([role,name])=>{
+    const key=name||'__unassigned__';
+    let g=groups.find(g=>g.key===key);
+    if(!g){ g={key, roleNames:[], display:name}; groups.push(g); }
+    g.roleNames.push(role);
+  });
+  const row=g=>`<div class="owner-row"><span class="owner-lbl">${esc(g.roleNames.join(', '))} Owner</span><span class="owner-name">${esc(g.display||'Unassigned')}</span></div>`;
+  return `<div class="owners-info">${groups.map(row).join('')}</div>`;
+}
+
 function cardIcons(p){
   const pid=pidOf(p.proj), n=(COMMENTS[p.proj]||[]).length;
   const cmt=`<span class="cmt-icon" data-pid="${pid}" onclick="event.stopPropagation();openQuickComments('${pid}',this)" data-tip="Comments" aria-label="Comments"><span class="cmt-glyph">${CMT_ICON_SVG}${n?`<span class="cmt-count">${n}</span>`:''}</span></span>`;
@@ -1038,7 +1202,7 @@ function renderCards(){
   const list=visibleProjects();
   document.getElementById('cards').innerHTML = list.length ? list.map(p=>{
     const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
-    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0});
+    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks});
     const pid=pidOf(p.proj);
     const wks=Math.round(r.weekDelta);
     const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
@@ -1049,9 +1213,10 @@ function renderCards(){
         <div class="proj-hdr-title">
           <div class="proj-name">${esc(p.proj)}</div>
           <div class="proj-address">${esc(p.address||'')}</div>
-          <div class="proj-classification">${esc(classificationText(p))}</div>
         </div>
+        <div class="proj-classification">${esc(classificationText(p))}</div>
         <div class="proj-hdr-sp"></div>
+        ${ownersInfo(p)}
         ${cardIcons(p)}
         <span class="gear-group">
           <button class="gear-btn" onclick="toggleGear('${pid}')" aria-label="Stage settings">${GEAR_ICON_SVG}</button>
@@ -1070,7 +1235,27 @@ function renderCards(){
   }).join('') : '<div class="empty-note">No projects match this filter.</div>';
   renderOwnerTabs();
   renderJumpPicker();
+  wireScrollShadows();
 }
+
+/* scroll-shadow affordance: makes it visually obvious when a track is wider
+   than its frame and there's more to scroll to, instead of the content just
+   looking abruptly cut off against the stat-band. */
+function updateScrollShadows(el){
+  const max=el.scrollWidth-el.clientWidth;
+  el.classList.toggle('can-scroll-left', el.scrollLeft>2);
+  el.classList.toggle('can-scroll-right', el.scrollLeft<max-2);
+}
+function wireScrollShadows(){
+  document.querySelectorAll('.row-mid').forEach(el=>{
+    updateScrollShadows(el);
+    if(!el.dataset.shadowWired){
+      el.addEventListener('scroll', ()=>updateScrollShadows(el));
+      el.dataset.shadowWired='1';
+    }
+  });
+}
+window.addEventListener('resize', wireScrollShadows);
 
 /* ═══════════════════ CORE_Config — shared key/value store (same
    {Title,Key,Value} shape the Pipeline and other CORE tools already use) ═══════════════════ */
