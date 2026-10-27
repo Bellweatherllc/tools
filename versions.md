@@ -25,7 +25,7 @@ Last updated: 2026-10-27
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v9 |
+| People Analyzer | `people-analyzer.html` | v10 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -33,11 +33,11 @@ Last updated: 2026-10-27
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v27 |
+| Team Members | `team-members.html` | v28 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v4 |
-| CORE System Map | `core-system-map.html` | v14 |
+| CORE System Map | `core-system-map.html` | v15 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-10-27** — People Analyzer v9 → v10: "HOD" relabeled back to **Admin** throughout the tool and manual (header switch, Admin panel, messages, name chip), matching Team Members and every other tool. Team Members v27 → v28: People Analyzer legend description no longer says "HODs". CORE System Map v14 → v15: People Analyzer entry says Admin.
 - **2026-10-27** — Team Members v26 → v27: People Analyzer column back to **Member / Admin**, consistent with every other tool. People Analyzer v8 → v9: its messages and manual now say to set **Admin** in Team Members; inside People Analyzer that role is still called HOD.
 - **2026-10-27** — People Analyzer v7 → v8: says why someone is or isn't an HOD — the Evaluate notice and the name-chip tooltip show the sign-in address, the roster entry matched (and whether by email or name), and the raw People Analyzer role. Each list now loads independently; a roster load failure is shown on screen and defaults to self-evaluation only instead of silently passing as "not an HOD" (or, with the column probe also failing, as everyone-is-HOD). Role value `HOD` is accepted as well as `admin`.
 - **2026-10-27** — People Analyzer v6 → v7: "Admin" relabeled **HOD** throughout (header switch, panel, messages, name-chip role); the stored role value is still `admin`. New **SharePoint Access Check** in the HOD panel reads the lock-down straight from SharePoint — unique permissions and item-level read/edit on `PA_Evaluations` and `PA_Sessions`, the signed-in HOD's own submit / see-everyone / delete / session rights, and (for site Owners) who has access to each list, including whether staff can submit and see sessions. HODs whom SharePoint limits to their own evaluations get a warning at sign-in. Manual relabeled and its lock-down steps updated (Owner-only; HODs get Design).
