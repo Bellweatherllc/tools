@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v13*
+*late-October 2026 edition · People Analyzer v14*
 
 ## Part I — Using People Analyzer
 
@@ -191,6 +191,30 @@ This section checks the connection between the tool and SharePoint. When everyth
 - **"N older evaluations are matched by name only"** with a **Link** button. Click it. It records each evaluation's team member Id, so renaming that person later won't separate them from their history. Ratings and names don't change.
 - **"N evaluations don't match anyone on the roster."** These are hidden from Summaries. See *Someone's evaluations disappeared* below.
 
+## Part IV-A — The annual review
+
+The January review is the **annual review**. It replaces the January 6-month review; June stays a regular review.
+
+### Setting it up (admins)
+
+1. In the Admin panel, type the session name (e.g. *2027 Annual Review*), tick **Annual review**, and click **Create**.
+2. Under **Annual Review Scorers**, pick the **HOD** and **second seat** for each staffer. Both must be admins. Each staffer also scores themselves, so everyone gets three scorers. The panel counts how many staffers have both set.
+3. Switch the session on when you're ready for people to start.
+
+### Scoring
+
+- **Admins** see only the staffers they're assigned to (plus themselves) in the Team Member list for an annual session. The form says whether you're scoring as **HOD** or **Second seat**.
+- **Staff** score themselves as usual.
+- Everyone rates the **Core Values** and **GWC** as usual, plus the **V/TO**: Core Focus, 10-Year Target, and 3-Year Picture & 1-Year Plan, each + / +/− / − with an optional comment.
+- The staffer also answers **eNPS**: *"How likely are you to recommend Bellweather as a place to work?"* 0–10. It's required on the self-evaluation and not asked of the HOD or second seat.
+- Each scorer scores each staffer once per annual review.
+
+### Reading the results
+
+- In Summaries with the annual session picked, each person's view shows the HOD and second seat side by side (tagged **HOD** and **2nd seat**), their consensus, and the self-score to the right — for Core Values, GWC and V/TO.
+- **eNPS is only ever shown as the company score** — % promoters (9–10) minus % detractors (0–6) — at the top of the annual session's summary. No one's individual answer appears in the tool. (SharePoint itself records who submitted each evaluation, so a site Owner could look it up in the list.) Staff see their own answer under My Self-Evaluations.
+- The final agreed ratings, compensation, bonus, wins/opportunities/goals and the meeting close come with the summary page (next update).
+
 ## Part IV-B — Review History (admins)
 
 The **History** tab brings in past review workbooks — the old "6-Month Performance Review & Bonus" files — so years of reviews sit next to the current evaluations.
@@ -309,8 +333,8 @@ The version badge in the header shows which build you have. After an update, add
 
 | List | Site | Holds |
 |---|---|---|
-| `PA_Sessions` | OperationsSecure | One row per evaluation round. Columns: `SessionName`, `CreatedDate`, `IsActive`, `SortOrder` |
-| `PA_Evaluations` | OperationsSecure | One row per evaluator per person per session. Columns: `SessionId`, `EmployeeId`, `EmployeeName`, `EvaluatorName`, `EvaluationDate`, the five Core Values, `GetsIt`, `WantsIt`, `Capacity`, `Comments` |
+| `PA_Sessions` | OperationsSecure | One row per evaluation round. Columns: `SessionName`, `CreatedDate`, `IsActive`, `SortOrder`, `SessionType` ("Annual" for an annual review) |
+| `PA_Evaluations` | OperationsSecure | One row per evaluator per person per session. Columns: `SessionId`, `EmployeeId`, `EmployeeName`, `EvaluatorName`, `EvaluationDate`, the five Core Values, `GetsIt`, `WantsIt`, `Capacity`, `Comments`, `AnnualData` (V/TO ratings and comments, eNPS, and the scorer's role, as JSON) |
 | `CORE_TeamMembers` | BWCore | The roster. **Read only** from this tool. Columns used: `EmployeeName`, `Department`, `Active`, `email`, `PeopleAnalyzerRole` |
 
 ### How the pieces connect
@@ -340,6 +364,8 @@ Keep the people set to Admin for People Analyzer in Team Members and the people 
 With that in place, a non-admin's browser only ever receives their own evaluations, whatever they try.
 
 ### PA_ReviewHistory
+
+Annual review scorer assignments are stored here too, one row per staffer per annual session (`ReviewType` = *Annual Review*, `SourceFile` = `session:<id>`); they don't appear in the History tab.
 
 One row per imported review sheet, on OperationsSecure. Columns: `EmployeeId` (Number), `EmployeeName`, `ReviewDate` (Date only — the first of the month), `ReviewLabel` (the sheet name), `ReviewType` (the form title), `Reviewer` (comment authors), `SourceFile`, and `ReviewData` (Multiple lines of text, **plain text**) holding the parsed sheet as JSON. If the History tab says the list isn't set up, it lists exactly what to create.
 
