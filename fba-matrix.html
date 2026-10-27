@@ -223,6 +223,19 @@
   .seat-delete-btn:disabled{opacity:.45;cursor:not-allowed;background:none;}
   .seat-warn{background:var(--warning-bg);border:1px solid #f0d59a;color:#7a5a10;font-size:12.5px;padding:9px 14px;border-radius:6px;margin-bottom:14px;}
   .legacy-seat{color:#8a5a06;}
+  .seat-multi{position:relative;display:inline-block;min-width:220px;}
+  .handbook-sop-admin-controls label:has(.seat-multi){align-items:flex-start;}
+  .handbook-sop-admin-controls label:has(.seat-multi) > .seat-multi{margin-top:-3px;}
+  .seat-multi summary{list-style:none;cursor:pointer;font-size:12px;padding:3px 24px 3px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--ink);position:relative;max-width:420px;}
+  .seat-multi summary::-webkit-details-marker{display:none;}
+  .seat-multi summary::after{content:"▾";position:absolute;right:7px;top:3px;color:var(--ink-muted);}
+  .seat-multi-panel{margin-top:3px;min-width:240px;max-height:260px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:6px 4px;display:flex;flex-direction:column;}
+  .seat-multi-opt{display:flex;align-items:center;gap:7px;font-size:12.5px;padding:4px 8px;border-radius:4px;cursor:pointer;white-space:nowrap;}
+  .seat-multi-opt:hover{background:var(--page);}
+  .split-table td{vertical-align:middle;}
+  .split-input{font-family:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;width:100%;}
+  .split-note{font-size:11.5px;color:#8a5a06;margin-top:3px;}
+  .seats-h{font-size:14px;font-weight:700;margin:22px 0 6px;}
 
   .promote-btn{
     font-size:11.5px;font-weight:600;color:var(--navy);background:var(--glass);
@@ -466,7 +479,7 @@
 // can tell which build they're looking at (e.g. after a GitHub Pages re-upload).
 // This script tag runs after #version-tag already exists in the DOM, so no need
 // to wait for DOMContentLoaded (which may have already fired by this point anyway).
-const CORE_VERSION = 6;
+const CORE_VERSION = 7;
 document.getElementById("version-tag").textContent = "v" + CORE_VERSION;
 
 const STATUS_LABEL = {good:"FBA Achieved", warning:"In Progress", critical:"Not Started"};
@@ -550,11 +563,26 @@ function nextReviewCell(sop){
 function seatEq(a, b){ return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase(); }
 function stepVisibleForSeat(step){
   if (!seatFilter) return true;
-  return seatEq(step.acct, seatFilter) || step.sops.some(s => seatEq(s.resp, seatFilter));
+  return seatEq(step.acct, seatFilter) || step.sops.some(s => hasSeat(s, seatFilter));
 }
 function visibleSops(step){
   if (!seatFilter || seatEq(step.acct, seatFilter)) return step.sops;
-  return step.sops.filter(s => seatEq(s.resp, seatFilter));
+  return step.sops.filter(s => hasSeat(s, seatFilter));
+}
+// SOP Responsible holds one OR MORE seats (Accountable on a Significant Step is always exactly one).
+// Stored in SharePoint's Responsible text column as "Seat A; Seat B".
+const RESP_DELIM = "; ";
+function parseResps(text){
+  const out = [];
+  String(text || "").split(";").map(x => x.trim()).filter(Boolean).forEach(n => { if (!out.some(o => seatEq(o, n))) out.push(n); });
+  return out;
+}
+function hasSeat(sop, name){ return (sop.resps || []).some(r => seatEq(r, name)); }
+// Replace one seat in a list with one or more others (rename / split), de-duplicating.
+function replaceSeat(list, oldName, newNames){
+  const out = [];
+  (list || []).forEach(r => (seatEq(r, oldName) ? newNames : [r]).forEach(n => { if (!out.some(o => seatEq(o, n))) out.push(n); }));
+  return out;
 }
 
 function fbaStatus(item){
@@ -686,7 +714,7 @@ function buildRow(item, opts){
         return `
           <tr>
             <td>${hl(escapeHtml(s.name))}</td>
-            <td class="sop-resp">${escapeHtml(s.resp || "")}</td>
+            <td class="sop-resp">${(s.resps || []).map(escapeHtml).join(", ")}</td>
             <td class="yn ${s.doc ? 'y' : 'n'}">${s.doc ? "Y" : "N"}</td>
             <td><span class="review-tag ${status2}">${REVIEW_LABEL[status2]}</span></td>
             <td>${nextReviewCell(s)}</td>
@@ -903,7 +931,7 @@ function renderHandbookSopRow(step, sop){
         <div class="handbook-sop-main">
           <span class="yn ${sop.doc ? 'y' : 'n'}">${sop.doc ? "Y" : "N"}</span>
           <span class="sop-name-slot">${nameHtml}</span>
-          ${sop.resp ? `<span class="sop-resp">${escapeHtml(sop.resp)}</span>` : ""}
+          ${(sop.resps || []).length ? `<span class="sop-resp">${sop.resps.map(escapeHtml).join(", ")}</span>` : ""}
           <span class="review-tag ${status}">${REVIEW_LABEL[status]}</span>
         </div>
         ${detailHtml}
@@ -923,7 +951,7 @@ function renderHandbookSopRow(step, sop){
         ${WRITE_ENABLED ? `<button type="button" class="sop-delete-btn" data-delete="${key}" title="Remove SOP">✕ Remove</button>` : ""}
       </div>
       <div class="handbook-sop-admin-controls">
-        <label>Responsible ${seatSelect(sop.resp, `data-sopresp="${key}"`, dis)}</label>
+        <label>Responsible ${seatMultiSelect(sop.resps, key, dis)}</label>
         <label><input type="checkbox" data-noreview="${key}" ${noReview ? "checked" : ""} ${dis}> No recurring review needed — Documented alone counts as FBA</label>
         ${!noReview ? `
         <label>Last reviewed <input type="date" value="${sop.lastReviewed || ""}" data-date="${key}" ${dis}></label>
@@ -967,6 +995,24 @@ function seatSelect(current, attrs, dis){
   opts += names.map(n => `<option value="${escapeAttr(n)}" ${seatEq(n, cur) ? "selected" : ""}>${escapeHtml(n)}</option>`).join("");
   return `<select ${attrs} ${dis} class="${onList ? "" : "legacy-seat"}">${opts}</select>`;
 }
+
+// Multi-seat picker for SOP Responsible: a small dropdown panel of checkboxes.
+function seatMultiSummary(chosen){
+  return chosen.length ? chosen.map(escapeHtml).join(", ") : `<span style="color:var(--ink-muted);">— Select seats —</span>`;
+}
+function seatMultiSelect(current, key, dis){
+  const chosen = current || [];
+  const names = SEATS.map(x => x.name);
+  const legacy = chosen.filter(c => !names.some(n => seatEq(n, c)));
+  const box = (n, flagged) => `<label class="seat-multi-opt ${flagged ? "legacy-seat" : ""}"><input type="checkbox" value="${escapeAttr(n)}" ${chosen.some(c => seatEq(c, n)) ? "checked" : ""} ${dis}> ${escapeHtml(n)}${flagged ? " (not on Seats list)" : ""}</label>`;
+  const opts = legacy.map(n => box(n, true)).join("") + names.map(n => box(n, false)).join("");
+  return `<details class="seat-multi" data-sopresp="${key}"><summary>${seatMultiSummary(chosen)}</summary>
+    <div class="seat-multi-panel">${opts || `<span class="seat-unused">No seats yet — add them on the Seats tab.</span>`}</div></details>`;
+}
+// Close any open seat picker when clicking elsewhere on the page.
+document.addEventListener("click", (e) => {
+  document.querySelectorAll("details.seat-multi[open]").forEach(d => { if (!d.contains(e.target)) d.removeAttribute("open"); });
+});
 
 function escapeAttr(text){
   return String(text == null ? "" : text).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -1189,14 +1235,19 @@ function wireHandbookAdminControls(){
       }
     });
   });
-  document.querySelectorAll("#handbook-groups [data-sopresp]").forEach(el => {
-    el.addEventListener("change", async (e) => {
-      const {sop} = findStepAndSop(e.target.dataset.sopresp);
+  document.querySelectorAll("#handbook-groups .seat-multi").forEach(picker => {
+    // Saves on every checkbox change, but does NOT re-render the Handbook on success — that keeps
+    // the picker open so several seats can be checked in a row. Summary text is updated in place.
+    const key = picker.dataset.sopresp;
+    picker.addEventListener("change", async (e) => {
+      if (!e.target.matches("input[type=checkbox]")) return;
+      const {sop} = findStepAndSop(key);
       if (!sop) return;
-      el.disabled = true;
+      const chosen = [...picker.querySelectorAll("input[type=checkbox]:checked")].map(cb => cb.value);
+      picker.querySelector("summary").innerHTML = seatMultiSummary(chosen);
       try {
-        await updateSopField(sop, "resp", e.target.value);
-        renderAll(); renderHandbook(); renderSeatsTab();
+        await updateSopField(sop, "resps", chosen);
+        renderAll(); renderSeatsTab();
       } catch (err) {
         toast("error", `Couldn't save Responsible: ${err.message}`);
         renderHandbook();
@@ -1412,7 +1463,7 @@ function seatNamesInUse(includeLegacy){
   STEPS.forEach(st => {
     add(st.acct);
     if (includeLegacy) add(st.resp); // old Significant-Step-level Responsible (hidden since v6)
-    st.sops.forEach(sp => add(sp.resp));
+    st.sops.forEach(sp => (sp.resps || []).forEach(add));
   });
   return names;
 }
@@ -1446,7 +1497,7 @@ document.getElementById("seat-filter").addEventListener("change", e => setSeatFi
 function seatAssignments(name){
   const steps = STEPS.filter(st => seatEq(st.acct, name));
   const sops = [];
-  STEPS.forEach(st => st.sops.forEach(sp => { if (seatEq(sp.resp, name)) sops.push({step: st, sop: sp}); }));
+  STEPS.forEach(st => st.sops.forEach(sp => { if (hasSeat(sp, name)) sops.push({step: st, sop: sp}); }));
   return {steps, sops, total: steps.length + sops.length};
 }
 function seatsItemsUrl(){ return `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SEATS_LIST_ID}/items`; }
@@ -1454,6 +1505,7 @@ function seatsItemsUrl(){ return `https://graph.microsoft.com/v1.0/sites/${SITE_
 async function addSeat(name){
   name = String(name || "").trim();
   if (!name) return;
+  if (name.includes(";")) throw new Error("Seat names can't contain a semicolon (;) — it's used to separate multiple Responsible seats.");
   if (SEATS.some(x => seatEq(x.name, name))) throw new Error(`"${name}" is already on the Seats list.`);
   const item = await graphWrite("POST", seatsItemsUrl(), { fields: { Title: name } });
   SEATS.push({ realId: item.id, name });
@@ -1464,6 +1516,7 @@ async function renameSeat(seat, newName){
   newName = String(newName || "").trim();
   const oldName = seat.name;
   if (!newName || newName === oldName) return 0;
+  if (newName.includes(";")) throw new Error("Seat names can't contain a semicolon (;) — it's used to separate multiple Responsible seats.");
   if (SEATS.some(x => x !== seat && seatEq(x.name, newName))) throw new Error(`"${newName}" is already on the Seats list.`);
   await graphWrite("PATCH", `${seatsItemsUrl()}/${seat.realId}/fields`, { Title: newName });
   seat.name = newName;
@@ -1473,7 +1526,7 @@ async function renameSeat(seat, newName){
   for (const st of STEPS) {
     if (seatEq(st.acct, oldName)) { await updateStepField(st, "acct", newName); updated++; }
     for (const sp of st.sops) {
-      if (seatEq(sp.resp, oldName)) { await updateSopField(sp, "resp", newName); updated++; }
+      if (hasSeat(sp, oldName)) { await updateSopField(sp, "resps", replaceSeat(sp.resps, oldName, [newName])); updated++; }
     }
   }
   if (seatEq(seatFilter, oldName)) seatFilter = newName;
@@ -1499,9 +1552,36 @@ function responsibleCopyTargets(){
   const targets = [];
   STEPS.forEach(st => {
     if (!String(st.resp || "").trim()) return;
-    st.sops.forEach(sp => { if (!String(sp.resp || "").trim()) targets.push({step: st, sop: sp}); });
+    st.sops.forEach(sp => { if (!(sp.resps || []).length) targets.push({step: st, sop: sp}); });
   });
   return targets;
+}
+
+// ---- Split combined seat names (e.g. "Project Manager / Estimator") into separate seats ----
+const COMBINED_RE = /\s*(?:\/|,|&|\+|\band\b)\s*/i;
+function splitDismissed(){ try { return JSON.parse(localStorage.getItem("fba-split-dismissed") || "[]"); } catch (e) { return []; } }
+function dismissSplit(name){ try { const d = splitDismissed(); d.push(name.toLowerCase()); localStorage.setItem("fba-split-dismissed", JSON.stringify(d)); } catch (e) {} }
+function combinedCandidates(){
+  const names = seatNamesInUse(false);
+  SEATS.forEach(x => { if (!names.some(n => seatEq(n, x.name))) names.push(x.name); });
+  const dismissed = splitDismissed();
+  return names
+    .filter(n => COMBINED_RE.test(n) && !dismissed.includes(n.toLowerCase()))
+    .map(n => ({ name: n, parts: n.split(COMBINED_RE).map(x => x.trim()).filter(Boolean) }))
+    .filter(c => c.parts.length > 1);
+}
+async function splitSeat(name, parts){
+  parts = parseResps(parts.join(";"));
+  if (parts.length < 2) throw new Error("Enter at least two seats, separated by semicolons.");
+  for (const p of parts) if (!SEATS.some(x => seatEq(x.name, p))) await addSeat(p);
+  let sops = 0;
+  for (const st of STEPS) for (const sp of st.sops) {
+    if (hasSeat(sp, name)) { await updateSopField(sp, "resps", replaceSeat(sp.resps, name, parts)); sops++; }
+  }
+  // Remove the combined name from the Seats list once nothing uses it (an Accountable use blocks this).
+  const seat = SEATS.find(x => seatEq(x.name, name));
+  if (seat && !seatAssignments(seat.name).total) await deleteSeat(seat);
+  return sops;
 }
 
 function afterSeatsChange(){ renderAll(); renderHandbook(); renderSeatsTab(); }
@@ -1548,6 +1628,8 @@ function renderSeatsTab(){
         <span>${missing.length ? "Adds seat names already typed into Significant Steps/SOPs that aren't on this list yet: " + missing.map(escapeHtml).join(", ") : "Every seat in use is already on this list."}</span>
       </div>
     </div>
+    ${splitSectionHtml()}
+    <div class="seats-h">Seats</div>
     <table class="matrix">
       <thead><tr><th style="width:34%;">Seat</th><th>Assigned to</th><th style="width:120px;"></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="3" class="empty-state">No seats yet — add one above, or import the seats already in use.</td></tr>`}</tbody>
@@ -1555,7 +1637,43 @@ function renderSeatsTab(){
   wireSeatsTab();
 }
 
+function splitSectionHtml(){
+  const cands = combinedCandidates();
+  if (!cands.length) return "";
+  const rows = cands.map((c, i) => {
+    const a = seatAssignments(c.name);
+    const acctNote = a.steps.length
+      ? `<div class="split-note">Also Accountable on ${a.steps.map(st => escapeHtml(st.name)).join(", ")} — Accountable must be ONE seat, so pick one there in the Handbook.</div>` : "";
+    return `<tr>
+      <td><strong>${escapeHtml(c.name)}</strong><div style="font-size:11.5px;color:var(--ink-muted);">Responsible on ${a.sops.length} SOP${a.sops.length === 1 ? "" : "s"}</div>${acctNote}</td>
+      <td><input type="text" class="split-input" data-splitinput="${i}" value="${escapeAttr(c.parts.join("; "))}"></td>
+      <td style="white-space:nowrap;text-align:right;">
+        <button type="button" class="handbook-add-btn" data-splitbtn="${i}">Split</button>
+        <button type="button" class="expand-btn" data-splitskip="${i}" title="This is one seat (e.g. “Sales & Marketing”) — stop suggesting a split">Not combined</button>
+      </td></tr>`;
+  }).join("");
+  return `<div class="seats-h">Combined seat names</div>
+    <p class="seats-intro" style="margin-bottom:8px;">These look like more than one seat in a single name. Check the proposed split (separate seats with semicolons), then click Split — each SOP gets all of those seats as Responsible, and any new seat names are added to the list.</p>
+    <table class="matrix split-table"><thead><tr><th style="width:34%;">Current name</th><th>Split into</th><th style="width:200px;"></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function wireSeatsTab(){
+  const cands = combinedCandidates();
+  document.querySelectorAll("#seats-content [data-splitbtn]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const c = cands[+btn.dataset.splitbtn];
+      const input = document.querySelector(`#seats-content [data-splitinput="${btn.dataset.splitbtn}"]`);
+      btn.disabled = true;
+      try {
+        const n = await splitSeat(c.name, input.value.split(";"));
+        toast("success", `Split "${c.name}" on ${n} SOP${n === 1 ? "" : "s"}.`);
+      } catch (err) { toast("error", `Couldn't split: ${err.message}`); }
+      afterSeatsChange();
+    });
+  });
+  document.querySelectorAll("#seats-content [data-splitskip]").forEach(btn => {
+    btn.addEventListener("click", () => { dismissSplit(cands[+btn.dataset.splitskip].name); renderSeatsTab(); });
+  });
   const addInput = document.getElementById("seat-add-input");
   const addBtn = document.getElementById("seat-add-btn");
   addBtn.addEventListener("click", async () => {
@@ -1579,7 +1697,7 @@ function wireSeatsTab(){
     e.target.disabled = true;
     let done = 0;
     try {
-      for (const t of responsibleCopyTargets()) { await updateSopField(t.sop, "resp", t.step.resp.trim()); done++; }
+      for (const t of responsibleCopyTargets()) { await updateSopField(t.sop, "resps", parseResps(t.step.resp)); done++; }
       toast("success", `Copied Responsible onto ${done} SOP${done === 1 ? "" : "s"}.`);
     } catch (err) { toast("error", `Copied ${done}, then failed: ${err.message}`); }
     afterSeatsChange();
@@ -1770,7 +1888,7 @@ function sopFieldGraphBody(field, value){
   // Document link lives in two plain-text columns (DocURL / DocLabel). The original LinkURL column
   // is a SharePoint Hyperlink type, which Microsoft Graph can read but NOT write ("Invalid request").
   if (field === "link") return { DocURL: value && value.url ? value.url : null, DocLabel: value && value.url ? (value.label || null) : null };
-  if (field === "resp") return { Responsible: value || null };
+  if (field === "resps") return { Responsible: value && value.length ? value.join(RESP_DELIM) : null };
   // noReview requires a "NoRecurringReview" Yes/No column on the FBA-SOPs list — see PROJECT_HANDOFF.
   if (field === "noReview") return { NoRecurringReview: value };
   throw new Error(`Unknown SOP field "${field}"`);
@@ -1780,7 +1898,7 @@ function sopFieldLocalValue(field, value){
     const lines = String(value || "").split("\n").map(s => s.trim()).filter(Boolean);
     return lines.length ? lines : undefined;
   }
-  if (field === "resp") return value || "";
+  if (field === "resps") return parseResps((value || []).join(";"));
   return value;
 }
 
@@ -1807,7 +1925,7 @@ async function createSop(step, name){
   const item = await graphWrite("POST", `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SOPS_LIST_ID}/items`, {
     fields: { Title: name, SignificantStepLookupId: step.realId, Documented: false, Cadence: "Quarterly" },
   });
-  const sop = { realId: item.id, name, doc: false, lastReviewed: null, cadenceDays: 90, detail: undefined, link: null, noReview: false, resp: "" };
+  const sop = { realId: item.id, name, doc: false, lastReviewed: null, cadenceDays: 90, detail: undefined, link: null, noReview: false, resps: [] };
   step.sops.push(sop);
   return sop;
 }
@@ -1878,7 +1996,7 @@ async function loadDataFromGraph(token){
       // Prefer the new DocURL/DocLabel text columns; fall back to the legacy LinkURL hyperlink (read-only).
       link: f.DocURL ? { url: f.DocURL, label: f.DocLabel || "" }
           : (f.LinkURL && f.LinkURL.Url ? { url: f.LinkURL.Url, label: f.LinkURL.Description || "" } : null),
-      resp: f.Responsible || "",
+      resps: parseResps(f.Responsible),
       noReview: !!f.NoRecurringReview,
     });
   });
