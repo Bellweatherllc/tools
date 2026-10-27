@@ -25,7 +25,7 @@ Last updated: 2026-10-27
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v12 |
+| People Analyzer | `people-analyzer.html` | v13 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -37,7 +37,7 @@ Last updated: 2026-10-27
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v4 |
-| CORE System Map | `core-system-map.html` | v15 |
+| CORE System Map | `core-system-map.html` | v16 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-10-27** — People Analyzer v12 → v13: new admin-only **History** tab — drag-and-drop import of past review workbooks into a new `PA_ReviewHistory` list. Each sheet is one review; the parser finds sections by their grey headings rather than fixed cells, handles +/− and 1–5 layouts, the pre-2023 value set, legacy and threaded comments, wins/opportunities/outcomes/notes, bonus and compensation panels, and keeps anything else with its cell reference. Preview lets you fix person/month before saving; re-imports are skipped. History shows grouped by person and inside each person's Summaries view. The Access Check covers `PA_ReviewHistory` (must not inherit; no member/staff access — it holds compensation). Tested on the Sean, Hayley and Stephanie workbooks: 21 reviews. CORE System Map v15 → v16: `PA_ReviewHistory` added.
 - **2026-10-27** — People Analyzer v11 → v12: Evaluate top section rebuilt as one compact card — Evaluator, Session and Team Member in a row, one-line hint. The evaluator is set from the sign-in (roster name, else Microsoft account name) and can't be edited; offline mode still asks. Members see their own name as both Evaluator and Team Member, with no dropdown. A lone open session is picked automatically. The large guidance box is gone, and the member note no longer shows sign-in diagnostics (the name-chip tooltip still does).
 - **2026-10-27** — People Analyzer v10 → v11: Core Values descriptors replaced with the revised sheet (NEW_Core_Values_v2, 08-03-26); "Cares & Connects with People" is now "Cares & Connects". The Evaluate form shows "Revised Aug 3, 2026" beside the Core Values heading (one `CORE_VALUES_REVISED` constant), and the text export carries it. The Excel export's EOS-form label is unchanged.
 - **2026-10-27** — People Analyzer v9 → v10: "HOD" relabeled back to **Admin** throughout the tool and manual (header switch, Admin panel, messages, name chip), matching Team Members and every other tool. Team Members v27 → v28: People Analyzer legend description no longer says "HODs". CORE System Map v14 → v15: People Analyzer entry says Admin.

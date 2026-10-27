@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v12*
+*late-October 2026 edition · People Analyzer v13*
 
 ## Part I — Using People Analyzer
 
@@ -191,6 +191,32 @@ This section checks the connection between the tool and SharePoint. When everyth
 - **"N older evaluations are matched by name only"** with a **Link** button. Click it. It records each evaluation's team member Id, so renaming that person later won't separate them from their history. Ratings and names don't change.
 - **"N evaluations don't match anyone on the roster."** These are hidden from Summaries. See *Someone's evaluations disappeared* below.
 
+## Part IV-B — Review History (admins)
+
+The **History** tab brings in past review workbooks — the old "6-Month Performance Review & Bonus" files — so years of reviews sit next to the current evaluations.
+
+### Importing
+
+1. Drag one or more `.xlsx` files onto the drop area (or click it to choose files). Nothing is saved yet.
+2. Each **sheet** becomes one review in the preview. The tool works out:
+   - **the person** from the first word of the file name (*Sean*_6-Month…), or the sheet initials (*SF* - 01-26);
+   - **the month** from the end of the sheet name (*01-26* = January 2026);
+   - **the ratings** — +/− from newer sheets, 1–5 averages from older ones — plus every descriptor score, comment, win, opportunity, outcome, note, bonus and compensation line.
+3. Check each row. Fix the person or month where it's blank (a "90 day check in" sheet has no date in its name). **View** shows exactly what was read.
+4. Click **Import**. Rows already in history are unticked, so dropping the same file twice doesn't double up.
+
+The reader doesn't depend on fixed cell positions. Grey headings mark the sections; anything that doesn't fit a section is kept under **Other notes on the sheet**, with its cell reference, so nothing is lost. The old 1–5 numbers are kept as they were — not converted to +/−. Pre-2023 sheets with the earlier values (Reliability, Proactive & Prepared…) show as a separate *pre-2023 set*.
+
+### Viewing
+
+- **History tab** — every imported review, grouped by person, newest first. Click a review to open it.
+- **Summaries → a person** — a **Review History** section under the Trajectory shows that person's past reviews.
+- **✕ remove from history** deletes one imported review (the Excel file isn't touched). In Summaries it appears when 🗑 Manage is on.
+
+### Who can see it
+
+Imported reviews include **salary, bonus and benefits**, so `PA_ReviewHistory` must be readable by People Analyzer admins only — its own permissions, with *Operations Secure Members*, *Visitors* and staff removed. The Admin panel's **SharePoint Access Check** confirms it. Staff never load this list.
+
 ## Part V — Repair: when something looks wrong
 
 ### I should be an admin but only see Evaluate and My Self-Evaluations
@@ -312,6 +338,10 @@ Owners of OperationsSecure see everything regardless. Group *Members* keep Edit,
 Keep the people set to Admin for People Analyzer in Team Members and the people granted Design in step 1 the same. Then check it all with **Admin panel → SharePoint Access Check**.
 
 With that in place, a non-admin's browser only ever receives their own evaluations, whatever they try.
+
+### PA_ReviewHistory
+
+One row per imported review sheet, on OperationsSecure. Columns: `EmployeeId` (Number), `EmployeeName`, `ReviewDate` (Date only — the first of the month), `ReviewLabel` (the sheet name), `ReviewType` (the form title), `Reviewer` (comment authors), `SourceFile`, and `ReviewData` (Multiple lines of text, **plain text**) holding the parsed sheet as JSON. If the History tab says the list isn't set up, it lists exactly what to create.
 
 ### What People Analyzer never does
 
