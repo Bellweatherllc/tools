@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v8*
+*late-October 2026 edition · People Analyzer v9*
 
 ## Part I — Using People Analyzer
 
@@ -27,7 +27,7 @@ Evaluations are sensitive, so they're stored in **OperationsSecure**, the restri
 
 ### HODs and everyone else
 
-What you see depends on your **People Analyzer** role, set on the **Access** tab of Team Members, where the People Analyzer column offers **Member** or **HOD**.
+What you see depends on your **People Analyzer** role, set on the **Access** tab of Team Members, where the People Analyzer column offers **Member** or **Admin**, as it does for every CORE tool. **Admin there makes you an HOD here.**
 
 | | HOD | Everyone else |
 |---|---|---|
@@ -197,12 +197,12 @@ This section checks the connection between the tool and SharePoint. When everyth
 
 1. Hover over your name chip in the header. It shows the address you signed in with, which roster entry the tool matched you to (and whether by email or by name), and the People Analyzer role it read. The same line appears in the note on the Evaluate tab.
    - *not found on the CORE roster* — see the next item.
-   - *People Analyzer role: blank* — set it to HOD (step 2).
+   - *People Analyzer role: blank* — set it to Admin (step 2).
    - *couldn't load the CORE roster* — a SharePoint problem reading BWCore. Reload; if it persists, the message names the error.
-2. In Team Members → Access, set your **People Analyzer** column to **HOD**.
+2. In Team Members → Access, set your **People Analyzer** column to **Admin**.
 3. Reload People Analyzer.
 
-If the role is already HOD, the tool probably matched the wrong roster entry, or none — see the next item.
+If the role is already Admin, the tool probably matched the wrong roster entry, or none — see the next item.
 
 ### "We couldn't find you on the CORE roster"
 
@@ -309,7 +309,7 @@ The screen-level roles keep everyone except HODs out of Summaries and the HOD pa
 
 Owners of OperationsSecure see everything regardless. Group *Members* keep Edit, which with item-level permissions on means they see only their own evaluations, unless they're also granted Design as an HOD.
 
-Keep the HODs in Team Members and the HODs granted Design in step 1 the same people. Then check it all with **HOD panel → SharePoint Access Check**.
+Keep the people set to Admin for People Analyzer in Team Members and the HODs granted Design in step 1 the same people. Then check it all with **HOD panel → SharePoint Access Check**.
 
 With that in place, a non-HOD's browser only ever receives their own evaluations, whatever they try.
 
