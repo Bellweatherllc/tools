@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v10*
+*late-October 2026 edition · People Analyzer v11*
 
 ## Part I — Using People Analyzer
 
@@ -12,7 +12,7 @@ For anyone who evaluates team members or runs an evaluation round. No prior know
 
 People Analyzer is where Bellweather rates each team member against the **five Core Values** and **GWC**:
 
-- **The five Core Values:** Disciplined, Humbly Confident, Always Improving, Forward-Looking, and Cares & Connects with People.
+- **The five Core Values:** Disciplined, Humbly Confident, Always Improving, Forward-Looking, and Cares & Connects.
 - **GWC** means *Gets it*, *Wants it*, and has the *Capacity* to do it.
 
 Several evaluators rate each person independently. The tool combines their answers into a **consensus** for each person and gives an overall status.
@@ -78,7 +78,7 @@ Admins see self-evaluations in Summaries, kept **separate**: they never count to
    - **+/−** — sometimes.
    - **−** — doesn't.
 
-   Under each value is a short list of what it looks like in practice.
+   Under each value is a short list of what it looks like in practice. The wording comes from the Core Values sheet revised **Aug 3, 2026**; the revision date shows next to the Core Values heading.
 5. Rate **Gets It**, **Wants It**, and **Capacity to Do It** as **Y** or **N**.
 6. Optionally, add a comment to any Core Value. Comments appear in Summaries and in the Excel export.
 7. Click **Submit Evaluation**. Every rating must be filled in first.

@@ -25,7 +25,7 @@ Last updated: 2026-10-27
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v10 |
+| People Analyzer | `people-analyzer.html` | v11 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-10-27** — People Analyzer v10 → v11: Core Values descriptors replaced with the revised sheet (NEW_Core_Values_v2, 08-03-26); "Cares & Connects with People" is now "Cares & Connects". The Evaluate form shows "Revised Aug 3, 2026" beside the Core Values heading (one `CORE_VALUES_REVISED` constant), and the text export carries it. The Excel export's EOS-form label is unchanged.
 - **2026-10-27** — People Analyzer v9 → v10: "HOD" relabeled back to **Admin** throughout the tool and manual (header switch, Admin panel, messages, name chip), matching Team Members and every other tool. Team Members v27 → v28: People Analyzer legend description no longer says "HODs". CORE System Map v14 → v15: People Analyzer entry says Admin.
 - **2026-10-27** — Team Members v26 → v27: People Analyzer column back to **Member / Admin**, consistent with every other tool. People Analyzer v8 → v9: its messages and manual now say to set **Admin** in Team Members; inside People Analyzer that role is still called HOD.
 - **2026-10-27** — People Analyzer v7 → v8: says why someone is or isn't an HOD — the Evaluate notice and the name-chip tooltip show the sign-in address, the roster entry matched (and whether by email or name), and the raw People Analyzer role. Each list now loads independently; a roster load failure is shown on screen and defaults to self-evaluation only instead of silently passing as "not an HOD" (or, with the column probe also failing, as everyone-is-HOD). Role value `HOD` is accepted as well as `admin`.
