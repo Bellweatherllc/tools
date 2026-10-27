@@ -512,6 +512,16 @@
   /* ── Admin notes ── */
   .admin-note { padding: 10px 12px; border: 1px solid var(--cloud); border-radius: 6px; margin-bottom: 10px; background: var(--snow); }
   .admin-note-warn { border-color: rgba(193,122,42,0.35); background: var(--amber-bg); color: var(--slate); }
+  .ac-head { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); margin: 10px 0 4px; }
+  .ac-head:first-child { margin-top: 0; }
+  .ac-row { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; color: var(--slate); }
+  .ac-ok { color: var(--green); font-weight: 700; width: 12px; flex-shrink: 0; }
+  .ac-bad { color: var(--red); font-weight: 700; width: 12px; flex-shrink: 0; }
+  .ac-na { color: var(--silver); width: 12px; flex-shrink: 0; }
+  .ac-detail { font-size: 11.5px; color: var(--steel); }
+  .ac-grants { margin: 6px 0 2px 20px; border: 1px solid var(--cloud); border-radius: 6px; padding: 6px 10px; background: var(--snow); }
+  .ac-grants-title { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--steel); margin-bottom: 3px; }
+  .ac-grant { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 1px 0; }
   .admin-note ul { margin: 6px 0 0 18px; }
   .admin-note code { font-size: 11.5px; background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 3px; }
   .session-del-btn { background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; padding: 2px 4px; opacity: 0.6; }
@@ -758,8 +768,8 @@
   <div class="hd"></div>
   <div class="hdr-title">People Analyzer</div>
   <div class="admin-control" id="adminControl">
-    <span class="admin-ctrl-label">Admin</span>
-    <label class="admin-switch" data-tip="Open the Admin panel">
+    <span class="admin-ctrl-label">HOD</span>
+    <label class="admin-switch" data-tip="Open the HOD panel">
       <input type="checkbox" id="adminPanelToggle" onchange="toggleAdminPanel()">
       <span class="admin-track"><span class="admin-thumb"></span></span>
     </label>
@@ -980,7 +990,7 @@
 <div class="admin-panel-overlay" id="adminOverlay" onclick="closeAdminPanel()"></div>
 <div class="admin-panel" id="adminPanel">
   <div class="admin-panel-header">
-    <div class="card-title">Admin</div>
+    <div class="card-title">HOD</div>
     <button class="admin-panel-close" onclick="closeAdminPanel()">✕</button>
   </div>
   <div class="admin-panel-body">
@@ -993,6 +1003,11 @@
         <button class="btn btn-secondary btn-sm" onclick="addSession()">Create</button>
       </div>
       <div id="sessionList" style="font-size:13px;color:var(--steel);">No sessions created.</div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-section-title">SharePoint Access Check</div>
+      <div id="accessCheck" style="font-size:12.5px;color:var(--steel);line-height:1.5;"></div>
     </div>
 
     <div class="admin-section">
@@ -1012,7 +1027,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v6';
+const CORE_VERSION = 'v7';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
 
 // ── Styled tooltips via data-tip (replaces native title everywhere) ──
@@ -1132,7 +1147,7 @@ function showUserChip(acct) {
   if (!firstName) return;
   nm.textContent = firstName;
   chip.setAttribute('data-tip', 'Signed in as ' + (acct.username || acct.name));
-  chip.setAttribute('data-tip-d', 'People Analyzer role: ' + (currentUser.isAdmin ? 'admin' : 'self-evaluation only'));
+  chip.setAttribute('data-tip-d', 'People Analyzer role: ' + (currentUser.isAdmin ? 'HOD' : 'self-evaluation only'));
   chip.style.display = 'flex';
 }
 
@@ -1290,7 +1305,7 @@ function resolveEvaluationEmployees() {
 }
 
 // ── Who is signed in, and what they may see ──
-// Admins (PeopleAnalyzerRole = admin in Team Members) get Summaries, Admin and Manage.
+// HODs (PeopleAnalyzerRole = admin, shown as "HOD" in Team Members) get Summaries, the HOD panel and Manage.
 // Everyone else gets a self-evaluation: Evaluate locked to themselves, plus My Self-Evaluations.
 // Until the PeopleAnalyzerRole column exists, everyone is treated as admin (the pre-v5 behavior)
 // and Admin → SharePoint Links says so. Offline mode is always admin; nothing is saved there.
@@ -1325,7 +1340,7 @@ function selfEvalsOf(evals) { return evals.filter(e => isSelfEval(e)); }
 
 function requireAdmin() {
   if (currentUser.isAdmin) return true;
-  showToast('Admin access required.');
+  showToast('HOD access required.');
   return false;
 }
 
@@ -1359,7 +1374,7 @@ function applyAccess() {
     notice.style.display = 'block';
   } else {
     notice.className = 'admin-note admin-note-warn';
-    notice.innerHTML = `We couldn't find you on the CORE roster (signed in as <b>${esc(currentUser.account && currentUser.account.username || 'unknown')}</b>), so there's no one to evaluate. Ask an admin to check your email address in Team Members.`;
+    notice.innerHTML = `We couldn't find you on the CORE roster (signed in as <b>${esc(currentUser.account && currentUser.account.username || 'unknown')}</b>), so there's no one to evaluate. Ask an HOD to check your email address in Team Members.`;
     notice.style.display = 'block';
   }
   populateEmployeeDropdown();
@@ -1482,6 +1497,7 @@ function toggleAdminPanel() {
     document.getElementById('adminControl').classList.add('is-open');
     renderSessionList();
     renderAdminDataPanel();
+    renderAccessCheck();
   }
 }
 
@@ -1501,6 +1517,108 @@ function toggleDeleteMode() {
   }
 }
 
+// ── SharePoint access check ──
+// Reads the list settings and the signed-in person's effective permissions straight from SharePoint,
+// so a HOD can confirm the lock-down without opening SharePoint's settings pages.
+// SP.PermissionKind bit numbers: view 1, add 2, edit 3, delete 4, override list behaviors 9,
+// manage lists 12, manage permissions 26, enumerate permissions 63.
+const PERM = { view: 1, add: 2, edit: 3, del: 4, override: 9, manageLists: 12, managePerms: 26, enumPerms: 63 };
+
+function hasPerm(mask, bit) {
+  if (!mask) return false;
+  return bit <= 32
+    ? ((Number(mask.Low) >>> (bit - 1)) & 1) === 1
+    : ((Number(mask.High) >>> (bit - 33)) & 1) === 1;
+}
+
+async function readListAccess(listName) {
+  const base = listApiUrl(listName);
+  const [props, perms] = await Promise.all([
+    spFetch(`${base}?$select=ReadSecurity,WriteSecurity,HasUniqueRoleAssignments`).then(r => r.json()),
+    spFetch(`${base}/EffectiveBasePermissions`).then(r => r.json())
+  ]);
+  const mask = perms.EffectiveBasePermissions || perms;
+  let grants = null;
+  if (hasPerm(mask, PERM.enumPerms)) {
+    try {
+      const ra = await spFetch(`${base}/RoleAssignments?$expand=Member,RoleDefinitionBindings`).then(r => r.json());
+      grants = (ra.value || []).map(a => ({
+        who: (a.Member && a.Member.Title) || '(unknown)',
+        levels: (a.RoleDefinitionBindings || []).map(d => d.Name).filter(n => n !== 'Limited Access')
+      })).filter(g => g.levels.length).sort((a, b) => a.who.localeCompare(b.who));
+    } catch (e) { console.warn('Role assignments unreadable:', e); }
+  }
+  return { readSecurity: props.ReadSecurity, writeSecurity: props.WriteSecurity, unique: props.HasUniqueRoleAssignments, mask, grants };
+}
+
+let accessCheckResult = null;
+
+async function runAccessCheck() {
+  const [ev, se] = await Promise.all([readListAccess(SP_CONFIG.lists.evaluations), readListAccess(SP_CONFIG.lists.sessions)]);
+  accessCheckResult = { ev, se };
+  return accessCheckResult;
+}
+
+function checkRow(ok, label, detail) {
+  const icon = ok === true ? '<span class="ac-ok">✓</span>' : ok === false ? '<span class="ac-bad">✗</span>' : '<span class="ac-na">–</span>';
+  return `<div class="ac-row">${icon}<div><div>${label}</div>${detail ? `<div class="ac-detail">${detail}</div>` : ''}</div></div>`;
+}
+
+function grantsHTML(listName, grants) {
+  if (!grants) return '';
+  if (!grants.length) return `<div class="ac-detail">No one has direct access to ${listName}.</div>`;
+  return `<div class="ac-grants"><div class="ac-grants-title">Who has access to ${esc(listName)}</div>${grants.map(g => `<div class="ac-grant"><span>${esc(g.who)}</span><span>${esc(g.levels.join(', '))}</span></div>`).join('')}</div>`;
+}
+
+async function renderAccessCheck() {
+  const el = document.getElementById('accessCheck');
+  if (!isOnline) { el.innerHTML = '<div style="color:var(--silver);padding:4px 0;">Offline — nothing to check.</div>'; return; }
+  el.innerHTML = '<div style="color:var(--silver);padding:4px 0;">Checking SharePoint…</div>';
+  let r;
+  try { r = await runAccessCheck(); }
+  catch (err) {
+    console.error(err);
+    el.innerHTML = `<div class="admin-note admin-note-warn">Couldn't read the list settings from SharePoint (${esc(err.message || err)}).</div>`;
+    return;
+  }
+  const { ev, se } = r;
+  const seesAll = hasPerm(ev.mask, PERM.override) || ev.readSecurity === 1;
+  let html = '<div class="ac-head">PA_Evaluations</div>';
+  html += checkRow(ev.unique, 'Has its own permissions', ev.unique ? '' : 'Still inherits from OperationsSecure. List settings → Permissions for this list → Stop Inheriting Permissions.');
+  html += checkRow(ev.readSecurity === 2, 'People can read only their own evaluations', ev.readSecurity === 2 ? '' : 'Advanced settings → Item-level Permissions → Read access: <i>Read items that were created by the user</i>.');
+  html += checkRow(ev.writeSecurity === 2, 'People can edit only their own evaluations', ev.writeSecurity === 2 ? '' : 'Advanced settings → Item-level Permissions → Create and Edit access: <i>Create items and edit items that were created by the user</i>.');
+  html += checkRow(hasPerm(ev.mask, PERM.add), 'You can submit evaluations', hasPerm(ev.mask, PERM.add) ? '' : 'Your account needs at least Contribute here.');
+  html += checkRow(seesAll, 'You can see everyone\'s evaluations', seesAll ? '' : 'Summaries will only show evaluations you created. Give HODs <b>Design</b> (or a level with Override List Behaviors) on this list.');
+  html += checkRow(hasPerm(ev.mask, PERM.del), 'You can delete evaluations', hasPerm(ev.mask, PERM.del) ? '' : 'Needed for 🗑 Manage.');
+  html += grantsHTML('PA_Evaluations', ev.grants);
+
+  html += '<div class="ac-head">PA_Sessions</div>';
+  html += checkRow(se.unique, 'Has its own permissions', se.unique ? '' : 'Still inherits from OperationsSecure, so staff can\'t reach it unless they\'re in the site group.');
+  html += checkRow(hasPerm(se.mask, PERM.edit) && hasPerm(se.mask, PERM.add), 'You can create and change sessions', hasPerm(se.mask, PERM.edit) ? '' : 'HODs need Contribute here.');
+  html += grantsHTML('PA_Sessions', se.grants);
+
+  if (!ev.grants) {
+    html += `<div class="ac-detail" style="margin-top:8px;">The list of who has access only shows for a site Owner. To check staff access, ask one non-HOD to sign in: they should see only Evaluate and My Self-Evaluations, with themselves picked.</div>`;
+  } else {
+    const staffEv = ev.grants.find(g => /everyone/i.test(g.who));
+    const staffSe = se.grants && se.grants.find(g => /everyone/i.test(g.who));
+    html += checkRow(!!staffEv, 'Staff can submit self-evaluations', staffEv ? `${esc(staffEv.who)}: ${esc(staffEv.levels.join(', '))}` : 'No "Everyone" entry on PA_Evaluations — staff can\'t submit unless they\'re granted some other way.');
+    html += checkRow(!!staffSe, 'Staff can see the sessions list', staffSe ? `${esc(staffSe.who)}: ${esc(staffSe.levels.join(', '))}` : 'No "Everyone" entry on PA_Sessions — staff will see no sessions to pick.');
+  }
+  el.innerHTML = html;
+}
+
+// A HOD whom SharePoint limits to their own evaluations would see a quietly incomplete Summaries. Say so once.
+async function warnIfHodCantSeeAll() {
+  if (!isOnline || !currentUser.isAdmin || !schema.employeeRole) return;
+  try {
+    const { ev } = await runAccessCheck();
+    if (!hasPerm(ev.mask, PERM.override) && ev.readSecurity === 2) {
+      showToast('SharePoint only shows you evaluations you created. See the HOD panel → Access Check.');
+    }
+  } catch (e) { console.warn('Access check failed:', e); }
+}
+
 // ── SharePoint columns & evaluation links ──
 
 function unlinkedEvaluations() {
@@ -1516,7 +1634,7 @@ function renderAdminDataPanel() {
   if (!schema.sessionActive) missing.push('<b>PA_Sessions</b> → <code>IsActive</code> · Yes/No, default Yes');
   if (!schema.sessionOrder) missing.push('<b>PA_Sessions</b> → <code>SortOrder</code> · Number');
   if (!schema.evalEmployeeId) missing.push('<b>PA_Evaluations</b> → <code>EmployeeId</code> · Number');
-  if (!schema.employeeRole) missing.push('<b>CORE_TeamMembers</b> (BWCore) → <code>PeopleAnalyzerRole</code> · same type as PipelineRole. Until it exists, everyone signed in gets Admin and Summaries.');
+  if (!schema.employeeRole) missing.push('<b>CORE_TeamMembers</b> (BWCore) → <code>PeopleAnalyzerRole</code> · same type as PipelineRole. Until it exists, everyone signed in gets HOD access, including Summaries.');
   if (missing.length) {
     parts.push(`<div class="admin-note admin-note-warn">Add these columns so session on/off, session order, person links and admin access work. Reload after adding.<ul>${missing.map(m => `<li>${m}</li>`).join('')}</ul></div>`);
   }
@@ -1678,7 +1796,7 @@ async function persistSessionOrder() {
     if (s.sortOrder !== order) { s.sortOrder = order; changed.push(s); }
   });
   if (!isOnline || changed.length === 0) return;
-  if (!schema.sessionOrder) { showToast('Order not saved — PA_Sessions needs a SortOrder column. See Admin.'); return; }
+  if (!schema.sessionOrder) { showToast('Order not saved — PA_Sessions needs a SortOrder column. See the HOD panel.'); return; }
   try {
     for (const s of changed) {
       if (!isLocalId(s.id)) await spUpdateItem(SP_CONFIG.lists.sessions, s.id, { SortOrder: s.sortOrder });
@@ -1698,7 +1816,7 @@ async function toggleSessionActive(id, active) {
   renderSessionList();
   populateSessionDropdowns();
   if (!isOnline || isLocalId(id)) return;
-  if (!schema.sessionActive) { showToast('Not saved — PA_Sessions needs an IsActive column. See Admin.'); return; }
+  if (!schema.sessionActive) { showToast('Not saved — PA_Sessions needs an IsActive column. See the HOD panel.'); return; }
   try {
     await spUpdateItem(SP_CONFIG.lists.sessions, id, { IsActive: active });
   } catch (err) {
@@ -1903,7 +2021,7 @@ async function submitEvaluation() {
   if (!currentUser.isAdmin) {
     if (emp.id !== currentUser.empId) { showToast('You can only submit your own self-evaluation.'); return; }
     if (evaluations.some(ev => ev.sessionId === sessionId && ev.empId === emp.id && isSelfEval(ev))) {
-      showToast('You already submitted a self-evaluation for this session. Ask an admin if it needs changing.'); return;
+      showToast('You already submitted a self-evaluation for this session. Ask an HOD if it needs changing.'); return;
     }
   }
 
@@ -2597,6 +2715,7 @@ function showToast(msg) {
         showApp();
         applyAccess();
         showUserChip(accounts[0]);
+        warnIfHodCantSeeAll();
       } catch (silentErr) {
         console.log('Silent token failed, user will need to click sign in.');
       }

@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v6*
+*late-October 2026 edition · People Analyzer v7*
 
 ## Part I — Using People Analyzer
 
@@ -25,18 +25,18 @@ Click **Sign in with Microsoft** and pick your Bellweather account. The tool fin
 
 Evaluations are sensitive, so they're stored in **OperationsSecure**, the restricted SharePoint site. If you can sign in but the page says *Error loading data from SharePoint*, you don't have access to that site. Ask Byron.
 
-### Admins and everyone else
+### HODs and everyone else
 
-What you see depends on your **People Analyzer** role, set by an admin on the **Access** tab of Team Members.
+What you see depends on your **People Analyzer** role, set on the **Access** tab of Team Members, where the People Analyzer column offers **Member** or **HOD**.
 
-| | Admin | Everyone else |
+| | HOD | Everyone else |
 |---|---|---|
 | **Evaluate** | Anyone on the roster; evaluator name can be edited | Themselves only — a self-evaluation; name locked |
 | **Summaries** | Yes | No |
 | **My Self-Evaluations** | — | Yes, their own |
-| **⚙ Admin panel and 🗑 Manage** | Yes | Hidden |
+| **⚙ HOD panel and 🗑 Manage** | Yes | Hidden |
 
-> **The screen is one layer; SharePoint is the other.** Hiding Summaries and Admin stops people *seeing* them in the tool. It doesn't stop a determined person reading the lists directly, because anyone who can submit an evaluation has some access to `PA_Evaluations`. The real protection is the list's **item-level permissions** in OperationsSecure — see *Locking down PA_Evaluations* in Part VI.
+> **The screen is one layer; SharePoint is the other.** Hiding Summaries and the HOD panel stops people *seeing* them in the tool. It doesn't stop a determined person reading the lists directly, because anyone who can submit an evaluation has some access to `PA_Evaluations`. The real protection is the list's **item-level permissions** in OperationsSecure — see *Locking down PA_Evaluations* in Part VI.
 
 ### Offline mode
 
@@ -52,27 +52,27 @@ Don't run a real evaluation round offline.
 The tabs sit at the right of the header:
 
 - **Evaluate** — rate one person at a time.
-- **Summaries** (admins) — see the consensus for everyone, or drill into one person.
+- **Summaries** (HODs) — see the consensus for everyone, or drill into one person.
 - **My Self-Evaluations** (everyone else) — what you've submitted about yourself.
 
-The **Admin** switch and ⚙ gear in the header (admins only) open the Admin panel. That's where sessions are created and where the SharePoint connection is checked.
+The **HOD** switch and ⚙ gear in the header (HODs only) open the HOD panel. That's where sessions are created and where the SharePoint connection is checked.
 
 ## Part II — Evaluating someone
 
 ### Self-evaluations
 
-If you're not an admin, Evaluate is set up for your self-evaluation: you're already picked as the Team Member, and your name is locked. Pick the session, rate yourself, and submit.
+If you're not an HOD, Evaluate is set up for your self-evaluation: you're already picked as the Team Member, and your name is locked. Pick the session, rate yourself, and submit.
 
-- You can submit **one self-evaluation per session**. If you need to change it, ask an admin to delete it, then submit again.
+- You can submit **one self-evaluation per session**. If you need to change it, ask an HOD to delete it, then submit again.
 - Afterwards, **My Self-Evaluations** shows what you submitted for each session, with your comments. It doesn't show how anyone else rated you.
 
-Admins see self-evaluations in Summaries, kept **separate**: they never count toward the consensus, the status, or the "N of M" count. In a person's view, the self-evaluation sits in a shaded column to the right of **Consensus**, with a **self** tag, so the two are easy to compare. The **Self** column in the summary tables shows ✓ when someone has submitted one.
+HODs see self-evaluations in Summaries, kept **separate**: they never count toward the consensus, the status, or the "N of M" count. In a person's view, the self-evaluation sits in a shaded column to the right of **Consensus**, with a **self** tag, so the two are easy to compare. The **Self** column in the summary tables shows ✓ when someone has submitted one.
 
 ### Step by step
 
 1. **Your Name** is filled in from the roster. Leave it as it is. (See *Evaluator names matter* below.)
-2. Pick the **Session**, for example *Q1 2026 Review*. Only sessions that are switched on in Admin appear here.
-3. Pick the **Team Member**. The list is grouped by department and shows **active** team members only. (Non-admins see only themselves.)
+2. Pick the **Session**, for example *Q1 2026 Review*. Only sessions that are switched on in the HOD panel appear here.
+3. Pick the **Team Member**. The list is grouped by department and shows **active** team members only. (Everyone else sees only themselves.)
 4. Rate each Core Value:
    - **+** — lives it.
    - **+/−** — sometimes.
@@ -95,7 +95,7 @@ You can't edit an evaluation after you submit it. Instead, delete it and submit 
 
 ## Part III — Reading the Summaries
 
-Summaries is for admins only.
+Summaries is for HODs only.
 
 ### Filters
 
@@ -132,7 +132,7 @@ Self-evaluations aren't counted in either number. The **Self** column next to it
 
 ### One person's view
 
-The top of the individual view is the **Trajectory**: a grid with one column per session, showing the consensus and status each round. Sessions appear in the order set in Admin.
+The top of the individual view is the **Trajectory**: a grid with one column per session, showing the consensus and status each round. Sessions appear in the order set in the HOD panel.
 
 Below that, each session has its own block. The block shows:
 
@@ -160,9 +160,9 @@ The **🗑 on a session block header** deletes that person's evaluations for tha
 
 Every delete asks first. Deletes are permanent, and there's no undo.
 
-## Part IV — Admin
+## Part IV — The HOD panel
 
-Admin is for admins only. The **Admin** switch in the header opens and closes the panel.
+The HOD panel is for HODs only. The **HOD** switch in the header opens and closes it.
 
 ### Evaluation sessions
 
@@ -173,23 +173,33 @@ Admin is for admins only. The **Admin** switch in the header opens and closes th
 
 Switching on or off and reordering save to SharePoint straight away.
 
+### SharePoint Access Check
+
+This section reads the lock-down settings straight from SharePoint each time the panel opens, so you can confirm them without going into SharePoint. Every line should show a green ✓.
+
+- **PA_Evaluations** — it has its own permissions; people can read and edit only their own evaluations; and **you** can submit, see everyone's evaluations, and delete.
+- **PA_Sessions** — it has its own permissions, and you can create and change sessions.
+- **Who has access** — if you're an Owner of OperationsSecure, it also lists everyone with access to each list, and checks that staff ("Everyone except external users") can submit and can see sessions. If you're not an Owner, that list is hidden; ask one non-HOD to sign in instead and check they see only Evaluate and My Self-Evaluations.
+
+A red ✗ comes with the setting to change. If an HOD can't see everyone's evaluations, the tool also warns them when they sign in, because their Summaries would otherwise look complete when it isn't.
+
 ### SharePoint Links
 
 This section checks the connection between the tool and SharePoint. When everything is healthy it reads *All evaluations are linked to a team member.* Otherwise it can show three kinds of message:
 
-- **A yellow box listing columns to add.** A column the tool needs is missing. See *Repair* below. If it lists `PeopleAnalyzerRole`, **everyone who signs in is treated as an admin** until that column exists — don't send out self-evaluations until it's gone.
+- **A yellow box listing columns to add.** A column the tool needs is missing. See *Repair* below. If it lists `PeopleAnalyzerRole`, **everyone who signs in is treated as an HOD** until that column exists — don't send out self-evaluations until it's gone.
 - **"N older evaluations are matched by name only"** with a **Link** button. Click it. It records each evaluation's team member Id, so renaming that person later won't separate them from their history. Ratings and names don't change.
 - **"N evaluations don't match anyone on the roster."** These are hidden from Summaries. See *Someone's evaluations disappeared* below.
 
 ## Part V — Repair: when something looks wrong
 
-### I should be an admin but only see Evaluate and My Self-Evaluations
+### I should be an HOD but only see Evaluate and My Self-Evaluations
 
 1. Hover over your name chip in the header. It shows the account you're signed in with and your role.
-2. In Team Members → Access, set your **People Analyzer** column to **Admin**.
+2. In Team Members → Access, set your **People Analyzer** column to **HOD**.
 3. Reload People Analyzer.
 
-If the role is already Admin, the tool probably matched the wrong roster entry, or none — see the next item.
+If the role is already HOD, the tool probably matched the wrong roster entry, or none — see the next item.
 
 ### "We couldn't find you on the CORE roster"
 
@@ -197,7 +207,7 @@ The tool matches the email address you sign in with against the **Email** on you
 
 ### "You already submitted a self-evaluation for this session"
 
-Non-admins get one self-evaluation per session. An admin can delete the old one (Summaries → the person → 🗑 Manage → ✕ remove); then the person can submit again.
+Everyone except HODs gets one self-evaluation per session. An HOD can delete the old one (Summaries → the person → 🗑 Manage → ✕ remove); then the person can submit again.
 
 ### Someone isn't in the Team Member dropdown
 
@@ -211,9 +221,9 @@ Work through these in order:
 ### Someone's evaluations disappeared from Summaries
 
 - **Check the session filter first.** It's often still set to an earlier round.
-- **If they still don't appear,** open Admin → SharePoint Links. If their old name is listed under *don't match anyone on the roster*, their evaluations were saved under a name that no longer matches the roster and were never linked to their Id. To fix it:
+- **If they still don't appear,** open the HOD panel → SharePoint Links. If their old name is listed under *don't match anyone on the roster*, their evaluations were saved under a name that no longer matches the roster and were never linked to their Id. To fix it:
   1. In Team Members, temporarily rename the person back to the exact name shown.
-  2. Reload People Analyzer, then click **Link** in Admin.
+  2. Reload People Analyzer, then click **Link** in the HOD panel.
   3. Rename them back in Team Members.
 
   Linked evaluations follow the person from then on.
@@ -234,7 +244,7 @@ The tool looks for three columns on OperationsSecure each time it loads:
 | `PA_Evaluations` | `EmployeeId` | Number |
 | `CORE_TeamMembers` (BWCore) | `PeopleAnalyzerRole` | Same type as `PipelineRole` |
 
-The tool keeps working without them, but session on/off, session order, and person links aren't saved — and without `PeopleAnalyzerRole`, everyone is an admin.
+The tool keeps working without them, but session on/off, session order, and person links aren't saved — and without `PeopleAnalyzerRole`, everyone is an HOD.
 
 The name must be typed **exactly** as shown, with no spaces, when the column is *first* created. SharePoint fixes a column's internal name at the moment of creation. A column first made as *Is Active* and renamed later is still invisible to the tool. In that case, delete it and re-create it with the exact name.
 
@@ -277,22 +287,28 @@ The version badge in the header shows which build you have. After an update, add
 ### How the pieces connect
 
 - **Sessions.** `SessionId` on an evaluation is the Id of its `PA_Sessions` row. Deleting a session deletes its evaluations too.
-- **People.** `EmployeeId` on an evaluation is the person's Id in `CORE_TeamMembers`. Evaluations without one fall back to an exact name match, ignoring capitals and extra spaces. **Link** in Admin fills it in.
+- **People.** `EmployeeId` on an evaluation is the person's Id in `CORE_TeamMembers`. Evaluations without one fall back to an exact name match, ignoring capitals and extra spaces. **Link** in the HOD panel fills it in.
 - **Names stored on evaluations.** `EmployeeName` holds the name as it was at the time of the evaluation. It's kept for the record. The tool shows the person's current roster name.
 - **Comments.** `Comments` holds the per-value comments as a small JSON record, keyed by value.
 - **Ratings.** They're stored as `+`, `+/-`, `-`, `Y`, and `N`.
 
 ### Locking down PA_Evaluations
 
-The screen-level roles keep non-admins out of Summaries and Admin, but SharePoint has to do the real work. In OperationsSecure:
+The screen-level roles keep everyone except HODs out of Summaries and the HOD panel, but SharePoint has to do the real work. Only an **Owner** of OperationsSecure can make these changes; group Members can't.
 
-1. **PA_Evaluations** → List settings → Advanced settings → **Item-level Permissions**:
+1. **PA_Evaluations** → ⚙ → List settings → **Permissions for this list** → **Stop Inheriting Permissions**. Then grant:
+   - **Everyone except external users** — **Contribute**
+   - each HOD — **Design** (it includes *Override List Behaviors*, which lets them see everyone's evaluations)
+2. **PA_Evaluations** → List settings → Advanced settings → **Item-level Permissions**:
    - Read access: **Read items that were created by the user**
    - Create and Edit access: **Create items and edit items that were created by the user**
-2. Give staff **Contribute** on `PA_Evaluations` and **Read** on `PA_Sessions`.
-3. Make sure admins hold **Full Control** (or another level that includes *Override List Behaviors*). Without it, item-level permissions hide other people's evaluations from admins too, and Summaries would only show what each admin submitted.
+3. **PA_Sessions** → List settings → Permissions for this list → **Stop Inheriting Permissions**. Then grant **Everyone except external users** — **Read**, and each HOD — **Contribute**.
 
-With that in place, a non-admin's browser only ever receives their own evaluations, whatever they try.
+Owners of OperationsSecure see everything regardless. Group *Members* keep Edit, which with item-level permissions on means they see only their own evaluations, unless they're also granted Design as an HOD.
+
+Keep the HODs in Team Members and the HODs granted Design in step 1 the same people. Then check it all with **HOD panel → SharePoint Access Check**.
+
+With that in place, a non-HOD's browser only ever receives their own evaluations, whatever they try.
 
 ### What People Analyzer never does
 

@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-10-23
+Last updated: 2026-10-27
 
 ## Live tools
 
@@ -25,7 +25,7 @@ Last updated: 2026-10-23
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v6 |
+| People Analyzer | `people-analyzer.html` | v7 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -33,11 +33,11 @@ Last updated: 2026-10-23
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v25 |
+| Team Members | `team-members.html` | v26 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v4 |
-| CORE System Map | `core-system-map.html` | v13 |
+| CORE System Map | `core-system-map.html` | v14 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -68,6 +68,9 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-10-27** — People Analyzer v6 → v7: "Admin" relabeled **HOD** throughout (header switch, panel, messages, name-chip role); the stored role value is still `admin`. New **SharePoint Access Check** in the HOD panel reads the lock-down straight from SharePoint — unique permissions and item-level read/edit on `PA_Evaluations` and `PA_Sessions`, the signed-in HOD's own submit / see-everyone / delete / session rights, and (for site Owners) who has access to each list, including whether staff can submit and see sessions. HODs whom SharePoint limits to their own evaluations get a warning at sign-in. Manual relabeled and its lock-down steps updated (Owner-only; HODs get Design).
+- **2026-10-27** — Team Members v25 → v26: the People Analyzer column's top level shows as **HOD** in the Access dropdown and legend (stored value unchanged).
+- **2026-10-27** — CORE System Map v13 → v14: People Analyzer entry says HOD.
 - **2026-10-23** — People Analyzer v5 → v6: self-evaluations kept separate from the consensus. They're excluded from consensus, status and "N of M"; shown in a shaded column to the right of Consensus; tracked in a new **Self** column on the summary tables; listed as "Self-rating" (not counted) in text and Excel exports. Manual updated.
 - **2026-10-23** — People Analyzer v3 → v5. v4: header rebuilt on the Pipeline's app-header pattern — Linen monogram, Swear title, Admin switch and gear, red badge, signed-in name chip, uppercase tabs with the gold underline, **?** manual link. v5: admin gating. A new `PeopleAnalyzerRole` column on `CORE_TeamMembers` (set on the Team Members Access tab) decides who is an admin. Non-admins get a self-evaluation: Evaluate locked to themselves with their name fixed, one per session, plus a **My Self-Evaluations** tab; Summaries, Admin and Manage are hidden and their actions refuse. The signed-in user is matched to the roster by email (any address in the Email column), then by exact name. Admins see a **self** tag on self-evaluations. Until the column exists, everyone is treated as admin and Admin says so. Manual updated, including item-level permissions for `PA_Evaluations`.
 - **2026-10-23** — Team Members v24 → v25: Access tab lists **People Analyzer** (Member: own self-evaluations; Admin: everything) once the `PeopleAnalyzerRole` column exists.
