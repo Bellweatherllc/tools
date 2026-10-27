@@ -1027,7 +1027,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v7';
+const CORE_VERSION = 'v8';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
 
 // ── Styled tooltips via data-tip (replaces native title everywhere) ──
@@ -1147,7 +1147,7 @@ function showUserChip(acct) {
   if (!firstName) return;
   nm.textContent = firstName;
   chip.setAttribute('data-tip', 'Signed in as ' + (acct.username || acct.name));
-  chip.setAttribute('data-tip-d', 'People Analyzer role: ' + (currentUser.isAdmin ? 'HOD' : 'self-evaluation only'));
+  chip.setAttribute('data-tip-d', (currentUser.isAdmin ? 'HOD' : 'Self-evaluation only') + ' — ' + accessDiagnosis());
   chip.style.display = 'flex';
 }
 
@@ -1208,23 +1208,30 @@ let sessions = [];
 //   CORE_TeamMembers: PeopleAnalyzerRole ('admin' / 'member'), set on the Team Members Access tab
 const schema = { sessionActive: false, sessionOrder: false, evalEmployeeId: false, employeeRole: false };
 
+// List name → error message, for any load that failed. Shown on screen so a failure never just looks like "no access".
+const loadErrors = {};
+
 async function loadAllData() {
-  try {
-    const [sessFields, evalFields, empFields] = await Promise.all([
-      getListFields(listApiUrl(SP_CONFIG.lists.sessions)),
-      getListFields(listApiUrl(SP_CONFIG.lists.evaluations)),
-      getListFields(employeeApiUrl())
-    ]);
-    schema.sessionActive = sessFields.has('IsActive');
-    schema.sessionOrder = sessFields.has('SortOrder');
-    schema.evalEmployeeId = evalFields.has('EmployeeId');
-    schema.employeeRole = empFields.has('PeopleAnalyzerRole');
-    await Promise.all([loadEmployees(), loadEvaluations(), loadSessions()]);
-    resolveEvaluationEmployees();
-  } catch (err) {
-    console.error('Failed to load data:', err);
-    showToast('Error loading data from SharePoint.');
-  }
+  const step = async (name, fn) => {
+    try { return await fn(); }
+    catch (err) { console.error(`Failed to load ${name}:`, err); loadErrors[name] = String(err.message || err).slice(0, 200); return null; }
+  };
+  const [sessFields, evalFields, empFields] = await Promise.all([
+    step(SP_CONFIG.lists.sessions, () => getListFields(listApiUrl(SP_CONFIG.lists.sessions))),
+    step(SP_CONFIG.lists.evaluations, () => getListFields(listApiUrl(SP_CONFIG.lists.evaluations))),
+    step(SP_CONFIG.lists.employees, () => getListFields(employeeApiUrl()))
+  ]);
+  schema.sessionActive = !!sessFields && sessFields.has('IsActive');
+  schema.sessionOrder = !!sessFields && sessFields.has('SortOrder');
+  schema.evalEmployeeId = !!evalFields && evalFields.has('EmployeeId');
+  schema.employeeRole = !!empFields && empFields.has('PeopleAnalyzerRole');
+  await Promise.all([
+    step(SP_CONFIG.lists.employees, loadEmployees),
+    step(SP_CONFIG.lists.evaluations, loadEvaluations),
+    step(SP_CONFIG.lists.sessions, loadSessions)
+  ]);
+  resolveEvaluationEmployees();
+  if (Object.keys(loadErrors).length) showToast('Error loading data from SharePoint: ' + Object.keys(loadErrors).join(', '));
 }
 
 async function getListFields(listUrl) {
@@ -1310,7 +1317,8 @@ function resolveEvaluationEmployees() {
 // Until the PeopleAnalyzerRole column exists, everyone is treated as admin (the pre-v5 behavior)
 // and Admin → SharePoint Links says so. Offline mode is always admin; nothing is saved there.
 // This is a screen-level guard. SharePoint permissions on the PA_ lists are what actually protect the data.
-const currentUser = { empId: '', isAdmin: true, account: null };
+const currentUser = { empId: '', isAdmin: true, account: null, matchedBy: '', roleRaw: '' };
+const HOD_ROLE_VALUES = ['admin', 'hod'];
 
 function resolveCurrentUser(acct) {
   currentUser.account = acct || null;
@@ -1319,13 +1327,29 @@ function resolveCurrentUser(acct) {
   const claims = acct.idTokenClaims || {};
   const ids = [acct.username, claims.preferred_username, claims.email, claims.upn]
     .map(v => String(v || '').trim().toLowerCase()).filter(Boolean);
+  currentUser.ids = ids;
   let me = employees.find(e => e.emails.some(m => ids.includes(m)));
+  currentUser.matchedBy = me ? 'email' : '';
   if (!me && acct.name) {
     const byName = employees.filter(e => normName(e.name) === normName(acct.name));
-    if (byName.length === 1) me = byName[0];
+    if (byName.length === 1) { me = byName[0]; currentUser.matchedBy = 'name'; }
   }
   currentUser.empId = me ? me.id : '';
-  currentUser.isAdmin = !schema.employeeRole || !!(me && me.role === 'admin');
+  currentUser.roleRaw = me ? me.role : '';
+  // If the roster couldn't be read, we can't know who's an HOD — default to self-evaluation only.
+  currentUser.isAdmin = !loadErrors[SP_CONFIG.lists.employees]
+    && (!schema.employeeRole || !!(me && HOD_ROLE_VALUES.includes(me.role)));
+}
+
+// One line saying exactly why someone is or isn't an HOD — shown to them, and in the name chip.
+function accessDiagnosis() {
+  const me = empById(currentUser.empId);
+  const parts = ['Signed in as ' + ((currentUser.ids || []).join(' / ') || 'unknown')];
+  if (loadErrors[SP_CONFIG.lists.employees]) parts.push(`couldn't load the CORE roster (${loadErrors[SP_CONFIG.lists.employees]})`);
+  else parts.push(me ? `roster: ${me.name} (matched by ${currentUser.matchedBy})` : 'not found on the CORE roster');
+  if (!schema.employeeRole) parts.push('PeopleAnalyzerRole column not found, so everyone is an HOD');
+  else if (me) parts.push(`People Analyzer role: ${currentUser.roleRaw ? '"' + currentUser.roleRaw + '"' : 'blank'}`);
+  return parts.join(' · ');
 }
 
 function isSelfEval(ev) {
@@ -1368,13 +1392,17 @@ function applyAccess() {
   const notice = document.getElementById('selfNotice');
   if (admin) {
     notice.style.display = 'none';
+  } else if (loadErrors[SP_CONFIG.lists.employees]) {
+    notice.className = 'admin-note admin-note-warn';
+    notice.innerHTML = `Couldn't load the CORE roster from BWCore, so People Analyzer can't tell who you are or whether you're an HOD. Reload to try again; if it keeps happening, send this to Byron:<div class="ac-detail" style="margin-top:6px;">${esc(accessDiagnosis())}</div>`;
+    notice.style.display = 'block';
   } else if (me) {
     notice.className = 'admin-note';
-    notice.innerHTML = `This is your <b>self-evaluation</b>. Pick the session, rate yourself honestly on each value, and submit. You can see what you submitted under <b>My Self-Evaluations</b>.`;
+    notice.innerHTML = `This is your <b>self-evaluation</b>. Pick the session, rate yourself honestly on each value, and submit. You can see what you submitted under <b>My Self-Evaluations</b>.<div class="ac-detail" style="margin-top:6px;">If you're an HOD and expected more: ${esc(accessDiagnosis())}. Your People Analyzer role needs to be <b>HOD</b> in Team Members.</div>`;
     notice.style.display = 'block';
   } else {
     notice.className = 'admin-note admin-note-warn';
-    notice.innerHTML = `We couldn't find you on the CORE roster (signed in as <b>${esc(currentUser.account && currentUser.account.username || 'unknown')}</b>), so there's no one to evaluate. Ask an HOD to check your email address in Team Members.`;
+    notice.innerHTML = `We couldn't find you on the CORE roster (signed in as <b>${esc(currentUser.account && currentUser.account.username || 'unknown')}</b>), so there's no one to evaluate. Ask an HOD to check your email address in Team Members.<div class="ac-detail" style="margin-top:6px;">${esc(accessDiagnosis())}</div>`;
     notice.style.display = 'block';
   }
   populateEmployeeDropdown();

@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v7*
+*late-October 2026 edition · People Analyzer v8*
 
 ## Part I — Using People Analyzer
 
@@ -195,7 +195,10 @@ This section checks the connection between the tool and SharePoint. When everyth
 
 ### I should be an HOD but only see Evaluate and My Self-Evaluations
 
-1. Hover over your name chip in the header. It shows the account you're signed in with and your role.
+1. Hover over your name chip in the header. It shows the address you signed in with, which roster entry the tool matched you to (and whether by email or by name), and the People Analyzer role it read. The same line appears in the note on the Evaluate tab.
+   - *not found on the CORE roster* — see the next item.
+   - *People Analyzer role: blank* — set it to HOD (step 2).
+   - *couldn't load the CORE roster* — a SharePoint problem reading BWCore. Reload; if it persists, the message names the error.
 2. In Team Members → Access, set your **People Analyzer** column to **HOD**.
 3. Reload People Analyzer.
 
