@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v11*
+*late-October 2026 edition · People Analyzer v12*
 
 ## Part I — Using People Analyzer
 
@@ -61,7 +61,7 @@ The **Admin** switch and ⚙ gear in the header (admins only) open the Admin pan
 
 ### Self-evaluations
 
-If you're not an admin, Evaluate is set up for your self-evaluation: you're already picked as the Team Member, and your name is locked. Pick the session, rate yourself, and submit.
+If you're not an admin, Evaluate is set up for your self-evaluation: your name is filled in as both the Evaluator and the Team Member, with nothing to choose. If only one session is open it's already picked; rate yourself and submit.
 
 - You can submit **one self-evaluation per session**. If you need to change it, ask an admin to delete it, then submit again.
 - Afterwards, **My Self-Evaluations** shows what you submitted for each session, with your comments. It doesn't show how anyone else rated you.
@@ -70,8 +70,8 @@ Admins see self-evaluations in Summaries, kept **separate**: they never count to
 
 ### Step by step
 
-1. **Your Name** is filled in from the roster. Leave it as it is. (See *Evaluator names matter* below.)
-2. Pick the **Session**, for example *Q1 2026 Review*. Only sessions that are switched on in the Admin panel appear here.
+1. **Evaluator** is filled in from your sign-in — your name as it appears on the CORE roster. It can't be changed.
+2. Pick the **Session**, for example *Q1 2026 Review*. Only sessions that are switched on in the Admin panel appear here; if only one is open, it's picked for you.
 3. Pick the **Team Member**. The list is grouped by department and shows **active** team members only. (Everyone else sees only themselves.)
 4. Rate each Core Value:
    - **+** — lives it.
@@ -87,7 +87,7 @@ The form clears, and you can pick the next person.
 
 ### Evaluator names matter
 
-The tool counts evaluators **by the name in the Your Name box**. *Joey Smith* and *Joey* count as two different people. Keep the name as your account fills it in, so that the "N of M" counts in Summaries come out right.
+The tool counts evaluators **by name**. Signed in, the name always comes from the CORE roster, so it's consistent. Older evaluations were typed in by hand, so *Joey Smith* and *Joey* there count as two different people. (In offline mode you type your name; nothing is saved.)
 
 ### Changing an evaluation
 

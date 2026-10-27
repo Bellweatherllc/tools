@@ -129,13 +129,13 @@
     box-shadow: 0 0 0 3px var(--gold-dim);
   }
 
-  .form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-  .form-group { display: flex; flex-direction: column; }
+  .eval-setup { padding: 18px 24px; }
+  .setup-row { display: grid; grid-template-columns: 1fr 1.2fr 1.4fr; gap: 16px; align-items: end; }
+  .setup-field { display: flex; flex-direction: column; min-width: 0; }
+  .setup-value { font-size: 15px; font-weight: 600; color: var(--navy); padding: 9px 0; display: flex; align-items: center; gap: 8px; min-height: 40px; }
+  .setup-hint { font-size: 12px; color: var(--steel); margin-top: 12px; line-height: 1.5; }
+  @media (max-width: 768px) { .setup-row { grid-template-columns: 1fr; } }
+
 
   /* ── Rating Controls ── */
   .eval-section { margin-bottom: 28px; }
@@ -734,7 +734,6 @@
 
   /* ── Responsive ── */
   @media (max-width: 768px) {
-    .form-row { grid-template-columns: 1fr; }
     .app-header { flex-wrap: wrap; row-gap: 6px; }
     .container { padding: 18px 12px; }
     .eval-row { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -798,38 +797,30 @@
   <!-- ═══ EVALUATE VIEW ═══ -->
   <div id="view-evaluate" class="view active">
 
-    <!-- Guidance -->
-    <div style="background:linear-gradient(135deg, rgba(200,149,62,0.06), rgba(26,39,68,0.04));border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;border:1px solid rgba(200,149,62,0.12);">
-      <div style="font-size:13px;color:var(--slate);line-height:1.6;">
-        Rate each team member on Bellweather's <strong>five Core Values</strong> (Disciplined, Humbly Confident, Always Improving, Forward-Looking, Cares &amp; Connects) and <strong>GWC</strong> — whether they <em>Get it</em>, <em>Want it</em>, and have the <em>Capacity</em> to do it. Multiple evaluators submit independently; the tool calculates consensus for each person.
-      </div>
-    </div>
-
-    <!-- Evaluate: Evaluator + Team Member Selection -->
-    <div class="card">
-      <div class="card-title">Evaluate</div>
-      <div id="selfNotice" class="admin-note" style="display:none;margin-bottom:14px;font-size:12.5px;line-height:1.5;"></div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="field-label" for="evaluatorName">Your Name (Evaluator)</label>
-          <input type="text" id="evaluatorName" placeholder="Enter your name">
+    <!-- Setup: who is evaluating, which session, which person -->
+    <div class="card eval-setup">
+      <div class="setup-row">
+        <div class="setup-field">
+          <label class="field-label" for="evaluatorName">Evaluator</label>
+          <div class="setup-value" id="evaluatorDisplay" style="display:none;"></div>
+          <input type="text" id="evaluatorName" placeholder="Your name (offline only)">
         </div>
-        <div class="form-group">
+        <div class="setup-field">
           <label class="field-label" for="sessionSelect">Session</label>
           <select id="sessionSelect">
             <option value="">Select a session…</option>
           </select>
         </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
+        <div class="setup-field">
           <label class="field-label" for="employeeSelect">Team Member</label>
           <select id="employeeSelect" onchange="handleEmployeeSelect()">
             <option value="">Select a team member…</option>
           </select>
+          <div class="setup-value" id="employeeFixed" style="display:none;"></div>
         </div>
-        <div class="form-group"></div>
       </div>
+      <div class="setup-hint" id="setupHint">Rate the five <b>Core Values</b> (+, +/−, −) and <b>GWC</b> (Y/N). Each evaluator submits on their own; the tool works out the consensus per person.</div>
+      <div id="selfNotice" class="admin-note" style="display:none;margin:12px 0 0;font-size:12.5px;line-height:1.5;"></div>
     </div>
 
     <!-- Evaluation Form -->
@@ -1028,7 +1019,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v11';
+const CORE_VERSION = 'v12';
 // Core Values wording: NEW_Core_Values_v2 (revised 08-03-26). Update this date when the descriptors change.
 const CORE_VALUES_REVISED = 'Aug 3, 2026';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
@@ -1388,10 +1379,14 @@ function applyAccess() {
     evaluations = evaluations.filter(ev => ev.empId && ev.empId === currentUser.empId && isSelfEval(ev));
   }
 
+  // Evaluator is whoever signed in — roster name if we found them, otherwise their Microsoft account name.
   const nameInput = document.getElementById('evaluatorName');
-  if (me) nameInput.value = me.name;
-  else if (currentUser.account && currentUser.account.name) nameInput.value = currentUser.account.name;
-  nameInput.readOnly = !admin;
+  const display = document.getElementById('evaluatorDisplay');
+  nameInput.value = me ? me.name : ((currentUser.account && currentUser.account.name) || '');
+  display.textContent = nameInput.value || '—';
+  display.style.display = '';
+  nameInput.style.display = 'none';
+  document.getElementById('setupHint').style.display = admin ? '' : 'none';
 
   const notice = document.getElementById('selfNotice');
   if (admin) {
@@ -1402,7 +1397,7 @@ function applyAccess() {
     notice.style.display = 'block';
   } else if (me) {
     notice.className = 'admin-note';
-    notice.innerHTML = `This is your <b>self-evaluation</b>. Pick the session, rate yourself honestly on each value, and submit. You can see what you submitted under <b>My Self-Evaluations</b>.<div class="ac-detail" style="margin-top:6px;">If you're an admin and expected more: ${esc(accessDiagnosis())}. Admins need <b>People Analyzer = Admin</b> on the Team Members Access tab.</div>`;
+    notice.innerHTML = `This is your <b>self-evaluation</b>. Rate yourself honestly on each value, and submit. You can see what you submitted under <b>My Self-Evaluations</b>.`;
     notice.style.display = 'block';
   } else {
     notice.className = 'admin-note admin-note-warn';
@@ -1410,9 +1405,17 @@ function applyAccess() {
     notice.style.display = 'block';
   }
   populateEmployeeDropdown();
-  if (!admin && me) {
-    document.getElementById('employeeSelect').value = me.id;
-    handleEmployeeSelect();
+  const empSelect = document.getElementById('employeeSelect');
+  const empFixed = document.getElementById('employeeFixed');
+  if (!admin) {
+    // Members evaluate only themselves: show their name, no dropdown.
+    empSelect.style.display = 'none';
+    empFixed.style.display = '';
+    empFixed.innerHTML = me ? `${esc(me.name)} ${deptChipHTML(me.department)}` : '—';
+    if (me) { empSelect.value = me.id; handleEmployeeSelect(); }
+  } else {
+    empSelect.style.display = '';
+    empFixed.style.display = 'none';
   }
   switchView('evaluate');
 }
@@ -1865,13 +1868,15 @@ function populateSessionDropdowns() {
   const evalSel = document.getElementById('sessionSelect');
   const evalCurrent = evalSel.value;
   evalSel.innerHTML = '<option value="">Select a session…</option>';
-  sessions.filter(s => s.active !== false).forEach(s => {
+  const openSessions = sessions.filter(s => s.active !== false);
+  openSessions.forEach(s => {
     const opt = document.createElement('option');
     opt.value = s.id;
     opt.textContent = s.name;
     evalSel.appendChild(opt);
   });
   if (evalCurrent) evalSel.value = evalCurrent;
+  if (!evalSel.value && openSessions.length === 1) evalSel.value = openSessions[0].id;
 
   // Summary tab session filter
   const sumSel = document.getElementById('sessionFilter');
@@ -2043,11 +2048,11 @@ function clearForm() {
 
 async function submitEvaluation() {
   const me = empById(currentUser.empId);
-  const evaluator = (!currentUser.isAdmin && me) ? me.name : document.getElementById('evaluatorName').value.trim();
+  const evaluator = document.getElementById('evaluatorName').value.trim();
   const emp = empById(document.getElementById('employeeSelect').value);
   const sessionId = document.getElementById('sessionSelect').value;
 
-  if (!evaluator) { showToast('Please enter your name as evaluator.'); return; }
+  if (!evaluator) { showToast(isOnline ? 'Couldn\'t work out your name from your sign-in. Reload and try again.' : 'Please enter your name as evaluator.'); return; }
   if (!sessionId) { showToast('Please select a session.'); return; }
   if (!emp) { showToast('Please select a team member.'); return; }
   if (!currentUser.isAdmin) {
