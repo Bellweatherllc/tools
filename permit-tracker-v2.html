@@ -347,6 +347,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
     <span class="legend-item"><span class="legend-glyph check">✓</span> Stage complete</span>
     <span class="legend-item"><span class="legend-glyph star">★</span> Completed early</span>
   </div>
+  <div class="sub" id="trelloSyncStatus" style="display:none;"></div>
   <div id="cards"><div class="empty-note">Loading&hellip;</div></div>
 </div>
 
@@ -380,7 +381,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v135';
+const CORE_VERSION = 'v136';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -742,7 +743,11 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     (redW>=50?`<text x="${bandX0+rStartFrac*bandW+redW/2}" y="${bandTop+bandH/2+3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" fill-opacity=".8" font-family="${FONT}">OFF TRACK</text>`:'')+
     `</g>`;
 
-  const pLast=shiftedPermit[shiftedPermit.length-1];
+  // A synced project can have a zoning card and no permit card yet (or vice
+  // versa) — fall back to whichever track actually has bars, rather than
+  // assuming permitting is always populated.
+  const pLast=shiftedPermit.length ? shiftedPermit[shiftedPermit.length-1]
+    : (shiftedZoning.length ? shiftedZoning[shiftedZoning.length-1] : {start:permitOffset, width:0});
   const pLastBarLeft=pLast.start*PX_PER_WEEK;
   const pLastBarRight=pLastBarLeft+Math.max(1,pLast.width*PX_PER_WEEK-BAR_GAP);
   // true week boundary (the bar itself stops BAR_GAP short of it) — the
@@ -881,12 +886,12 @@ const STAGE_CATALOG={
   zoning:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estMin:2, estMax:2},
     {key:'survey', fullName:'Survey', renderName:'Survey', estMin:4, estMax:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit/Review', estMin:4, estMax:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estMin:4, estMax:4},
   ],
   permitting:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estMin:2, estMax:2},
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estMin:4, estMax:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit/Review', estMin:4, estMax:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estMin:4, estMax:4},
   ],
 };
 function pidOf(name){ return name.replace(/[^a-z0-9]+/gi,'-').toLowerCase(); }
@@ -968,6 +973,7 @@ const PROJECTS=[
 PROJECTS.forEach(p=>{ p.stageState=seedStageState(p); });
 
 const OPEN_PANELS=new Set();
+let _trelloCfg=null; // {apiKey,token,boardId} — set once all three are known (see loadAdminFields/saveAdmin)
 const COMMENTS={
   'Harrington Build':[
     {author:'Byron', date:'Oct 2', text:'Confirmed scope with the client before submitting.'},
@@ -1133,11 +1139,13 @@ function renderSettingsPanel(p){
   }
   return `<div class="settings-panel" id="panel-${pid}" style="display:${OPEN_PANELS.has(pid)?'block':'none'};">
     <div class="settings-context">
-      <label class="admin-switch" data-tip="Discuss, set, then lock">
+      ${p.trelloSynced
+        ? `<span class="admin-ctrl-label" data-tip="Trello is authoritative for this project" data-tip-d="Move the card to the right list to change its stage — this panel can't edit it.">Synced from Trello &mdash; stages locked</span>`
+        : `<label class="admin-switch" data-tip="Discuss, set, then lock">
         <input type="checkbox" ${locked?'':'checked'} onchange="toggleLock('${pid}',!this.checked)">
         <span class="admin-track"><span class="admin-thumb"></span></span>
       </label>
-      <span class="admin-ctrl-label">${locked?'Locked':'Unlocked'}</span>
+      <span class="admin-ctrl-label">${locked?'Locked':'Unlocked'}</span>`}
     </div>
     <div class="shift-row">
       <span class="admin-ctrl-label">Shift on/off-track band</span>
@@ -1193,7 +1201,9 @@ function ownersInfo(p){
 function cardIcons(p){
   const pid=pidOf(p.proj), n=(COMMENTS[p.proj]||[]).length;
   const cmt=`<span class="cmt-icon" data-pid="${pid}" onclick="event.stopPropagation();openQuickComments('${pid}',this)" data-tip="Comments" aria-label="Comments"><span class="cmt-glyph">${CMT_ICON_SVG}${n?`<span class="cmt-count">${n}</span>`:''}</span></span>`;
-  const ext=`<span class="ext-icon" data-tip="Open Trello card" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span></span>`;
+  const ext=p.trelloCardId
+    ? `<a class="ext-icon" href="https://trello.com/c/${encodeURIComponent(p.trelloCardId)}" target="_blank" rel="noopener" data-tip="Open Trello card" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span></a>`
+    : `<span class="ext-icon" style="opacity:.4;cursor:default;" data-tip="No Trello card linked yet" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span></span>`;
   return `<span class="trello-group"><span class="trello-icons">${cmt}${ext}</span><span class="trello-lbl">Trello</span></span>`;
 }
 
@@ -1360,6 +1370,7 @@ async function loadAdminFields(){
     if(key) document.getElementById('apKey').value=key;
     if(token) document.getElementById('apToken').value=token;
     if(board) document.getElementById('apBoard').value=board;
+    if(key&&token&&board) _trelloCfg={apiKey:key,token:token,boardId:board};
   }catch(e){ console.error('loadAdminFields failed', e); }
 }
 async function saveAdmin(){
@@ -1372,6 +1383,9 @@ async function saveAdmin(){
       cfgSet('permit_trello_board', document.getElementById('apBoard').value.trim()),
     ]);
     status.className='ap-status ok'; status.textContent='Saved to CORE_Config.';
+    const key=document.getElementById('apKey').value.trim(), token=document.getElementById('apToken').value.trim(), board=document.getElementById('apBoard').value.trim();
+    _trelloCfg=(key&&token&&board)?{apiKey:key,token:token,boardId:board}:null;
+    if(_trelloCfg) await syncTrelloAndRender();
   }catch(e){
     status.className='ap-status err'; status.textContent='Save failed: '+e.message;
   }
@@ -1390,6 +1404,176 @@ async function testTrello(){
   }catch(e){
     status.className='ap-status err'; status.textContent='Connection failed: '+e.message;
   }
+}
+
+/* ═══════════════════ Trello sync (Round 1) — board: [PRE-CON] DESIGN
+   ABSOLUTES. 8 lists, track-prefixed: ZONING PREP/SURVEY/SUBMIT/APPROVED,
+   PERMIT PREP/ARCH-ENG/SUBMITTED/APPROVED. APPROVED isn't a stage of its
+   own — a card there just means every real bar for that track is done
+   (the existing done/✓ treatment already handles that with no changes).
+   Trello is authoritative here, same philosophy as permit-zoning-
+   tracker.html: this tool never edits a synced project's stage data — the
+   fix for wrong data is moving the card, not unlocking the settings panel
+   below. CA and Phase I/II/III still come from the manual tuning defaults
+   — that's Round 2, once this is solid. ═══════════════════════════════ */
+function tURL(path, params){
+  const qs=new URLSearchParams(Object.assign({}, params, {key:_trelloCfg.apiKey, token:_trelloCfg.token}));
+  return 'https://api.trello.com/1/'+path+'?'+qs.toString();
+}
+async function tGet(path, params){
+  const resp=await fetch(tURL(path, params));
+  if(!resp.ok) throw new Error('Trello HTTP '+resp.status+' on '+path);
+  return resp.json();
+}
+function trelloNormName(x){ return String(x==null?'':x).toLowerCase().replace(/[^a-z0-9]/g,''); }
+function trelloCfValue(card,defs,label){
+  const def=defs.find(d=>trelloNormName(d.name)===trelloNormName(label));
+  if(!def) return '';
+  const item=(card.customFieldItems||[]).find(i=>i.idCustomField===def.id);
+  if(!item) return '';
+  if(item.idValue&&def.options){
+    const opt=def.options.find(o=>o.id===item.idValue);
+    return opt&&opt.value&&opt.value.text?opt.value.text:'';
+  }
+  if(item.value){
+    if(item.value.text!=null) return item.value.text;
+    if(item.value.number!=null) return item.value.number;
+    if(item.value.date!=null) return item.value.date;
+  }
+  return '';
+}
+// "ZONING PREP" -> {category:'zoning', suffix:'prep'}; "PERMIT ARCH/ENG" ->
+// {category:'permitting', suffix:'archeng'}. A list outside this track-
+// prefixed naming (there shouldn't be any on the tracking board) is
+// ignored — not part of the tracker.
+function parseTrelloListName(name){
+  const n=trelloNormName(name);
+  if(n.indexOf('zoning')===0) return {category:'zoning', suffix:n.slice('zoning'.length)};
+  if(n.indexOf('permit')===0) return {category:'permitting', suffix:n.slice('permit'.length)};
+  return null;
+}
+// suffix (post-prefix, normalized) -> STAGE_CATALOG key. 'approved' has no
+// entry — it's resolved as "one past the last real stage" in trelloStageRank.
+const TRELLO_SUFFIX_KEY = {
+  zoning: {prep:'prep', survey:'survey', submit:'submitted-review'},
+  permitting: {prep:'prep', archeng:'archeng', submitted:'submitted-review'},
+};
+function trelloStageRank(category, suffix){
+  if(suffix==='approved') return STAGE_CATALOG[category].length;
+  const key=TRELLO_SUFFIX_KEY[category][suffix];
+  return key ? STAGE_CATALOG[category].findIndex(c=>c.key===key) : -1;
+}
+// First time this card's history shows it entering the stage at this rank
+// (ascending history, one pass) — null if that transition isn't in the
+// fetched window (Trello only serves the most recent 200 board actions).
+function trelloEnterTimeForRank(category, history, listMeta, rank){
+  for(const h of history){
+    const meta=listMeta[h.listId];
+    if(!meta||meta.category!==category) continue;
+    if(trelloStageRank(category, meta.suffix)===rank) return h.at;
+  }
+  return null;
+}
+
+async function loadTrelloProjects(){
+  const b=_trelloCfg.boardId;
+  const [lists, cards, defs, actions] = await Promise.all([
+    tGet('boards/'+b+'/lists', {fields:'name'}),
+    tGet('boards/'+b+'/cards', {fields:'name,idList,dateLastActivity', customFieldItems:'true', members:'true', member_fields:'fullName'}),
+    tGet('boards/'+b+'/customFields', {}),
+    // v1's own comment still applies: Trello only serves the last 200
+    // board actions — a done stage whose transition predates that window
+    // just renders with a plain check (no early/late star), per trelloEnterTimeForRank.
+    tGet('boards/'+b+'/actions', {filter:'updateCard:idList', limit:'200', fields:'data,type,date'}),
+  ]);
+  const listMeta={}; lists.forEach(l=>{ listMeta[l.id]=parseTrelloListName(l.name); });
+
+  const histByCard={}; // ascending {listId,at} per card
+  actions.slice().reverse().forEach(a=>{
+    const cid=a.data&&a.data.card&&a.data.card.id;
+    const afterId=a.data&&a.data.listAfter&&a.data.listAfter.id;
+    if(!cid||!afterId) return;
+    (histByCard[cid]=histByCard[cid]||[]).push({listId:afterId, at:new Date(a.date)});
+  });
+
+  const byProject={}; // trelloNormName(project) -> {name, zoning:cardInfo|null, permitting:cardInfo|null}
+  cards.forEach(c=>{
+    const meta=listMeta[c.idList];
+    if(!meta) return; // not one of the 8 tracked lists
+    const projectName=String(trelloCfValue(c,defs,'project')||'').trim();
+    if(!projectName) return;
+    const key=trelloNormName(projectName);
+    if(!byProject[key]) byProject[key]={name:projectName};
+    byProject[key][meta.category]={
+      cardId:c.id, suffix:meta.suffix,
+      owner:String(trelloCfValue(c,defs,'card owner')||'').trim(),
+      archEngOwner:String(trelloCfValue(c,defs,'arch eng owner')||trelloCfValue(c,defs,'eng owner')||'').trim(),
+      history:histByCard[c.id]||[],
+      lastActivity:c.dateLastActivity?new Date(c.dateLastActivity):null,
+    };
+  });
+
+  const liveNow=now();
+  const projects=[];
+  Object.values(byProject).forEach(entry=>{
+    const p={ proj:entry.name, jur:'City', commercial:false, address:'', trelloCardId:null,
+      permitOwner:null, archEngOwner:null, zoningOwner:null,
+      phaseWeeks:{I:6,II:18,III:6}, gradientOffset:0, trelloSynced:true };
+    ['zoning','permitting'].forEach(category=>{
+      const card=entry[category];
+      const stagesOut=[];
+      if(card){
+        const catalog=STAGE_CATALOG[category];
+        const currentRank=trelloStageRank(category, card.suffix);
+        catalog.forEach((c2,i)=>{
+          const st={name:c2.fullName, estMin:c2.estMin, estMax:c2.estMax};
+          if(i<currentRank){
+            st.status='done';
+            const enterThis=trelloEnterTimeForRank(category, card.history, listMeta, i);
+            const enterNext=trelloEnterTimeForRank(category, card.history, listMeta, i+1);
+            if(enterThis&&enterNext) st.actualWeeks=Math.max(0, Math.round((enterNext-enterThis)/(7*86400000)));
+          }else if(i===currentRank){
+            st.status='active';
+            const enterThis=trelloEnterTimeForRank(category, card.history, listMeta, i)||card.lastActivity||liveNow;
+            st.ageWeeks=Math.max(0, Math.round((liveNow-enterThis)/(7*86400000)));
+          }else{
+            st.status='future';
+          }
+          stagesOut.push(st);
+        });
+        if(!p.trelloCardId) p.trelloCardId=card.cardId;
+        if(category==='zoning') p.zoningOwner=card.owner||null;
+        else { p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
+      }
+      p[category==='zoning'?'zoningStages':'permitStages']=stagesOut;
+    });
+    projects.push(p);
+  });
+  return projects;
+}
+
+// Swaps PROJECTS in place (it's a const — mutate contents, not the
+// binding) with live Trello data, falls back to the 3 demo projects on
+// any failure (no credentials yet, network error, bad board ID, etc.),
+// and always ends in a render either way.
+async function syncTrelloAndRender(){
+  const statusEl=document.getElementById('trelloSyncStatus');
+  if(!_trelloCfg) return;
+  try{
+    const projects=await loadTrelloProjects();
+    if(projects.length){
+      PROJECTS.length=0;
+      projects.forEach(p=>{ p.stageState=seedStageState(p); if(p.trelloSynced) p.stageState.locked=true; PROJECTS.push(p); });
+      if(statusEl){ statusEl.style.display='block'; statusEl.textContent='Synced from Trello — '+projects.length+' project'+(projects.length===1?'':'s')+'.'; }
+    }else if(statusEl){
+      statusEl.style.display='block';
+      statusEl.textContent='Connected to Trello, but no card carries a "Project" value yet — showing demo data.';
+    }
+  }catch(e){
+    console.error('[trello sync]', e);
+    if(statusEl){ statusEl.style.display='block'; statusEl.textContent='Couldn’t sync from Trello — check the credentials/board ID in Setup. '+e.message; }
+  }
+  renderCards();
 }
 
 /* ═══════════════════ boot / auth (SherpaAuth) ═══════════════════ */
@@ -1418,6 +1602,7 @@ async function boot(){
   renderCards();
   updateTestBanner();
   try{ await loadAdminFields(); }catch(e){ console.error(e); }
+  if(_trelloCfg){ try{ await syncTrelloAndRender(); }catch(e){ console.error(e); } }
 }
 
 async function main(){
