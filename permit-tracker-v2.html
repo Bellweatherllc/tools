@@ -380,7 +380,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v133';
+const CORE_VERSION = 'v134';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -544,7 +544,7 @@ function barRow(stages, y, barH, groupColor, insetFirst){
   }).join('');
 }
 
-function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset, phaseWeeks }){
+function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset, phaseWeeks, zoningStartWeek }){
   const TODAY=now();
   const zoning=buildLane(zoningStages, 0);
   const permit=buildLane(permitStages, zoning.endWeek);
@@ -561,7 +561,11 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const phaseIIStart=phaseIWidth;
   const phaseIIWidth=PHASE_II_WEEKS;
   const phaseIIIStart=phaseIIStart+phaseIIWidth;
-  const seqOffset=phaseIIStart;
+  // Zoning doesn't have to wait for Phase II — Prep can kick off any week
+  // within Phase I itself. Defaults to phaseIIStart (today's behavior: no
+  // overlap with Phase I at all) when a project hasn't got the field yet,
+  // and is clamped to Phase I's own width so it can never run past it.
+  const seqOffset=Math.max(0, Math.min(phaseIIStart, zoningStartWeek!=null ? zoningStartWeek : phaseIIStart));
   const todayWeek=seqOffset+todayWeekInSeq;
 
   // last week OF Phase II (not the first week of Pre-Con, which is what
@@ -1052,6 +1056,17 @@ function shiftGradient(pid, delta){
   p.gradientOffset=(p.gradientOffset||0)+delta;
   renderCards();
 }
+function shiftZoningStart(pid, delta){
+  const p=findProject(pid);
+  const phaseIWidth=(p.phaseWeeks&&p.phaseWeeks.I)||6;
+  const current=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIWidth;
+  p.zoningStartWeek=Math.max(0, Math.min(phaseIWidth, current+delta));
+  renderCards();
+}
+function zoningStartLabel(zoningStartWeek, phaseIWidth){
+  if(zoningStartWeek>=phaseIWidth) return 'Start of Phase II';
+  return 'Phase I, wk '+(zoningStartWeek+1);
+}
 /* Posting really does reach Trello when a project carries a real
    trelloCardId — Trello's own comments endpoint (POST .../actions/comments)
    — gated on that plus saved credentials. None of the mock projects have a
@@ -1086,6 +1101,8 @@ async function postComment(pid, projName){
 function renderSettingsPanel(p){
   const pid=pidOf(p.proj), locked=p.stageState.locked, dis=locked?'disabled':'';
   const gradOffset=p.gradientOffset||0;
+  const phaseIWidth=(p.phaseWeeks&&p.phaseWeeks.I)||6;
+  const zoningStartWeek=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIWidth;
   function stageRow(category, c){
     const st=p.stageState[category][c.key]||{enabled:false, estMin:c.estMin, estMax:c.estMax};
     return `<div class="stage-row">
@@ -1109,6 +1126,14 @@ function renderSettingsPanel(p){
         <button type="button" class="shift-btn" onclick="shiftGradient('${pid}',-1)" aria-label="Shift one week earlier">&minus;</button>
         <span class="shift-readout">${gradOffset===0?'0 wks':(gradOffset>0?'+':'')+gradOffset+' wk'+(Math.abs(gradOffset)===1?'':'s')}</span>
         <button type="button" class="shift-btn" onclick="shiftGradient('${pid}',1)" aria-label="Shift one week later">&plus;</button>
+      </div>
+    </div>
+    <div class="shift-row">
+      <span class="admin-ctrl-label">Zoning Prep start</span>
+      <div class="shift-controls">
+        <button type="button" class="shift-btn" ${dis} onclick="shiftZoningStart('${pid}',-1)" aria-label="Start zoning one week earlier">&minus;</button>
+        <span class="shift-readout">${esc(zoningStartLabel(zoningStartWeek, phaseIWidth))}</span>
+        <button type="button" class="shift-btn" ${dis} onclick="shiftZoningStart('${pid}',1)" aria-label="Start zoning one week later">&plus;</button>
       </div>
     </div>
     <div class="settings-cols">
@@ -1220,7 +1245,7 @@ function renderCards(){
   const list=visibleProjects();
   document.getElementById('cards').innerHTML = list.length ? list.map(p=>{
     const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
-    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks});
+    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek});
     const pid=pidOf(p.proj);
     const wks=Math.round(r.weekDelta);
     const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
