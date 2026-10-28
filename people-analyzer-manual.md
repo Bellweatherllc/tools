@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v6*
+*late-October 2026 edition · People Analyzer v15*
 
 ## Part I — Using People Analyzer
 
@@ -12,7 +12,7 @@ For anyone who evaluates team members or runs an evaluation round. No prior know
 
 People Analyzer is where Bellweather rates each team member against the **five Core Values** and **GWC**:
 
-- **The five Core Values:** Disciplined, Humbly Confident, Always Improving, Forward-Looking, and Cares & Connects with People.
+- **The five Core Values:** Disciplined, Humbly Confident, Always Improving, Forward-Looking, and Cares & Connects.
 - **GWC** means *Gets it*, *Wants it*, and has the *Capacity* to do it.
 
 Several evaluators rate each person independently. The tool combines their answers into a **consensus** for each person and gives an overall status.
@@ -27,7 +27,7 @@ Evaluations are sensitive, so they're stored in **OperationsSecure**, the restri
 
 ### Admins and everyone else
 
-What you see depends on your **People Analyzer** role, set by an admin on the **Access** tab of Team Members.
+What you see depends on your **People Analyzer** role, set on the **Access** tab of Team Members, where the People Analyzer column offers **Member** or **Admin**, as it does for every CORE tool.
 
 | | Admin | Everyone else |
 |---|---|---|
@@ -36,7 +36,7 @@ What you see depends on your **People Analyzer** role, set by an admin on the **
 | **My Self-Evaluations** | — | Yes, their own |
 | **⚙ Admin panel and 🗑 Manage** | Yes | Hidden |
 
-> **The screen is one layer; SharePoint is the other.** Hiding Summaries and Admin stops people *seeing* them in the tool. It doesn't stop a determined person reading the lists directly, because anyone who can submit an evaluation has some access to `PA_Evaluations`. The real protection is the list's **item-level permissions** in OperationsSecure — see *Locking down PA_Evaluations* in Part VI.
+> **The screen is one layer; SharePoint is the other.** Hiding Summaries and the Admin panel stops people *seeing* them in the tool. It doesn't stop a determined person reading the lists directly, because anyone who can submit an evaluation has some access to `PA_Evaluations`. The real protection is the list's **item-level permissions** in OperationsSecure — see *Locking down PA_Evaluations* in Part VI.
 
 ### Offline mode
 
@@ -61,7 +61,7 @@ The **Admin** switch and ⚙ gear in the header (admins only) open the Admin pan
 
 ### Self-evaluations
 
-If you're not an admin, Evaluate is set up for your self-evaluation: you're already picked as the Team Member, and your name is locked. Pick the session, rate yourself, and submit.
+If you're not an admin, Evaluate is set up for your self-evaluation: your name is filled in as both the Evaluator and the Team Member, with nothing to choose. If only one session is open it's already picked; rate yourself and submit.
 
 - You can submit **one self-evaluation per session**. If you need to change it, ask an admin to delete it, then submit again.
 - Afterwards, **My Self-Evaluations** shows what you submitted for each session, with your comments. It doesn't show how anyone else rated you.
@@ -70,15 +70,15 @@ Admins see self-evaluations in Summaries, kept **separate**: they never count to
 
 ### Step by step
 
-1. **Your Name** is filled in from the roster. Leave it as it is. (See *Evaluator names matter* below.)
-2. Pick the **Session**, for example *Q1 2026 Review*. Only sessions that are switched on in Admin appear here.
-3. Pick the **Team Member**. The list is grouped by department and shows **active** team members only. (Non-admins see only themselves.)
+1. **Evaluator** is filled in from your sign-in — your name as it appears on the CORE roster. It can't be changed.
+2. Pick the **Session**, for example *Q1 2026 Review*. Only sessions that are switched on in the Admin panel appear here; if only one is open, it's picked for you.
+3. Pick the **Team Member**. The list is grouped by department and shows **active** team members only. (Everyone else sees only themselves.)
 4. Rate each Core Value:
    - **+** — lives it.
    - **+/−** — sometimes.
    - **−** — doesn't.
 
-   Under each value is a short list of what it looks like in practice.
+   Under each value is a short list of what it looks like in practice. The wording comes from the Core Values sheet revised **Aug 3, 2026**; the revision date shows next to the Core Values heading.
 5. Rate **Gets It**, **Wants It**, and **Capacity to Do It** as **Y** or **N**.
 6. Optionally, add a comment to any Core Value. Comments appear in Summaries and in the Excel export.
 7. Click **Submit Evaluation**. Every rating must be filled in first.
@@ -87,7 +87,7 @@ The form clears, and you can pick the next person.
 
 ### Evaluator names matter
 
-The tool counts evaluators **by the name in the Your Name box**. *Joey Smith* and *Joey* count as two different people. Keep the name as your account fills it in, so that the "N of M" counts in Summaries come out right.
+The tool counts evaluators **by name**. Signed in, the name always comes from the CORE roster, so it's consistent. Older evaluations were typed in by hand, so *Joey Smith* and *Joey* there count as two different people. (In offline mode you type your name; nothing is saved.)
 
 ### Changing an evaluation
 
@@ -132,7 +132,7 @@ Self-evaluations aren't counted in either number. The **Self** column next to it
 
 ### One person's view
 
-The top of the individual view is the **Trajectory**: a grid with one column per session, showing the consensus and status each round. Sessions appear in the order set in Admin.
+The top of the individual view is the **Trajectory**: a grid with one column per session, showing the consensus and status each round. Sessions appear in the order set in the Admin panel.
 
 Below that, each session has its own block. The block shows:
 
@@ -160,9 +160,9 @@ The **🗑 on a session block header** deletes that person's evaluations for tha
 
 Every delete asks first. Deletes are permanent, and there's no undo.
 
-## Part IV — Admin
+## Part IV — The Admin panel
 
-Admin is for admins only. The **Admin** switch in the header opens and closes the panel.
+The Admin panel is for admins only. The **Admin** switch in the header opens and closes it.
 
 ### Evaluation sessions
 
@@ -173,6 +173,16 @@ Admin is for admins only. The **Admin** switch in the header opens and closes th
 
 Switching on or off and reordering save to SharePoint straight away.
 
+### SharePoint Access Check
+
+This section reads the lock-down settings straight from SharePoint each time the panel opens, so you can confirm them without going into SharePoint. Every line should show a green ✓.
+
+- **PA_Evaluations** — it has its own permissions; people can read and edit only their own evaluations; and **you** can submit, see everyone's evaluations, and delete.
+- **PA_Sessions** — it has its own permissions, and you can create and change sessions.
+- **Who has access** — if you're an Owner of OperationsSecure, it also lists everyone with access to each list, and checks that staff ("Everyone except external users") can submit and can see sessions. If you're not an Owner, that list is hidden; ask one non-admin to sign in instead and check they see only Evaluate and My Self-Evaluations.
+
+A red ✗ comes with the setting to change. If an admin can't see everyone's evaluations, the tool also warns them when they sign in, because their Summaries would otherwise look complete when it isn't.
+
 ### SharePoint Links
 
 This section checks the connection between the tool and SharePoint. When everything is healthy it reads *All evaluations are linked to a team member.* Otherwise it can show three kinds of message:
@@ -181,11 +191,79 @@ This section checks the connection between the tool and SharePoint. When everyth
 - **"N older evaluations are matched by name only"** with a **Link** button. Click it. It records each evaluation's team member Id, so renaming that person later won't separate them from their history. Ratings and names don't change.
 - **"N evaluations don't match anyone on the roster."** These are hidden from Summaries. See *Someone's evaluations disappeared* below.
 
+## Part IV-A — The annual review
+
+The January review is the **annual review**. It replaces the January 6-month review; June stays a regular review.
+
+### Setting it up (admins)
+
+1. In the Admin panel, type the session name (e.g. *2027 Annual Review*), tick **Annual review**, and click **Create**.
+2. Under **Annual Review Scorers**, pick the **HOD** and **second seat** for each staffer. Both must be admins. Each staffer also scores themselves, so everyone gets three scorers. The panel counts how many staffers have both set.
+3. Switch the session on when you're ready for people to start.
+
+### Scoring
+
+- **Admins** see only the staffers they're assigned to (plus themselves) in the Team Member list for an annual session. The form says whether you're scoring as **HOD** or **Second seat**.
+- **Staff** score themselves as usual.
+- Everyone rates the **Core Values** and **GWC** as usual, plus the **V/TO**: Core Focus, 10-Year Target, and 3-Year Picture & 1-Year Plan, each + / +/− / − with an optional comment.
+- The staffer also answers **eNPS**: *"How likely are you to recommend Bellweather as a place to work?"* 0–10. It's required on the self-evaluation and not asked of the HOD or second seat.
+- Each scorer scores each staffer once per annual review.
+
+### Reading the results
+
+- In Summaries with the annual session picked, each person's view shows the HOD and second seat side by side (tagged **HOD** and **2nd seat**), their consensus, and the self-score to the right — for Core Values, GWC and V/TO.
+- **eNPS is only ever shown as the company score** — % promoters (9–10) minus % detractors (0–6) — at the top of the annual session's summary. No one's individual answer appears in the tool. (SharePoint itself records who submitted each evaluation, so a site Owner could look it up in the list.) Staff see their own answer under My Self-Evaluations.
+### The summary page (admins)
+
+Each staffer has one summary page per annual review. Open it from the **Summary** column in Summaries (annual session picked), or the **Summary page** button on a person's annual session block. The button shows *Not started*, *Draft* or *Complete*.
+
+- **Ratings** — HOD, second seat and self side by side for every Core Value, GWC item and V/TO part, and a **Final (agreed)** column you set in the meeting. **Fill final where HOD & second seat agree** fills the easy ones; set the rest by hand.
+- **Wins, Opportunities, Goals for next year** — one per line.
+- **Compensation & benefits** — pre-filled from the person's most recent imported review (it says which). Edit amounts, add or remove lines; the total adds itself up. Record the **new salary** and any notes.
+- **PTO** — PTO days, sick days, paid holidays, notes (pre-filled where the old review had them).
+- **Annual bonus** — bonus available and bonus earned are typed in; nothing is calculated.
+- **Meeting close** — record the meeting on a phone or any app, then paste the transcript or drop a `.txt`, `.vtt` or `.srt` file (for a Word transcript, copy the text and paste it). Click **Copy prompt for Claude**, paste it into Claude, paste Claude's draft into **The close**, and edit it. The prompt includes the names, every score and comment, wins/opportunities/goals and the transcript — never eNPS, and it asks Claude not to restate compensation.
+- **Save** keeps it as a draft; **Save & mark complete** stamps the date and who completed it (**Reopen** undoes that). Leaving with unsaved changes asks first.
+- **Print / PDF** prints a clean copy of the page. Summary pages are admin-only; staff don't get a copy.
+
+Everything on the page is stored on the staffer's annual record in `PA_ReviewHistory` (admins only); the transcript is saved as a `transcript.txt` attachment on that record.
+
+> When the Azure Function proxy is deployed, set `AI_PROXY_URL` in the page and the copy step becomes a **Draft the close with Claude** button. Until then nothing is sent anywhere automatically.
+
+## Part IV-B — Review History (admins)
+
+The **History** tab brings in past review workbooks — the old "6-Month Performance Review & Bonus" files — so years of reviews sit next to the current evaluations.
+
+### Importing
+
+1. Drag one or more `.xlsx` files onto the drop area (or click it to choose files). Nothing is saved yet.
+2. Each **sheet** becomes one review in the preview. The tool works out:
+   - **the person** from the first word of the file name (*Sean*_6-Month…), or the sheet initials (*SF* - 01-26);
+   - **the month** from the end of the sheet name (*01-26* = January 2026);
+   - **the ratings** — +/− from newer sheets, 1–5 averages from older ones — plus every descriptor score, comment, win, opportunity, outcome, note, bonus and compensation line.
+3. Check each row. Fix the person or month where it's blank (a "90 day check in" sheet has no date in its name). **View** shows exactly what was read.
+4. Click **Import**. Rows already in history are unticked, so dropping the same file twice doesn't double up.
+
+The reader doesn't depend on fixed cell positions. Grey headings mark the sections; anything that doesn't fit a section is kept under **Other notes on the sheet**, with its cell reference, so nothing is lost. The old 1–5 numbers are kept as they were — not converted to +/−. Pre-2023 sheets with the earlier values (Reliability, Proactive & Prepared…) show as a separate *pre-2023 set*.
+
+### Viewing
+
+- **History tab** — every imported review, grouped by person, newest first. Click a review to open it.
+- **Summaries → a person** — a **Review History** section under the Trajectory shows that person's past reviews.
+- **✕ remove from history** deletes one imported review (the Excel file isn't touched). In Summaries it appears when 🗑 Manage is on.
+
+### Who can see it
+
+Imported reviews include **salary, bonus and benefits**, so `PA_ReviewHistory` must be readable by People Analyzer admins only — its own permissions, with *Operations Secure Members*, *Visitors* and staff removed. The Admin panel's **SharePoint Access Check** confirms it. Staff never load this list.
+
 ## Part V — Repair: when something looks wrong
 
 ### I should be an admin but only see Evaluate and My Self-Evaluations
 
-1. Hover over your name chip in the header. It shows the account you're signed in with and your role.
+1. Hover over your name chip in the header. It shows the address you signed in with, which roster entry the tool matched you to (and whether by email or by name), and the People Analyzer role it read. The same line appears in the note on the Evaluate tab.
+   - *not found on the CORE roster* — see the next item.
+   - *People Analyzer role: blank* — set it to Admin (step 2).
+   - *couldn't load the CORE roster* — a SharePoint problem reading BWCore. Reload; if it persists, the message names the error.
 2. In Team Members → Access, set your **People Analyzer** column to **Admin**.
 3. Reload People Analyzer.
 
@@ -197,7 +275,7 @@ The tool matches the email address you sign in with against the **Email** on you
 
 ### "You already submitted a self-evaluation for this session"
 
-Non-admins get one self-evaluation per session. An admin can delete the old one (Summaries → the person → 🗑 Manage → ✕ remove); then the person can submit again.
+Everyone except admins gets one self-evaluation per session. An admin can delete the old one (Summaries → the person → 🗑 Manage → ✕ remove); then the person can submit again.
 
 ### Someone isn't in the Team Member dropdown
 
@@ -211,9 +289,9 @@ Work through these in order:
 ### Someone's evaluations disappeared from Summaries
 
 - **Check the session filter first.** It's often still set to an earlier round.
-- **If they still don't appear,** open Admin → SharePoint Links. If their old name is listed under *don't match anyone on the roster*, their evaluations were saved under a name that no longer matches the roster and were never linked to their Id. To fix it:
+- **If they still don't appear,** open the Admin panel → SharePoint Links. If their old name is listed under *don't match anyone on the roster*, their evaluations were saved under a name that no longer matches the roster and were never linked to their Id. To fix it:
   1. In Team Members, temporarily rename the person back to the exact name shown.
-  2. Reload People Analyzer, then click **Link** in Admin.
+  2. Reload People Analyzer, then click **Link** in the Admin panel.
   3. Rename them back in Team Members.
 
   Linked evaluations follow the person from then on.
@@ -270,29 +348,41 @@ The version badge in the header shows which build you have. After an update, add
 
 | List | Site | Holds |
 |---|---|---|
-| `PA_Sessions` | OperationsSecure | One row per evaluation round. Columns: `SessionName`, `CreatedDate`, `IsActive`, `SortOrder` |
-| `PA_Evaluations` | OperationsSecure | One row per evaluator per person per session. Columns: `SessionId`, `EmployeeId`, `EmployeeName`, `EvaluatorName`, `EvaluationDate`, the five Core Values, `GetsIt`, `WantsIt`, `Capacity`, `Comments` |
+| `PA_Sessions` | OperationsSecure | One row per evaluation round. Columns: `SessionName`, `CreatedDate`, `IsActive`, `SortOrder`, `SessionType` ("Annual" for an annual review) |
+| `PA_Evaluations` | OperationsSecure | One row per evaluator per person per session. Columns: `SessionId`, `EmployeeId`, `EmployeeName`, `EvaluatorName`, `EvaluationDate`, the five Core Values, `GetsIt`, `WantsIt`, `Capacity`, `Comments`, `AnnualData` (V/TO ratings and comments, eNPS, and the scorer's role, as JSON) |
 | `CORE_TeamMembers` | BWCore | The roster. **Read only** from this tool. Columns used: `EmployeeName`, `Department`, `Active`, `email`, `PeopleAnalyzerRole` |
 
 ### How the pieces connect
 
 - **Sessions.** `SessionId` on an evaluation is the Id of its `PA_Sessions` row. Deleting a session deletes its evaluations too.
-- **People.** `EmployeeId` on an evaluation is the person's Id in `CORE_TeamMembers`. Evaluations without one fall back to an exact name match, ignoring capitals and extra spaces. **Link** in Admin fills it in.
+- **People.** `EmployeeId` on an evaluation is the person's Id in `CORE_TeamMembers`. Evaluations without one fall back to an exact name match, ignoring capitals and extra spaces. **Link** in the Admin panel fills it in.
 - **Names stored on evaluations.** `EmployeeName` holds the name as it was at the time of the evaluation. It's kept for the record. The tool shows the person's current roster name.
 - **Comments.** `Comments` holds the per-value comments as a small JSON record, keyed by value.
 - **Ratings.** They're stored as `+`, `+/-`, `-`, `Y`, and `N`.
 
 ### Locking down PA_Evaluations
 
-The screen-level roles keep non-admins out of Summaries and Admin, but SharePoint has to do the real work. In OperationsSecure:
+The screen-level roles keep everyone except admins out of Summaries and the Admin panel, but SharePoint has to do the real work. Only an **Owner** of OperationsSecure can make these changes; group Members can't.
 
-1. **PA_Evaluations** → List settings → Advanced settings → **Item-level Permissions**:
+1. **PA_Evaluations** → ⚙ → List settings → **Permissions for this list** → **Stop Inheriting Permissions**. Then grant:
+   - **Everyone except external users** — **Contribute**
+   - each admin — **Design** (it includes *Override List Behaviors*, which lets them see everyone's evaluations)
+2. **PA_Evaluations** → List settings → Advanced settings → **Item-level Permissions**:
    - Read access: **Read items that were created by the user**
    - Create and Edit access: **Create items and edit items that were created by the user**
-2. Give staff **Contribute** on `PA_Evaluations` and **Read** on `PA_Sessions`.
-3. Make sure admins hold **Full Control** (or another level that includes *Override List Behaviors*). Without it, item-level permissions hide other people's evaluations from admins too, and Summaries would only show what each admin submitted.
+3. **PA_Sessions** → List settings → Permissions for this list → **Stop Inheriting Permissions**. Then grant **Everyone except external users** — **Read**, and each admin — **Contribute**.
+
+Owners of OperationsSecure see everything regardless. Group *Members* keep Edit, which with item-level permissions on means they see only their own evaluations, unless they're also granted Design as an admin.
+
+Keep the people set to Admin for People Analyzer in Team Members and the people granted Design in step 1 the same. Then check it all with **Admin panel → SharePoint Access Check**.
 
 With that in place, a non-admin's browser only ever receives their own evaluations, whatever they try.
+
+### PA_ReviewHistory
+
+Annual review scorer assignments are stored here too, one row per staffer per annual session (`ReviewType` = *Annual Review*, `SourceFile` = `session:<id>`); they don't appear in the History tab.
+
+One row per imported review sheet, on OperationsSecure. Columns: `EmployeeId` (Number), `EmployeeName`, `ReviewDate` (Date only — the first of the month), `ReviewLabel` (the sheet name), `ReviewType` (the form title), `Reviewer` (comment authors), `SourceFile`, and `ReviewData` (Multiple lines of text, **plain text**) holding the parsed sheet as JSON. If the History tab says the list isn't set up, it lists exactly what to create.
 
 ### What People Analyzer never does
 

@@ -379,7 +379,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .tl-tally[data-person]{cursor:pointer;} /* v890: the week popup lives here — advertise it */
 .ms-tall:hover,.tier-dot:hover,.crit-dot:hover,.pd-dot:hover{filter:brightness(1.16);cursor:pointer;}
 .ms-tall.ms-ca{box-shadow:0 0 0 1.5px #fff;} /* v913: 1.5px opaque white stroke, signed & unsigned */
-.prod-cue-bar{transition:height .1s,top .1s;} .prod-cue-bar:hover{height:5px!important;box-shadow:0 0 0 1px rgba(255,255,255,.5);} /* v917: production-phase cue on the Design row */
+/* .prod-cue-bar: v917 production-phase cue on the Design row — static, non-interactive */
 .fc-proj-tooltip .tt-edit-link{display:flex;align-items:center;gap:4px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.38);cursor:pointer;transition:color .1s;}
 .fc-proj-tooltip .tt-edit-link:hover{color:var(--gl);}
 /* MGR pill — compact rectangle replacing "Edit in Manager" */
@@ -570,7 +570,7 @@ body.is-transitioning .section:not(.is-focus-outgoing){animation:hdrFadeIn 200ms
   position:relative;background:#fff;border-bottom:1px solid rgba(0,0,0,.04);overflow:visible;
 
 }
-.lane-row:hover{background-color:#FDFCF9;}
+.lane-row:hover{background-color:rgba(31,46,62,.12);}
 .lane-row.pan-hover,.tl-ms-row.pan-hover{cursor:grab;}
 body.is-panning{cursor:grabbing!important;}
 body.is-panning *{cursor:grabbing!important;}
@@ -3533,7 +3533,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1151';
+const CORE_VERSION = 'v1157';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -6152,6 +6152,11 @@ function buildTlLcProject(proj,lcId){
     // Collapsed: full rowH with border-bottom separator rendered on the bar (reliable at all zoom levels)
     const bandH=rowH;
     const bandTop=0;
+    // v1152: span the hover/date-ring gate to where bars actually exist, same convention
+    // as the PM area's collapsed project row (rowEl.dataset.spanStart/spanEnd there).
+    const _lcBounds=[];
+    phases.forEach(ph=>{ if(ph.startWeek!=null&&ph.durWeeks>0){ _lcBounds.push(ph.startWeek,ph.startWeek+ph.durWeeks); } });
+    if(_lcBounds.length){ laneRow.dataset.spanStart=Math.min(..._lcBounds); laneRow.dataset.spanEnd=Math.max(..._lcBounds); }
     phases.forEach(ph=>{
       if(ph.startWeek===null||ph.durWeeks<=0) return;
       const b=el('div','');
@@ -6623,9 +6628,8 @@ function populateBars(row,proj,laneId,includeControls,showJunctions,isGhost){
 }
 
 // v917 — two thin green bars on the Design row marking the production phases
-// (Pre-con, Construction) with a visible break between them. Positioned in the
-// row's week space, non-interactive for drag, but clickable to read the span.
-function _prodCueDate(w){ return wkMon(w).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}); }
+// (Pre-con, Construction) with a visible break between them. Purely a visual
+// cue — non-interactive, so it never intercepts hover/click from the row below.
 function _appendProdCue(laneRow,proj,rowH){
   const phs=(proj.productionLane&&proj.productionLane.phases)||[];
   if(!phs.length) return;
@@ -6636,18 +6640,7 @@ function _appendProdCue(laneRow,proj,rowH){
     const left=w2px(ph.startWeek)+GAP;
     const width=Math.max(2,w2px(ph.durWeeks)-GAP*2);
     const cue=el('div','prod-cue-bar');
-    cue.style.cssText='position:absolute;top:'+cueTop+'px;left:'+left+'px;width:'+width+'px;height:'+CUE_H+'px;background:'+(ph.color||'#4A8A60')+';border-radius:1.5px;cursor:pointer;z-index:3;';
-    const s=ph.startWeek, e=ph.startWeek+ph.durWeeks;
-    cue.dataset.tip=ph.name+': '+_prodCueDate(s)+' \u2192 '+_prodCueDate(e);
-    cue.addEventListener('click',ev=>{
-      if(DRAG||Date.now()-_gdbDragGuard<250) return; ev.stopPropagation();
-      const r=cue.getBoundingClientRect();
-      const html='<div class="gdb-title">'+escH(ph.name)+' (Production)</div>'
-        +'<div class="gdb-line">Start: '+escH(_prodCueDate(s))+'</div>'
-        +'<div class="gdb-line">End: '+escH(_prodCueDate(e))+'</div>'
-        +'<div class="gdb-line" style="opacity:.6;">'+ph.durWeeks+' weeks</div>';
-      gdbToggle('prodcue-'+proj.id+'-'+ph.id, r.left+r.width/2, r.top, html);
-    });
+    cue.style.cssText='position:absolute;top:'+cueTop+'px;left:'+left+'px;width:'+width+'px;height:'+CUE_H+'px;background:'+(ph.color||'#4A8A60')+';border-radius:1.5px;pointer-events:none;z-index:3;';
     laneRow.appendChild(cue);
     // v921 — white tick in the gap between consecutive production phases, to
     // sharpen the light-green → dark-green handoff.
@@ -9789,7 +9782,7 @@ document.addEventListener('mousemove',e=>{
     const mw=_markerWeek(mk); if(mw!=null) _gdbRingHeaderWeek(mk,mw); else _gdbClearHeaderRing();
     return;
   }
-  const t=e.target.closest&&(e.target.closest('.phase-bar')||e.target.closest('.lanes-wrap.proj-collapsed .lane-row')||e.target.closest('.tl-tally[data-person]')); // v890: time strips too
+  const t=e.target.closest&&(e.target.closest('.phase-bar')||e.target.closest('.lane-row')||e.target.closest('.tl-tally[data-person]')); // v890: time strips too; v1153: any lane-row cell, project or not, not just where a bar/band exists
   if(_gdbHoverCell&&(!t||_gdbHoverCell.parentNode!==t)){ _gdbHoverCell.remove(); _gdbHoverCell=null; }
   if(!t){ _gdbClearHeaderRing(); return; }
   const isBar=t.classList.contains('phase-bar');
@@ -9797,10 +9790,6 @@ document.addEventListener('mousemove',e=>{
   if(!dur) return;
   const r=t.getBoundingClientRect(); if(r.width<=0) return;
   const idx=Math.max(0,Math.min(dur-1,Math.floor((e.clientX-r.left)/r.width*dur)));
-  if(!isBar&&t.dataset.spanStart!=null){ // collapsed band: only where bars actually exist (v889); time strips have no span and tint everywhere (v890)
-    const ss=parseInt(t.dataset.spanStart), se=parseInt(t.dataset.spanEnd);
-    if(isNaN(ss)||idx<ss||idx>=se){ if(_gdbHoverCell){ _gdbHoverCell.remove(); _gdbHoverCell=null; } if(typeof _gdbClearHeaderRing==='function') _gdbClearHeaderRing(); return; }
-  }
   if(!_gdbHoverCell){ _gdbHoverCell=document.createElement('div'); _gdbHoverCell.className='gdb-hover-cell'; t.appendChild(_gdbHoverCell); }
   _gdbHoverCell.style.left=(idx/dur*100)+'%'; _gdbHoverCell.style.width=(100/dur)+'%';
   // v909 — mirror the highlight onto the date row: absolute week = bar start + idx
@@ -9845,7 +9834,7 @@ document.addEventListener('click',e=>{
   if(e.target.closest('button')||e.target.closest('.resize-hdl')||e.target.closest('.resize-hdl-left')||e.target.closest('.bar-caret')) return;
   const bar=e.target.closest('.phase-bar');
   const toBlk=null; // v929: time-off strips open the day calendar on click, not the date bubble
-  const colRow=(bar||toBlk)?null:e.target.closest('.lanes-wrap.proj-collapsed .lane-row'); // v889
+  const colRow=(bar||toBlk)?null:(e.target.closest('.lanes-wrap.proj-collapsed .lane-row')||e.target.closest('.lc-proj-tl.lc-proj-collapsed .lane-row')); // v889; v1152: LC collapsed rows too
   if(!bar&&!toBlk&&!colRow){
     if(!e.target.closest('.ms-tall,.tier-dot,.crit-dot,.pd-dot')) gdbHide();
     return;
@@ -16837,6 +16826,30 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1157', date: '2026-10-27',
+    entries:['Eased the Gantt row hover highlight back down (.18 → .12). Over a colored phase bar the wash is hidden under the bar regardless, so this only shows up where it matters — the blank/white stretches of a row with no project content — where .18 read as too dark. .lane-row only exists in the Design and Production Gantts, so Sales and Operations are untouched.'],
+  },
+  {
+    version: 'v1156', date: '2026-10-27',
+    entries:['The Design row’s thin Pre-Con/Construction cue strip is now purely visual — removed its hover growth/glow effect and its click-to-open date popup (v1155 only removed its tooltip text). It no longer reacts to the mouse at all, so the row’s own hover highlight shows through it cleanly.'],
+  },
+  {
+    version: 'v1155', date: '2026-10-27',
+    entries:['Removed the hover tooltip on the thin Pre-Con/Construction cue strip on the Design row — clicking it still opens the date popup, only the mouseover note is gone.'],
+  },
+  {
+    version: 'v1154', date: '2026-10-27',
+    entries:['Gantt row hover highlight darkened again — the v1153 navy wash was still too faint to register at a glance. More than doubled its opacity.'],
+  },
+  {
+    version: 'v1153', date: '2026-10-27',
+    entries:['Production/Design screens: the row-highlight-and-date-outline hover now works over any cell in a project’s row — not just over a phase bar or a collapsed band’s own span — so gaps before/after/between phases ring the matching date too. Also made the row highlight itself visible: it was a near-white tint on a white row (#FDFCF9 on #fff) that was effectively invisible; it’s now a visible navy wash.'],
+  },
+  {
+    version: 'v1152', date: '2026-10-26',
+    entries:['Production screen: hovering a project’s collapsed phase band in the LC (Labor Capacity) area now rings the matching week in the date header, same as the PM area already did — clicking it opens the date bubble too. Collapsed LC bands had no hover/click target at all before this, so the feature only ever worked in PM.'],
+  },
   {
     version: 'v1151', date: '2026-10-23',
     entries:['Fixed the Key Dates panel (Design and Production) showing dates that didn’t match the Gantt for every project on both screens. The Matterport-scan cell is inserted into every row right after DA Sign (Design) or Con Start (Production), but neither column list had a header for it — so every date after that point rendered one column to the left of its actual label: Ph I Start showed the Matterport icon’s slot, Ph II Start showed what was really Ph I Start, and so on all the way down, with the true last column (Ph III Start in Design, % Complete in Production) spilling out into an unlabeled trailing column. Added the missing “MP” header in both lists so every column lines up with what it actually shows.'],

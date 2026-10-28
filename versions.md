@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-10-23
+Last updated: 2026-10-27
 
 ## Live tools
 
@@ -25,7 +25,7 @@ Last updated: 2026-10-23
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v6 |
+| People Analyzer | `people-analyzer.html` | v15 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -33,11 +33,11 @@ Last updated: 2026-10-23
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v25 |
+| Team Members | `team-members.html` | v28 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v4 |
-| CORE System Map | `core-system-map.html` | v13 |
+| CORE System Map | `core-system-map.html` | v16 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -68,6 +68,17 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-10-28** — People Analyzer v14 → v15: annual review, part 2 — the **summary page** (admins). Per staffer per annual session: HOD / second seat / self side by side with a Final (agreed) column (auto-fill where HOD and second seat agree); wins, opportunities, goals; compensation & benefits pre-filled from the last imported review, editable, totalled in integer cents; new salary; PTO; bonus available/earned (entered, not calculated); meeting close with transcript paste or .txt/.vtt/.srt drop, a prepared Claude prompt to copy (no eNPS, no comp figures), and the close text. Save, Save & mark complete / Reopen, Print / PDF. Stored on the annual record in `PA_ReviewHistory`; transcript as a `transcript.txt` attachment. Entry points: Summary column in the annual session table and a button on each person's annual block. `apiCall()` / `AI_PROXY_URL` scaffold ready for the Azure Function proxy (empty — not deployed).
+- **2026-10-27** — People Analyzer v13 → v14: annual review, part 1. Sessions can be created as **Annual review** (`SessionType` on `PA_Sessions`; until that column exists, a name containing "Annual" counts). Admin panel → **Annual Review Scorers** assigns each staffer's HOD and second seat (admins), stored as admin-only records in `PA_ReviewHistory`. In an annual session, admins see only the staffers they score and the form shows their role; everyone rates V/TO (Core Focus, 10-Year Target, 3-Year Picture & 1-Year Plan); the staffer answers eNPS (0–10, required). V/TO, eNPS and role are saved in a new `AnnualData` column on `PA_Evaluations`. Summaries tag HOD / 2nd seat / self and add a V/TO grid; the company eNPS shows for the annual session, never individual answers. One score per scorer per staffer per annual review.
+- **2026-10-27** — People Analyzer v12 → v13: new admin-only **History** tab — drag-and-drop import of past review workbooks into a new `PA_ReviewHistory` list. Each sheet is one review; the parser finds sections by their grey headings rather than fixed cells, handles +/− and 1–5 layouts, the pre-2023 value set, legacy and threaded comments, wins/opportunities/outcomes/notes, bonus and compensation panels, and keeps anything else with its cell reference. Preview lets you fix person/month before saving; re-imports are skipped. History shows grouped by person and inside each person's Summaries view. The Access Check covers `PA_ReviewHistory` (must not inherit; no member/staff access — it holds compensation). Tested on the Sean, Hayley and Stephanie workbooks: 21 reviews. CORE System Map v15 → v16: `PA_ReviewHistory` added.
+- **2026-10-27** — People Analyzer v11 → v12: Evaluate top section rebuilt as one compact card — Evaluator, Session and Team Member in a row, one-line hint. The evaluator is set from the sign-in (roster name, else Microsoft account name) and can't be edited; offline mode still asks. Members see their own name as both Evaluator and Team Member, with no dropdown. A lone open session is picked automatically. The large guidance box is gone, and the member note no longer shows sign-in diagnostics (the name-chip tooltip still does).
+- **2026-10-27** — People Analyzer v10 → v11: Core Values descriptors replaced with the revised sheet (NEW_Core_Values_v2, 08-03-26); "Cares & Connects with People" is now "Cares & Connects". The Evaluate form shows "Revised Aug 3, 2026" beside the Core Values heading (one `CORE_VALUES_REVISED` constant), and the text export carries it. The Excel export's EOS-form label is unchanged.
+- **2026-10-27** — People Analyzer v9 → v10: "HOD" relabeled back to **Admin** throughout the tool and manual (header switch, Admin panel, messages, name chip), matching Team Members and every other tool. Team Members v27 → v28: People Analyzer legend description no longer says "HODs". CORE System Map v14 → v15: People Analyzer entry says Admin.
+- **2026-10-27** — Team Members v26 → v27: People Analyzer column back to **Member / Admin**, consistent with every other tool. People Analyzer v8 → v9: its messages and manual now say to set **Admin** in Team Members; inside People Analyzer that role is still called HOD.
+- **2026-10-27** — People Analyzer v7 → v8: says why someone is or isn't an HOD — the Evaluate notice and the name-chip tooltip show the sign-in address, the roster entry matched (and whether by email or name), and the raw People Analyzer role. Each list now loads independently; a roster load failure is shown on screen and defaults to self-evaluation only instead of silently passing as "not an HOD" (or, with the column probe also failing, as everyone-is-HOD). Role value `HOD` is accepted as well as `admin`.
+- **2026-10-27** — People Analyzer v6 → v7: "Admin" relabeled **HOD** throughout (header switch, panel, messages, name-chip role); the stored role value is still `admin`. New **SharePoint Access Check** in the HOD panel reads the lock-down straight from SharePoint — unique permissions and item-level read/edit on `PA_Evaluations` and `PA_Sessions`, the signed-in HOD's own submit / see-everyone / delete / session rights, and (for site Owners) who has access to each list, including whether staff can submit and see sessions. HODs whom SharePoint limits to their own evaluations get a warning at sign-in. Manual relabeled and its lock-down steps updated (Owner-only; HODs get Design).
+- **2026-10-27** — Team Members v25 → v26: the People Analyzer column's top level shows as **HOD** in the Access dropdown and legend (stored value unchanged).
+- **2026-10-27** — CORE System Map v13 → v14: People Analyzer entry says HOD.
 - **2026-10-23** — People Analyzer v5 → v6: self-evaluations kept separate from the consensus. They're excluded from consensus, status and "N of M"; shown in a shaded column to the right of Consensus; tracked in a new **Self** column on the summary tables; listed as "Self-rating" (not counted) in text and Excel exports. Manual updated.
 - **2026-10-23** — People Analyzer v3 → v5. v4: header rebuilt on the Pipeline's app-header pattern — Linen monogram, Swear title, Admin switch and gear, red badge, signed-in name chip, uppercase tabs with the gold underline, **?** manual link. v5: admin gating. A new `PeopleAnalyzerRole` column on `CORE_TeamMembers` (set on the Team Members Access tab) decides who is an admin. Non-admins get a self-evaluation: Evaluate locked to themselves with their name fixed, one per session, plus a **My Self-Evaluations** tab; Summaries, Admin and Manage are hidden and their actions refuse. The signed-in user is matched to the roster by email (any address in the Email column), then by exact name. Admins see a **self** tag on self-evaluations. Until the column exists, everyone is treated as admin and Admin says so. Manual updated, including item-level permissions for `PA_Evaluations`.
 - **2026-10-23** — Team Members v24 → v25: Access tab lists **People Analyzer** (Member: own self-evaluations; Admin: everything) once the `PeopleAnalyzerRole` column exists.
