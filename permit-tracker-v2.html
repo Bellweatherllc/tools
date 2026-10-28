@@ -380,7 +380,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v134';
+const CORE_VERSION = 'v135';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -549,7 +549,6 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const zoning=buildLane(zoningStages, 0);
   const permit=buildLane(permitStages, zoning.endWeek);
   const sequenceTotal=permit.endWeek;
-  const todayWeekInSeq = permit.todayWeek!=null ? permit.todayWeek : zoning.todayWeek;
 
   // Phase lengths are PER-PROJECT (Pipeline-assigned), not a shared global —
   // real projects won't all run 6/18/6 weeks. Falls back to that only when a
@@ -565,8 +564,17 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // within Phase I itself. Defaults to phaseIIStart (today's behavior: no
   // overlap with Phase I at all) when a project hasn't got the field yet,
   // and is clamped to Phase I's own width so it can never run past it.
-  const seqOffset=Math.max(0, Math.min(phaseIIStart, zoningStartWeek!=null ? zoningStartWeek : phaseIIStart));
-  const todayWeek=seqOffset+todayWeekInSeq;
+  // Permitting, though, keeps its own fixed anchor at Phase II's start no
+  // matter where zoning begins — zoning and permitting stack up sequentially
+  // when zoning is at its default (both inside Phase II), but moving zoning
+  // earlier into Phase I only moves zoning; permitting stays put, per Byron.
+  const zoningOffset=Math.max(0, Math.min(phaseIIStart, zoningStartWeek!=null ? zoningStartWeek : phaseIIStart));
+  const permitOffset=phaseIIStart;
+  // zoning.todayWeek/permit.todayWeek are local (buildLane bakes its own
+  // cursorStart in), so each needs its OWN track's offset — using one
+  // shared offset here would misplace NOW whenever the active stage is in
+  // permitting and zoning has been moved into Phase I.
+  const todayWeek = permit.todayWeek!=null ? (permitOffset+permit.todayWeek) : (zoningOffset+zoning.todayWeek);
 
   // last week OF Phase II (not the first week of Pre-Con, which is what
   // phaseIIStart+phaseIIWidth itself actually marks) — per Byron.
@@ -579,7 +587,11 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // move), not a preview-only mask move, per Byron.
   const shiftWeeks=gradientOffset||0;
   const greenEnd=greenEndBase+shiftWeeks, redStart=redStartBase+shiftWeeks;
-  const approvedWeek = seqOffset+sequenceTotal;
+  // sequenceTotal (permit.endWeek) already has zoning's own local duration
+  // baked into it via permit's cursorStart, so "approved" (both tracks
+  // done) is permitOffset+sequenceTotal — permitting's own fixed anchor,
+  // not zoning's adjustable one.
+  const approvedWeek = permitOffset+sequenceTotal;
   const tier = tierInfo(approvedWeek, greenEnd, redStart);
   // signed week delta for the stat-band counter: weeks of cushion left
   // before the On Track threshold (positive) or weeks already past it
@@ -659,8 +671,12 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     `<text x="${phaseIIRectX+4}" y="${phaseLabelY}" font-size="10" font-weight="700" letter-spacing=".02em" fill="#fff" fill-opacity=".9" font-family="${FONT}">DESIGN PHASE II</text>`+
     `<text x="${phaseIIIRectX+4}" y="${phaseLabelY}" font-size="10" font-weight="700" letter-spacing=".02em" fill="#fff" fill-opacity=".9" font-family="${FONT}">PRE-CON</text>`;
 
-  const shiftedZoning=zoning.positioned.map(s=>({...s,start:s.start+seqOffset}));
-  const shiftedPermit=permit.positioned.map(s=>({...s,start:s.start+seqOffset}));
+  const shiftedZoning=zoning.positioned.map(s=>({...s,start:s.start+zoningOffset}));
+  // permit.positioned's own s.start already has zoning.endWeek baked in as
+  // its local base (buildLane's cursorStart), so adding permitOffset here
+  // (not zoningOffset) is what keeps permitting anchored at Phase II
+  // regardless of where zoning starts.
+  const shiftedPermit=permit.positioned.map(s=>({...s,start:s.start+permitOffset}));
   const sequenceBars=barRow(shiftedZoning, barY, barH, 'var(--zoning-gray)', true)
     + barRow(shiftedPermit, barY, barH, 'var(--permit-gray)', false);
 
@@ -702,7 +718,10 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // bandX0 is clamped to that same ceiling (not just bandX1) so a large
   // rightward shift can't push the band's left edge past its right edge.
   const bandX1=Math.min((redStart+bandCapWeeks)*PX_PER_WEEK, preConEndWeek*PX_PER_WEEK);
-  const bandX0=Math.min(Math.max(seqOffset*PX_PER_WEEK, (greenEnd-bandCapWeeks)*PX_PER_WEEK), bandX1);
+  // permitOffset (not zoningOffset) — the band is about the permitting/CA
+  // timeline, which stays anchored at Phase II regardless of where zoning
+  // itself starts.
+  const bandX0=Math.min(Math.max(permitOffset*PX_PER_WEEK, (greenEnd-bandCapWeeks)*PX_PER_WEEK), bandX1);
   const bandW=Math.max(1,bandX1-bandX0);
   const gEndFrac=Math.max(0,Math.min(1,(greenEnd*PX_PER_WEEK-bandX0)/bandW));
   const rStartFrac=Math.max(gEndFrac,Math.min(1,(redStart*PX_PER_WEEK-bandX0)/bandW));
