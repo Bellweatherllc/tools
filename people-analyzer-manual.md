@@ -2,7 +2,7 @@
 
 *How to run an evaluation round, how to read the results, and what to check when something looks wrong. Written for people, not programmers.*
 
-*late-October 2026 edition · People Analyzer v14*
+*late-October 2026 edition · People Analyzer v15*
 
 ## Part I — Using People Analyzer
 
@@ -213,7 +213,22 @@ The January review is the **annual review**. It replaces the January 6-month rev
 
 - In Summaries with the annual session picked, each person's view shows the HOD and second seat side by side (tagged **HOD** and **2nd seat**), their consensus, and the self-score to the right — for Core Values, GWC and V/TO.
 - **eNPS is only ever shown as the company score** — % promoters (9–10) minus % detractors (0–6) — at the top of the annual session's summary. No one's individual answer appears in the tool. (SharePoint itself records who submitted each evaluation, so a site Owner could look it up in the list.) Staff see their own answer under My Self-Evaluations.
-- The final agreed ratings, compensation, bonus, wins/opportunities/goals and the meeting close come with the summary page (next update).
+### The summary page (admins)
+
+Each staffer has one summary page per annual review. Open it from the **Summary** column in Summaries (annual session picked), or the **Summary page** button on a person's annual session block. The button shows *Not started*, *Draft* or *Complete*.
+
+- **Ratings** — HOD, second seat and self side by side for every Core Value, GWC item and V/TO part, and a **Final (agreed)** column you set in the meeting. **Fill final where HOD & second seat agree** fills the easy ones; set the rest by hand.
+- **Wins, Opportunities, Goals for next year** — one per line.
+- **Compensation & benefits** — pre-filled from the person's most recent imported review (it says which). Edit amounts, add or remove lines; the total adds itself up. Record the **new salary** and any notes.
+- **PTO** — PTO days, sick days, paid holidays, notes (pre-filled where the old review had them).
+- **Annual bonus** — bonus available and bonus earned are typed in; nothing is calculated.
+- **Meeting close** — record the meeting on a phone or any app, then paste the transcript or drop a `.txt`, `.vtt` or `.srt` file (for a Word transcript, copy the text and paste it). Click **Copy prompt for Claude**, paste it into Claude, paste Claude's draft into **The close**, and edit it. The prompt includes the names, every score and comment, wins/opportunities/goals and the transcript — never eNPS, and it asks Claude not to restate compensation.
+- **Save** keeps it as a draft; **Save & mark complete** stamps the date and who completed it (**Reopen** undoes that). Leaving with unsaved changes asks first.
+- **Print / PDF** prints a clean copy of the page. Summary pages are admin-only; staff don't get a copy.
+
+Everything on the page is stored on the staffer's annual record in `PA_ReviewHistory` (admins only); the transcript is saved as a `transcript.txt` attachment on that record.
+
+> When the Azure Function proxy is deployed, set `AI_PROXY_URL` in the page and the copy step becomes a **Draft the close with Claude** button. Until then nothing is sent anywhere automatically.
 
 ## Part IV-B — Review History (admins)
 
