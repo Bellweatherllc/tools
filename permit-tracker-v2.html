@@ -381,7 +381,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v137';
+const CORE_VERSION = 'v138';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1139,13 +1139,11 @@ function renderSettingsPanel(p){
   }
   return `<div class="settings-panel" id="panel-${pid}" style="display:${OPEN_PANELS.has(pid)?'block':'none'};">
     <div class="settings-context">
-      ${p.trelloSynced
-        ? `<span class="admin-ctrl-label" data-tip="Trello is authoritative for this project" data-tip-d="Move the card to the right list to change its stage — this panel can't edit it.">Synced from Trello &mdash; stages locked</span>`
-        : `<label class="admin-switch" data-tip="Discuss, set, then lock">
+      <label class="admin-switch" data-tip="Discuss, set, then lock">
         <input type="checkbox" ${locked?'':'checked'} onchange="toggleLock('${pid}',!this.checked)">
         <span class="admin-track"><span class="admin-thumb"></span></span>
       </label>
-      <span class="admin-ctrl-label">${locked?'Locked':'Unlocked'}</span>`}
+      <span class="admin-ctrl-label">${locked?'Locked':'Unlocked'}</span>
     </div>
     <div class="shift-row">
       <span class="admin-ctrl-label">Shift on/off-track band</span>
@@ -1413,11 +1411,14 @@ async function testTrello(){
    PERMIT PREP/ARCH-ENG/SUBMITTED/APPROVED. APPROVED isn't a stage of its
    own — a card there just means every real bar for that track is done
    (the existing done/✓ treatment already handles that with no changes).
-   Trello is authoritative here, same philosophy as permit-zoning-
-   tracker.html: this tool never edits a synced project's stage data — the
-   fix for wrong data is moving the card, not unlocking the settings panel
-   below. CA and Phase I/II/III still come from the manual tuning defaults
-   — that's Round 2, once this is solid. ═══════════════════════════════ */
+   Unlike permit-zoning-tracker.html (v1), Trello is NOT authoritative for
+   stage/duration data here — the card's current list is just the time
+   marker (it drives status: done/active/future, and actualWeeks/ageWeeks
+   from the card's move history). Byron still sets which stages exist and
+   how long each is estimated to take in this tool's own settings panel,
+   same lock/unlock flow as a manual project. CA and Phase I/II/III still
+   come from the manual tuning defaults — that's Round 2, once this is
+   solid. ═══════════════════════════════════════════════════════════ */
 function tURL(path, params){
   const qs=new URLSearchParams(Object.assign({}, params, {key:_trelloCfg.apiKey, token:_trelloCfg.token}));
   return 'https://api.trello.com/1/'+path+'?'+qs.toString();
@@ -1558,14 +1559,44 @@ async function loadTrelloProjects(){
 // binding) with live Trello data, falls back to the 3 demo projects on
 // any failure (no credentials yet, network error, bad board ID, etc.),
 // and always ends in a render either way.
+// Trello only drives STATUS/timing (done/active/future, actualWeeks,
+// ageWeeks) — which stages exist and how long each is estimated to take is
+// Byron's own call, made in this tool's settings panel, same as a manual
+// project. So a re-sync (boot, or right after saving Setup credentials)
+// must carry forward any enabled/estMin/estMax/locked choice already made
+// this session instead of re-seeding every stage back to "on, catalog
+// default" — otherwise editing would be pointless, undone by the very
+// next sync. zoningStartWeek/gradientOffset (the other two settings-panel
+// tuning controls) carry forward the same way.
+function mergeStageState(freshP, oldP){
+  const seeded=seedStageState(freshP);
+  if(!oldP) return seeded;
+  const state={zoning:{}, permitting:{}, locked:oldP.stageState.locked};
+  ['zoning','permitting'].forEach(category=>{
+    STAGE_CATALOG[category].forEach(c=>{
+      const fresh=seeded[category][c.key], old=oldP.stageState[category][c.key];
+      if(!fresh && !old) return;
+      state[category][c.key]=old
+        ? {enabled:old.enabled, estMin:old.estMin, estMax:old.estMax, status:fresh?fresh.status:old.status, actualWeeks:fresh?fresh.actualWeeks:old.actualWeeks, ageWeeks:fresh?fresh.ageWeeks:old.ageWeeks}
+        : fresh;
+    });
+  });
+  return state;
+}
 async function syncTrelloAndRender(){
   const statusEl=document.getElementById('trelloSyncStatus');
   if(!_trelloCfg) return;
   try{
     const projects=await loadTrelloProjects();
     if(projects.length){
+      const prior={}; PROJECTS.forEach(p=>{ prior[pidOf(p.proj)]=p; });
       PROJECTS.length=0;
-      projects.forEach(p=>{ p.stageState=seedStageState(p); if(p.trelloSynced) p.stageState.locked=true; PROJECTS.push(p); });
+      projects.forEach(p=>{
+        const old=prior[pidOf(p.proj)];
+        p.stageState=mergeStageState(p, old);
+        if(old){ p.gradientOffset=old.gradientOffset||0; if(old.zoningStartWeek!=null) p.zoningStartWeek=old.zoningStartWeek; }
+        PROJECTS.push(p);
+      });
       if(statusEl){ statusEl.style.display='block'; statusEl.textContent='Synced from Trello — '+projects.length+' project'+(projects.length===1?'':'s')+'.'; }
     }else if(statusEl){
       statusEl.style.display='block';
