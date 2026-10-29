@@ -381,7 +381,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v136';
+const CORE_VERSION = 'v137';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1202,7 +1202,7 @@ function cardIcons(p){
   const pid=pidOf(p.proj), n=(COMMENTS[p.proj]||[]).length;
   const cmt=`<span class="cmt-icon" data-pid="${pid}" onclick="event.stopPropagation();openQuickComments('${pid}',this)" data-tip="Comments" aria-label="Comments"><span class="cmt-glyph">${CMT_ICON_SVG}${n?`<span class="cmt-count">${n}</span>`:''}</span></span>`;
   const ext=p.trelloCardId
-    ? `<a class="ext-icon" href="https://trello.com/c/${encodeURIComponent(p.trelloCardId)}" target="_blank" rel="noopener" data-tip="Open Trello card" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span></a>`
+    ? `<a class="ext-icon" href="https://trello.com/c/${encodeURIComponent(p.trelloShortLink||p.trelloCardId)}" target="_blank" rel="noopener" data-tip="Open Trello card" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span></a>`
     : `<span class="ext-icon" style="opacity:.4;cursor:default;" data-tip="No Trello card linked yet" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span></span>`;
   return `<span class="trello-group"><span class="trello-icons">${cmt}${ext}</span><span class="trello-lbl">Trello</span></span>`;
 }
@@ -1366,7 +1366,9 @@ function toggleAdmin(forceOpen){
 }
 async function loadAdminFields(){
   try{
-    const [key,token,board]=await Promise.all([cfgGet('permit_trello_key'),cfgGet('permit_trello_token'),cfgGet('permit_trello_board')]);
+    // Same CORE_Config rows permit-zoning-tracker.html (v1) already reads/writes —
+    // Byron's existing credentials there just work here too, no re-entry needed.
+    const [key,token,board]=await Promise.all([cfgGet('TrelloApiKey'),cfgGet('TrelloToken'),cfgGet('TrelloPermitBoardId')]);
     if(key) document.getElementById('apKey').value=key;
     if(token) document.getElementById('apToken').value=token;
     if(board) document.getElementById('apBoard').value=board;
@@ -1378,9 +1380,9 @@ async function saveAdmin(){
   status.className='ap-status'; status.textContent='Saving…';
   try{
     await Promise.all([
-      cfgSet('permit_trello_key', document.getElementById('apKey').value.trim()),
-      cfgSet('permit_trello_token', document.getElementById('apToken').value.trim()),
-      cfgSet('permit_trello_board', document.getElementById('apBoard').value.trim()),
+      cfgSet('TrelloApiKey', document.getElementById('apKey').value.trim()),
+      cfgSet('TrelloToken', document.getElementById('apToken').value.trim()),
+      cfgSet('TrelloPermitBoardId', document.getElementById('apBoard').value.trim()),
     ]);
     status.className='ap-status ok'; status.textContent='Saved to CORE_Config.';
     const key=document.getElementById('apKey').value.trim(), token=document.getElementById('apToken').value.trim(), board=document.getElementById('apBoard').value.trim();
@@ -1479,7 +1481,7 @@ async function loadTrelloProjects(){
   const b=_trelloCfg.boardId;
   const [lists, cards, defs, actions] = await Promise.all([
     tGet('boards/'+b+'/lists', {fields:'name'}),
-    tGet('boards/'+b+'/cards', {fields:'name,idList,dateLastActivity', customFieldItems:'true', members:'true', member_fields:'fullName'}),
+    tGet('boards/'+b+'/cards', {fields:'name,idList,dateLastActivity,shortLink', customFieldItems:'true', members:'true', member_fields:'fullName'}),
     tGet('boards/'+b+'/customFields', {}),
     // v1's own comment still applies: Trello only serves the last 200
     // board actions — a done stage whose transition predates that window
@@ -1505,7 +1507,7 @@ async function loadTrelloProjects(){
     const key=trelloNormName(projectName);
     if(!byProject[key]) byProject[key]={name:projectName};
     byProject[key][meta.category]={
-      cardId:c.id, suffix:meta.suffix,
+      cardId:c.id, shortLink:c.shortLink, suffix:meta.suffix,
       owner:String(trelloCfValue(c,defs,'card owner')||'').trim(),
       archEngOwner:String(trelloCfValue(c,defs,'arch eng owner')||trelloCfValue(c,defs,'eng owner')||'').trim(),
       history:histByCard[c.id]||[],
@@ -1541,7 +1543,7 @@ async function loadTrelloProjects(){
           }
           stagesOut.push(st);
         });
-        if(!p.trelloCardId) p.trelloCardId=card.cardId;
+        if(!p.trelloCardId){ p.trelloCardId=card.cardId; p.trelloShortLink=card.shortLink; }
         if(category==='zoning') p.zoningOwner=card.owner||null;
         else { p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
       }
