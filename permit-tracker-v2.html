@@ -394,7 +394,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v142';
+const CORE_VERSION = 'v143';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1428,6 +1428,46 @@ async function stageEventsRecord(cardId, category, stageKey, projectName, entere
   items.push({id:created.id, fields});
 }
 
+/* ═══ Pipeline phase durations (CORE_Projects.GanttData) — Round 2.
+   Same read-only pattern as permit-zoning-tracker.html's loadProjectCAs():
+   narrow $select (every field named explicitly, per the hard rule — an
+   omitted field comes back empty with no error), parse the GanttData JSON
+   blob per item, match by normalized project name (no reliable shared ID
+   exists between CORE_Projects and the Trello board's "Project" field).
+   Only pulls DURATIONS (Phase I/II, and the production lane's Pre-Con
+   phase — what this tool calls "Phase III"). Deliberately does NOT pull
+   the Pipeline's own CA milestone: this tool's CA week is, per Byron's
+   earlier explicit decision (see renderCombinedTrack's caWeek comment),
+   defined as "the last week of Phase II," not an independent date — so
+   correcting Phase II's real duration is what corrects CA here too.
+   A project with no CORE_Projects match, or malformed/incomplete
+   GanttData, is simply left out of the map — loadTrelloProjects() falls
+   back to the {I:6,II:18,III:6} placeholder for it, same as today. */
+let _pipelineSchedCache=null, _pipelineSchedPromise=null;
+async function loadPipelineSchedules(){
+  if(_pipelineSchedCache) return _pipelineSchedCache;
+  if(!_pipelineSchedPromise) _pipelineSchedPromise=graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields($select=ProjectName,ClientName,Title,GanttData)&$select=id,fields').then(items=>{
+    const byName={};
+    items.forEach(it=>{
+      const f=it.fields||{};
+      const name=f.ProjectName||f.ClientName||f.Title||'';
+      if(!name) return;
+      let gd=null;
+      try{ gd=JSON.parse(f.GanttData||'null'); }catch(e){ return; }
+      if(!gd) return;
+      const dPhases=((gd.designLane&&gd.designLane.phases)||[]).filter(p=>!p.isDesignProd);
+      const phaseI=dPhases[0], phaseII=dPhases[1];
+      const preCon=((gd.productionLane&&gd.productionLane.phases)||[]).find(p=>/pre.?con/i.test(String(p.name||'').trim()));
+      if(!phaseI||!(phaseI.durWeeks>0) || !phaseII||!(phaseII.durWeeks>0) || !preCon||!(preCon.durWeeks>0)) return;
+      const key=trelloNormName(name);
+      if(!byName[key]) byName[key]={I:phaseI.durWeeks, II:phaseII.durWeeks, III:preCon.durWeeks};
+    });
+    _pipelineSchedCache=byName;
+    return byName;
+  }).catch(e=>{ _pipelineSchedPromise=null; throw e; });
+  return _pipelineSchedPromise;
+}
+
 function toggleAdmin(forceOpen){
   const panel=document.getElementById('adminPanel');
   if(forceOpen) panel.classList.add('open');
@@ -1596,6 +1636,12 @@ async function loadTrelloProjects(){
 
   const liveNow=now();
   await stageEventsAll(); // warm the cache once — every stageEventsPeek() below reads it synchronously
+  // Pipeline read failing (no CORE_Projects match ever needed, permission
+  // hiccup, whatever) must never take down the Trello sync itself — it
+  // just means every project falls back to the {I:6,II:18,III:6}
+  // placeholder, same as before Round 2 existed.
+  let pipelineSchedules={};
+  try{ pipelineSchedules=await loadPipelineSchedules(); }catch(e){ console.warn('[pipeline schedules]', e); }
 
   function stageKeyForRank(category, rank){
     return rank===STAGE_CATALOG[category].length ? 'approved' : STAGE_CATALOG[category][rank].key;
@@ -1634,7 +1680,7 @@ async function loadTrelloProjects(){
   for(const entry of Object.values(byProject)){
     const p={ proj:entry.name, jur:'City', commercial:false, address:'', trelloCardId:null,
       permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null,
-      phaseWeeks:{I:6,II:18,III:6}, gradientOffset:0, trelloSynced:true };
+      phaseWeeks:pipelineSchedules[trelloNormName(entry.name)]||{I:6,II:18,III:6}, gradientOffset:0, trelloSynced:true };
     for(const category of ['zoning','permitting']){
       const card=entry[category];
       const stagesOut=[];
