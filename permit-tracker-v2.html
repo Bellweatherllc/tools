@@ -218,6 +218,12 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .stat-band.tier-on{background:#e5f4e8;color:var(--grad-green);}
 .stat-band.tier-risk{background:#faf2e9;color:var(--grad-orange);}
 .stat-band.tier-off{background:#f7eaea;color:var(--grad-red);}
+/* Approved overrides the on/off-track tier entirely, regardless of what
+   it would otherwise say — a project that's actually done (permits
+   approved, zoning approved, whatever exists) is never "off track," per
+   Byron. The big gold star lives here now, not floating over a stage bar. */
+.stat-band.tier-approved{background:#fdf3d0;color:#8a6d00;}
+.sb-star{color:#f5c518;text-shadow:0 1px 1px rgba(0,0,0,.25);font-size:15px;line-height:1;}
 
 .settings-panel{margin:0 16px 14px;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:12px;}
 .settings-context{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line);}
@@ -360,7 +366,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
     <span class="legend-item"><span class="legend-dot tier-off"></span><b>Off Track</b> — past the deadline</span>
     <span class="legend-item"><span class="legend-glyph check">✓</span> Stage complete</span>
     <span class="legend-item"><span class="legend-glyph star">★</span> Completed early</span>
-    <span class="legend-item"><span class="legend-glyph star big">★</span> Track approved</span>
+    <span class="legend-item"><span class="legend-glyph star big">★</span> Approved — in the status strip, replacing On/At Risk/Off Track</span>
   </div>
   <div class="trello-sync-status" id="trelloSyncStatus" style="display:none;"></div>
   <div id="cards"><div class="empty-note">Loading&hellip;</div></div>
@@ -396,7 +402,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v146';
+const CORE_VERSION = 'v147';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -560,7 +566,7 @@ function barRow(stages, y, barH, groupColor, insetFirst){
   }).join('');
 }
 
-function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset, phaseWeeks, zoningStartWeek, caWeeksFromToday }){
+function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset, phaseWeeks, zoningStartWeek, caWeeksFromToday, phaseIWeeksFromToday, phaseIIWeeksFromToday, preConWeeksFromToday }){
   const TODAY=now();
   const zoning=buildLane(zoningStages, 0);
   const permit=buildLane(permitStages, zoning.endWeek);
@@ -573,9 +579,40 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const PHASE_I_WEEKS=(phaseWeeks&&phaseWeeks.I)||6, PHASE_II_WEEKS=(phaseWeeks&&phaseWeeks.II)||18, PHASE_III_WEEKS=(phaseWeeks&&phaseWeeks.III)||6, PHASE_GAP=2;
   const CA_GREEN='#127432'; // Pipeline's own CA Signed green (.ms-tall.ca-signed) — reused here for continuity
   const phaseIWidth=PHASE_I_WEEKS;
-  const phaseIIStart=phaseIWidth;
   const phaseIIWidth=PHASE_II_WEEKS;
-  const phaseIIIStart=phaseIIStart+phaseIIWidth;
+
+  // "The Pipeline's dates are canonical — change tracker so they're the
+  // same numbers," per Byron, after the old design kept proving that
+  // wrong: it placed Phase I at local week 0 and todayWeek wherever the
+  // ACTIVE Trello stage's own elapsed time put it — fine only as long as
+  // Trello's actual pace matched the Pipeline's plan, and fully broken
+  // once a track has nothing active left at all (buildLane only sets
+  // todayWeek when it finds a stage marked 'active'). That's exactly how
+  // a project already in CONSTRUCTION, permits long since approved, could
+  // still read as "just starting Phase II": with neither track active,
+  // the old fallback chain (permit.todayWeek ?? zoning.todayWeek) landed
+  // on whichever track happened to still show SOME in-progress stage, or
+  // produced NaN if both were fully done.
+  //
+  // Fix: when the Pipeline gives us Phase I's real start date, "today" is
+  // computed directly from (today's real date) vs (Phase I's real start)
+  // — a fact that's true regardless of whether any Trello card is active
+  // at all. Phase II and Pre-Con then take their OWN real start dates the
+  // same way, so every phase block lands at the Pipeline's actual number,
+  // not a chained guess. The stage bars still use their own existing
+  // offsets (zoningOffset/permitOffset, including the manual zoning-start
+  // slider) — this intentionally does NOT warp them to chase today's
+  // marker, so a real gap between Trello's actual pace and the Pipeline's
+  // plan shows up honestly as NOW not quite sitting on the active bar,
+  // rather than being silently hidden.
+  const hasPipelineAnchor = phaseIWeeksFromToday!=null;
+  const pipelineTodayWeek = hasPipelineAnchor ? -phaseIWeeksFromToday : null;
+  const phaseIIStart = hasPipelineAnchor
+    ? (phaseIIWeeksFromToday!=null ? pipelineTodayWeek+phaseIIWeeksFromToday : pipelineTodayWeek+phaseIWidth)
+    : phaseIWidth;
+  const phaseIIIStart = hasPipelineAnchor && preConWeeksFromToday!=null
+    ? pipelineTodayWeek+preConWeeksFromToday
+    : phaseIIStart+phaseIIWidth;
   // Zoning doesn't have to wait for Phase II — Prep can kick off any week
   // within Phase I itself. Defaults to phaseIIStart (today's behavior: no
   // overlap with Phase I at all) when a project hasn't got the field yet,
@@ -586,11 +623,14 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // earlier into Phase I only moves zoning; permitting stays put, per Byron.
   const zoningOffset=Math.max(0, Math.min(phaseIIStart, zoningStartWeek!=null ? zoningStartWeek : phaseIIStart));
   const permitOffset=phaseIIStart;
-  // zoning.todayWeek/permit.todayWeek are local (buildLane bakes its own
-  // cursorStart in), so each needs its OWN track's offset — using one
-  // shared offset here would misplace NOW whenever the active stage is in
-  // permitting and zoning has been moved into Phase I.
-  const todayWeek = permit.todayWeek!=null ? (permitOffset+permit.todayWeek) : (zoningOffset+zoning.todayWeek);
+  // Without a Pipeline anchor: todayWeek is still derived from whichever
+  // track has an active stage (old behavior, unchanged) — except neither
+  // track being active no longer produces NaN; it parks NOW at the
+  // project's own completion point instead.
+  const todayWeek = hasPipelineAnchor ? pipelineTodayWeek
+    : permit.todayWeek!=null ? (permitOffset+permit.todayWeek)
+    : zoning.todayWeek!=null ? (zoningOffset+zoning.todayWeek)
+    : permitOffset+sequenceTotal;
 
   // The Pipeline's own CA date is canonical — caWeeksFromToday (set in
   // loadTrelloProjects from CORE_Projects' real CA milestone) says how many
@@ -716,20 +756,22 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // early-star treatment.
   const zoningApproved=shiftedZoning.length>0 && shiftedZoning.every(s=>s.status==='done');
   const permitApproved=shiftedPermit.length>0 && shiftedPermit.every(s=>s.status==='done');
+  // Per Byron: the big gold star belongs in the status strip, not
+  // floating over a stage bar — see wholeApproved below, read by
+  // renderCards() to override the stat-band tier/label/star entirely.
+  // The gantt itself still gets the quieter "— approved" text label per
+  // track, since a project can have one track approved and the other
+  // still active.
   const categoryLabels=
     (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning${zoningApproved?' — approved':''}</text>`:'')+
     (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
-  // The big gold star — distinct from barRow's own small per-stage "early"
-  // star, which marks a single stage beating its own estimate. This marks
-  // the WHOLE track being done, centered over its last bar, poking above
-  // the lane the same way the small star does.
-  function approvedStar(stages){
-    if(!stages.length) return '';
-    const last=stages[stages.length-1];
-    const x=(last.start+last.width/2)*PX_PER_WEEK;
-    return `<text x="${x}" y="${barY-1}" text-anchor="middle" dominant-baseline="central" font-size="24" fill="#f5c518" stroke="#fff" stroke-width="1.4" paint-order="stroke" font-family="${FONT}" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));">★</text>`;
-  }
-  const approvedStars=(zoningApproved?approvedStar(shiftedZoning):'')+(permitApproved?approvedStar(shiftedPermit):'');
+  // "Wholly approved" = every track that actually exists for this project
+  // is done; a track with no card at all (e.g. a permit-only project with
+  // no zoning card) doesn't block it — there's simply nothing left to
+  // approve on that side.
+  const wholeApproved = (shiftedZoning.length>0 || shiftedPermit.length>0)
+    && (shiftedZoning.length===0 || zoningApproved)
+    && (shiftedPermit.length===0 || permitApproved);
 
   const MARKER_RISE=CFG.markerRise, PILL_RX=5;
   // CA's pill sits INSIDE the gantt, overlapping the top of the lane,
@@ -910,7 +952,6 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     ${weekGrid}
     ${milestoneColumnsHtml}
     ${sequenceBars}
-    ${approvedStars}
     ${categoryLabels}
     ${phaseLabels}
     ${band}
@@ -920,7 +961,7 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     ${hoverFrame}
     ${dateFrame}
   </svg>`;
-  return { html, tier, weekDelta };
+  return { html, tier, weekDelta, wholeApproved };
 }
 
 /* ═══════════════════ stage catalog, settings, comments — ported
@@ -1317,11 +1358,19 @@ function renderCards(){
   const list=visibleProjects();
   document.getElementById('cards').innerHTML = list.length ? list.map(p=>{
     const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
-    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, caWeeksFromToday:p.caWeeksFromToday});
+    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
     const pid=pidOf(p.proj);
     const wks=Math.round(r.weekDelta);
     const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
-    const tierLbl=r.tier.label.split(' ').map(esc).join('<br>');
+    // Approved overrides the tier label/color entirely — a completed
+    // project is never shown as "Off Track" just because its actual
+    // finish landed past some threshold. wksLabel stays (still
+    // meaningful: how far ahead of/behind the CA deadline it actually
+    // finished), but the big gold star replaces the tier dot/label.
+    const tierCls = r.wholeApproved ? 'tier-approved' : (TIER_CLS[r.tier.label]||'');
+    const tierLbl = r.wholeApproved
+      ? '<span class="sb-star">★</span> Approved'
+      : r.tier.label.split(' ').map(esc).join('<br>');
     return `
     <div class="proj-group">
       <div class="proj-hdr">
@@ -1341,7 +1390,7 @@ function renderCards(){
       </div>
       <div class="app-row">
         <div class="row-mid">${r.html}</div>
-        <div class="stat-band ${TIER_CLS[r.tier.label]||''}">
+        <div class="stat-band ${tierCls}">
           <div class="sb-lbl">${tierLbl}</div>
           <div class="sb-wks">${wksLabel}</div>
         </div>
@@ -1460,23 +1509,30 @@ async function stageEventsRecord(cardId, category, stageKey, projectName, entere
   items.push({id:created.id, fields});
 }
 
-/* ═══ Pipeline phase durations + CA date (CORE_Projects.GanttData) —
-   Round 2. Same read-only pattern as permit-zoning-tracker.html's
-   loadProjectCAs(): narrow $select (every field named explicitly, per the
-   hard rule — an omitted field comes back empty with no error), parse the
-   GanttData JSON blob per item, match by normalized project name (no
-   reliable shared ID exists between CORE_Projects and the Trello board's
-   "Project" field). Pulls DURATIONS (Phase I/II, and the production
-   lane's Pre-Con phase — what this tool calls "Phase III") AND the real
-   CA milestone: the Pipeline's CA date is canonical, so it's converted
-   from the Pipeline's own week-epoch into a real calendar date, then
-   expressed as "weeks before/after today" — a form renderCombinedTrack
-   can drop straight onto its own today-anchored coordinate system without
-   needing any other absolute date math of its own (see caWeek there).
+/* ═══ Pipeline phase dates + CA date (CORE_Projects.GanttData) — Round 2.
+   Same read-only pattern as permit-zoning-tracker.html's loadProjectCAs():
+   narrow $select (every field named explicitly, per the hard rule — an
+   omitted field comes back empty with no error), parse the GanttData JSON
+   blob per item, match by normalized project name (no reliable shared ID
+   exists between CORE_Projects and the Trello board's "Project" field).
+   The Pipeline's dates are canonical, full stop — Byron confirmed this
+   twice (once for CA specifically, then again: "change tracker so they're
+   the same numbers," after comparing Raabe's real Pipeline dates against
+   the tracker and still finding them wrong). So this pulls each phase's
+   real START week too, not just its duration — Phase I, Phase II, and the
+   production lane's Pre-Con phase (what this tool calls "Phase III") —
+   alongside the CA milestone, each converted from the Pipeline's own
+   week-epoch into a real calendar date and expressed as "weeks before/
+   after today." renderCombinedTrack uses these to anchor its ENTIRE
+   today-relative coordinate system to Phase I's real start instead of to
+   wherever Trello's stage-bar activity happens to place it — see the
+   todayWeek comment there for why that matters (a project whose permits
+   are fully approved has no "active" stage left to derive today's
+   position from at all, which was producing nonsense positions before).
    A project with no CORE_Projects match, or malformed/incomplete
    GanttData, is simply left out of the map — loadTrelloProjects() falls
-   back to the {I:6,II:18,III:6} placeholder and the old derived-CA
-   behavior for it, same as before this existed. */
+   back to the {I:6,II:18,III:6} placeholder and the old derived behavior
+   for it, same as before this existed. */
 // Fixed week-epoch the Pipeline itself uses (project-pipeline.html:
 // CAL_ABS_EARLIEST, mirrored exactly by permit-zoning-tracker.html's
 // CA_EPOCH) — must match bit-for-bit or a converted CA date would quietly
@@ -1505,22 +1561,27 @@ async function loadPipelineSchedules(){
       const preCon=((gd.productionLane&&gd.productionLane.phases)||[]).find(p=>/pre.?con/i.test(String(p.name||'').trim()));
       if(!phaseI||!(phaseI.durWeeks>0) || !phaseII||!(phaseII.durWeeks>0) || !preCon||!(preCon.durWeeks>0)) return;
       const ca=(gd.milestones||[]).find(m=>m.name==='CA');
-      // Deliberately NOT rounded to a whole week here — the Pipeline's own
-      // week grid is Monday-anchored, but this tool's week grid is anchored
-      // to TODAY (today always sits in "week todayWeek", whatever weekday
-      // today happens to be — see dateRuler's d=TODAY+(w-todayWeek)*7days).
-      // Those two grids are only ever aligned by coincidence, so rounding
-      // this to an integer week would silently throw away up to 3-4 days
-      // of precision — exactly the "misaligned dates" Byron measured
-      // against Raabe's real Pipeline dates. renderCombinedTrack positions
-      // the CA pill using this exact fractional value (pixels don't need
-      // to land on a week boundary); only the ruler's day-label highlight
-      // rounds it, for picking which single day-cell to flag.
-      const caWeeksFromToday=(ca&&ca.week!=null)
-        ? (pipelineWeekToDate(ca.week)-todayReal)/(7*86400000)
-        : null;
+      // Deliberately NOT rounded to a whole week anywhere here — the
+      // Pipeline's own week grid is Monday-anchored, but this tool's week
+      // grid is anchored to TODAY (today always sits in "week todayWeek",
+      // whatever weekday today happens to be — see dateRuler's
+      // d=TODAY+(w-todayWeek)*7days). Those two grids are only ever
+      // aligned by coincidence, so rounding any of these to an integer
+      // week would silently throw away up to 3-4 days of precision —
+      // exactly the "misaligned dates" Byron measured against Raabe's
+      // real Pipeline dates. renderCombinedTrack uses these exact
+      // fractional values directly (pixels don't need to land on a week
+      // boundary); only the ruler's day-label highlights round them, for
+      // picking which single day-cell to flag.
+      const weeksFromToday=startWeek=>startWeek!=null ? (pipelineWeekToDate(startWeek)-todayReal)/(7*86400000) : null;
       const key=trelloNormName(name);
-      if(!byName[key]) byName[key]={I:phaseI.durWeeks, II:phaseII.durWeeks, III:preCon.durWeeks, caWeeksFromToday};
+      if(!byName[key]) byName[key]={
+        I:phaseI.durWeeks, II:phaseII.durWeeks, III:preCon.durWeeks,
+        phaseIWeeksFromToday:weeksFromToday(phaseI.startWeek),
+        phaseIIWeeksFromToday:weeksFromToday(phaseII.startWeek),
+        preConWeeksFromToday:weeksFromToday(preCon.startWeek),
+        caWeeksFromToday:weeksFromToday(ca&&ca.week),
+      };
     });
     _pipelineSchedCache=byName;
     return byName;
@@ -1742,6 +1803,9 @@ async function loadTrelloProjects(){
     const p={ proj:entry.name, jur:'City', commercial:false, address:'', trelloCardId:null,
       permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null,
       phaseWeeks:sched ? {I:sched.I, II:sched.II, III:sched.III} : {I:6,II:18,III:6},
+      phaseIWeeksFromToday:sched ? sched.phaseIWeeksFromToday : null,
+      phaseIIWeeksFromToday:sched ? sched.phaseIIWeeksFromToday : null,
+      preConWeeksFromToday:sched ? sched.preConWeeksFromToday : null,
       caWeeksFromToday:sched ? sched.caWeeksFromToday : null,
       gradientOffset:0, trelloSynced:true };
     for(const category of ['zoning','permitting']){
