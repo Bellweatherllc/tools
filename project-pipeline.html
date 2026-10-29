@@ -3533,7 +3533,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1157';
+const CORE_VERSION = 'v1158';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -8264,6 +8264,12 @@ PP_LEAD_MENU.addEventListener('click',e=>{
   if(!pp){ closePPLeadMenu(); return; }
   if(ns==='lost'){
     closePPLeadMenu();
+    // v1158: a pp synced from a live Lead (pp._fromLeadId) must mark the SOURCE lead lost too.
+    // Splicing only the PLANNING_PROJECTS wrapper left the Lead itself untouched in PROJECTS,
+    // so the very next rebuildSection('planning') call re-ran syncLeadsToPlanning(), saw the
+    // still-isLead source project, and silently recreated a fresh unmatched entry for it \u2014
+    // the card looked exactly as before, as if the click had done nothing.
+    const srcProj=pp._fromLeadId?PROJECTS.find(p=>p.id===pp._fromLeadId||String(p._spItemId)===pp._fromLeadId.replace(/^sp-proj-/,'')):null;
     const dlg=document.getElementById('confirmDialog');
     document.getElementById('confirmTitle').textContent='Mark as Lost?';
     document.getElementById('confirmMsg').textContent=`"${pp.name}" didn\u2019t convert. It will be removed from Sales Planning.`;
@@ -8271,9 +8277,13 @@ PP_LEAD_MENU.addEventListener('click',e=>{
     dlg.classList.add('open');
     document.getElementById('confirmOk').onclick=()=>{
       dlg.classList.remove('open');
-      const idx=PLANNING_PROJECTS.findIndex(p=>p.id===_ppLeadMenuId);
-      if(idx>=0){ pushPlanningHistory(pp.name+' \u2014 marked Lost and removed'); _tombstone('planning',pp.id); PLANNING_PROJECTS.splice(idx,1); }
-      rebuildSection('planning'); triggerSave();
+      if(srcProj){
+        archiveProject(srcProj.id,'Lost \u2014 did not convert',false,true); // archives the Lead and removes its planning entry; buildAll() inside covers the rebuild+save
+      } else {
+        const idx=PLANNING_PROJECTS.findIndex(p=>p.id===_ppLeadMenuId);
+        if(idx>=0){ pushPlanningHistory(pp.name+' \u2014 marked Lost and removed'); _tombstone('planning',pp.id); PLANNING_PROJECTS.splice(idx,1); }
+        rebuildSection('planning'); triggerSave();
+      }
     };
     document.getElementById('confirmCancel').onclick=()=>{ dlg.classList.remove('open'); };
   } else {
@@ -16826,6 +16836,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1158', date: '2026-10-29',
+    entries:['Fixed: marking a Sales Planning card Lost did nothing — clicking it removed the card locally, but it was synced from a live Lead, and the very next rebuild re-synced that still-active Lead right back into an unmatched card. Marking Lost now archives the underlying Lead itself (same as marking a project Lost from its own status badge), so it actually stays gone.'],
+  },
   {
     version: 'v1157', date: '2026-10-27',
     entries:['Eased the Gantt row hover highlight back down (.18 → .12). Over a colored phase bar the wash is hidden under the bar regardless, so this only shows up where it matters — the blank/white stretches of a row with no project content — where .18 read as too dark. .lane-row only exists in the Design and Production Gantts, so Sales and Operations are untouched.'],
