@@ -218,14 +218,17 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .stat-band.tier-on{background:#e5f4e8;color:var(--grad-green);}
 .stat-band.tier-risk{background:#faf2e9;color:var(--grad-orange);}
 .stat-band.tier-off{background:#f7eaea;color:var(--grad-red);}
-/* Approved overrides the on/off-track tier entirely, regardless of what
-   it would otherwise say — a project that's actually done (permits
-   approved, zoning approved, whatever exists) is never "off track," per
-   Byron. Green check, not a gold star — gold stars are reserved for a
-   single stage finishing early (barRow's own early-star), a different
-   meaning entirely. */
-.stat-band.tier-approved{background:#e5f4e8;color:var(--grad-green);}
-.sb-check{color:var(--grad-green);font-size:15px;line-height:1;}
+/* Replaces the gantt+stat-band entirely once a project is wholly
+   approved — a plain factual record (what happened, when), no tier
+   color or clock framing at all, per Byron. */
+.approved-summary{display:flex;gap:28px;flex-wrap:wrap;padding:14px 18px;background:var(--card);border:1px solid var(--line);border-radius:8px;flex:1;min-width:0;}
+.rec-track{min-width:220px;}
+.rec-track-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--mut);margin-bottom:6px;}
+.rec-row{display:flex;align-items:baseline;gap:10px;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line);}
+.rec-stage{font-weight:600;flex:0 0 auto;min-width:80px;}
+.rec-dates{color:var(--ink);flex:1 1 auto;}
+.rec-dur{color:var(--mut);font-size:11px;flex:0 0 auto;}
+.rec-approved{margin-top:6px;font-size:12px;font-weight:700;color:var(--grad-green);}
 
 .settings-panel{margin:0 16px 14px;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:12px;}
 .settings-context{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line);}
@@ -267,7 +270,6 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .legend-glyph{font-weight:700;}
 .legend-glyph.check{color:var(--grad-green);}
 .legend-glyph.star{color:#f5c518;text-shadow:0 0 1px rgba(0,0,0,.35);}
-.legend-glyph.star.big{font-size:18px;}
 
 /* ── quick-comments floating popover (ported from permit-zoning-
    tracker.html's #cmtPop) — a single shared panel, positioned on open,
@@ -368,7 +370,6 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
     <span class="legend-item"><span class="legend-dot tier-off"></span><b>Off Track</b> — past the deadline</span>
     <span class="legend-item"><span class="legend-glyph check">✓</span> Stage complete</span>
     <span class="legend-item"><span class="legend-glyph star">★</span> Completed early</span>
-    <span class="legend-item"><span class="legend-glyph star big">★</span> Approved — in the status strip, replacing On/At Risk/Off Track</span>
   </div>
   <div class="trello-sync-status" id="trelloSyncStatus" style="display:none;"></div>
   <div id="cards"><div class="empty-note">Loading&hellip;</div></div>
@@ -404,7 +405,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v149';
+const CORE_VERSION = 'v150';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -756,24 +757,17 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // flight, projected) — it's done, and almost always ahead — so it gets
   // its own callout rather than just blending into the small per-stage
   // early-star treatment.
+  // renderCards() now skips this whole function once a project is WHOLLY
+  // approved (every track that exists is fully done) — see
+  // renderApprovedSummary instead. zoningApproved/permitApproved stay
+  // useful here for the PARTIAL case: one track done, the other still
+  // active, which still gets the live gantt plus this quieter "— approved"
+  // text label on whichever track has already finished.
   const zoningApproved=shiftedZoning.length>0 && shiftedZoning.every(s=>s.status==='done');
   const permitApproved=shiftedPermit.length>0 && shiftedPermit.every(s=>s.status==='done');
-  // Per Byron: the big gold star belongs in the status strip, not
-  // floating over a stage bar — see wholeApproved below, read by
-  // renderCards() to override the stat-band tier/label/star entirely.
-  // The gantt itself still gets the quieter "— approved" text label per
-  // track, since a project can have one track approved and the other
-  // still active.
   const categoryLabels=
     (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning${zoningApproved?' — approved':''}</text>`:'')+
     (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
-  // "Wholly approved" = every track that actually exists for this project
-  // is done; a track with no card at all (e.g. a permit-only project with
-  // no zoning card) doesn't block it — there's simply nothing left to
-  // approve on that side.
-  const wholeApproved = (shiftedZoning.length>0 || shiftedPermit.length>0)
-    && (shiftedZoning.length===0 || zoningApproved)
-    && (shiftedPermit.length===0 || permitApproved);
 
   const MARKER_RISE=CFG.markerRise, PILL_RX=5;
   // CA's pill sits INSIDE the gantt, overlapping the top of the lane,
@@ -963,7 +957,31 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     ${hoverFrame}
     ${dateFrame}
   </svg>`;
-  return { html, tier, weekDelta, wholeApproved };
+  return { html, tier, weekDelta };
+}
+
+// Replaces the live gantt entirely once a project is wholly approved —
+// per Byron: "the whole idea of the clock or on or off track becomes
+// irrelevant" once approved, so this isn't a re-skinned tier/stat-band,
+// it's a plain factual record: what happened, and when. No CA-deadline
+// comparison, no tier color, no judgment — just dates. The small gold
+// star is kept for a single stage beating its own estimate (a fact about
+// what happened, same meaning as barRow's own early-star — not a live
+// clock), since that's still useful context for a closed-out project.
+function renderApprovedSummary(zoningStages, permitStages){
+  function trackBlock(label, stages){
+    if(!stages.length) return '';
+    const rows=stages.map(s=>{
+      const early=s.actualWeeks!=null && s.actualWeeks<s.estWeeks;
+      const dates=(s.startDate&&s.endDate) ? `${fmtShort(s.startDate)} &rarr; ${fmtShort(s.endDate)}` : '&mdash;';
+      const dur=s.actualWeeks!=null ? s.actualWeeks+' wk'+(s.actualWeeks===1?'':'s') : '';
+      return `<div class="rec-row"><span class="rec-stage">${esc(s.name)}${early?' <span class="legend-glyph star" style="font-size:11px;">★</span>':''}</span><span class="rec-dates">${dates}</span><span class="rec-dur">${esc(dur)}</span></div>`;
+    }).join('');
+    const last=stages[stages.length-1];
+    const approvedOn=last&&last.endDate ? `<div class="rec-approved">Approved ${fmtShort(last.endDate)}</div>` : '';
+    return `<div class="rec-track"><div class="rec-track-lbl">${esc(label)}</div>${rows}${approvedOn}</div>`;
+  }
+  return `<div class="approved-summary">${trackBlock('Zoning',zoningStages)}${trackBlock('Permitting',permitStages)}</div>`;
 }
 
 /* ═══════════════════ stage catalog, settings, comments — ported
@@ -1000,7 +1018,7 @@ function seedStageState(p){
       const match=STAGE_CATALOG[category].find(c=>c.fullName===s.name && !claimed.has(c.key));
       if(!match) return;
       claimed.add(match.key);
-      state[category][match.key]={enabled:true, estWeeks:s.estWeeks, status:s.status, actualWeeks:s.actualWeeks, ageWeeks:s.ageWeeks};
+      state[category][match.key]={enabled:true, estWeeks:s.estWeeks, status:s.status, actualWeeks:s.actualWeeks, ageWeeks:s.ageWeeks, startDate:s.startDate, endDate:s.endDate};
     });
   }
   seed('zoning', p.zoningStages);
@@ -1012,8 +1030,19 @@ function deriveStages(p, category){
   return STAGE_CATALOG[category].map(c=>{
     const st=p.stageState[category][c.key];
     if(!st||!st.enabled) return null;
-    return {name:c.renderName, estWeeks:st.estWeeks, status:st.status||'future', actualWeeks:st.actualWeeks, ageWeeks:st.ageWeeks};
+    return {name:c.renderName, estWeeks:st.estWeeks, status:st.status||'future', actualWeeks:st.actualWeeks, ageWeeks:st.ageWeeks, startDate:st.startDate, endDate:st.endDate};
   }).filter(Boolean);
+}
+// Every track that actually EXISTS for this project (has at least one
+// enabled stage) is fully done — a track with no card at all (e.g. a
+// permit-only project with no zoning card) doesn't block it, since
+// there's simply nothing left to approve on that side. Once true, per
+// Byron the whole clock/on-off-track idea stops being meaningful —
+// renderCards() shows renderApprovedSummary() instead of the live gantt.
+function isWhollyApproved(zoningStages, permitStages){
+  return (zoningStages.length>0 || permitStages.length>0)
+    && (zoningStages.length===0 || zoningStages.every(s=>s.status==='done'))
+    && (permitStages.length===0 || permitStages.every(s=>s.status==='done'));
 }
 
 /* ───────── mock Trello-shaped board data (same scenarios as the
@@ -1360,20 +1389,24 @@ function renderCards(){
   const list=visibleProjects();
   document.getElementById('cards').innerHTML = list.length ? list.map(p=>{
     const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
-    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
     const pid=pidOf(p.proj);
-    const wks=Math.round(r.weekDelta);
-    const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
-    // Approved overrides the tier label/color entirely — a completed
-    // project is never shown as "Off Track" just because its actual
-    // finish landed past some threshold. wksLabel stays (still
-    // meaningful: how far ahead of/behind the CA deadline it actually
-    // finished), but a green check replaces the tier dot/label — gold
-    // stars are reserved for a single stage finishing early, per Byron.
-    const tierCls = r.wholeApproved ? 'tier-approved' : (TIER_CLS[r.tier.label]||'');
-    const tierLbl = r.wholeApproved
-      ? '<span class="sb-check">✓</span> Approved'
-      : r.tier.label.split(' ').map(esc).join('<br>');
+    const wholeApproved = isWhollyApproved(zoningStages, permitStages);
+    let appRowHtml;
+    if(wholeApproved){
+      appRowHtml = `<div class="app-row">${renderApprovedSummary(zoningStages, permitStages)}</div>`;
+    }else{
+      const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
+      const wks=Math.round(r.weekDelta);
+      const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
+      const tierLbl=r.tier.label.split(' ').map(esc).join('<br>');
+      appRowHtml = `<div class="app-row">
+        <div class="row-mid">${r.html}</div>
+        <div class="stat-band ${TIER_CLS[r.tier.label]||''}">
+          <div class="sb-lbl">${tierLbl}</div>
+          <div class="sb-wks">${wksLabel}</div>
+        </div>
+      </div>`;
+    }
     return `
     <div class="proj-group">
       <div class="proj-hdr">
@@ -1391,13 +1424,7 @@ function renderCards(){
           <span class="gear-lbl">Stages</span>
         </span>
       </div>
-      <div class="app-row">
-        <div class="row-mid">${r.html}</div>
-        <div class="stat-band ${tierCls}">
-          <div class="sb-lbl">${tierLbl}</div>
-          <div class="sb-wks">${wksLabel}</div>
-        </div>
-      </div>
+      ${appRowHtml}
       ${renderSettingsPanel(p)}
     </div>`;
   }).join('') : '<div class="empty-note">No projects match this filter.</div>';
@@ -1841,7 +1868,14 @@ async function loadTrelloProjects(){
             st.status='done';
             const enterThis=stageEventsPeek(card.cardId, c2.key);
             const enterNext=stageEventsPeek(card.cardId, stageKeyForRank(category,i+1));
-            if(enterThis&&enterNext) st.actualWeeks=Math.max(0, Math.round((enterNext-enterThis)/(7*86400000)));
+            if(enterThis&&enterNext){
+              st.actualWeeks=Math.max(0, Math.round((enterNext-enterThis)/(7*86400000)));
+              // Real calendar dates, not just a week count — this is what
+              // renderApprovedSummary() shows once a project's clock/on-
+              // off-track framing stops mattering and it's just a record
+              // of what happened when.
+              st.startDate=enterThis; st.endDate=enterNext;
+            }
           }else if(i===currentRank){
             st.status='active';
             const enterThis=stageEventsPeek(card.cardId, c2.key)||liveNow;
@@ -1886,7 +1920,7 @@ function mergeStageState(freshP, oldP){
       const fresh=seeded[category][c.key], old=oldP.stageState[category][c.key];
       if(!fresh && !old) return;
       state[category][c.key]=old
-        ? {enabled:old.enabled, estWeeks:old.estWeeks, status:fresh?fresh.status:old.status, actualWeeks:fresh?fresh.actualWeeks:old.actualWeeks, ageWeeks:fresh?fresh.ageWeeks:old.ageWeeks}
+        ? {enabled:old.enabled, estWeeks:old.estWeeks, status:fresh?fresh.status:old.status, actualWeeks:fresh?fresh.actualWeeks:old.actualWeeks, ageWeeks:fresh?fresh.ageWeeks:old.ageWeeks, startDate:fresh?fresh.startDate:old.startDate, endDate:fresh?fresh.endDate:old.endDate}
         : fresh;
     });
   });
