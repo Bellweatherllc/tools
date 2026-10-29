@@ -151,6 +151,10 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .proj-hdr{position:relative;display:flex;align-items:center;gap:10px;padding:0 0 0 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;min-height:55px;}
 .proj-hdr-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
 .proj-name{font-family:var(--font-swear);font-size:14.5px;font-weight:700;}
+/* Clearly visible regardless of whether the record detail below is even
+   scrolled into view — per Byron, approval is "an accomplishment" that
+   shouldn't require opening/reading the summary to notice. */
+.approved-badge{display:inline-flex;align-items:center;gap:3px;background:var(--grad-green);color:#fff;font-family:var(--font-tt);font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:2px 7px;border-radius:9px;vertical-align:middle;}
 .proj-address{font-size:11.5px;color:var(--mut);}
 .proj-permit-num{font-size:11.5px;color:var(--mut);}
 /* centered in the header bar as a whole (both axes), independent of the
@@ -405,7 +409,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v150';
+const CORE_VERSION = 'v151';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1411,7 +1415,7 @@ function renderCards(){
     <div class="proj-group">
       <div class="proj-hdr">
         <div class="proj-hdr-title">
-          <div class="proj-name">${esc(p.proj)}</div>
+          <div class="proj-name">${esc(p.proj)}${wholeApproved?' <span class="approved-badge">&check; Approved</span>':''}</div>
           <div class="proj-address">${esc(p.address||'')}</div>
           ${p.permitNumber?`<div class="proj-permit-num" data-tip="Permit number">Permit #${esc(p.permitNumber)}</div>`:''}
         </div>
@@ -1576,13 +1580,27 @@ function pipelineWeekToDate(w){
 let _pipelineSchedCache=null, _pipelineSchedPromise=null;
 async function loadPipelineSchedules(){
   if(_pipelineSchedCache) return _pipelineSchedCache;
-  if(!_pipelineSchedPromise) _pipelineSchedPromise=graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields($select=ProjectName,ClientName,Title,GanttData)&$select=id,fields').then(items=>{
+  // Address column name is genuinely unconfirmed — permit-zoning-tracker.html's
+  // own loadProjectAddresses() tries several candidates for the same reason
+  // (its comment: "tell Byron the real CORE_Projects column name" if every
+  // project shows blank). Named explicitly here (never a bare $expand=fields,
+  // per the hard rule) rather than broadened to fetch everything, since
+  // GanttData alone is already a heavy JSON blob on this list.
+  const ADDRESS_CANDIDATES=['Address','ProjectAddress','SiteAddress','StreetAddress','PropertyAddress','FullAddress'];
+  if(!_pipelineSchedPromise) _pipelineSchedPromise=graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields($select=ProjectName,ClientName,Title,GanttData,'+ADDRESS_CANDIDATES.join(',')+')&$select=id,fields').then(items=>{
     const todayReal=now();
     const byName={};
     items.forEach(it=>{
       const f=it.fields||{};
       const name=f.ProjectName||f.ClientName||f.Title||'';
       if(!name) return;
+      const key=trelloNormName(name);
+      // Address is captured regardless of whether this row's GanttData is
+      // usable below — a project with an address but no (or malformed)
+      // schedule data shouldn't lose the address just because the phase
+      // durations/dates can't be derived.
+      const addressKey=ADDRESS_CANDIDATES.find(k=>f[k]);
+      if(!byName[key]) byName[key]={address: addressKey?String(f[addressKey]):''};
       let gd=null;
       try{ gd=JSON.parse(f.GanttData||'null'); }catch(e){ return; }
       if(!gd) return;
@@ -1604,14 +1622,17 @@ async function loadPipelineSchedules(){
       // boundary); only the ruler's day-label highlights round them, for
       // picking which single day-cell to flag.
       const weeksFromToday=startWeek=>startWeek!=null ? (pipelineWeekToDate(startWeek)-todayReal)/(7*86400000) : null;
-      const key=trelloNormName(name);
-      if(!byName[key]) byName[key]={
+      // Merge onto the address entry already created above, rather than a
+      // guarded create — byName[key] always exists by this point (the
+      // address block runs first for every named row), so a guard here
+      // would never fire and this data would silently never attach.
+      if(!byName[key].I) Object.assign(byName[key], {
         I:phaseI.durWeeks, II:phaseII.durWeeks, III:preCon.durWeeks,
         phaseIWeeksFromToday:weeksFromToday(phaseI.startWeek),
         phaseIIWeeksFromToday:weeksFromToday(phaseII.startWeek),
         preConWeeksFromToday:weeksFromToday(preCon.startWeek),
         caWeeksFromToday:weeksFromToday(ca&&ca.week),
-      };
+      });
     });
     _pipelineSchedCache=byName;
     return byName;
@@ -1847,13 +1868,19 @@ async function loadTrelloProjects(){
   const projects=[];
   for(const entry of Object.values(byProject)){
     const sched=pipelineSchedules[trelloNormName(entry.name)];
-    const p={ proj:entry.name, jur:'City', commercial:false, address:'', trelloCardId:null,
+    // sched can now exist purely for its address (decoupled from GanttData
+    // validity — see loadPipelineSchedules), so each of these checks its
+    // OWN field specifically rather than just "sched is truthy", keeping
+    // the explicit {I:6,II:18,III:6}/null placeholders exact whenever the
+    // real phase/CA data isn't actually there.
+    const hasSched = sched && sched.I!=null;
+    const p={ proj:entry.name, jur:'City', commercial:false, address:(sched&&sched.address)||'', trelloCardId:null,
       permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null,
-      phaseWeeks:sched ? {I:sched.I, II:sched.II, III:sched.III} : {I:6,II:18,III:6},
-      phaseIWeeksFromToday:sched ? sched.phaseIWeeksFromToday : null,
-      phaseIIWeeksFromToday:sched ? sched.phaseIIWeeksFromToday : null,
-      preConWeeksFromToday:sched ? sched.preConWeeksFromToday : null,
-      caWeeksFromToday:sched ? sched.caWeeksFromToday : null,
+      phaseWeeks:hasSched ? {I:sched.I, II:sched.II, III:sched.III} : {I:6,II:18,III:6},
+      phaseIWeeksFromToday:hasSched ? sched.phaseIWeeksFromToday : null,
+      phaseIIWeeksFromToday:hasSched ? sched.phaseIIWeeksFromToday : null,
+      preConWeeksFromToday:hasSched ? sched.preConWeeksFromToday : null,
+      caWeeksFromToday:hasSched ? sched.caWeeksFromToday : null,
       gradientOffset:0, trelloSynced:true };
     for(const category of ['zoning','permitting']){
       const card=entry[category];
