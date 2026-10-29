@@ -381,7 +381,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v138';
+const CORE_VERSION = 'v139';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1507,10 +1507,16 @@ async function loadTrelloProjects(){
     if(!projectName) return;
     const key=trelloNormName(projectName);
     if(!byProject[key]) byProject[key]={name:projectName};
+    const submittedRaw=trelloCfValue(c,defs,'submitted date');
     byProject[key][meta.category]={
       cardId:c.id, shortLink:c.shortLink, suffix:meta.suffix,
       owner:String(trelloCfValue(c,defs,'card owner')||'').trim(),
       archEngOwner:String(trelloCfValue(c,defs,'arch eng owner')||trelloCfValue(c,defs,'eng owner')||'').trim(),
+      jurisdiction:String(trelloCfValue(c,defs,'jurisdiction')||'').trim(),
+      // Explicit, persistent anchor for the Submit stage — set by hand on
+      // the card, so (unlike the move-history reconstruction below) it
+      // never ages out of Trello's 200-action window.
+      submittedDate:submittedRaw?new Date(submittedRaw):null,
       history:histByCard[c.id]||[],
       lastActivity:c.dateLastActivity?new Date(c.dateLastActivity):null,
     };
@@ -1530,14 +1536,23 @@ async function loadTrelloProjects(){
         const currentRank=trelloStageRank(category, card.suffix);
         catalog.forEach((c2,i)=>{
           const st={name:c2.fullName, estMin:c2.estMin, estMax:c2.estMax};
+          // Submit's own enter-time prefers the hand-set SubmittedDate field
+          // over the history reconstruction below — it's the one stage Byron
+          // can anchor explicitly, and it's what stays correct once a card's
+          // real transition has aged out of Trello's 200-action window.
+          const historyEnterThis=trelloEnterTimeForRank(category, card.history, listMeta, i);
+          const enterThisOverride=(c2.key==='submitted-review') ? card.submittedDate : null;
           if(i<currentRank){
             st.status='done';
-            const enterThis=trelloEnterTimeForRank(category, card.history, listMeta, i);
-            const enterNext=trelloEnterTimeForRank(category, card.history, listMeta, i+1);
+            const enterThis=enterThisOverride||historyEnterThis;
+            // History may have aged out the APPROVED transition too (an old
+            // card) — card.lastActivity is a reasonable proxy for "when it
+            // got approved" once nothing else is moving the card anymore.
+            const enterNext=trelloEnterTimeForRank(category, card.history, listMeta, i+1)||(i+1===currentRank&&currentRank===catalog.length?card.lastActivity:null);
             if(enterThis&&enterNext) st.actualWeeks=Math.max(0, Math.round((enterNext-enterThis)/(7*86400000)));
           }else if(i===currentRank){
             st.status='active';
-            const enterThis=trelloEnterTimeForRank(category, card.history, listMeta, i)||card.lastActivity||liveNow;
+            const enterThis=enterThisOverride||historyEnterThis||card.lastActivity||liveNow;
             st.ageWeeks=Math.max(0, Math.round((liveNow-enterThis)/(7*86400000)));
           }else{
             st.status='future';
@@ -1545,6 +1560,7 @@ async function loadTrelloProjects(){
           stagesOut.push(st);
         });
         if(!p.trelloCardId){ p.trelloCardId=card.cardId; p.trelloShortLink=card.shortLink; }
+        if(!p.jurisdictionSet && card.jurisdiction){ p.jur=card.jurisdiction; p.jurisdictionSet=true; }
         if(category==='zoning') p.zoningOwner=card.owner||null;
         else { p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
       }
