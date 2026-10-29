@@ -382,7 +382,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v140';
+const CORE_VERSION = 'v141';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1367,7 +1367,10 @@ async function cfgSet(key,value){
    Every later sync just reads the stamp back — no re-guessing, and no
    200-action ceiling, ever. Byron never edits this list by hand; it's
    populated entirely by the tool as cards move (see loadTrelloProjects).
-   SharePoint columns required on CORE_PermitStageEvents (BWCore site):
+   The list itself needs no manual setup either — stageEventsAll() below
+   creates it on first use (via the Sites.ReadWrite.All scope sherpa-auth.js
+   already requests for CORE_Config/CORE_Projects; no new permission grant)
+   if a 404 says it doesn't exist yet. Columns, for reference/verification:
      Title        single line of text
      CardId       single line of text  — Trello card id, the lookup key
      Category     single line of text  — 'zoning' | 'permitting'
@@ -1375,9 +1378,27 @@ async function cfgSet(key,value){
      EnteredAt    date and time        — ISO instant, first-observed or backfilled
      Backfilled   yes/no               — true if reconstructed, not caught live */
 let _stageEvCache=null, _stageEvPromise=null;
+async function createStageEventsList(){
+  await SherpaAuth.graph(BWC_SITE,{method:'POST', body:JSON.stringify({
+    displayName:'CORE_PermitStageEvents',
+    list:{template:'genericList'},
+    columns:[
+      {name:'CardId', text:{}},
+      {name:'Category', text:{}},
+      {name:'StageKey', text:{}},
+      {name:'EnteredAt', dateTime:{}},
+      {name:'Backfilled', boolean:{}},
+    ],
+  })});
+}
 async function stageEventsAll(){
   if(_stageEvCache) return _stageEvCache;
-  if(!_stageEvPromise) _stageEvPromise=graphGetAll(BWC_SITE+'/CORE_PermitStageEvents/items?$expand=fields($select=CardId,Category,StageKey,EnteredAt,Backfilled)&$select=id,fields').then(items=>{ _stageEvCache=items; return items; }).catch(e=>{ _stageEvPromise=null; throw e; });
+  const fetchItems=()=>graphGetAll(BWC_SITE+'/CORE_PermitStageEvents/items?$expand=fields($select=CardId,Category,StageKey,EnteredAt,Backfilled)&$select=id,fields');
+  if(!_stageEvPromise) _stageEvPromise=fetchItems().catch(async e=>{
+    if(e.status!==404) throw e; // anything other than "list not found" is a real error — surface it, don't paper over it
+    await createStageEventsList();
+    return fetchItems();
+  }).then(items=>{ _stageEvCache=items; return items; }).catch(e=>{ _stageEvPromise=null; throw e; });
   return _stageEvPromise;
 }
 // Synchronous cache read — only safe to call after stageEventsAll() has
