@@ -124,6 +124,18 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .main{padding:calc(var(--app-h) + 22px) 26px 60px;max-width:1180px;margin:0 auto;}
 .main.test-active{padding-top:calc(var(--app-h) + 44px);}
 .sub{font-size:12px;color:var(--mut);margin:0 0 18px;max-width:80ch;line-height:1.55;}
+/* Deliberately NOT a plain .sub sentence — Byron missed the Trello sync
+   status entirely the first time because it read as just more of the
+   same muted description text above it. A colored dot + colored text
+   makes it unmistakably a live status, not filler copy. */
+.trello-sync-status{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;margin:0 0 14px;}
+.trello-sync-status .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.trello-sync-status.ok{color:var(--grad-green);}
+.trello-sync-status.ok .dot{background:var(--grad-green);}
+.trello-sync-status.warn{color:var(--grad-orange);}
+.trello-sync-status.warn .dot{background:var(--grad-orange);}
+.trello-sync-status.err{color:var(--grad-red);}
+.trello-sync-status.err .dot{background:var(--grad-red);}
 
 /* ── PROJECT CARDS — proj-hdr + a single combined app-row per project
    (per Byron: one row per project, not split zoning/permit rows). The
@@ -348,7 +360,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
     <span class="legend-item"><span class="legend-glyph check">✓</span> Stage complete</span>
     <span class="legend-item"><span class="legend-glyph star">★</span> Completed early</span>
   </div>
-  <div class="sub" id="trelloSyncStatus" style="display:none;"></div>
+  <div class="trello-sync-status" id="trelloSyncStatus" style="display:none;"></div>
   <div id="cards"><div class="empty-note">Loading&hellip;</div></div>
 </div>
 
@@ -382,7 +394,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v141';
+const CORE_VERSION = 'v142';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1687,8 +1699,14 @@ function mergeStageState(freshP, oldP){
   });
   return state;
 }
-async function syncTrelloAndRender(){
+function setSyncStatus(kind, text){
   const statusEl=document.getElementById('trelloSyncStatus');
+  if(!statusEl) return;
+  statusEl.className='trello-sync-status '+kind;
+  statusEl.style.display='flex';
+  statusEl.innerHTML='<span class="dot"></span>'+esc(text);
+}
+async function syncTrelloAndRender(){
   if(!_trelloCfg) return;
   try{
     const projects=await loadTrelloProjects();
@@ -1701,14 +1719,13 @@ async function syncTrelloAndRender(){
         if(old){ p.gradientOffset=old.gradientOffset||0; if(old.zoningStartWeek!=null) p.zoningStartWeek=old.zoningStartWeek; }
         PROJECTS.push(p);
       });
-      if(statusEl){ statusEl.style.display='block'; statusEl.textContent='Synced from Trello — '+projects.length+' project'+(projects.length===1?'':'s')+'.'; }
-    }else if(statusEl){
-      statusEl.style.display='block';
-      statusEl.textContent='Connected to Trello, but no card carries a "Project" value yet — showing demo data.';
+      setSyncStatus('ok', 'Synced from Trello — '+projects.length+' project'+(projects.length===1?'':'s')+'.');
+    }else{
+      setSyncStatus('warn', 'Connected to Trello, but no card carries a "Project" value yet — showing demo data.');
     }
   }catch(e){
     console.error('[trello sync]', e);
-    if(statusEl){ statusEl.style.display='block'; statusEl.textContent='Couldn’t sync from Trello — check the credentials/board ID in Setup. '+e.message; }
+    setSyncStatus('err', 'Couldn’t sync from Trello — check the credentials/board ID in Setup. '+e.message);
   }
   renderCards();
 }
