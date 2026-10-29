@@ -404,7 +404,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v148';
+const CORE_VERSION = 'v149';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1722,16 +1722,32 @@ async function loadTrelloProjects(){
     // v1's own comment still applies: Trello only serves the last 200
     // board actions — a done stage whose transition predates that window
     // just renders with a plain check (no early/late star), per trelloEnterTimeForRank.
-    tGet('boards/'+b+'/actions', {filter:'updateCard:idList', limit:'200', fields:'data,type,date'}),
+    // commentCard shares this one fetch/cap rather than a separate per-card
+    // call (which would mean 1-2 extra HTTP round trips per project, every
+    // sync) — an old comment aging out of the 200-action window alongside
+    // an old stage-move is an acceptable tradeoff for that, especially
+    // since stage timing is durably cached in CORE_PermitStageEvents now
+    // and no longer depends on this window surviving at all past first sync.
+    tGet('boards/'+b+'/actions', {filter:'updateCard:idList,commentCard', limit:'200', fields:'data,type,date', memberCreator_fields:'fullName'}),
   ]);
   const listMeta={}; lists.forEach(l=>{ listMeta[l.id]=parseTrelloListName(l.name); });
 
   const histByCard={}; // ascending {listId,at} per card
+  const commentsByCard={}; // ascending {author,date,text} per card
   actions.slice().reverse().forEach(a=>{
     const cid=a.data&&a.data.card&&a.data.card.id;
-    const afterId=a.data&&a.data.listAfter&&a.data.listAfter.id;
-    if(!cid||!afterId) return;
-    (histByCard[cid]=histByCard[cid]||[]).push({listId:afterId, at:new Date(a.date)});
+    if(!cid) return;
+    if(a.type==='updateCard'){
+      const afterId=a.data.listAfter&&a.data.listAfter.id;
+      if(!afterId) return;
+      (histByCard[cid]=histByCard[cid]||[]).push({listId:afterId, at:new Date(a.date)});
+    }else if(a.type==='commentCard'){
+      (commentsByCard[cid]=commentsByCard[cid]||[]).push({
+        author:(a.memberCreator&&a.memberCreator.fullName)||'Trello',
+        date:fmtShort(new Date(a.date)),
+        text:String(a.data.text||''),
+      });
+    }
   });
 
   const byProject={}; // trelloNormName(project) -> {name, zoning:cardInfo|null, permitting:cardInfo|null}
@@ -1754,6 +1770,7 @@ async function loadTrelloProjects(){
       // Submit stage below, same tier as the Trello history reconstruction.
       submittedDate:submittedRaw?new Date(submittedRaw):null,
       history:histByCard[c.id]||[],
+      comments:commentsByCard[c.id]||[],
       lastActivity:c.dateLastActivity?new Date(c.dateLastActivity):null,
     };
   });
@@ -1834,7 +1851,7 @@ async function loadTrelloProjects(){
           }
           stagesOut.push(st);
         });
-        if(!p.trelloCardId){ p.trelloCardId=card.cardId; p.trelloShortLink=card.shortLink; }
+        if(!p.trelloCardId){ p.trelloCardId=card.cardId; p.trelloShortLink=card.shortLink; p.comments=card.comments; }
         if(!p.jurisdictionSet && card.jurisdiction){ p.jur=card.jurisdiction; p.jurisdictionSet=true; }
         if(!p.permitNumber && card.permitNumber) p.permitNumber=card.permitNumber;
         if(category==='zoning') p.zoningOwner=card.owner||null;
@@ -1893,6 +1910,11 @@ async function syncTrelloAndRender(){
         const old=prior[pidOf(p.proj)];
         p.stageState=mergeStageState(p, old);
         if(old){ p.gradientOffset=old.gradientOffset||0; if(old.zoningStartWeek!=null) p.zoningStartWeek=old.zoningStartWeek; }
+        // Trello is authoritative for comments on a synced project — a
+        // full refresh (not an append) so a comment posted through this
+        // tool (which also posts straight to Trello) doesn't end up
+        // duplicated once the next sync fetches it back from Trello itself.
+        if(p.comments) COMMENTS[p.proj]=p.comments;
         PROJECTS.push(p);
       });
       setSyncStatus('ok', 'Synced from Trello — '+projects.length+' project'+(projects.length===1?'':'s')+'.');
