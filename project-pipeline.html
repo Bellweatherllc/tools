@@ -3533,7 +3533,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1158';
+const CORE_VERSION = 'v1159';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -12550,6 +12550,22 @@ function _projectFromItem(item){
     }
     // SP always owns these fields — overwrite GanttData values
     proj.status=status;
+    // v1159: PipelineStage (proj.status, just overwritten above) and the DA/CA milestones'
+    // own .status embedded in GanttData are two independently-saved fields and can drift —
+    // a GanttData save that raced or never landed, or PipelineStage edited directly outside
+    // the Pipeline's own status menu, leaves a milestone dot showing stale colors (e.g. a
+    // CA-Signed project with a still-"projected" gold CA dot). Reconcile here exactly the
+    // way setStatus() keeps them in lockstep during a live edit, so this self-heals on load
+    // instead of needing a one-off repair per project.
+    { const _da=(proj.milestones||[]).find(m=>m.name==='DA'), _ca=(proj.milestones||[]).find(m=>m.name==='CA');
+      const _before=(_da?_da.status:undefined)+'|'+(_ca?_ca.status:undefined);
+      if(status==='projected'){ if(_da) _da.status='projected'; if(_ca) _ca.status='projected'; }
+      else if(status==='da-signed'){ if(_da) _da.status='da-signed'; }
+      else if(status==='ca-signed'){ if(_ca) _ca.status='ca-signed'; if(_da) _da.status='da-signed'; }
+      const _after=(_da?_da.status:undefined)+'|'+(_ca?_ca.status:undefined);
+      // Only the real GanttData path (ganttData truthy) has drift worth persisting back —
+      // makeDefaultSchedule() always builds milestones fresh from status, never mismatched.
+      if(_after!==_before&&ganttData){ console.warn(APP_VER+' Healed drifted DA/CA milestone status for',clientName,'— re-saving.'); markDirty(proj); } }
     // Durable "first appeared" timestamp = SP item creation time. Same for every viewer,
     // survives reloads. Drives the "new card" marker; the client-clock addedAt set on load
     // would otherwise make every card look new on every open.
@@ -16836,6 +16852,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1159', date: '2026-10-29',
+    entries:['Fixed HYER showing CA Signed but a yellow (unsigned) CA milestone dot — PipelineStage and the DA/CA milestone status embedded in GanttData are saved separately and had drifted apart for that project. On load, the milestone status is now reconciled to match the project’s actual stage (same rule setStatus() already uses live), and the corrected record is queued to save back to SharePoint. Self-heals any other project with the same drift, not just HYER.'],
+  },
   {
     version: 'v1158', date: '2026-10-29',
     entries:['Fixed: marking a Sales Planning card Lost did nothing — clicking it removed the card locally, but it was synced from a live Lead, and the very next rebuild re-synced that still-active Lead right back into an unmatched card. Marking Lost now archives the underlying Lead itself (same as marking a project Lost from its own status badge), so it actually stays gone.'],
