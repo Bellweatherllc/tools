@@ -396,7 +396,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v145';
+const CORE_VERSION = 'v146';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -478,16 +478,16 @@ function weeksBetween(a,b){ return Math.round((b-a)/(7*DAY)); }
 
 function buildLane(stages, cursorStart){
   // A done stage's width is its fixed, already-happened ACTUAL duration —
-  // not its estimate. estMax stays editable (for tuning/future planning)
+  // not its estimate. estWeeks stays editable (for tuning/future planning)
   // but a finished stage's real-world position can't move just because
-  // someone nudges its estimate afterward; only estMax still drives width
+  // someone nudges its estimate afterward; only estWeeks still drives width
   // for the active/future stages, where no actual exists yet. This is what
   // keeps NOW (and every calendar date up to it) fixed when a past stage's
   // duration is edited — only stages at/after the point of a real change
   // should expand or contract.
   let cursor=cursorStart, todayWeek=null;
   const positioned=stages.map(s=>{
-    const width=(s.status==='done' && s.actualWeeks!=null) ? s.actualWeeks : s.estMax;
+    const width=(s.status==='done' && s.actualWeeks!=null) ? s.actualWeeks : s.estWeeks;
     const start=cursor; cursor+=width;
     if(s.status==='active') todayWeek=start+(s.ageWeeks||0);
     return {...s, start, width};
@@ -547,7 +547,7 @@ function barRow(stages, y, barH, groupColor, insetFirst){
     const x=xTrue+extraInset, w=Math.max(1,trueW-BAR_GAP-extraInset);
     const fontSize=9.5;
     const done=s.status==='done';
-    const early=done && s.actualWeeks!=null && s.actualWeeks<s.estMax;
+    const early=done && s.actualWeeks!=null && s.actualWeeks<s.estWeeks;
     // check shows for every done stage now (early or not); the star is no
     // longer inline with the label — it floats on its own, centered over
     // the stage text, straddling the bar's top edge (dominant-baseline:
@@ -875,7 +875,7 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
       const monthKey=d.getFullYear()+'-'+d.getMonth();
       const isMonthStart=monthKey!==seenMonth;
       seenMonth=monthKey;
-      const isToday=w===todayWeek, isCA=w===caWeek;
+      const isToday=w===todayWeek, isCA=w===Math.round(caWeek);
       const x=w*PX_PER_WEEK+PX_PER_WEEK/2;
       const dayLabel=isMonthStart
         ? d.toLocaleDateString('en-US',{month:'short'}).toUpperCase()+' '+d.getDate()
@@ -927,14 +927,14 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
    unchanged from the prototype ═══════════════════ */
 const STAGE_CATALOG={
   zoning:[
-    {key:'prep', fullName:'Prep', renderName:'Prep', estMin:2, estMax:2},
-    {key:'survey', fullName:'Survey', renderName:'Survey', estMin:4, estMax:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estMin:4, estMax:4},
+    {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
+    {key:'survey', fullName:'Survey', renderName:'Survey', estWeeks:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
   ],
   permitting:[
-    {key:'prep', fullName:'Prep', renderName:'Prep', estMin:2, estMax:2},
-    {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estMin:4, estMax:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estMin:4, estMax:4},
+    {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
+    {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estWeeks:4},
   ],
 };
 function pidOf(name){ return name.replace(/[^a-z0-9]+/gi,'-').toLowerCase(); }
@@ -957,7 +957,7 @@ function seedStageState(p){
       const match=STAGE_CATALOG[category].find(c=>c.fullName===s.name && !claimed.has(c.key));
       if(!match) return;
       claimed.add(match.key);
-      state[category][match.key]={enabled:true, estMin:s.estMin, estMax:s.estMax, status:s.status, actualWeeks:s.actualWeeks, ageWeeks:s.ageWeeks};
+      state[category][match.key]={enabled:true, estWeeks:s.estWeeks, status:s.status, actualWeeks:s.actualWeeks, ageWeeks:s.ageWeeks};
     });
   }
   seed('zoning', p.zoningStages);
@@ -969,7 +969,7 @@ function deriveStages(p, category){
   return STAGE_CATALOG[category].map(c=>{
     const st=p.stageState[category][c.key];
     if(!st||!st.enabled) return null;
-    return {name:c.renderName, estMin:st.estMin, estMax:st.estMax, status:st.status||'future', actualWeeks:st.actualWeeks, ageWeeks:st.ageWeeks};
+    return {name:c.renderName, estWeeks:st.estWeeks, status:st.status||'future', actualWeeks:st.actualWeeks, ageWeeks:st.ageWeeks};
   }).filter(Boolean);
 }
 
@@ -978,25 +978,25 @@ function deriveStages(p, category){
 const PROJECTS=[
   { proj:'Harrington Build', jur:'City', commercial:false, owner:'Byron', address:'214 Harrington Ave, Philadelphia PA', trelloCardId:null, permitOwner:'Marcus', archEngOwner:'Dana', zoningOwner:'Ashley', phaseWeeks:{I:6,II:18,III:6},
     zoningStages:[
-      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
-      {name:'Survey', estMin:4, estMax:4, status:'done', actualWeeks:4},
-      {name:'Submitted / In Review', estMin:4, estMax:4, status:'done', actualWeeks:4},
+      {name:'Prep', estWeeks:2, status:'done', actualWeeks:2},
+      {name:'Survey', estWeeks:4, status:'done', actualWeeks:4},
+      {name:'Submitted / In Review', estWeeks:4, status:'done', actualWeeks:4},
     ],
     permitStages:[
-      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
-      {name:'With Arch/Eng', estMin:4, estMax:4, status:'done', actualWeeks:4},
-      {name:'Submitted / In Review', estMin:4, estMax:4, status:'active', ageWeeks:3},
+      {name:'Prep', estWeeks:2, status:'done', actualWeeks:2},
+      {name:'With Arch/Eng', estWeeks:4, status:'done', actualWeeks:4},
+      {name:'Submitted / In Review', estWeeks:4, status:'active', ageWeeks:3},
     ],
     note:'Zoning fully done. Permitting is sitting In Review, 3 weeks in against a 4-week estimate.' },
 
   { proj:'Castor Ave Shop', jur:'City', commercial:false, owner:'Ashley', address:'88 Castor Ave, Philadelphia PA', trelloCardId:null, permitOwner:'Ashley', archEngOwner:null, zoningOwner:'Marcus', phaseWeeks:{I:6,II:18,III:6},
     zoningStages:[
-      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:1},
-      {name:'Submitted / In Review', estMin:4, estMax:4, status:'done', actualWeeks:4},
+      {name:'Prep', estWeeks:2, status:'done', actualWeeks:1},
+      {name:'Submitted / In Review', estWeeks:4, status:'done', actualWeeks:4},
     ],
     permitStages:[
-      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
-      {name:'Submitted / In Review', estMin:4, estMax:4, status:'active', ageWeeks:1},
+      {name:'Prep', estWeeks:2, status:'done', actualWeeks:2},
+      {name:'Submitted / In Review', estWeeks:4, status:'active', ageWeeks:1},
     ],
     note:'Simple project — With Arch/Eng toggled off entirely on both tracks (no architect/engineer involvement needed). Zoning Prep finished in 1 week against a 2-week estimate — that\'s the gold star. Permitting just moved into Submitted.' },
 
@@ -1004,12 +1004,12 @@ const PROJECTS=[
     // Byron owns all three roles on this one.
     permitOwner:'Byron', archEngOwner:'Byron', zoningOwner:'Byron', phaseWeeks:{I:6,II:18,III:6},
     zoningStages:[
-      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
-      {name:'Submitted / In Review', estMin:4, estMax:4, status:'done', actualWeeks:4},
+      {name:'Prep', estWeeks:2, status:'done', actualWeeks:2},
+      {name:'Submitted / In Review', estWeeks:4, status:'done', actualWeeks:4},
     ],
     permitStages:[
-      {name:'Prep', estMin:2, estMax:2, status:'done', actualWeeks:2},
-      {name:'Submitted / In Review', estMin:4, estMax:4, status:'active', ageWeeks:1},
+      {name:'Prep', estWeeks:2, status:'done', actualWeeks:2},
+      {name:'Submitted / In Review', estWeeks:4, status:'active', ageWeeks:1},
     ],
     note:'Suburb — CA Signing is fixed at the end of Phase II, not an independent date. Submitted still needs to land before that week (CA has to be signed before Submit can happen).' },
 ];
@@ -1105,14 +1105,14 @@ function toggleGear(pid){
 }
 function toggleStage(pid, category, key, checked){
   const p=findProject(pid), c=STAGE_CATALOG[category].find(x=>x.key===key);
-  if(!p.stageState[category][key]) p.stageState[category][key]={estMin:c.estMin, estMax:c.estMax, status:'future'};
+  if(!p.stageState[category][key]) p.stageState[category][key]={estWeeks:c.estWeeks, status:'future'};
   p.stageState[category][key].enabled=checked;
   renderCards();
 }
-function updateStageDur(pid, category, key, field, value){
+function updateStageWeeks(pid, category, key, value){
   const p=findProject(pid), c=STAGE_CATALOG[category].find(x=>x.key===key);
-  if(!p.stageState[category][key]) p.stageState[category][key]={enabled:false, estMin:c.estMin, estMax:c.estMax, status:'future'};
-  p.stageState[category][key][field]=Math.max(0, parseInt(value,10)||0);
+  if(!p.stageState[category][key]) p.stageState[category][key]={enabled:false, estWeeks:c.estWeeks, status:'future'};
+  p.stageState[category][key].estWeeks=Math.max(0, parseInt(value,10)||0);
   renderCards();
 }
 function toggleLock(pid, checked){
@@ -1172,11 +1172,11 @@ function renderSettingsPanel(p){
   const phaseIWidth=(p.phaseWeeks&&p.phaseWeeks.I)||6;
   const zoningStartWeek=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIWidth;
   function stageRow(category, c){
-    const st=p.stageState[category][c.key]||{enabled:false, estMin:c.estMin, estMax:c.estMax};
+    const st=p.stageState[category][c.key]||{enabled:false, estWeeks:c.estWeeks};
     return `<div class="stage-row">
       <label><input type="checkbox" ${st.enabled?'checked':''} ${dis} onchange="toggleStage('${pid}','${category}','${c.key}',this.checked)"> ${esc(c.fullName)}</label>
       <span class="dur-inputs">
-        <input type="number" min="0" value="${st.estMin}" ${dis} onchange="updateStageDur('${pid}','${category}','${c.key}','estMin',this.value)">–<input type="number" min="0" value="${st.estMax}" ${dis} onchange="updateStageDur('${pid}','${category}','${c.key}','estMax',this.value)"> wks
+        <input type="number" min="0" value="${st.estWeeks}" ${dis} onchange="updateStageWeeks('${pid}','${category}','${c.key}',this.value)"> wks
       </span>
     </div>`;
   }
@@ -1505,8 +1505,19 @@ async function loadPipelineSchedules(){
       const preCon=((gd.productionLane&&gd.productionLane.phases)||[]).find(p=>/pre.?con/i.test(String(p.name||'').trim()));
       if(!phaseI||!(phaseI.durWeeks>0) || !phaseII||!(phaseII.durWeeks>0) || !preCon||!(preCon.durWeeks>0)) return;
       const ca=(gd.milestones||[]).find(m=>m.name==='CA');
+      // Deliberately NOT rounded to a whole week here — the Pipeline's own
+      // week grid is Monday-anchored, but this tool's week grid is anchored
+      // to TODAY (today always sits in "week todayWeek", whatever weekday
+      // today happens to be — see dateRuler's d=TODAY+(w-todayWeek)*7days).
+      // Those two grids are only ever aligned by coincidence, so rounding
+      // this to an integer week would silently throw away up to 3-4 days
+      // of precision — exactly the "misaligned dates" Byron measured
+      // against Raabe's real Pipeline dates. renderCombinedTrack positions
+      // the CA pill using this exact fractional value (pixels don't need
+      // to land on a week boundary); only the ruler's day-label highlight
+      // rounds it, for picking which single day-cell to flag.
       const caWeeksFromToday=(ca&&ca.week!=null)
-        ? Math.round((pipelineWeekToDate(ca.week)-todayReal)/(7*86400000))
+        ? (pipelineWeekToDate(ca.week)-todayReal)/(7*86400000)
         : null;
       const key=trelloNormName(name);
       if(!byName[key]) byName[key]={I:phaseI.durWeeks, II:phaseII.durWeeks, III:preCon.durWeeks, caWeeksFromToday};
@@ -1741,7 +1752,7 @@ async function loadTrelloProjects(){
         const currentRank=trelloStageRank(category, card.suffix);
         await ensureStageEvents(category, card, entry.name, currentRank);
         catalog.forEach((c2,i)=>{
-          const st={name:c2.fullName, estMin:c2.estMin, estMax:c2.estMax};
+          const st={name:c2.fullName, estWeeks:c2.estWeeks};
           if(i<currentRank){
             st.status='done';
             const enterThis=stageEventsPeek(card.cardId, c2.key);
@@ -1777,7 +1788,7 @@ async function loadTrelloProjects(){
 // ageWeeks) — which stages exist and how long each is estimated to take is
 // Byron's own call, made in this tool's settings panel, same as a manual
 // project. So a re-sync (boot, or right after saving Setup credentials)
-// must carry forward any enabled/estMin/estMax/locked choice already made
+// must carry forward any enabled/estWeeks/locked choice already made
 // this session instead of re-seeding every stage back to "on, catalog
 // default" — otherwise editing would be pointless, undone by the very
 // next sync. zoningStartWeek/gradientOffset (the other two settings-panel
@@ -1791,7 +1802,7 @@ function mergeStageState(freshP, oldP){
       const fresh=seeded[category][c.key], old=oldP.stageState[category][c.key];
       if(!fresh && !old) return;
       state[category][c.key]=old
-        ? {enabled:old.enabled, estMin:old.estMin, estMax:old.estMax, status:fresh?fresh.status:old.status, actualWeeks:fresh?fresh.actualWeeks:old.actualWeeks, ageWeeks:fresh?fresh.ageWeeks:old.ageWeeks}
+        ? {enabled:old.enabled, estWeeks:old.estWeeks, status:fresh?fresh.status:old.status, actualWeeks:fresh?fresh.actualWeeks:old.actualWeeks, ageWeeks:fresh?fresh.ageWeeks:old.ageWeeks}
         : fresh;
     });
   });
