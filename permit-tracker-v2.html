@@ -394,7 +394,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v143';
+const CORE_VERSION = 'v144';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -558,7 +558,7 @@ function barRow(stages, y, barH, groupColor, insetFirst){
   }).join('');
 }
 
-function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset, phaseWeeks, zoningStartWeek }){
+function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset, phaseWeeks, zoningStartWeek, caWeeksFromToday }){
   const TODAY=now();
   const zoning=buildLane(zoningStages, 0);
   const permit=buildLane(permitStages, zoning.endWeek);
@@ -590,9 +590,14 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // permitting and zoning has been moved into Phase I.
   const todayWeek = permit.todayWeek!=null ? (permitOffset+permit.todayWeek) : (zoningOffset+zoning.todayWeek);
 
-  // last week OF Phase II (not the first week of Pre-Con, which is what
-  // phaseIIStart+phaseIIWidth itself actually marks) — per Byron.
-  const caWeek = phaseIIStart+phaseIIWidth-1;
+  // The Pipeline's own CA date is canonical — caWeeksFromToday (set in
+  // loadTrelloProjects from CORE_Projects' real CA milestone) says how many
+  // weeks before/after TODAY that real date falls, so adding it to
+  // todayWeek places it correctly in this same today-anchored coordinate
+  // system. Only a project with no Pipeline CA match at all (manual/demo
+  // projects, or a synced project the Pipeline doesn't have yet) falls back
+  // to the old assumption of "last week of Phase II."
+  const caWeek = caWeeksFromToday!=null ? todayWeek+caWeeksFromToday : phaseIIStart+phaseIIWidth-1;
   const {greenEnd:greenEndBase, redStart:redStartBase} = zoneBounds(caWeek);
   // Shift control moves the WHOLE on/off-track system together — band
   // position, its green/amber/red color stops, its labels, AND the computed
@@ -1285,7 +1290,7 @@ function renderCards(){
   const list=visibleProjects();
   document.getElementById('cards').innerHTML = list.length ? list.map(p=>{
     const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
-    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek});
+    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, caWeeksFromToday:p.caWeeksFromToday});
     const pid=pidOf(p.proj);
     const wks=Math.round(r.weekDelta);
     const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
@@ -1428,25 +1433,38 @@ async function stageEventsRecord(cardId, category, stageKey, projectName, entere
   items.push({id:created.id, fields});
 }
 
-/* ═══ Pipeline phase durations (CORE_Projects.GanttData) — Round 2.
-   Same read-only pattern as permit-zoning-tracker.html's loadProjectCAs():
-   narrow $select (every field named explicitly, per the hard rule — an
-   omitted field comes back empty with no error), parse the GanttData JSON
-   blob per item, match by normalized project name (no reliable shared ID
-   exists between CORE_Projects and the Trello board's "Project" field).
-   Only pulls DURATIONS (Phase I/II, and the production lane's Pre-Con
-   phase — what this tool calls "Phase III"). Deliberately does NOT pull
-   the Pipeline's own CA milestone: this tool's CA week is, per Byron's
-   earlier explicit decision (see renderCombinedTrack's caWeek comment),
-   defined as "the last week of Phase II," not an independent date — so
-   correcting Phase II's real duration is what corrects CA here too.
+/* ═══ Pipeline phase durations + CA date (CORE_Projects.GanttData) —
+   Round 2. Same read-only pattern as permit-zoning-tracker.html's
+   loadProjectCAs(): narrow $select (every field named explicitly, per the
+   hard rule — an omitted field comes back empty with no error), parse the
+   GanttData JSON blob per item, match by normalized project name (no
+   reliable shared ID exists between CORE_Projects and the Trello board's
+   "Project" field). Pulls DURATIONS (Phase I/II, and the production
+   lane's Pre-Con phase — what this tool calls "Phase III") AND the real
+   CA milestone: the Pipeline's CA date is canonical, so it's converted
+   from the Pipeline's own week-epoch into a real calendar date, then
+   expressed as "weeks before/after today" — a form renderCombinedTrack
+   can drop straight onto its own today-anchored coordinate system without
+   needing any other absolute date math of its own (see caWeek there).
    A project with no CORE_Projects match, or malformed/incomplete
    GanttData, is simply left out of the map — loadTrelloProjects() falls
-   back to the {I:6,II:18,III:6} placeholder for it, same as today. */
+   back to the {I:6,II:18,III:6} placeholder and the old derived-CA
+   behavior for it, same as before this existed. */
+// Fixed week-epoch the Pipeline itself uses (project-pipeline.html:
+// CAL_ABS_EARLIEST, mirrored exactly by permit-zoning-tracker.html's
+// CA_EPOCH) — must match bit-for-bit or a converted CA date would quietly
+// drift from what the Pipeline itself shows for the same project.
+const CAL_ABS_EARLIEST=new Date('2025-01-01');
+function pipelineWeekToDate(w){
+  const day=CAL_ABS_EARLIEST.getDay();
+  const offset=day===1?0:(day===0?1:8-day);
+  return new Date(CAL_ABS_EARLIEST.getTime()+(w*7+offset)*86400000);
+}
 let _pipelineSchedCache=null, _pipelineSchedPromise=null;
 async function loadPipelineSchedules(){
   if(_pipelineSchedCache) return _pipelineSchedCache;
   if(!_pipelineSchedPromise) _pipelineSchedPromise=graphGetAll(BWC_SITE+'/CORE_Projects/items?$expand=fields($select=ProjectName,ClientName,Title,GanttData)&$select=id,fields').then(items=>{
+    const todayReal=now();
     const byName={};
     items.forEach(it=>{
       const f=it.fields||{};
@@ -1459,8 +1477,12 @@ async function loadPipelineSchedules(){
       const phaseI=dPhases[0], phaseII=dPhases[1];
       const preCon=((gd.productionLane&&gd.productionLane.phases)||[]).find(p=>/pre.?con/i.test(String(p.name||'').trim()));
       if(!phaseI||!(phaseI.durWeeks>0) || !phaseII||!(phaseII.durWeeks>0) || !preCon||!(preCon.durWeeks>0)) return;
+      const ca=(gd.milestones||[]).find(m=>m.name==='CA');
+      const caWeeksFromToday=(ca&&ca.week!=null)
+        ? Math.round((pipelineWeekToDate(ca.week)-todayReal)/(7*86400000))
+        : null;
       const key=trelloNormName(name);
-      if(!byName[key]) byName[key]={I:phaseI.durWeeks, II:phaseII.durWeeks, III:preCon.durWeeks};
+      if(!byName[key]) byName[key]={I:phaseI.durWeeks, II:phaseII.durWeeks, III:preCon.durWeeks, caWeeksFromToday};
     });
     _pipelineSchedCache=byName;
     return byName;
@@ -1678,9 +1700,12 @@ async function loadTrelloProjects(){
 
   const projects=[];
   for(const entry of Object.values(byProject)){
+    const sched=pipelineSchedules[trelloNormName(entry.name)];
     const p={ proj:entry.name, jur:'City', commercial:false, address:'', trelloCardId:null,
       permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null,
-      phaseWeeks:pipelineSchedules[trelloNormName(entry.name)]||{I:6,II:18,III:6}, gradientOffset:0, trelloSynced:true };
+      phaseWeeks:sched ? {I:sched.I, II:sched.II, III:sched.III} : {I:6,II:18,III:6},
+      caWeeksFromToday:sched ? sched.caWeeksFromToday : null,
+      gradientOffset:0, trelloSynced:true };
     for(const category of ['zoning','permitting']){
       const card=entry[category];
       const stagesOut=[];
