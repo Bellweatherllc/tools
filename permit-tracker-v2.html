@@ -140,6 +140,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .proj-hdr-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
 .proj-name{font-family:var(--font-swear);font-size:14.5px;font-weight:700;}
 .proj-address{font-size:11.5px;color:var(--mut);}
+.proj-permit-num{font-size:11.5px;color:var(--mut);}
 /* centered in the header bar as a whole (both axes), independent of the
    left-aligned name/address and right-aligned owners/Trello/Stages groups
    around it — not just centered within the title's own flex row. */
@@ -381,7 +382,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v139';
+const CORE_VERSION = 'v140';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1283,6 +1284,7 @@ function renderCards(){
         <div class="proj-hdr-title">
           <div class="proj-name">${esc(p.proj)}</div>
           <div class="proj-address">${esc(p.address||'')}</div>
+          ${p.permitNumber?`<div class="proj-permit-num" data-tip="Permit number">Permit #${esc(p.permitNumber)}</div>`:''}
         </div>
         <div class="proj-classification">${esc(classificationText(p))}</div>
         <div class="proj-hdr-sp"></div>
@@ -1355,6 +1357,42 @@ async function cfgSet(key,value){
     const created=await SherpaAuth.graph(BWC_SITE+'/CORE_Config/items',{method:'POST',body:JSON.stringify({fields:{Title:key,Key:key,Value:value}})});
     items.push({id:created.id,fields:{Key:key,Value:value}});
   }
+}
+
+/* ═══ Stage-entry event log (CORE_PermitStageEvents) — the durable
+   replacement for Trello's own board-wide action log, which only serves
+   the most recent 200 actions and silently ages the rest out. Write-once
+   per (CardId, StageKey): the FIRST time this tool observes a card
+   sitting at a given stage, it stamps that moment here, permanently.
+   Every later sync just reads the stamp back — no re-guessing, and no
+   200-action ceiling, ever. Byron never edits this list by hand; it's
+   populated entirely by the tool as cards move (see loadTrelloProjects).
+   SharePoint columns required on CORE_PermitStageEvents (BWCore site):
+     Title        single line of text
+     CardId       single line of text  — Trello card id, the lookup key
+     Category     single line of text  — 'zoning' | 'permitting'
+     StageKey     single line of text  — a STAGE_CATALOG key, or 'approved'
+     EnteredAt    date and time        — ISO instant, first-observed or backfilled
+     Backfilled   yes/no               — true if reconstructed, not caught live */
+let _stageEvCache=null, _stageEvPromise=null;
+async function stageEventsAll(){
+  if(_stageEvCache) return _stageEvCache;
+  if(!_stageEvPromise) _stageEvPromise=graphGetAll(BWC_SITE+'/CORE_PermitStageEvents/items?$expand=fields($select=CardId,Category,StageKey,EnteredAt,Backfilled)&$select=id,fields').then(items=>{ _stageEvCache=items; return items; }).catch(e=>{ _stageEvPromise=null; throw e; });
+  return _stageEvPromise;
+}
+// Synchronous cache read — only safe to call after stageEventsAll() has
+// been awaited at least once this session (loadTrelloProjects does this
+// up front, before touching any card).
+function stageEventsPeek(cardId, stageKey){
+  const row=(_stageEvCache||[]).find(it=>{ const f=it.fields||{}; return f.CardId===cardId && f.StageKey===stageKey; });
+  return row ? new Date(row.fields.EnteredAt) : null;
+}
+async function stageEventsRecord(cardId, category, stageKey, projectName, enteredAt, backfilled){
+  const items=await stageEventsAll();
+  if(stageEventsPeek(cardId, stageKey)) return; // write-once — never overwrite a recorded moment
+  const fields={ Title:projectName+' — '+category+' — '+stageKey, CardId:cardId, Category:category, StageKey:stageKey, EnteredAt:enteredAt.toISOString(), Backfilled:!!backfilled };
+  const created=await SherpaAuth.graph(BWC_SITE+'/CORE_PermitStageEvents/items',{method:'POST',body:JSON.stringify({fields})});
+  items.push({id:created.id, fields});
 }
 
 function toggleAdmin(forceOpen){
@@ -1513,9 +1551,10 @@ async function loadTrelloProjects(){
       owner:String(trelloCfValue(c,defs,'card owner')||'').trim(),
       archEngOwner:String(trelloCfValue(c,defs,'arch eng owner')||trelloCfValue(c,defs,'eng owner')||'').trim(),
       jurisdiction:String(trelloCfValue(c,defs,'jurisdiction')||'').trim(),
-      // Explicit, persistent anchor for the Submit stage — set by hand on
-      // the card, so (unlike the move-history reconstruction below) it
-      // never ages out of Trello's 200-action window.
+      permitNumber:String(trelloCfValue(c,defs,'permit number')||'').trim(),
+      // SubmittedDate is NEVER required — Byron doesn't want to hand-enter
+      // it. It's read only as a free, optional backfill signal for the
+      // Submit stage below, same tier as the Trello history reconstruction.
       submittedDate:submittedRaw?new Date(submittedRaw):null,
       history:histByCard[c.id]||[],
       lastActivity:c.dateLastActivity?new Date(c.dateLastActivity):null,
@@ -1523,36 +1562,63 @@ async function loadTrelloProjects(){
   });
 
   const liveNow=now();
+  await stageEventsAll(); // warm the cache once — every stageEventsPeek() below reads it synchronously
+
+  function stageKeyForRank(category, rank){
+    return rank===STAGE_CATALOG[category].length ? 'approved' : STAGE_CATALOG[category][rank].key;
+  }
+  // Ensures every rank the card has reached (0..currentRank, 'approved'
+  // included) has a permanent EnteredAt stamp, writing one the first time
+  // it's missing. This is the one place a stage's timing is ever decided —
+  // every later sync just reads stageEventsPeek() back (see stagesOut below).
+  async function ensureStageEvents(category, card, projectName, currentRank){
+    const catalog=STAGE_CATALOG[category];
+    const trackedBefore=[...Array(catalog.length+1).keys()].some(r=>!!stageEventsPeek(card.cardId, stageKeyForRank(category,r)));
+    for(let rank=0; rank<=currentRank; rank++){
+      const stageKey=stageKeyForRank(category, rank);
+      if(stageEventsPeek(card.cardId, stageKey)) continue; // write-once — already captured
+      let enteredAt=trelloEnterTimeForRank(category, card.history, listMeta, rank)
+        || (stageKey==='submitted-review' ? card.submittedDate : null);
+      let backfilled=true;
+      if(!enteredAt && rank===currentRank){
+        if(trackedBefore){
+          // We've synced this card before and it just now shows up one
+          // rank further along — this sync IS the real-time catch of that
+          // move, not a guess.
+          enteredAt=liveNow; backfilled=false;
+        }else{
+          // First time this card has ever been synced, and it's already
+          // sitting here — dateLastActivity is a far better guess for how
+          // long than "today" would be.
+          enteredAt=card.lastActivity||liveNow;
+        }
+      }
+      if(enteredAt) await stageEventsRecord(card.cardId, category, stageKey, projectName, enteredAt, backfilled);
+    }
+  }
+
   const projects=[];
-  Object.values(byProject).forEach(entry=>{
+  for(const entry of Object.values(byProject)){
     const p={ proj:entry.name, jur:'City', commercial:false, address:'', trelloCardId:null,
-      permitOwner:null, archEngOwner:null, zoningOwner:null,
+      permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null,
       phaseWeeks:{I:6,II:18,III:6}, gradientOffset:0, trelloSynced:true };
-    ['zoning','permitting'].forEach(category=>{
+    for(const category of ['zoning','permitting']){
       const card=entry[category];
       const stagesOut=[];
       if(card){
         const catalog=STAGE_CATALOG[category];
         const currentRank=trelloStageRank(category, card.suffix);
+        await ensureStageEvents(category, card, entry.name, currentRank);
         catalog.forEach((c2,i)=>{
           const st={name:c2.fullName, estMin:c2.estMin, estMax:c2.estMax};
-          // Submit's own enter-time prefers the hand-set SubmittedDate field
-          // over the history reconstruction below — it's the one stage Byron
-          // can anchor explicitly, and it's what stays correct once a card's
-          // real transition has aged out of Trello's 200-action window.
-          const historyEnterThis=trelloEnterTimeForRank(category, card.history, listMeta, i);
-          const enterThisOverride=(c2.key==='submitted-review') ? card.submittedDate : null;
           if(i<currentRank){
             st.status='done';
-            const enterThis=enterThisOverride||historyEnterThis;
-            // History may have aged out the APPROVED transition too (an old
-            // card) — card.lastActivity is a reasonable proxy for "when it
-            // got approved" once nothing else is moving the card anymore.
-            const enterNext=trelloEnterTimeForRank(category, card.history, listMeta, i+1)||(i+1===currentRank&&currentRank===catalog.length?card.lastActivity:null);
+            const enterThis=stageEventsPeek(card.cardId, c2.key);
+            const enterNext=stageEventsPeek(card.cardId, stageKeyForRank(category,i+1));
             if(enterThis&&enterNext) st.actualWeeks=Math.max(0, Math.round((enterNext-enterThis)/(7*86400000)));
           }else if(i===currentRank){
             st.status='active';
-            const enterThis=enterThisOverride||historyEnterThis||card.lastActivity||liveNow;
+            const enterThis=stageEventsPeek(card.cardId, c2.key)||liveNow;
             st.ageWeeks=Math.max(0, Math.round((liveNow-enterThis)/(7*86400000)));
           }else{
             st.status='future';
@@ -1561,13 +1627,14 @@ async function loadTrelloProjects(){
         });
         if(!p.trelloCardId){ p.trelloCardId=card.cardId; p.trelloShortLink=card.shortLink; }
         if(!p.jurisdictionSet && card.jurisdiction){ p.jur=card.jurisdiction; p.jurisdictionSet=true; }
+        if(!p.permitNumber && card.permitNumber) p.permitNumber=card.permitNumber;
         if(category==='zoning') p.zoningOwner=card.owner||null;
         else { p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
       }
       p[category==='zoning'?'zoningStages':'permitStages']=stagesOut;
-    });
+    }
     projects.push(p);
-  });
+  }
   return projects;
 }
 
