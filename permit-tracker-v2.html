@@ -259,6 +259,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .legend-glyph{font-weight:700;}
 .legend-glyph.check{color:var(--grad-green);}
 .legend-glyph.star{color:#f5c518;text-shadow:0 0 1px rgba(0,0,0,.35);}
+.legend-glyph.star.big{font-size:18px;}
 
 /* ── quick-comments floating popover (ported from permit-zoning-
    tracker.html's #cmtPop) — a single shared panel, positioned on open,
@@ -359,6 +360,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
     <span class="legend-item"><span class="legend-dot tier-off"></span><b>Off Track</b> — past the deadline</span>
     <span class="legend-item"><span class="legend-glyph check">✓</span> Stage complete</span>
     <span class="legend-item"><span class="legend-glyph star">★</span> Completed early</span>
+    <span class="legend-item"><span class="legend-glyph star big">★</span> Track approved</span>
   </div>
   <div class="trello-sync-status" id="trelloSyncStatus" style="display:none;"></div>
   <div id="cards"><div class="empty-note">Loading&hellip;</div></div>
@@ -394,7 +396,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v144';
+const CORE_VERSION = 'v145';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -703,9 +705,31 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // centering treatment as CITY/RESIDENTIAL gets in the header), instead of
   // sitting bottom-anchored against the lane edge.
   const catLabelY=barY+barH+(laneBottom-(barY+barH))/2+3.5;
+  // A track is "approved" exactly when every one of its (enabled) stages
+  // shows done — for a Trello-synced project that's only true once the
+  // card has actually moved into the APPROVED list (see loadTrelloProjects:
+  // the last real stage only gets marked done once currentRank reaches
+  // catalog.length), so this needs no separate flag of its own. Per Byron:
+  // this is a materially different state than "on track" (still in
+  // flight, projected) — it's done, and almost always ahead — so it gets
+  // its own callout rather than just blending into the small per-stage
+  // early-star treatment.
+  const zoningApproved=shiftedZoning.length>0 && shiftedZoning.every(s=>s.status==='done');
+  const permitApproved=shiftedPermit.length>0 && shiftedPermit.every(s=>s.status==='done');
   const categoryLabels=
-    (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning</text>`:'')+
-    (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting</text>`:'');
+    (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning${zoningApproved?' — approved':''}</text>`:'')+
+    (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
+  // The big gold star — distinct from barRow's own small per-stage "early"
+  // star, which marks a single stage beating its own estimate. This marks
+  // the WHOLE track being done, centered over its last bar, poking above
+  // the lane the same way the small star does.
+  function approvedStar(stages){
+    if(!stages.length) return '';
+    const last=stages[stages.length-1];
+    const x=(last.start+last.width/2)*PX_PER_WEEK;
+    return `<text x="${x}" y="${barY-1}" text-anchor="middle" dominant-baseline="central" font-size="24" fill="#f5c518" stroke="#fff" stroke-width="1.4" paint-order="stroke" font-family="${FONT}" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));">★</text>`;
+  }
+  const approvedStars=(zoningApproved?approvedStar(shiftedZoning):'')+(permitApproved?approvedStar(shiftedPermit):'');
 
   const MARKER_RISE=CFG.markerRise, PILL_RX=5;
   // CA's pill sits INSIDE the gantt, overlapping the top of the lane,
@@ -886,6 +910,7 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     ${weekGrid}
     ${milestoneColumnsHtml}
     ${sequenceBars}
+    ${approvedStars}
     ${categoryLabels}
     ${phaseLabels}
     ${band}
@@ -1200,17 +1225,19 @@ const GEAR_ICON_SVG='<svg viewBox="0 0 24 24" fill="#fff" stroke="currentColor" 
 // Zoning / Permit / Arch-Eng Owner — pulled from the Trello card, sitting
 // just left of the Trello buttons. When one person holds two or more of
 // these roles, their roles combine onto a single row ("Zoning, Permit
-// Owner: Byron") instead of repeating their name on separate lines.
+// Owner: Byron") instead of repeating their name on separate lines. A role
+// with no owner — no name set, or (for Zoning specifically) no card for
+// that track at all yet — is just left off entirely, per Byron: an
+// "Unassigned" row isn't useful information, so don't show one.
 function ownersInfo(p){
-  const roles=[['Zoning',p.zoningOwner],['Permit',p.permitOwner],['Arch/Eng',p.archEngOwner]];
+  const roles=[['Zoning',p.zoningOwner],['Permit',p.permitOwner],['Arch/Eng',p.archEngOwner]].filter(([,name])=>name);
   const groups=[]; // [{key, roleNames:[], display}]
   roles.forEach(([role,name])=>{
-    const key=name||'__unassigned__';
-    let g=groups.find(g=>g.key===key);
-    if(!g){ g={key, roleNames:[], display:name}; groups.push(g); }
+    let g=groups.find(g=>g.display===name);
+    if(!g){ g={roleNames:[], display:name}; groups.push(g); }
     g.roleNames.push(role);
   });
-  const row=g=>`<div class="owner-row"><span class="owner-lbl">${esc(g.roleNames.join(', '))} Owner</span><span class="owner-name">${esc(g.display||'Unassigned')}</span></div>`;
+  const row=g=>`<div class="owner-row"><span class="owner-lbl">${esc(g.roleNames.join(', '))} Owner</span><span class="owner-name">${esc(g.display)}</span></div>`;
   return `<div class="owners-info">${groups.map(row).join('')}</div>`;
 }
 
