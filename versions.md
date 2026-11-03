@@ -25,7 +25,7 @@ Last updated: 2026-10-27
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v22 |
+| People Analyzer | `people-analyzer.html` | v23 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-11-03** — People Analyzer v22 → v23: every menu starts empty — Evaluate session (no longer auto-picked), Compensation Show, Review History Show and the Annual Review Scorers session each open on a "Pick…" prompt. Quick guide: "Two kinds of review" rewritten as two short lists instead of a table; the manual page now styles its tables.
 - **2026-11-03** — People Analyzer v21 → v22: History tab split into **Add History** (import) and **Review History**, which shows one person at a time, picked from a Show list grouped by department with review counts.
 - **2026-11-03** — People Analyzer v20 → v21: department compensation gains a **By year** layout — years down the side (newest open, click to expand), people under each year, and pay lines across (salary, total, bonus available/earned, PTO, then each benefit line) with a total per year, so people can be compared within a year. Both layouts group people by their Team Members **Role** (job title) with a subtotal per role. `Role` is read from `CORE_TeamMembers` only after checking the column exists.
 - **2026-11-03** — People Analyzer v19 → v20: department compensation table — click a name (or **Expand all**) to open that person's breakdown under their row: salary, each benefit line, total, bonus earned and PTO, aligned to the department's years. "open ›" goes to the person's own page.

@@ -1288,7 +1288,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v22';
+const CORE_VERSION = 'v23';
 // Core Values wording: NEW_Core_Values_v2 (revised 08-03-26). Update this date when the descriptors change.
 const CORE_VALUES_REVISED = 'Aug 3, 2026';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
@@ -2199,7 +2199,6 @@ function populateSessionDropdowns() {
     evalSel.appendChild(opt);
   });
   if (evalCurrent) evalSel.value = evalCurrent;
-  if (!evalSel.value && openSessions.length === 1) evalSel.value = openSessions[0].id;
 
   // Summary tab session filter
   const sumSel = document.getElementById('sessionFilter');
@@ -3334,19 +3333,19 @@ function renderHistoryList() {
   });
   const name = key => key.startsWith('name:') ? key.slice(5) + ' (not on roster)' : (empById(key) || {}).name || '?';
   const deptOf = key => key.startsWith('name:') ? 'Not on roster' : ((empById(key) || {}).department || 'Unassigned');
-  if (!groups.has(historyPick)) historyPick = [...groups.keys()].sort((a, b) => name(a).localeCompare(name(b)))[0];
+  if (historyPick && !groups.has(historyPick)) historyPick = '';
   const depts = [...new Set([...groups.keys()].map(deptOf))].sort((a, b) => getDepartments().indexOf(a) - getDepartments().indexOf(b) || a.localeCompare(b));
   const options = depts.map(d => `<optgroup label="${esc(d)}">${[...groups.keys()].filter(k => deptOf(k) === d).sort((a, b) => name(a).localeCompare(name(b)))
     .map(k => `<option value="${esc(k)}"${k === historyPick ? ' selected' : ''}>${esc(name(k))} (${groups.get(k).length})</option>`).join('')}</optgroup>`).join('');
   const emp = empById(historyPick);
-  const items = groups.get(historyPick);
+  const items = groups.get(historyPick) || [];
   el.innerHTML = `<div class="card h-person">
     <div class="h-person-head"><div class="card-title" style="margin-bottom:0;">Review History</div>
       <label class="field-label" for="historyPick" style="margin:0 0 0 16px;">Show</label>
-      <select id="historyPick" onchange="historyPick=this.value;renderHistoryList()" style="width:auto;min-width:240px;">${options}</select>
+      <select id="historyPick" onchange="historyPick=this.value;renderHistoryList()" style="width:auto;min-width:240px;"><option value=""${historyPick ? '' : ' selected'}>Pick a person…</option>${options}</select>
       <span class="ac-detail" style="margin-left:auto;">${groups.size} ${groups.size === 1 ? 'person' : 'people'} · ${reviewHistory.length} reviews</span></div>
-    <div class="h-person-head" style="margin-top:14px;"><b>${esc(name(historyPick))}</b>${emp ? deptChipHTML(emp.department) : ''}<span class="ac-detail">${items.length} review${items.length !== 1 ? 's' : ''}, newest first — click one to open it</span></div>
-    <div class="h-list">${items.map(h => historyItemHTML(h, true)).join('')}</div></div>`;
+    ${historyPick ? `<div class="h-person-head" style="margin-top:14px;"><b>${esc(name(historyPick))}</b>${emp ? deptChipHTML(emp.department) : ''}<span class="ac-detail">${items.length} review${items.length !== 1 ? 's' : ''}, newest first — click one to open it</span></div>
+    <div class="h-list">${items.map(h => historyItemHTML(h, true)).join('')}</div>` : ''}</div>`;
 }
 
 // ── Import: drop → parse → preview → save ──
@@ -3554,11 +3553,12 @@ function renderAnnualScorers() {
   let html = notes.length ? `<div class="admin-note admin-note-warn">Add for annual reviews:<ul>${notes.map(n => `<li>${n}</li>`).join('')}</ul></div>` : '';
   if (!annualSessions.length) { el.innerHTML = html + '<div style="color:var(--silver);">No annual review session yet. Create one above with "Annual review" ticked.</div>'; return; }
   if (isOnline && historyState !== 'ok') { el.innerHTML = html + '<div class="admin-note admin-note-warn">Scorer assignments are stored in PA_ReviewHistory, which isn\'t available yet. See the History tab.</div>'; return; }
-  if (!annualSessions.some(s => s.id === annualScorerSession)) annualScorerSession = annualSessions[annualSessions.length - 1].id;
+  if (annualScorerSession && !annualSessions.some(s => s.id === annualScorerSession)) annualScorerSession = '';
   const admins = employees.filter(e => e.active && (!schema.employeeRole || ADMIN_ROLE_VALUES.includes(e.role))).sort((a, b) => a.name.localeCompare(b.name));
   const staff = employees.filter(e => e.active).sort((a, b) => a.name.localeCompare(b.name));
   const opts = (sel, exclude) => `<option value="">—</option>` + admins.filter(a => a.id !== exclude).map(a => `<option value="${esc(a.id)}"${a.id === sel ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
-  html += `<select onchange="annualScorerSession=this.value;renderAnnualScorers()" style="margin-bottom:8px;">${annualSessions.map(s => `<option value="${esc(s.id)}"${s.id === annualScorerSession ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select>`;
+  html += `<select onchange="annualScorerSession=this.value;renderAnnualScorers()" style="margin-bottom:8px;"><option value=""${annualScorerSession ? '' : ' selected'}>Pick an annual session…</option>${annualSessions.map(s => `<option value="${esc(s.id)}"${s.id === annualScorerSession ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select>`;
+  if (!annualScorerSession) { el.innerHTML = html; return; }
   const done = staff.filter(e => { const r = annualRecord(annualScorerSession, e.id); return r && r.data.hodId && r.data.secondId; }).length;
   html += `<div class="ac-detail" style="margin-bottom:6px;">${done} of ${staff.length} staffers have both scorers. Each staffer also scores themselves.</div>`;
   html += `<table class="scorer-table"><thead><tr><th>Staffer</th><th>HOD</th><th>Second seat</th></tr></thead><tbody>`;
@@ -4172,6 +4172,9 @@ function chartLeave(id) {
 
 // ── Compensation tab ──
 function compScopeOptions() {
+  return `<option value=""${compScope ? '' : ' selected'}>Pick a person or department…</option>` + compScopeOptionList();
+}
+function compScopeOptionList() {
   const depts = getDepartments().filter(d => employees.some(e => e.department === d));
   const people = [...employees].filter(e => e.active || Object.keys(compYearsFor(e.id)).length).sort((a, b) => a.name.localeCompare(b.name));
   return `<optgroup label="People">${people.map(e => `<option value="emp:${esc(e.id)}"${compScope === 'emp:' + e.id ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</optgroup>
@@ -4184,11 +4187,6 @@ function renderCompView() {
     el.innerHTML = `<div class="card"><div class="admin-note admin-note-warn">Compensation is stored in PA_ReviewHistory, which isn't available yet. See the History tab.</div></div>`;
     return;
   }
-  if (!compScope) {
-    const withData = employees.filter(e => Object.keys(compYearsFor(e.id)).length).sort((a, b) => a.name.localeCompare(b.name));
-    const first = withData[0] || employees.filter(e => e.active).sort((a, b) => a.name.localeCompare(b.name))[0];
-    compScope = first ? 'emp:' + first.id : '';
-  }
   let h = `<div class="card comp-bar"><label class="field-label" for="compScope" style="margin:0;">Show</label>
     <select id="compScope" onchange="compScope=this.value;compEdit=null;renderCompView()">${compScopeOptions()}</select>`;
   if (compScope.startsWith('dept:')) {
@@ -4196,7 +4194,7 @@ function renderCompView() {
   }
   h += `<div class="comp-hint">Pick anyone on the roster — including someone who hasn't had a review yet — then click <b>+ Add a year</b> and enter their salary. Each person shows here once they're active in Team Members.</div>`;
   h += `</div>`;
-  h += compScope.startsWith('dept:') ? compDeptHTML(compScope.slice(5)) : compPersonHTML(compScope.slice(4));
+  h += !compScope ? '' : compScope.startsWith('dept:') ? compDeptHTML(compScope.slice(5)) : compPersonHTML(compScope.slice(4));
   el.innerHTML = h;
 }
 

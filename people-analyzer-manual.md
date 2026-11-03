@@ -2,7 +2,7 @@
 
 *How to fill out a review, run one, and fix the usual problems.*
 
-*November 2026 · People Analyzer v22*
+*November 2026 · People Analyzer v23*
 
 ## The basics
 
@@ -14,14 +14,19 @@ Open it at [bellweatherllc.github.io/tools/people-analyzer.html](https://bellwea
 
 ### Two kinds of review
 
-| | **Periodic review** | **Annual review** |
-|---|---|---|
-| **When** | Mid-year (June), or any check-in | January |
-| **Who scores** | Admins score staff; staff score themselves | Each staffer gets three scorers: their **HOD**, a **second seat**, and **themselves** |
-| **What's rated** | Core Values and GWC | Core Values, GWC and the **V/TO** — plus **eNPS** from the staffer |
-| **What you end with** | A consensus per person in Summaries | A **summary page** per person: final agreed ratings, compensation, bonus, goals and the meeting close |
+**Periodic review** — mid-year (June), or any check-in
 
-An admin decides which kind it is when creating the session — tick **Annual review** for the January one.
+- Admins score staff; staff score themselves.
+- Rates the Core Values and GWC.
+- Ends with a consensus for each person in **Summaries**.
+
+**Annual review** — January
+
+- Each staffer has three scorers: their **HOD**, a **second seat**, and **themselves**.
+- Rates the Core Values, GWC and the **V/TO**. The staffer also answers **eNPS**.
+- Ends with a **summary page** for each person: final agreed ratings, compensation, bonus, goals and the meeting close.
+
+An admin picks the kind when creating the session — tick **Annual review** for the January one.
 
 ### Who sees what
 
@@ -33,7 +38,7 @@ Admin is set per person in **Team Members → Access → People Analyzer**.
 ## Filling out an evaluation (everyone)
 
 1. Open People Analyzer. Your name is already filled in.
-2. Pick the **Session** if there's more than one open.
+2. Pick the **Session**.
 3. Staff: you're already picked — this is your self-evaluation. Admins: pick the person you're scoring.
 4. Rate each item, add a comment where it helps, and click **Submit Evaluation**.
 
