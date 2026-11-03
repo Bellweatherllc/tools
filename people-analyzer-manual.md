@@ -2,7 +2,7 @@
 
 *How to fill out a review, run one, and fix the usual problems.*
 
-*November 2026 · People Analyzer v21*
+*November 2026 · People Analyzer v22*
 
 ## The basics
 
@@ -76,7 +76,7 @@ The annual summary page saves its compensation here too, so there's one set of f
 
 ## History (admins)
 
-The **History** tab brings in past review spreadsheets. Drag the Excel files onto it, check the preview (fix the person or month if they're blank), and click **Import**. Each sheet becomes one review, and its compensation shows on the Compensation tab. Importing the same file twice does nothing.
+The **History** tab has two parts. **Add History** brings in past review spreadsheets: drag the Excel files onto it, check the preview (fix the person or month if they're blank), and click **Import**. **Review History** shows one person's past reviews at a time — pick them in **Show**. Each sheet becomes one review, and its compensation shows on the Compensation tab. Importing the same file twice does nothing.
 
 ## If something's wrong
 
