@@ -25,7 +25,7 @@ Last updated: 2026-10-27
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v15 |
+| People Analyzer | `people-analyzer.html` | v16 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -37,7 +37,7 @@ Last updated: 2026-10-27
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v4 |
-| CORE System Map | `core-system-map.html` | v16 |
+| CORE System Map | `core-system-map.html` | v17 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-11-03** — People Analyzer v15 → v16: offline mode removed from the sign-in screen — the tool only runs signed in. New admin **Compensation** tab: per person, salary and total comp by year (chart + side-by-side table with year-over-year change, bonus, PTO); per department, everyone on one chart (total comp or salary) with a department total that flags partial years. **+ Add a year** / **Edit** save one compensation record per person per year in `PA_ReviewHistory`; imported years are never changed (edits override them; Undo restores). The annual summary page now reads and saves that same yearly record (its Salary line is the year's salary; the separate "New salary" box is gone). Manual rewritten as a short quick guide built around periodic vs annual reviews. CORE System Map v16 → v17.
 - **2026-10-28** — People Analyzer v14 → v15: annual review, part 2 — the **summary page** (admins). Per staffer per annual session: HOD / second seat / self side by side with a Final (agreed) column (auto-fill where HOD and second seat agree); wins, opportunities, goals; compensation & benefits pre-filled from the last imported review, editable, totalled in integer cents; new salary; PTO; bonus available/earned (entered, not calculated); meeting close with transcript paste or .txt/.vtt/.srt drop, a prepared Claude prompt to copy (no eNPS, no comp figures), and the close text. Save, Save & mark complete / Reopen, Print / PDF. Stored on the annual record in `PA_ReviewHistory`; transcript as a `transcript.txt` attachment. Entry points: Summary column in the annual session table and a button on each person's annual block. `apiCall()` / `AI_PROXY_URL` scaffold ready for the Azure Function proxy (empty — not deployed).
 - **2026-10-27** — People Analyzer v13 → v14: annual review, part 1. Sessions can be created as **Annual review** (`SessionType` on `PA_Sessions`; until that column exists, a name containing "Annual" counts). Admin panel → **Annual Review Scorers** assigns each staffer's HOD and second seat (admins), stored as admin-only records in `PA_ReviewHistory`. In an annual session, admins see only the staffers they score and the form shows their role; everyone rates V/TO (Core Focus, 10-Year Target, 3-Year Picture & 1-Year Plan); the staffer answers eNPS (0–10, required). V/TO, eNPS and role are saved in a new `AnnualData` column on `PA_Evaluations`. Summaries tag HOD / 2nd seat / self and add a V/TO grid; the company eNPS shows for the annual session, never individual answers. One score per scorer per staffer per annual review.
 - **2026-10-27** — People Analyzer v12 → v13: new admin-only **History** tab — drag-and-drop import of past review workbooks into a new `PA_ReviewHistory` list. Each sheet is one review; the parser finds sections by their grey headings rather than fixed cells, handles +/− and 1–5 layouts, the pre-2023 value set, legacy and threaded comments, wins/opportunities/outcomes/notes, bonus and compensation panels, and keeps anything else with its cell reference. Preview lets you fix person/month before saving; re-imports are skipped. History shows grouped by person and inside each person's Summaries view. The Access Check covers `PA_ReviewHistory` (must not inherit; no member/staff access — it holds compensation). Tested on the Sean, Hayley and Stephanie workbooks: 21 reviews. CORE System Map v15 → v16: `PA_ReviewHistory` added.
