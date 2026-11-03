@@ -2,7 +2,7 @@
 
 *How to fill out a review, run one, and fix the usual problems.*
 
-*November 2026 · People Analyzer v24*
+*November 2026 · People Analyzer v25*
 
 ## The basics
 
@@ -18,7 +18,7 @@ Open it at [bellweatherllc.github.io/tools/people-analyzer.html](https://bellwea
 
 - Admins score staff; staff score themselves.
 - Rates the Core Values and GWC.
-- Ends with a consensus for each person in **Summaries**.
+- Ends with a consensus for each person in **Session Summary**.
 
 **Annual review** — January
 
@@ -31,7 +31,7 @@ An admin picks the kind when creating the session — tick **Annual review** for
 ### Who sees what
 
 - **Staff** see only their own self-evaluation (the Evaluate tab and **My Self-Evaluations**).
-- **Admins** see everything: Summaries, Review History, Compensation and the Admin panel.
+- **Admins** see everything: Session Summary, Review History, Compensation and the Admin panel.
 
 Admin is set per person in **Team Members → Access → People Analyzer**.
 
@@ -49,7 +49,7 @@ In an annual review you'll also rate three parts of the V/TO, and staff answer o
 ### A periodic review
 
 1. Click the **Admin** switch in the header, type a session name (e.g. *June 2027*), and click **Create**.
-2. Tell people it's open. They score; you watch **Summaries** fill in.
+2. Tell people it's open. They score; open **Session Summary**, pick the session, and watch it fill in — who's been scored by how many people, and who still owes a self-evaluation.
 3. When it's done, switch the session off in the Admin panel. Nothing is deleted.
 
 ### The annual review
@@ -57,7 +57,7 @@ In an annual review you'll also rate three parts of the V/TO, and staff answer o
 1. In the Admin panel, type a name (e.g. *2027 Annual Review*), tick **Annual review**, and click **Create**.
 2. Under **Annual Review Scorers**, pick each staffer's **HOD** and **second seat**.
 3. Everyone scores. Each admin only sees the people they're assigned to.
-4. Before each review meeting, open **Summaries**, pick the annual session, and click the person's **Summary** button.
+4. Before each review meeting, open **Session Summary**, pick the annual session, and click the person's **Summary** button.
 5. In the meeting, fill in the summary page:
    - **Final (agreed)** ratings — **Fill final where HOD & second seat agree** does the easy ones.
    - Wins, opportunities and goals.
@@ -81,9 +81,9 @@ The annual summary page saves its compensation here too, so there's one set of f
 
 ## Review History (admins)
 
-**Summaries** is for the review you're running now. **Review History** is everyone's complete record: pick a person in **Show** to see every review they've had, newest first —
+**Session Summary** shows one session and everyone in it — use it while a round is running. **Review History** shows one person and every review they've had — use it to see how someone has done over time. Pick a person in **Show**: the **Trajectory** at the top shows their consensus in each session, and below it every review, newest first —
 
-- **In tool** and **Annual** — reviews done in People Analyzer. Open one to see each scorer's ratings; **Open in Summaries** takes you to it.
+- **In tool** and **Annual** — reviews done in People Analyzer. Open one to see each scorer's ratings; **Open in Session Summary** takes you to it.
 - **Imported** — reviews from past spreadsheets, with the reviewer's comments, wins and opportunities.
 
 **Add History** (below it) brings in past spreadsheets: drag the Excel files on, check the preview (fix the person or month if they're blank), and click **Import**. Importing the same file twice does nothing; the figures also show on the Compensation tab.
@@ -94,7 +94,7 @@ The annual summary page saves its compensation here too, so there's one set of f
 
 **"We couldn't find you on the roster."** Your sign-in email doesn't match your Team Members row. Add it there (separate several addresses with semicolons), then reload.
 
-**"I already submitted for this session."** Each person gets one self-evaluation per session. An admin can delete it: Summaries → the person → turn on **🗑 Manage** → **✕ remove**.
+**"I already submitted for this session."** Each person gets one self-evaluation per session. An admin can delete it: Session Summary → pick the session → the person → turn on **🗑 Manage** → **✕ remove**.
 
 **Old evaluations "don't match anyone on the roster."** Usually a misspelled name. In the Admin panel under SharePoint Links, pick who each one is and click **Link**.
 

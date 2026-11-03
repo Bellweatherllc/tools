@@ -971,7 +971,7 @@
   <nav class="focus-nav" role="tablist" aria-label="People Analyzer view">
     <button type="button" class="focus-btn is-active" data-view="evaluate" role="tab" onclick="switchView('evaluate')">Evaluate</button>
     <button type="button" class="focus-btn" data-view="mine" role="tab" id="tabMine" style="display:none;" onclick="switchView('mine')">My Self-Evaluations</button>
-    <button type="button" class="focus-btn" data-view="summary" role="tab" id="tabSummary" onclick="switchView('summary')">Summaries</button>
+    <button type="button" class="focus-btn" data-view="summary" role="tab" id="tabSummary" onclick="switchView('summary')">Session Summary</button>
     <button type="button" class="focus-btn" data-view="history" role="tab" id="tabHistory" onclick="switchView('history')">Review History</button>
     <button type="button" class="focus-btn" data-view="comp" role="tab" id="tabComp" onclick="switchView('comp')">Compensation</button>
     <a class="manual-btn" href="people-analyzer-manual.html" target="_blank" rel="noopener" data-tip="Quick guide">?</a>
@@ -1192,15 +1192,14 @@
   <div id="view-summary" class="view">
     <div class="card" style="padding:16px 24px;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <span class="field-label" style="margin-bottom:0;white-space:nowrap;">Filter by</span>
-        <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All</button>
-        <span id="deptFilterBtns" style="display:contents;"></span>
-        <select id="individualFilter" onchange="setFilter(this.value || 'all')" aria-label="Show one person" style="width:180px;padding:7px 12px;font-size:13px;">
-          <option value="">Individual…</option>
+        <label class="field-label" for="sessionFilter" style="margin-bottom:0;white-space:nowrap;">Session</label>
+        <select id="sessionFilter" onchange="setSessionFilter(this.value)" style="width:220px;padding:7px 12px;font-size:13px;">
+          <option value="">Pick a session…</option>
         </select>
         <div style="border-left:1px solid var(--cloud);height:24px;margin:0 4px;"></div>
-        <select id="sessionFilter" onchange="setSessionFilter(this.value)" style="width:180px;padding:7px 12px;font-size:13px;">
-          <option value="">All Sessions</option>
+        <span id="deptFilterBtns" style="display:contents;"></span>
+        <select id="individualFilter" onchange="setFilter(this.value || 'all')" aria-label="Show one person" style="width:180px;padding:7px 12px;font-size:13px;">
+          <option value="">Person…</option>
         </select>
       </div>
       <div id="manageRow" style="display:flex;align-items:center;gap:6px;margin-top:8px;">
@@ -1297,7 +1296,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v24';
+const CORE_VERSION = 'v25';
 // Core Values wording: NEW_Core_Values_v2 (revised 08-03-26). Update this date when the descriptors change.
 const CORE_VALUES_REVISED = 'Aug 3, 2026';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
@@ -1916,7 +1915,7 @@ async function renderAccessCheck() {
   html += checkRow(ev.readSecurity === 2, 'People can read only their own evaluations', ev.readSecurity === 2 ? '' : 'Advanced settings → Item-level Permissions → Read access: <i>Read items that were created by the user</i>.');
   html += checkRow(ev.writeSecurity === 2, 'People can edit only their own evaluations', ev.writeSecurity === 2 ? '' : 'Advanced settings → Item-level Permissions → Create and Edit access: <i>Create items and edit items that were created by the user</i>.');
   html += checkRow(hasPerm(ev.mask, PERM.add), 'You can submit evaluations', hasPerm(ev.mask, PERM.add) ? '' : 'Your account needs at least Contribute here.');
-  html += checkRow(seesAll, 'You can see everyone\'s evaluations', seesAll ? '' : 'Summaries will only show evaluations you created. Give admins <b>Design</b> (or a level with Override List Behaviors) on this list.');
+  html += checkRow(seesAll, 'You can see everyone\'s evaluations', seesAll ? '' : 'Session Summary will only show evaluations you created. Give admins <b>Design</b> (or a level with Override List Behaviors) on this list.');
   html += checkRow(hasPerm(ev.mask, PERM.del), 'You can delete evaluations', hasPerm(ev.mask, PERM.del) ? '' : 'Needed for 🗑 Manage.');
   html += grantsHTML('PA_Evaluations', ev.grants);
 
@@ -2212,7 +2211,7 @@ function populateSessionDropdowns() {
   // Summary tab session filter
   const sumSel = document.getElementById('sessionFilter');
   const sumCurrent = sumSel.value;
-  sumSel.innerHTML = '<option value="">All Sessions</option>';
+  sumSel.innerHTML = '<option value="">Pick a session…</option>';
   sessions.forEach(s => {
     const opt = document.createElement('option');
     opt.value = s.id;
@@ -2550,7 +2549,7 @@ function renderDeptFilterButtons() {
   const el = document.getElementById('deptFilterBtns');
   const depts = getDepartments().filter(d => employees.some(e => e.department === d));
   el.innerHTML = depts.map(d =>
-    `<button class="filter-btn${currentFilter === d ? ' active' : ''}" data-filter="${esc(d)}" onclick="setFilter(this.dataset.filter)">${esc(d)}</button>`
+    `<button class="filter-btn${currentFilter === d ? ' active' : ''}" data-filter="${esc(d)}" onclick="setFilter(currentFilter === this.dataset.filter ? 'all' : this.dataset.filter)" data-tip="Show only ${esc(d)} — click again to show everyone">${esc(d)}</button>`
   ).join('');
 }
 
@@ -2565,7 +2564,7 @@ function setFilter(filter) {
 
 function populateIndividualFilter() {
   const sel = document.getElementById('individualFilter');
-  sel.innerHTML = '<option value="">Individual…</option>';
+  sel.innerHTML = '<option value="">Person…</option>';
   const filteredEvals = getFilteredEvaluations();
   const evaluated = employees.filter(emp => filteredEvals.some(ev => ev.empId === emp.id));
   evaluated.sort((a,b) => a.name.localeCompare(b.name)).forEach(emp => {
@@ -2595,6 +2594,13 @@ function distinctEvaluators(evals) {
 
 function renderSummary() {
   const container = document.getElementById('summaryContent');
+  const pickers = ['deptFilterBtns', 'individualFilter'].map(id => document.getElementById(id));
+  pickers.forEach(el => { el.style.visibility = currentSessionFilter ? '' : 'hidden'; });
+  if (!currentSessionFilter) {
+    container.innerHTML = `<div class="empty-state"><p>Pick a session to see who's been scored and how they came out.</p>
+      <p class="hint">For one person's reviews over time, use the Review History tab.</p></div>`;
+    return;
+  }
   const filteredEvals = getFilteredEvaluations().filter(e => e.empId);
 
   if (filteredEvals.length === 0) {
@@ -2637,69 +2643,9 @@ function renderSummary() {
     html += `<div class="card-title" style="margin-bottom:0;">${esc(emp.name)}</div>`;
     html += `<span style="font-size:13px;">${deptChipHTML(emp.department)}</span>`;
     if (!emp.active) html += `<span class="dept-chip dept-chip-other" data-tip="Marked inactive in Team Members">Inactive</span>`;
-    html += `<span style="margin-left:auto;">${statusHTML(getStatus(allPersonEvals))}</span>`;
+    html += `<a href="#" class="comp-open-link" style="margin-left:auto;" onclick="historyPick='${esc(empId)}';switchView('history');return false;">Full review history ›</a>`;
     html += `</div>`;
 
-    // ── Cross-Session Trajectory ──
-    // Get ALL sessions for this person (ignore session filter for trajectory)
-    const allPersonEvalsUnfiltered = evaluations.filter(e => e.empId === empId);
-    const allSessionIds = [...new Set(allPersonEvalsUnfiltered.map(e => e.sessionId))];
-    // Order by session array position (saved session order)
-    const orderedSessionIds = sessions.map(s => s.id).filter(id => allSessionIds.includes(id));
-    // Add any orphaned session IDs not in sessions array
-    allSessionIds.forEach(id => { if (!orderedSessionIds.includes(id)) orderedSessionIds.push(id); });
-
-    if (orderedSessionIds.length > 0) {
-      const trajCols = orderedSessionIds.length;
-
-      html += `<div class="trajectory-section">`;
-      html += `<div class="trajectory-header">`;
-      html += `<span class="trajectory-title">Trajectory</span>`;
-      if (orderedSessionIds.length > 1) {
-        html += `<button class="btn btn-secondary btn-sm" onclick="exportAllSessionsXLSX('${esc(empId)}')" style="margin-left:auto;font-size:11px;">📥 Download All Sessions</button>`;
-      }
-      html += `</div>`;
-      html += `<div class="trajectory-body">`;
-      html += `<div class="trajectory-grid-wrap"><div class="trajectory-grid" style="--session-count:${trajCols};">`;
-
-      // Column headers = session names
-      html += `<div class="tg-header" style="text-align:left;"></div>`;
-      orderedSessionIds.forEach(sid => {
-        html += `<div class="tg-header">${esc(getSessionName(sid))}</div>`;
-      });
-
-      // Core Values rows
-      CORE_VALUES.forEach(v => {
-        html += `<div class="tg-label">${esc(v.label)}</div>`;
-        orderedSessionIds.forEach(sid => {
-          const sEvals = allPersonEvalsUnfiltered.filter(e => e.sessionId === sid);
-          html += `<div class="tg-cell">${consensusChip(peerEvals(sEvals).map(e => e[v.key]))}</div>`;
-        });
-      });
-
-      // Divider
-      html += `<div class="tg-divider"></div>`;
-
-      // GWC rows
-      GWC.forEach(g => {
-        html += `<div class="tg-label">${g.label}</div>`;
-        orderedSessionIds.forEach(sid => {
-          const sEvals = allPersonEvalsUnfiltered.filter(e => e.sessionId === sid);
-          html += `<div class="tg-cell">${consensusChip(peerEvals(sEvals).map(e => e[g.key]))}</div>`;
-        });
-      });
-
-      // Status row
-      html += `<div class="tg-label" style="font-weight:600;">Status</div>`;
-      orderedSessionIds.forEach(sid => {
-        const sEvals = allPersonEvalsUnfiltered.filter(e => e.sessionId === sid);
-        html += `<div class="tg-cell">${statusHTML(getStatus(sEvals))}</div>`;
-      });
-
-      html += `</div></div></div></div>`;
-    }
-
-    html += personHistoryHTML(empId);
 
     // Render each session as its own block
     sessionGroups.forEach(sg => {
@@ -3372,11 +3318,77 @@ function sessionItemHTML(it, empId) {
       <span class="h-meta">${peers.length} scorer${peers.length !== 1 ? 's' : ''}${selfs.length ? ' + self' : ''}</span></summary>
     <div class="h-body">
       <div class="h-source">Status: ${statusHTML(getStatus(it.evals))}
-        <button class="btn btn-secondary btn-sm" onclick="openInSummaries('${esc(it.sessionId)}','${esc(empId)}')">Open in Summaries</button>
+        <button class="btn btn-secondary btn-sm" onclick="openInSummaries('${esc(it.sessionId)}','${esc(empId)}')">Open in Session Summary</button>
         ${annual ? `<span>Summary page ${annualStatusChip(it.sessionId, empId)}</span>` : ''}</div>
       ${t}
     </div>
   </details>`;
+}
+
+// Consensus per session across every People Analyzer session for one person (shown on Review History).
+function trajectoryHTML(empId) {
+  const emp = empById(empId);
+  if (!emp) return '';
+  let html = '';
+  // Get ALL sessions for this person (ignore session filter for trajectory)
+  const allPersonEvalsUnfiltered = evaluations.filter(e => e.empId === empId);
+  const allSessionIds = [...new Set(allPersonEvalsUnfiltered.map(e => e.sessionId))];
+  // Order by session array position (saved session order)
+  const orderedSessionIds = sessions.map(s => s.id).filter(id => allSessionIds.includes(id));
+  // Add any orphaned session IDs not in sessions array
+  allSessionIds.forEach(id => { if (!orderedSessionIds.includes(id)) orderedSessionIds.push(id); });
+
+  if (orderedSessionIds.length > 0) {
+    const trajCols = orderedSessionIds.length;
+
+    html += `<div class="trajectory-section">`;
+    html += `<div class="trajectory-header">`;
+    html += `<span class="trajectory-title">Trajectory</span>`;
+    if (orderedSessionIds.length > 1) {
+      html += `<button class="btn btn-secondary btn-sm" onclick="exportAllSessionsXLSX('${esc(empId)}')" style="margin-left:auto;font-size:11px;">📥 Download All Sessions</button>`;
+    }
+    html += `</div>`;
+    html += `<div class="trajectory-body">`;
+    html += `<div class="trajectory-grid-wrap"><div class="trajectory-grid" style="--session-count:${trajCols};">`;
+
+    // Column headers = session names
+    html += `<div class="tg-header" style="text-align:left;"></div>`;
+    orderedSessionIds.forEach(sid => {
+      html += `<div class="tg-header">${esc(getSessionName(sid))}</div>`;
+    });
+
+    // Core Values rows
+    CORE_VALUES.forEach(v => {
+      html += `<div class="tg-label">${esc(v.label)}</div>`;
+      orderedSessionIds.forEach(sid => {
+        const sEvals = allPersonEvalsUnfiltered.filter(e => e.sessionId === sid);
+        html += `<div class="tg-cell">${consensusChip(peerEvals(sEvals).map(e => e[v.key]))}</div>`;
+      });
+    });
+
+    // Divider
+    html += `<div class="tg-divider"></div>`;
+
+    // GWC rows
+    GWC.forEach(g => {
+      html += `<div class="tg-label">${g.label}</div>`;
+      orderedSessionIds.forEach(sid => {
+        const sEvals = allPersonEvalsUnfiltered.filter(e => e.sessionId === sid);
+        html += `<div class="tg-cell">${consensusChip(peerEvals(sEvals).map(e => e[g.key]))}</div>`;
+      });
+    });
+
+    // Status row
+    html += `<div class="tg-label" style="font-weight:600;">Status</div>`;
+    orderedSessionIds.forEach(sid => {
+      const sEvals = allPersonEvalsUnfiltered.filter(e => e.sessionId === sid);
+      html += `<div class="tg-cell">${statusHTML(getStatus(sEvals))}</div>`;
+    });
+
+    html += `</div></div></div></div>`;
+  }
+
+  return html;
 }
 
 function openInSummaries(sessionId, empId) {
@@ -3410,7 +3422,8 @@ function renderHistoryList() {
       <span class="ac-detail" style="margin-left:auto;">${keys.size} ${keys.size === 1 ? 'person' : 'people'} · ${total} reviews</span></div>
     <div class="ac-detail" style="margin-top:6px;">Every review for one person, newest first — done in People Analyzer (<span class="h-kind k-tool">In tool</span> <span class="h-kind k-annual">Annual</span>) or brought in from past spreadsheets (<span class="h-kind k-import">Imported</span>).</div>
     ${historyPick ? `<div class="h-person-head" style="margin-top:14px;"><b>${esc(name(historyPick))}</b>${emp ? deptChipHTML(emp.department) : ''}<span class="ac-detail">${items.length} review${items.length !== 1 ? 's' : ''} — click one to open it</span></div>
-    <div class="h-list">${items.map(it => it.kind === 'import' ? historyItemHTML(it.h, true) : sessionItemHTML(it, historyPick)).join('')}</div>` : ''}</div>`;
+    ${historyPick.startsWith('name:') ? '' : trajectoryHTML(historyPick)}
+    <div class="h-list" style="margin-top:12px;">${items.map(it => it.kind === 'import' ? historyItemHTML(it.h, true) : sessionItemHTML(it, historyPick)).join('')}</div>` : ''}</div>`;
 }
 
 // ── Import: drop → parse → preview → save ──
@@ -3966,7 +3979,7 @@ function renderAnnualSummary() {
   const compTotal = (draft.comp || []).reduce((t, r) => t + (r.cents || 0), 0);
 
   let h = `<div class="ann-toolbar no-print">
-      <button class="btn btn-secondary btn-sm" onclick="leaveAnnualSummary()">← Back to Summaries</button>
+      <button class="btn btn-secondary btn-sm" onclick="leaveAnnualSummary()">← Back to Session Summary</button>
       <span class="ann-save-state" id="annSaveState">${annualCtx.dirty ? 'Unsaved changes' : (rec ? 'Saved' : 'Not saved yet')}</span>
       <span style="margin-left:auto;display:flex;gap:8px;">
         <button class="btn btn-secondary btn-sm" onclick="printAnnualSummary()">🖨 Print / PDF</button>

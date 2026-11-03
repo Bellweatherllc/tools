@@ -25,7 +25,7 @@ Last updated: 2026-10-27
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v24 |
+| People Analyzer | `people-analyzer.html` | v25 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-11-03** — People Analyzer v24 → v25: Summaries renamed **Session Summary** and narrowed to one session at a time — it starts on "Pick a session…" (no "All Sessions", no "All" button; department buttons filter and clear on a second click), and a person shows only that session with a **Full review history ›** link. The cross-session **Trajectory** (and Download All Sessions) moves to the top of the person's **Review History**; the imported-reviews section leaves Session Summary.
 - **2026-11-03** — People Analyzer v23 → v24: tabs reordered to Evaluate · Summaries · Review History · Compensation. **Review History** is now each person's complete record — reviews done in People Analyzer (tagged In tool / Annual, with each scorer's ratings, status and an Open in Summaries link) alongside imported spreadsheets (tagged Imported), newest first. Review History sits above Add History on the tab. The section inside a person's Summaries view is renamed "Imported reviews".
 - **2026-11-03** — People Analyzer v22 → v23: every menu starts empty — Evaluate session (no longer auto-picked), Compensation Show, Review History Show and the Annual Review Scorers session each open on a "Pick…" prompt. Quick guide: "Two kinds of review" rewritten as two short lists instead of a table; the manual page now styles its tables.
 - **2026-11-03** — People Analyzer v21 → v22: History tab split into **Add History** (import) and **Review History**, which shows one person at a time, picked from a Show list grouped by department with review counts.
