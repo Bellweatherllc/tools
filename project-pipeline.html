@@ -3533,7 +3533,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1160';
+const CORE_VERSION = 'v1161';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -14314,17 +14314,6 @@ function _dlRecoveryUI(act,dlProj,type,pop){
       pasteB.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); _dlPasteEditor(act,dlProj,type,pop,'',(type==='trl'?'Paste Trello board link':'Paste SharePoint link')); });
       act.appendChild(pasteB);
 }
-function _dlBrowseOnly(act,dlProj,type,pop){
-  act.style.cssText='margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;gap:5px;';
-  const openB=document.createElement('button');
-  openB.style.cssText='padding:4px 8px;border:1px solid rgba(255,255,255,.25);background:transparent;border-radius:5px;font-size:10px;color:rgba(255,255,255,.85);cursor:pointer;font-family:inherit;text-align:left;';
-  openB.textContent='Browse SharePoint folder \u2197';
-  openB.addEventListener('pointerdown',function(ev){ ev.stopPropagation();
-    var w=window.open('about:blank','_blank');
-    dlFolderWebUrl(dlProj,type).then(function(u){ if(u&&w) w.location=u; else if(w) w.close(); }).catch(function(){ if(w) w.close(); });
-  });
-  act.appendChild(openB);
-}
 // v918 — the paste/edit input, reusable pre-filled. Used by dim-pill recovery
 // (empty) and by lit TRL pills (pre-filled with the current URL for editing).
 function _dlPasteEditor(act,dlProj,type,pop,prefill,placeholder){
@@ -14380,6 +14369,11 @@ function _showUpcomingPop(btn){
     soon.style.color=hasUrl?'rgba(150,225,180,.85)':'rgba(255,200,80,.80)';
   }
   else if(hasUrl&&(type==='mp'||type==='so')&&btn.dataset.dlProj){ soon.textContent='Click to choose from folder'; soon.style.color='rgba(150,225,180,.85)'; }
+  else if(type==='plans'){
+    const _pp=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
+    soon.textContent=(_pp&&_pp.spFolderItemId)?'Click to open Plans folder':'No project folder linked yet';
+    soon.style.color=(_pp&&_pp.spFolderItemId)?'rgba(150,225,180,.85)':'rgba(255,150,140,.80)';
+  }
   else if(hasUrl){ soon.textContent='Click to open'; soon.style.color='rgba(150,225,180,.85)'; }
   else {
     const _hp=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
@@ -14392,7 +14386,7 @@ function _showUpcomingPop(btn){
   if(act){
     act.innerHTML='';
     const dlProj=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
-    if(!hasUrl&&type!=='pt'&&dlProj&&dlProj.spFolderItemId){
+    if(!hasUrl&&type!=='pt'&&type!=='plans'&&dlProj&&dlProj.spFolderItemId){
       _dlRecoveryUI(act,dlProj,type,pop);
     } else { act.style.cssText='display:none;'; }
   }
@@ -14434,7 +14428,7 @@ function _dlShowDocPicker(btn){
     act.innerHTML='';
     if(!files.length){
       if(soon){ soon.textContent='No '+(DL_LABELS[type]||type).toLowerCase()+' detected'; soon.style.color='rgba(255,150,140,.80)'; }
-      if(type==='plans'){ _dlBrowseOnly(act,proj,type,pop); } else { _dlRecoveryUI(act,proj,type,pop); }
+      _dlRecoveryUI(act,proj,type,pop); // v1161: 'plans' no longer reaches this picker at all — it's mp/so only now
       return;
     }
     if(soon){ soon.textContent=files.length+' document'+(files.length===1?'':'s')+' \u2014 newest first'; soon.style.color='rgba(150,225,180,.85)'; }
@@ -14477,7 +14471,16 @@ document.addEventListener('pointerdown',e=>{
   if(upBtn){
     e.stopPropagation();
     const t=upBtn.dataset.upcomingPill;
-    if((t==='mp'||t==='so'||t==='plans')&&upBtn.dataset.dlProj){ _dlShowDocPicker(upBtn); return; } // v909: hover already opened it on pointer devices; this covers touch. v1160: always (re)open on click — a click that landed on an already-open picker used to silently no-op, which read as "the button does nothing" on a dim/touch device
+    if((t==='mp'||t==='so')&&upBtn.dataset.dlProj){ _dlShowDocPicker(upBtn); return; } // v909: hover already opened it on pointer devices; this covers touch. v1160: always (re)open on click — a click that landed on an already-open picker used to silently no-op, which read as "the button does nothing" on a dim/touch device
+    // v1161: PLN just opens the Plans folder directly — no file matching, no picker.
+    if(t==='plans'&&upBtn.dataset.dlProj){
+      const _pp=PROJECTS.find(p=>p._spItemId===upBtn.dataset.dlProj);
+      if(_pp&&_pp.spFolderItemId){
+        const w=window.open('about:blank','_blank');
+        dlFolderWebUrl(_pp,'plans').then(u=>{ if(u&&w) w.location=u; else if(w) w.close(); }).catch(()=>{ if(w) w.close(); });
+      } else { _showUpcomingPop(upBtn); }
+      return;
+    }
     const url=upBtn.dataset.upcomingUrl;
     // v919 — lit TRL opens the board directly. The link is a one-time static
     // add; corrections happen in SharePoint, so no in-app edit menu.
@@ -14504,7 +14507,7 @@ document.addEventListener('pointerover',e=>{
   // picker directly, so the list is reachable without a click-then-click. All
   // other pills keep the lightweight hover preview.
   const t=btn.dataset.upcomingPill;
-  if((t==='mp'||t==='so'||t==='plans')&&btn.dataset.dlProj){ if(_dlPickerBtn!==btn) _dlShowDocPicker(btn); return; }
+  if((t==='mp'||t==='so')&&btn.dataset.dlProj){ if(_dlPickerBtn!==btn) _dlShowDocPicker(btn); return; }
   _showUpcomingPop(btn);
 });
 // v903 — hover surfaces are position-anchored to elements that scroll away
@@ -16862,6 +16865,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1161', date: '2026-11-03',
+    entries:['PLN simplified: it no longer tries to match a specific plan document — it just opens the project’s Plans folder in SharePoint directly, one click. Dropped the file-picker/matching path for this pill entirely (that machinery stays for MP and SO, which can have several legitimate documents).'],
+  },
   {
     version: 'v1160', date: '2026-11-03',
     entries:['Cleaned up the project hover’s link row: the PB pill now reads LOD. The Permit &amp; Zoning zone beside the team is greyed out and inert (no hover fetch, no click-through) until that tracker integration is actually reliable — one constant (PZ_ENABLED) flips it back on later. Fixed PLN (and MP/SO) sometimes doing nothing on click: a click on an already-open picker used to silently no-op, and a failed project lookup with no fallback URL — always true for PLN, which has no stored link — returned with zero visible effect; both now always show something.'],
