@@ -2,7 +2,7 @@
 
 *How to fill out a review, run one, and fix the usual problems.*
 
-*November 2026 · People Analyzer v23*
+*November 2026 · People Analyzer v24*
 
 ## The basics
 
@@ -31,7 +31,7 @@ An admin picks the kind when creating the session — tick **Annual review** for
 ### Who sees what
 
 - **Staff** see only their own self-evaluation (the Evaluate tab and **My Self-Evaluations**).
-- **Admins** see everything: Summaries, Compensation, History and the Admin panel.
+- **Admins** see everything: Summaries, Review History, Compensation and the Admin panel.
 
 Admin is set per person in **Team Members → Access → People Analyzer**.
 
@@ -79,9 +79,14 @@ The **Compensation** tab shows each person's pay year by year, with a chart.
 
 The annual summary page saves its compensation here too, so there's one set of figures per person per year.
 
-## History (admins)
+## Review History (admins)
 
-The **History** tab has two parts. **Add History** brings in past review spreadsheets: drag the Excel files onto it, check the preview (fix the person or month if they're blank), and click **Import**. **Review History** shows one person's past reviews at a time — pick them in **Show**. Each sheet becomes one review, and its compensation shows on the Compensation tab. Importing the same file twice does nothing.
+**Summaries** is for the review you're running now. **Review History** is everyone's complete record: pick a person in **Show** to see every review they've had, newest first —
+
+- **In tool** and **Annual** — reviews done in People Analyzer. Open one to see each scorer's ratings; **Open in Summaries** takes you to it.
+- **Imported** — reviews from past spreadsheets, with the reviewer's comments, wins and opportunities.
+
+**Add History** (below it) brings in past spreadsheets: drag the Excel files on, check the preview (fix the person or month if they're blank), and click **Import**. Importing the same file twice does nothing; the figures also show on the Compensation tab.
 
 ## If something's wrong
 
@@ -101,7 +106,7 @@ The **History** tab has two parts. **Add History** brings in past review spreads
 
 ## Setup (for whoever maintains the tool)
 
-The data lives on the **OperationsSecure** SharePoint site. If a list or column is missing, the Admin panel and History tab say which.
+The data lives on the **OperationsSecure** SharePoint site. If a list or column is missing, the Admin panel and Review History tab say which.
 
 | List | Columns the tool needs |
 |---|---|

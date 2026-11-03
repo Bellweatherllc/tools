@@ -341,6 +341,15 @@
   .h-item summary::-webkit-details-marker { display: none; }
   .h-item summary::before { content: '▸'; color: var(--steel); }
   .h-item[open] summary::before { content: '▾'; }
+  .h-kind { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 8px; padding: 1px 7px; white-space: nowrap; }
+  .h-kind.k-tool { color: var(--navy); background: rgba(38,56,96,0.08); }
+  .h-kind.k-annual { color: #fff; background: var(--gold); }
+  .h-kind.k-import { color: var(--steel); background: var(--snow); border: 1px solid var(--cloud); }
+  .h-session-table { margin-top: 8px; }
+  .h-session-table th { font-size: 11px; color: var(--steel); text-align: center; padding: 4px 8px; font-weight: 600; }
+  .h-session-table td { text-align: center; padding: 3px 8px; }
+  .h-session-table td:first-child { text-align: left; color: var(--slate); }
+  .h-cons { background: rgba(200,149,62,0.06); }
   .h-date { font-weight: 700; color: var(--navy); min-width: 72px; }
   .h-label { color: var(--steel); font-size: 12px; min-width: 110px; }
   .h-meta { margin-left: auto; font-size: 11.5px; color: var(--silver); }
@@ -963,8 +972,8 @@
     <button type="button" class="focus-btn is-active" data-view="evaluate" role="tab" onclick="switchView('evaluate')">Evaluate</button>
     <button type="button" class="focus-btn" data-view="mine" role="tab" id="tabMine" style="display:none;" onclick="switchView('mine')">My Self-Evaluations</button>
     <button type="button" class="focus-btn" data-view="summary" role="tab" id="tabSummary" onclick="switchView('summary')">Summaries</button>
+    <button type="button" class="focus-btn" data-view="history" role="tab" id="tabHistory" onclick="switchView('history')">Review History</button>
     <button type="button" class="focus-btn" data-view="comp" role="tab" id="tabComp" onclick="switchView('comp')">Compensation</button>
-    <button type="button" class="focus-btn" data-view="history" role="tab" id="tabHistory" onclick="switchView('history')">History</button>
     <a class="manual-btn" href="people-analyzer-manual.html" target="_blank" rel="noopener" data-tip="Quick guide">?</a>
   </nav>
 </div>
@@ -1217,6 +1226,7 @@
 
   <!-- ═══ HISTORY VIEW (admins) ═══ -->
   <div id="view-history" class="view">
+    <div id="historyList"></div>
     <div class="card">
       <div class="card-title">Add History</div>
       <div class="ac-detail" style="margin:-6px 0 12px;">Bring in past review workbooks — one sheet per review. Nothing is saved until you check the preview and click Import.</div>
@@ -1229,7 +1239,6 @@
       </label>
       <div id="importPreview"></div>
     </div>
-    <div id="historyList"></div>
   </div>
 
   <!-- ═══ MY SELF-EVALUATIONS VIEW (non-admins) ═══ -->
@@ -1288,7 +1297,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v23';
+const CORE_VERSION = 'v24';
 // Core Values wording: NEW_Core_Values_v2 (revised 08-03-26). Update this date when the descriptors change.
 const CORE_VALUES_REVISED = 'Aug 3, 2026';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
@@ -3276,7 +3285,7 @@ function renderReviewDetail(data) {
 
 function historyItemHTML(h, withDelete) {
   return `<details class="h-item">
-    <summary><span class="h-date">${esc(monthLabel(h.date))}</span><span class="h-label">${esc(h.label)}</span><span class="h-chips">${reviewSummaryChips(h.data)}</span>
+    <summary><span class="h-date">${esc(monthLabel(h.date))}</span><span class="h-label">${esc(h.label)}</span><span class="h-kind k-import">Imported</span><span class="h-chips">${reviewSummaryChips(h.data)}</span>
       <span class="h-meta">${esc(h.reviewer || '')}</span></summary>
     <div class="h-body">
       <div class="h-source">${esc(h.type || '')}${h.file ? ` · from <b>${esc(h.file)}</b>` : ''}${withDelete ? ` <button class="delete-btn h-del" onclick="deleteHistoryItem('${esc(h.id)}')">✕ remove from history</button>` : ''}</div>
@@ -3290,8 +3299,8 @@ function personHistoryHTML(empId) {
   if (historyState !== 'ok') return '';
   const items = historyFor(empId);
   if (!items.length) return '';
-  return `<div class="trajectory-section"><div class="trajectory-header"><span class="trajectory-title">Review History (${items.length})</span>
-    <span class="ac-detail" style="margin-left:8px;">Imported from past review workbooks</span></div>
+  return `<div class="trajectory-section"><div class="trajectory-header"><span class="trajectory-title">Imported reviews (${items.length})</span>
+    <span class="ac-detail" style="margin-left:8px;">From past review workbooks · the full timeline is on the Review History tab</span></div>
     <div class="h-list">${items.map(h => historyItemHTML(h, adminMode)).join('')}</div></div>`;
 }
 
@@ -3320,32 +3329,88 @@ function renderHistoryView() {
 }
 
 // Review History: one person at a time, picked from a list grouped by department.
+// Review History: one person's complete record — reviews done in People Analyzer (each session they were scored in)
+// and imported past reviews — newest first.
 let historyPick = '';
+
+function toolSessionsFor(empId) {
+  const bySession = new Map();
+  evaluations.filter(ev => ev.empId === empId).forEach(ev => {
+    if (!bySession.has(ev.sessionId)) bySession.set(ev.sessionId, []);
+    bySession.get(ev.sessionId).push(ev);
+  });
+  return [...bySession.entries()].map(([sid, evs]) => {
+    const latest = evs.map(e => String(e.date || '')).sort().pop() || '';
+    return { kind: 'session', sessionId: sid, evals: evs, date: latest.slice(0, 7), label: getSessionName(sid) };
+  });
+}
+
+function timelineFor(key) {
+  const imported = key.startsWith('name:')
+    ? reviewHistory.filter(h => !h.empId && 'name:' + h.employeeName === key)
+    : historyFor(key);
+  const items = imported.map(h => ({ kind: 'import', date: h.date, h }));
+  if (!key.startsWith('name:')) items.push(...toolSessionsFor(key));
+  return items.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+function sessionItemHTML(it, empId) {
+  const annual = isAnnualSession(it.sessionId);
+  const peers = peerEvals(it.evals), selfs = selfEvalsOf(it.evals);
+  const basis = peers.length ? peers : selfs;
+  const chips = CORE_VALUES.map(v => `<span class="h-mini" data-tip="${esc(v.label)}">${consensusChip(basis.map(e => e[v.key]))}</span>`).join('');
+  const who = ev => `${esc(ev.evaluatorName)}${isSelfEval(ev) ? ' <span class="self-tag">self</span>' : (ev.annual && ROLE_SHORT[ev.annual.role] ? ` <span class="self-tag role">${esc(ROLE_SHORT[ev.annual.role])}</span>` : '')}`;
+  const rows = [...CORE_VALUES, ...GWC, ...(annual ? VTO : [])];
+  const val = (ev, k) => k.startsWith('vto_') ? (ev.annual && ev.annual.vto ? ev.annual.vto[k] : null) : ev[k];
+  let t = `<table class="h-table h-session-table"><thead><tr><th></th>${peers.map(ev => `<th>${who(ev)}</th>`).join('')}${peers.length ? '<th class="h-cons">Consensus</th>' : ''}${selfs.map(ev => `<th>${who(ev)}</th>`).join('')}</tr></thead><tbody>`;
+  rows.forEach(r => {
+    t += `<tr><td>${esc(r.label)}</td>${peers.map(ev => `<td>${chipHTML(val(ev, r.key))}</td>`).join('')}${peers.length ? `<td class="h-cons">${consensusChip(peers.map(e => val(e, r.key)))}</td>` : ''}${selfs.map(ev => `<td>${chipHTML(val(ev, r.key))}</td>`).join('')}</tr>`;
+  });
+  t += '</tbody></table>';
+  return `<details class="h-item">
+    <summary><span class="h-date">${esc(monthLabel(it.date))}</span><span class="h-label">${esc(it.label)}</span><span class="h-kind ${annual ? 'k-annual' : 'k-tool'}">${annual ? 'Annual' : 'In tool'}</span><span class="h-chips">${chips}</span>
+      <span class="h-meta">${peers.length} scorer${peers.length !== 1 ? 's' : ''}${selfs.length ? ' + self' : ''}</span></summary>
+    <div class="h-body">
+      <div class="h-source">Status: ${statusHTML(getStatus(it.evals))}
+        <button class="btn btn-secondary btn-sm" onclick="openInSummaries('${esc(it.sessionId)}','${esc(empId)}')">Open in Summaries</button>
+        ${annual ? `<span>Summary page ${annualStatusChip(it.sessionId, empId)}</span>` : ''}</div>
+      ${t}
+    </div>
+  </details>`;
+}
+
+function openInSummaries(sessionId, empId) {
+  switchView('summary');
+  currentSessionFilter = sessionId;
+  document.getElementById('sessionFilter').value = sessionId;
+  populateIndividualFilter();
+  setFilter('emp:' + empId);
+}
+
 function renderHistoryList() {
   const el = document.getElementById('historyList');
-  if (historyState !== 'ok') { el.innerHTML = ''; return; }
-  if (!reviewHistory.length) { el.innerHTML = '<div class="card"><div class="card-title">Review History</div><div class="empty-state"><p>No past reviews imported yet.</p><p class="hint">Drop review workbooks into Add History above.</p></div></div>'; return; }
-  const groups = new Map();
-  reviewHistory.forEach(h => {
-    const key = h.empId || ('name:' + h.employeeName);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(h);
-  });
+  const keys = new Set();
+  if (historyState === 'ok') reviewHistory.forEach(h => keys.add(h.empId || ('name:' + h.employeeName)));
+  evaluations.forEach(ev => { if (ev.empId) keys.add(ev.empId); });
+  if (!keys.size) { el.innerHTML = '<div class="card"><div class="card-title">Review History</div><div class="empty-state"><p>No reviews yet.</p><p class="hint">Reviews done in People Analyzer appear here automatically. Bring in older ones with Add History below.</p></div></div>'; return; }
   const name = key => key.startsWith('name:') ? key.slice(5) + ' (not on roster)' : (empById(key) || {}).name || '?';
   const deptOf = key => key.startsWith('name:') ? 'Not on roster' : ((empById(key) || {}).department || 'Unassigned');
-  if (historyPick && !groups.has(historyPick)) historyPick = '';
-  const depts = [...new Set([...groups.keys()].map(deptOf))].sort((a, b) => getDepartments().indexOf(a) - getDepartments().indexOf(b) || a.localeCompare(b));
-  const options = depts.map(d => `<optgroup label="${esc(d)}">${[...groups.keys()].filter(k => deptOf(k) === d).sort((a, b) => name(a).localeCompare(name(b)))
-    .map(k => `<option value="${esc(k)}"${k === historyPick ? ' selected' : ''}>${esc(name(k))} (${groups.get(k).length})</option>`).join('')}</optgroup>`).join('');
+  const counts = new Map([...keys].map(k => [k, timelineFor(k).length]));
+  if (historyPick && !keys.has(historyPick)) historyPick = '';
+  const depts = [...new Set([...keys].map(deptOf))].sort((a, b) => getDepartments().indexOf(a) - getDepartments().indexOf(b) || a.localeCompare(b));
+  const options = depts.map(d => `<optgroup label="${esc(d)}">${[...keys].filter(k => deptOf(k) === d).sort((a, b) => name(a).localeCompare(name(b)))
+    .map(k => `<option value="${esc(k)}"${k === historyPick ? ' selected' : ''}>${esc(name(k))} (${counts.get(k)})</option>`).join('')}</optgroup>`).join('');
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
   const emp = empById(historyPick);
-  const items = groups.get(historyPick) || [];
+  const items = historyPick ? timelineFor(historyPick) : [];
   el.innerHTML = `<div class="card h-person">
     <div class="h-person-head"><div class="card-title" style="margin-bottom:0;">Review History</div>
       <label class="field-label" for="historyPick" style="margin:0 0 0 16px;">Show</label>
       <select id="historyPick" onchange="historyPick=this.value;renderHistoryList()" style="width:auto;min-width:240px;"><option value=""${historyPick ? '' : ' selected'}>Pick a person…</option>${options}</select>
-      <span class="ac-detail" style="margin-left:auto;">${groups.size} ${groups.size === 1 ? 'person' : 'people'} · ${reviewHistory.length} reviews</span></div>
-    ${historyPick ? `<div class="h-person-head" style="margin-top:14px;"><b>${esc(name(historyPick))}</b>${emp ? deptChipHTML(emp.department) : ''}<span class="ac-detail">${items.length} review${items.length !== 1 ? 's' : ''}, newest first — click one to open it</span></div>
-    <div class="h-list">${items.map(h => historyItemHTML(h, true)).join('')}</div>` : ''}</div>`;
+      <span class="ac-detail" style="margin-left:auto;">${keys.size} ${keys.size === 1 ? 'person' : 'people'} · ${total} reviews</span></div>
+    <div class="ac-detail" style="margin-top:6px;">Every review for one person, newest first — done in People Analyzer (<span class="h-kind k-tool">In tool</span> <span class="h-kind k-annual">Annual</span>) or brought in from past spreadsheets (<span class="h-kind k-import">Imported</span>).</div>
+    ${historyPick ? `<div class="h-person-head" style="margin-top:14px;"><b>${esc(name(historyPick))}</b>${emp ? deptChipHTML(emp.department) : ''}<span class="ac-detail">${items.length} review${items.length !== 1 ? 's' : ''} — click one to open it</span></div>
+    <div class="h-list">${items.map(it => it.kind === 'import' ? historyItemHTML(it.h, true) : sessionItemHTML(it, historyPick)).join('')}</div>` : ''}</div>`;
 }
 
 // ── Import: drop → parse → preview → save ──
