@@ -672,6 +672,10 @@
   .ac-grants { margin: 6px 0 2px 20px; border: 1px solid var(--cloud); border-radius: 6px; padding: 6px 10px; background: var(--snow); }
   .ac-grants-title { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--steel); margin-bottom: 3px; }
   .ac-grant { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 1px 0; }
+  .orphan-list { list-style: none; margin: 8px 0 0 !important; }
+  .orphan-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 3px 0; }
+  .orphan-row span { flex: 1; min-width: 120px; }
+  .orphan-row select { width: auto; max-width: 170px; font-size: 12px; padding: 3px 6px; }
   .admin-note ul { margin: 6px 0 0 18px; }
   .admin-note code { font-size: 11.5px; background: rgba(0,0,0,0.05); padding: 0 4px; border-radius: 3px; }
   .session-del-btn { background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; padding: 2px 4px; opacity: 0.6; }
@@ -1258,7 +1262,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v17';
+const CORE_VERSION = 'v18';
 // Core Values wording: NEW_Core_Values_v2 (revised 08-03-26). Update this date when the descriptors change.
 const CORE_VALUES_REVISED = 'Aug 3, 2026';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
@@ -1947,11 +1951,33 @@ function renderAdminDataPanel() {
   if (orphans.length) {
     const counts = {};
     orphans.forEach(ev => { const k = ev.employeeName || '(blank)'; counts[k] = (counts[k] || 0) + 1; });
-    const list = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0])).map(([n, c]) => `<li>${esc(n)} (${c})</li>`).join('');
-    parts.push(`<div class="admin-note admin-note-warn">${orphans.length} evaluation${orphans.length !== 1 ? 's don\'t' : ' doesn\'t'} match anyone on the CORE_TeamMembers roster, so ${orphans.length !== 1 ? 'they\'re' : 'it\'s'} hidden from Summaries. Usually a rename or a removed team member.<ul>${list}</ul></div>`);
+    const people = employees.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const canLink = schema.evalEmployeeId;
+    const list = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0])).map(([n, c], i) => `<li class="orphan-row"><span>${esc(n)} (${c})</span>${canLink ? `
+      <select id="orphanPick${i}" aria-label="Who is ${esc(n)}?"><option value="">This is…</option>${people.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}</select>
+      <button class="btn btn-secondary btn-sm" onclick="linkOrphans(${esc(JSON.stringify(n))}, document.getElementById('orphanPick${i}').value)">Link</button>` : ''}</li>`).join('');
+    parts.push(`<div class="admin-note admin-note-warn">${orphans.length} evaluation${orphans.length !== 1 ? 's don\'t' : ' doesn\'t'} match anyone on the CORE_TeamMembers roster, so ${orphans.length !== 1 ? 'they\'re' : 'it\'s'} hidden from Summaries — usually a misspelling, a rename or someone who left.${canLink ? ' Pick who each one is and click <b>Link</b>; the name on the evaluation isn\'t changed.' : ''}<ul class="orphan-list">${list}</ul></div>`);
   }
 
   el.innerHTML = parts.length ? parts.join('') : '<div style="color:var(--silver);padding:4px 0;">All evaluations are linked to a team member.</div>';
+}
+
+// Tie evaluations saved under an unmatched name to the right roster person (writes EmployeeId only).
+async function linkOrphans(name, empId) {
+  if (!requireAdmin()) return;
+  const emp = empById(empId);
+  if (!emp) { showToast('Pick who this is first.'); return; }
+  const rows = evaluations.filter(ev => !ev.empId && (ev.employeeName || '(blank)') === name);
+  if (!rows.length || !confirm(`Link ${rows.length} evaluation(s) saved as "${name}" to ${emp.name}?`)) return;
+  let done = 0;
+  try {
+    for (const ev of rows) {
+      if (!isLocalId(ev.id)) await spUpdateItem(SP_CONFIG.lists.evaluations, ev.id, { EmployeeId: Number(emp.id) });
+      ev.employeeId = emp.id; ev.empId = emp.id; done++;
+    }
+    showToast(`Linked ${done} evaluation${done !== 1 ? 's' : ''} to ${emp.name}.`);
+  } catch (err) { console.error(err); showToast(`Linked ${done}; SharePoint error on the rest.`); }
+  renderAdminDataPanel();
 }
 
 async function linkEvaluations() {

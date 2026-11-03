@@ -2,7 +2,7 @@
 
 *How to fill out a review, run one, and fix the usual problems.*
 
-*November 2026 · People Analyzer v16*
+*November 2026 · People Analyzer v18*
 
 ## The basics
 
@@ -82,6 +82,8 @@ The **History** tab brings in past review spreadsheets. Drag the Excel files ont
 **"We couldn't find you on the roster."** Your sign-in email doesn't match your Team Members row. Add it there (separate several addresses with semicolons), then reload.
 
 **"I already submitted for this session."** Each person gets one self-evaluation per session. An admin can delete it: Summaries → the person → turn on **🗑 Manage** → **✕ remove**.
+
+**Old evaluations "don't match anyone on the roster."** Usually a misspelled name. In the Admin panel under SharePoint Links, pick who each one is and click **Link**.
 
 **Someone's missing from the list.** They're marked inactive in Team Members, or were added after you opened the page — reload.
 
