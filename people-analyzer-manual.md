@@ -2,7 +2,7 @@
 
 *How to fill out a review, run one, and fix the usual problems.*
 
-*November 2026 · People Analyzer v18*
+*November 2026 · People Analyzer v20*
 
 ## The basics
 
@@ -65,7 +65,7 @@ In an annual review you'll also rate three parts of the V/TO, and staff answer o
 The **Compensation** tab shows each person's pay year by year, with a chart.
 
 - **Pick a person** to see their salary and total compensation side by side for every year, with the change from the year before.
-- **Pick a department** to compare everyone in it on one chart, by total comp or salary.
+- **Pick a department** to compare everyone in it on one chart, by total comp or salary. Click a name in the table (or **Expand all**) to see that person's full breakdown — salary, each benefit, bonus and PTO — year by year.
 - **+ Add a year** to enter this year or next year. It starts from last year's figures — change what changed.
 - **Edit** any year. Editing an imported year keeps the import safe; **Undo edits** brings it back.
 

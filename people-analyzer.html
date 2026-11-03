@@ -439,6 +439,17 @@
   /* ── Compensation tab ── */
   .comp-bar { display: flex; align-items: center; gap: 12px; padding: 14px 22px; flex-wrap: wrap; }
   .comp-bar select { width: auto; min-width: 240px; }
+  .comp-table-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 6px; flex-wrap: wrap; }
+  .comp-person { cursor: pointer; }
+  .comp-person:hover td { background: var(--snow); }
+  .comp-person.is-open td { background: rgba(200,149,62,0.06); border-bottom-color: transparent; }
+  .comp-caret { display: inline-block; width: 12px; color: var(--steel); }
+  .comp-open-link { font-size: 11px; color: var(--steel); margin-left: 8px; text-decoration: none; }
+  .comp-open-link:hover { color: var(--gold); }
+  .comp-detail td { font-size: 12px; color: var(--steel); background: rgba(200,149,62,0.03); padding-top: 3px; padding-bottom: 3px; }
+  .comp-detail td:first-child { padding-left: 30px; }
+  .comp-detail.comp-salary td { color: var(--slate); font-weight: 600; }
+  .comp-detail.comp-subtotal td { color: var(--navy); font-weight: 600; border-top: 1px solid var(--cloud); }
   .comp-hint { flex-basis: 100%; font-size: 12px; color: var(--steel); }
   .comp-metric { display: inline-flex; gap: 6px; margin-left: 8px; }
   .comp-table-wrap { overflow-x: auto; }
@@ -1263,7 +1274,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v19';
+const CORE_VERSION = 'v20';
 // Core Values wording: NEW_Core_Values_v2 (revised 08-03-26). Update this date when the descriptors change.
 const CORE_VALUES_REVISED = 'Aug 3, 2026';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
@@ -3980,6 +3991,7 @@ let compRecords = [];
 let compScope = '';          // 'emp:<id>' or 'dept:<name>'
 let compMetric = 'total';    // department view: 'total' | 'salary'
 let compEdit = null;         // { empId, year, draft, isNew }
+const compOpen = new Set();  // department view: people whose breakdown is expanded
 
 function compKey(label) {
   return String(label || '').toLowerCase().replace(/\(.*?\)/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -4209,8 +4221,16 @@ function compDeptHTML(dept) {
   let h = `<div class="card"><div class="h-person-head"><div class="card-title" style="margin:0;">${esc(dept)}</div><span class="ac-detail">${compMetric === 'salary' ? 'Salary' : 'Total compensation + benefits'} by year</span></div>`;
   h += lineChartHTML('chartDept', shown.map((p, i) => ({ name: p.e.name, color: CHART_COLORS[i], points: years.map(y => ({ x: y, y: p.ys[y] ? metric(p.ys[y]) : null })) })), years);
   if (data.length > shown.length) h += `<div class="ac-detail">Chart shows the first ${shown.length} people; the table has everyone.</div>`;
-  h += `<div class="comp-table-wrap" style="margin-top:14px;"><table class="comp-table"><thead><tr><th></th>${years.map(y => `<th>${y}</th>`).join('')}</tr></thead><tbody>`;
-  data.forEach(p => { h += `<tr><td><a href="#" onclick="compScope='emp:${esc(p.e.id)}';renderCompView();return false;">${esc(p.e.name)}</a>${p.e.active ? '' : ' <span class="eval-count">(inactive)</span>'}</td>${years.map(y => `<td>${p.ys[y] && metric(p.ys[y]) != null ? fmtCents(metric(p.ys[y])) : '—'}</td>`).join('')}</tr>`; });
+  const allOpen = data.every(p => compOpen.has(p.e.id));
+  h += `<div class="comp-table-head"><span class="ac-detail">Click a name to see the full breakdown — salary, each benefit, bonus and PTO.</span>
+    <button class="btn btn-secondary btn-sm" onclick="compToggleAll(${allOpen ? 'false' : 'true'}, ${esc(JSON.stringify(data.map(p => p.e.id)))})">${allOpen ? 'Collapse all' : 'Expand all'}</button></div>`;
+  h += `<div class="comp-table-wrap"><table class="comp-table"><thead><tr><th></th>${years.map(y => `<th>${y}</th>`).join('')}</tr></thead><tbody>`;
+  data.forEach(p => {
+    const open = compOpen.has(p.e.id);
+    h += `<tr class="comp-person${open ? ' is-open' : ''}" onclick="compToggle('${esc(p.e.id)}')"><td><span class="comp-caret">${open ? '▾' : '▸'}</span> <b>${esc(p.e.name)}</b>${p.e.active ? '' : ' <span class="eval-count">(inactive)</span>'}
+      <a href="#" class="comp-open-link" onclick="event.stopPropagation();compScope='emp:${esc(p.e.id)}';renderCompView();return false;" data-tip="Open ${esc(p.e.name)}'s page">open ›</a></td>${years.map(y => `<td>${p.ys[y] && metric(p.ys[y]) != null ? fmtCents(metric(p.ys[y])) : '—'}</td>`).join('')}</tr>`;
+    if (open) compBreakdownRows(p.ys, years).forEach(r => { h += `<tr class="comp-detail${r.cls ? ' ' + r.cls : ''}"><td>${esc(r.label)}</td>${r.cells.map(c => `<td>${c}</td>`).join('')}</tr>`; });
+  });
   h += `<tr class="comp-total"><td>Department total</td>${years.map(y => {
     const have = data.filter(p => p.ys[y] && metric(p.ys[y]) != null);
     const t = have.reduce((s, p) => s + metric(p.ys[y]), 0);
@@ -4219,6 +4239,22 @@ function compDeptHTML(dept) {
   h += `</tbody></table></div></div>`;
   return h;
 }
+
+// One person's line-by-line breakdown across the given years (used under their department row)
+function compBreakdownRows(ys, years) {
+  const have = years.filter(y => ys[y]);
+  const order = [], labelFor = {};
+  [...have].reverse().forEach(y => (ys[y].lines || []).forEach(l => { const k = compKey(l.label); if (!labelFor[k]) { labelFor[k] = l.label; order.push(k); } }));
+  order.sort((a, b) => (b === 'salary') - (a === 'salary'));
+  const money = c => c != null ? fmtCents(c) : '—';
+  const rows = order.map(k => ({ label: labelFor[k], cls: k === 'salary' ? 'comp-salary' : '', cells: years.map(y => { if (!ys[y]) return '—'; const l = (ys[y].lines || []).find(x => compKey(x.label) === k); return money(l && l.cents); }) }));
+  rows.push({ label: 'Total compensation + benefits', cls: 'comp-subtotal', cells: years.map(y => ys[y] ? money(totalCents(ys[y])) : '—') });
+  rows.push({ label: 'Bonus earned', cells: years.map(y => ys[y] && ys[y].bonus ? money(ys[y].bonus.earnedCents) : '—') });
+  rows.push({ label: 'PTO days', cells: years.map(y => ys[y] && ys[y].pto && ys[y].pto.days ? esc(ys[y].pto.days) : '—') });
+  return rows;
+}
+function compToggle(empId) { compOpen.has(empId) ? compOpen.delete(empId) : compOpen.add(empId); renderCompView(); }
+function compToggleAll(open, ids) { ids.forEach(id => open ? compOpen.add(id) : compOpen.delete(id)); renderCompView(); }
 
 // ── Adding / editing a year ──
 function startCompEdit(empId, year) {
