@@ -25,7 +25,7 @@ Last updated: 2026-10-27
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v18 |
+| People Analyzer | `people-analyzer.html` | v19 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-11-03** — People Analyzer v18 → v19: one-line instruction on the Compensation tab — pick anyone on the roster (even with no review yet), click + Add a year, enter their salary.
 - **2026-11-03** — People Analyzer v17 → v18: evaluations saved under a name that matches no one on the roster (e.g. a misspelling) can be linked to the right person from the Admin panel — a "This is…" picker and **Link** per name, writing only `EmployeeId`; the stored name is unchanged.
 - **2026-11-03** — People Analyzer v16 → v17: SharePoint connection indicator moved left, beside the signed-in name chip; reads "Not connected" instead of "Offline" now that offline mode is gone.
 - **2026-11-03** — People Analyzer v15 → v16: offline mode removed from the sign-in screen — the tool only runs signed in. New admin **Compensation** tab: per person, salary and total comp by year (chart + side-by-side table with year-over-year change, bonus, PTO); per department, everyone on one chart (total comp or salary) with a department total that flags partial years. **+ Add a year** / **Edit** save one compensation record per person per year in `PA_ReviewHistory`; imported years are never changed (edits override them; Undo restores). The annual summary page now reads and saves that same yearly record (its Salary line is the year's salary; the separate "New salary" box is gone). Manual rewritten as a short quick guide built around periodic vs annual reviews. CORE System Map v16 → v17.
