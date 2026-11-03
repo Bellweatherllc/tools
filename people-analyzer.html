@@ -439,6 +439,20 @@
   /* ── Compensation tab ── */
   .comp-bar { display: flex; align-items: center; gap: 12px; padding: 14px 22px; flex-wrap: wrap; }
   .comp-bar select { width: auto; min-width: 240px; }
+  .comp-group td { background: var(--snow); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--steel); padding-top: 8px; text-align: left !important; }
+  .comp-group-n { font-weight: 400; color: var(--silver); text-transform: none; letter-spacing: 0; margin-left: 4px; }
+  .comp-group-total td { font-weight: 600; color: var(--slate); font-size: 12px; border-top: 1px solid var(--cloud); }
+  .comp-year-row { cursor: pointer; }
+  .comp-year-row td { font-size: 14px; font-weight: 700; color: var(--navy); text-align: left !important; background: var(--white); border-top: 2px solid var(--cloud); padding-top: 9px; }
+  .comp-year-row:hover td { background: var(--snow); }
+  .comp-by-year th { white-space: normal !important; min-width: 96px; max-width: 124px; font-size: 11.5px; line-height: 1.3; overflow-wrap: normal; word-break: normal; hyphens: manual; }
+  .comp-by-year th:first-child, .comp-by-year td:first-child { min-width: 150px; position: sticky; left: 0; z-index: 1; background: var(--white); }
+  .comp-by-year tr.comp-group td:first-child, .comp-by-year tr.comp-year-row td:first-child { position: static; }
+  .comp-yr-person td:first-child { padding-left: 24px; }
+  .comp-yr-person a { color: var(--navy); text-decoration: none; font-weight: 500; }
+  .comp-yr-person a:hover { color: var(--gold); }
+  .comp-col-salary { font-weight: 600; color: var(--navy) !important; }
+  .comp-col-total { font-weight: 700; color: var(--navy) !important; background: rgba(200,149,62,0.05); }
   .comp-table-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 6px; flex-wrap: wrap; }
   .comp-person { cursor: pointer; }
   .comp-person:hover td { background: var(--snow); }
@@ -1274,7 +1288,7 @@
 </div><!-- end appContainer -->
 
 <script>
-const CORE_VERSION = 'v20';
+const CORE_VERSION = 'v21';
 // Core Values wording: NEW_Core_Values_v2 (revised 08-03-26). Update this date when the descriptors change.
 const CORE_VALUES_REVISED = 'Aug 3, 2026';
 (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
@@ -1454,7 +1468,7 @@ let sessions = [];
 //   CORE_TeamMembers: PeopleAnalyzerRole ('admin' / 'member'), set on the Team Members Access tab
 //   PA_Sessions:    SessionType (Single line — "Annual" marks an annual review session)
 //   PA_Evaluations: AnnualData (Multiple lines, plain — V/TO ratings, eNPS and scorer role as JSON)
-const schema = { sessionActive: false, sessionOrder: false, evalEmployeeId: false, employeeRole: false, sessionType: false, evalAnnual: false };
+const schema = { sessionActive: false, sessionOrder: false, evalEmployeeId: false, employeeRole: false, sessionType: false, evalAnnual: false, employeeJobRole: false };
 
 // List name → error message, for any load that failed. Shown on screen so a failure never just looks like "no access".
 const loadErrors = {};
@@ -1473,6 +1487,7 @@ async function loadAllData() {
   schema.sessionOrder = !!sessFields && sessFields.has('SortOrder');
   schema.evalEmployeeId = !!evalFields && evalFields.has('EmployeeId');
   schema.employeeRole = !!empFields && empFields.has('PeopleAnalyzerRole');
+  schema.employeeJobRole = !!empFields && empFields.has('Role');
   schema.sessionType = !!sessFields && sessFields.has('SessionType');
   schema.evalAnnual = !!evalFields && evalFields.has('AnnualData');
   await Promise.all([
@@ -1492,7 +1507,7 @@ async function getListFields(listUrl) {
 
 async function loadEmployees() {
   const resp = await spFetch(
-    `${employeeApiUrl()}/items?$select=Id,EmployeeName,Department,Active,SortOrder,email${schema.employeeRole ? ',PeopleAnalyzerRole' : ''}&$orderby=SortOrder asc&$top=1000`
+    `${employeeApiUrl()}/items?$select=Id,EmployeeName,Department,Active,SortOrder,email${schema.employeeRole ? ',PeopleAnalyzerRole' : ''}${schema.employeeJobRole ? ',Role' : ''}&$orderby=SortOrder asc&$top=1000`
   );
   const data = await resp.json();
   employees = (data.value || []).map(item => ({
@@ -1501,7 +1516,8 @@ async function loadEmployees() {
     department: item.Department || 'Unassigned',
     active: item.Active !== false,
     emails: String(item.email || '').toLowerCase().split(/[;,]/).map(x => x.trim()).filter(Boolean),
-    role: String(item.PeopleAnalyzerRole || '').trim().toLowerCase()
+    role: String(item.PeopleAnalyzerRole || '').trim().toLowerCase(),
+    jobRole: String(item.Role || '').trim()
   }));
 }
 
@@ -3990,6 +4006,8 @@ const CHART_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#0
 let compRecords = [];
 let compScope = '';          // 'emp:<id>' or 'dept:<name>'
 let compMetric = 'total';    // department view: 'total' | 'salary'
+let compDeptMode = 'person'; // department view: 'person' (people down, years across) | 'year' (years down, pay lines across)
+const compYearOpen = new Set();   // department "By year" view: years expanded, keyed 'dept|year'
 let compEdit = null;         // { empId, year, draft, isNew }
 const compOpen = new Set();  // department view: people whose breakdown is expanded
 
@@ -4211,34 +4229,107 @@ function compPersonHTML(empId) {
   return h + compEditorHTML();
 }
 
+// People in a department grouped by their Team Members role (job title); one unnamed group if no roles are set.
+function compRoleGroups(data) {
+  const by = new Map();
+  data.forEach(p => { const r = p.e.jobRole || ''; if (!by.has(r)) by.set(r, []); by.get(r).push(p); });
+  const roles = [...by.keys()].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+  return roles.map(r => ({ role: r || 'No role set', people: by.get(r) }));
+}
+
 function compDeptHTML(dept) {
   const people = employees.filter(e => e.department === dept).sort((a, b) => a.name.localeCompare(b.name));
   const data = people.map(e => ({ e, ys: compYearsFor(e.id) })).filter(p => Object.keys(p.ys).length);
   if (!data.length) return `<div class="card"><div class="empty-state"><p>No compensation on record for ${esc(dept)} yet.</p></div></div>`;
   const years = [...new Set(data.flatMap(p => Object.keys(p.ys).map(Number)))].sort((a, b) => a - b);
   const metric = y => compMetric === 'salary' ? salaryCents(y) : totalCents(y);
-  const shown = data.slice(0, CHART_COLORS.length);
+  const groups = compRoleGroups(data);
+  const showGroups = groups.length > 1 || groups[0].role !== 'No role set';
+  // Chart: one line per person, ordered by role group so colours stay with the same people
+  const ordered = groups.flatMap(g => g.people);
+  const shown = ordered.slice(0, CHART_COLORS.length);
   let h = `<div class="card"><div class="h-person-head"><div class="card-title" style="margin:0;">${esc(dept)}</div><span class="ac-detail">${compMetric === 'salary' ? 'Salary' : 'Total compensation + benefits'} by year</span></div>`;
   h += lineChartHTML('chartDept', shown.map((p, i) => ({ name: p.e.name, color: CHART_COLORS[i], points: years.map(y => ({ x: y, y: p.ys[y] ? metric(p.ys[y]) : null })) })), years);
-  if (data.length > shown.length) h += `<div class="ac-detail">Chart shows the first ${shown.length} people; the table has everyone.</div>`;
-  const allOpen = data.every(p => compOpen.has(p.e.id));
-  h += `<div class="comp-table-head"><span class="ac-detail">Click a name to see the full breakdown — salary, each benefit, bonus and PTO.</span>
-    <button class="btn btn-secondary btn-sm" onclick="compToggleAll(${allOpen ? 'false' : 'true'}, ${esc(JSON.stringify(data.map(p => p.e.id)))})">${allOpen ? 'Collapse all' : 'Expand all'}</button></div>`;
-  h += `<div class="comp-table-wrap"><table class="comp-table"><thead><tr><th></th>${years.map(y => `<th>${y}</th>`).join('')}</tr></thead><tbody>`;
-  data.forEach(p => {
-    const open = compOpen.has(p.e.id);
-    h += `<tr class="comp-person${open ? ' is-open' : ''}" onclick="compToggle('${esc(p.e.id)}')"><td><span class="comp-caret">${open ? '▾' : '▸'}</span> <b>${esc(p.e.name)}</b>${p.e.active ? '' : ' <span class="eval-count">(inactive)</span>'}
-      <a href="#" class="comp-open-link" onclick="event.stopPropagation();compScope='emp:${esc(p.e.id)}';renderCompView();return false;" data-tip="Open ${esc(p.e.name)}'s page">open ›</a></td>${years.map(y => `<td>${p.ys[y] && metric(p.ys[y]) != null ? fmtCents(metric(p.ys[y])) : '—'}</td>`).join('')}</tr>`;
-    if (open) compBreakdownRows(p.ys, years).forEach(r => { h += `<tr class="comp-detail${r.cls ? ' ' + r.cls : ''}"><td>${esc(r.label)}</td>${r.cells.map(c => `<td>${c}</td>`).join('')}</tr>`; });
-  });
-  h += `<tr class="comp-total"><td>Department total</td>${years.map(y => {
-    const have = data.filter(p => p.ys[y] && metric(p.ys[y]) != null);
-    const t = have.reduce((s, p) => s + metric(p.ys[y]), 0);
-    return `<td>${fmtCents(t)}${have.length < data.length ? `<div class="comp-src" data-tip="Only people with figures for ${y} are included">${have.length} of ${data.length} people</div>` : ''}</td>`;
-  }).join('')}</tr>`;
-  h += `</tbody></table></div></div>`;
+  if (ordered.length > shown.length) h += `<div class="ac-detail">Chart shows the first ${shown.length} people; the table has everyone.</div>`;
+  h += `<div class="comp-table-head"><span class="comp-metric" style="margin:0;">${[['person', 'By person'], ['year', 'By year']].map(([k, t]) => `<button class="filter-btn${compDeptMode === k ? ' active' : ''}" onclick="compDeptMode='${k}';renderCompView()">${t}</button>`).join('')}</span>`;
+  h += compDeptMode === 'year' ? compDeptByYear(dept, data, groups, showGroups, years) : compDeptByPerson(data, groups, showGroups, years, metric);
+  h += `</div>`;
   return h;
 }
+
+// People down the side, years across; click a name for that person's breakdown.
+function compDeptByPerson(data, groups, showGroups, years, metric) {
+  const allOpen = data.every(p => compOpen.has(p.e.id));
+  let h = `<span class="ac-detail">Click a name to see the full breakdown — salary, each benefit, bonus and PTO.</span>
+    <button class="btn btn-secondary btn-sm" onclick="compToggleAll(${allOpen ? 'false' : 'true'}, ${esc(JSON.stringify(data.map(p => p.e.id)))})">${allOpen ? 'Collapse all' : 'Expand all'}</button></div>`;
+  h += `<div class="comp-table-wrap"><table class="comp-table"><thead><tr><th></th>${years.map(y => `<th>${y}</th>`).join('')}</tr></thead><tbody>`;
+  const sumRow = (list, label, cls) => `<tr class="${cls}"><td>${label}</td>${years.map(y => {
+    const have = list.filter(p => p.ys[y] && metric(p.ys[y]) != null);
+    const t = have.reduce((s, p) => s + metric(p.ys[y]), 0);
+    return `<td>${have.length ? fmtCents(t) : '—'}${have.length && have.length < list.length ? `<div class="comp-src" data-tip="Only people with figures for ${y} are included">${have.length} of ${list.length} people</div>` : ''}</td>`;
+  }).join('')}</tr>`;
+  groups.forEach(g => {
+    if (showGroups) h += `<tr class="comp-group"><td colspan="${years.length + 1}">${esc(g.role)} <span class="comp-group-n">${g.people.length}</span></td></tr>`;
+    g.people.forEach(p => {
+      const open = compOpen.has(p.e.id);
+      h += `<tr class="comp-person${open ? ' is-open' : ''}" onclick="compToggle('${esc(p.e.id)}')"><td><span class="comp-caret">${open ? '▾' : '▸'}</span> <b>${esc(p.e.name)}</b>${p.e.active ? '' : ' <span class="eval-count">(inactive)</span>'}
+        <a href="#" class="comp-open-link" onclick="event.stopPropagation();compScope='emp:${esc(p.e.id)}';renderCompView();return false;" data-tip="Open ${esc(p.e.name)}'s page">open ›</a></td>${years.map(y => `<td>${p.ys[y] && metric(p.ys[y]) != null ? fmtCents(metric(p.ys[y])) : '—'}</td>`).join('')}</tr>`;
+      if (open) compBreakdownRows(p.ys, years).forEach(r => { h += `<tr class="comp-detail${r.cls ? ' ' + r.cls : ''}"><td>${esc(r.label)}</td>${r.cells.map(c => `<td>${c}</td>`).join('')}</tr>`; });
+    });
+    if (showGroups && g.people.length > 1) h += sumRow(g.people, `${esc(g.role)} total`, 'comp-group-total');
+  });
+  h += sumRow(data, 'Department total', 'comp-total');
+  h += `</tbody></table></div>`;
+  return h;
+}
+
+// Years down the side (newest first, click to open), people under each year, every pay line across —
+// read down a column to compare people within a year.
+function compDeptByYear(dept, data, groups, showGroups, years) {
+  const counts = {}, labelFor = {};
+  [...years].reverse().forEach(y => data.forEach(p => (p.ys[y] ? p.ys[y].lines || [] : []).forEach(l => {
+    const k = compKey(l.label); counts[k] = (counts[k] || 0) + 1; if (!labelFor[k]) labelFor[k] = l.label;
+  })));
+  const keys = Object.keys(counts).sort((a, b) => (b === 'salary') - (a === 'salary') || counts[b] - counts[a]);
+  // The columns people compare most come first; the individual benefit lines follow.
+  const lineCol = k => ({ label: labelFor[k].replace(/\s*\(annually\)/i, '').replace(/\//g, ' / '), cls: k === 'salary' ? 'comp-col-salary' : '', money: true, get: y => { const l = (y.lines || []).find(x => compKey(x.label) === k); return l ? l.cents : null; } });
+  const cols = [
+    ...(keys.includes('salary') ? [lineCol('salary')] : []),
+    { label: 'Total comp + benefits', cls: 'comp-col-total', money: true, get: y => totalCents(y) },
+    { label: 'Bonus available', money: true, get: y => (y.bonus || {}).availableCents ?? null },
+    { label: 'Bonus earned', money: true, get: y => (y.bonus || {}).earnedCents ?? null },
+    { label: 'PTO days', money: false, get: y => (y.pto || {}).days || null },
+    ...keys.filter(k => k !== 'salary').map(lineCol)
+  ];
+  const newest = years[years.length - 1];
+  if (![...compYearOpen].some(k => k.startsWith(dept + '|'))) compYearOpen.add(dept + '|' + newest);
+  const allOpen = years.every(y => compYearOpen.has(dept + '|' + y));
+  let h = `<span class="ac-detail">Click a year to open it, then read down a column to compare people. Scroll sideways for each benefit line.</span>
+    <button class="btn btn-secondary btn-sm" onclick="compYearsAll(${esc(JSON.stringify(dept))}, ${allOpen ? 'false' : 'true'}, ${esc(JSON.stringify(years))})">${allOpen ? 'Collapse all' : 'Expand all'}</button></div>`;
+  h += `<div class="comp-table-wrap"><table class="comp-table comp-by-year"><thead><tr><th></th>${cols.map(c => `<th class="${c.cls || ''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>`;
+  const cell = (c, y) => { const v = y ? c.get(y) : null; return v == null || v === '' ? '—' : (c.money ? fmtCents(v) : esc(v)); };
+  [...years].reverse().forEach(yr => {
+    const key = dept + '|' + yr, open = compYearOpen.has(key);
+    const inYear = data.filter(p => p.ys[yr]);
+    h += `<tr class="comp-year-row${open ? ' is-open' : ''}" onclick="compYearToggle(${esc(JSON.stringify(key))})"><td colspan="${cols.length + 1}"><span class="comp-caret">${open ? '▾' : '▸'}</span> ${yr} <span class="comp-group-n">${inYear.length} ${inYear.length === 1 ? 'person' : 'people'}</span></td></tr>`;
+    if (!open) return;
+    groups.forEach(g => {
+      const ppl = g.people.filter(p => p.ys[yr]);
+      if (!ppl.length) return;
+      if (showGroups) h += `<tr class="comp-group"><td colspan="${cols.length + 1}">${esc(g.role)}</td></tr>`;
+      ppl.forEach(p => { h += `<tr class="comp-yr-person"><td><a href="#" onclick="compScope='emp:${esc(p.e.id)}';renderCompView();return false;">${esc(p.e.name)}</a></td>${cols.map(c => `<td class="${c.cls || ''}">${cell(c, p.ys[yr])}</td>`).join('')}</tr>`; });
+    });
+    h += `<tr class="comp-group-total"><td>${yr} total</td>${cols.map(c => {
+      if (!c.money) return '<td></td>';
+      const vals = inYear.map(p => c.get(p.ys[yr])).filter(v => v != null);
+      return `<td class="${c.cls || ''}">${vals.length ? fmtCents(vals.reduce((a, b) => a + b, 0)) : '—'}</td>`;
+    }).join('')}</tr>`;
+  });
+  h += `</tbody></table></div>`;
+  return h;
+}
+function compYearToggle(key) { compYearOpen.has(key) ? compYearOpen.delete(key) : compYearOpen.add(key); renderCompView(); }
+function compYearsAll(dept, open, years) { years.forEach(y => open ? compYearOpen.add(dept + '|' + y) : compYearOpen.delete(dept + '|' + y)); renderCompView(); }
 
 // One person's line-by-line breakdown across the given years (used under their department row)
 function compBreakdownRows(ys, years) {
