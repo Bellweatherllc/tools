@@ -2960,8 +2960,10 @@ tr.ops-ar-detail>td.ops-ar-detail-td{padding:0;background:#fff;position:relative
 /* v1142: week-2 Payables edit — inline in the cell. The v1140 expand-below-the-row
    version took up far more room than a single editable number needed. */
 .ops-table td[data-ops-row="payables"][data-ops-wk="1"]{cursor:pointer;}
+.ops-table td[data-ops-row="payroll"][data-ops-wk="1"]{cursor:pointer;} /* v1162 */
 .ops-pay-edit-ico{display:inline-block;margin-left:6px;font-size:10px;color:#a3a3a3;}
-.ops-table td[data-ops-row="payables"][data-ops-wk="1"]:hover .ops-pay-edit-ico{color:#1f2e3e;}
+.ops-table td[data-ops-row="payables"][data-ops-wk="1"]:hover .ops-pay-edit-ico,
+.ops-table td[data-ops-row="payroll"][data-ops-wk="1"]:hover .ops-pay-edit-ico{color:#1f2e3e;}
 .ops-table td.ops-pay-overridden{color:#0066ff !important;} /* v1148: bright blue flags an edited figure at a glance */
 .ops-pay-orig{display:block;font-size:9.5px;font-weight:600;color:#0066ff;text-transform:none;letter-spacing:0;margin-top:2px;cursor:pointer;}
 .ops-pay-orig:hover{text-decoration:underline;}
@@ -3020,7 +3022,8 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-group.zone-acc{background:rgba(216,182,79,.30);}
 .ops-group.zone-proj{background:rgba(59,127,168,.22);}
 .ops-group.zone-beyond{background:#f0ece2;}
-.ops-group{color:#1f2e3e;font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid #e4dac4;}
+.ops-group{color:#1f2e3e;font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid #e4dac4;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.ops-group-total{font-variant-numeric:tabular-nums;} /* v1162: subtotal rides on the right of a group header */
 .ops-group.zone-acc{border-top-left-radius:6px;border-top-right-radius:6px;}
 .ops-group.zone-acc{position:relative;border-top:2.5px solid #d8b64f;}
 .ops-inv.zone-acc{border-left:2.5px solid #d8b64f;border-right:2.5px solid #d8b64f;}
@@ -3031,6 +3034,15 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-group.zone-proj{border-top:1px solid #e4dac4;}
 .ops-group.zone-beyond{border-top:1px solid #e4dac4;}
 .ops-inv.zone-beyond:last-child{border-bottom-left-radius:6px;border-bottom-right-radius:6px;}
+/* v1162: Past Due AR — same framed-zone treatment as zone-acc, in red for urgency */
+.ops-inv.zone-past{background:#fdf0ee;}
+.ops-group.zone-past{background:rgba(172,40,40,.14);color:#ac2828;}
+.ops-group.zone-past{position:relative;border-top:2.5px solid #ac2828;border-top-left-radius:6px;border-top-right-radius:6px;}
+.ops-group.zone-past{border-left:2.5px solid #ac2828;border-right:2.5px solid #ac2828;}
+.ops-inv.zone-past{border-left:2.5px solid #ac2828;border-right:2.5px solid #ac2828;}
+.ops-inv.zone-past-last,.ops-empty.zone-past-last{border-bottom:2.5px solid #ac2828;border-bottom-left-radius:4px;border-bottom-right-radius:4px;}
+.ops-empty.zone-past-last{border-left:2.5px solid #ac2828;border-right:2.5px solid #ac2828;}
+.ops-inv.zone-past-last::after{display:none;}
 .ops-inv-date{font-family:'Swear Text',serif;font-size:13px;font-weight:600;color:#1f2e3e;width:56px;flex-shrink:0;}
 .ops-ar-sub{font-size:11px;color:#7a7a7a;}
 .ops-inv-src{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:20px;flex-shrink:0;}
@@ -3533,7 +3545,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1161';
+const CORE_VERSION = 'v1162';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -13429,6 +13441,18 @@ async function initFromSharePoint(){
         _opsPayablesRowId=data.id;
       }
     }catch(e){ console.warn(APP_VER+' Operations: payables override row unavailable',e); }
+    // v1162: week-2 Payroll override — identical shape and pattern to the Payables one above.
+    try{
+      const prRow=_findCfgRow('ops_payroll_w2');
+      if(prRow){
+        _opsPayrollRowId=prRow.id;
+        try{ _opsPayrollOverride=JSON.parse(prRow.fields?.Value||'null')||null; }
+        catch(e){ console.warn('[v1162] Bad JSON in ops_payroll_w2 — starting empty:',e); _opsPayrollOverride=null; }
+      } else {
+        const data=await graphPost(BWC_SITE+'/CORE_Config/items',{fields:{Title:'ops_payroll_w2',Key:'ops_payroll_w2',Value:'null'}});
+        _opsPayrollRowId=data.id;
+      }
+    }catch(e){ console.warn(APP_VER+' Operations: payroll override row unavailable',e); }
     // ── v1128: capacity split out of pipeline_state — own row, migrated from the legacy
     // blob's PERSON_TARGETS/CAP_BOOSTS on first run after the split ──
     try{
@@ -16865,6 +16889,14 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1162', date: '2026-11-05',
+    entries:[
+      'OPS Cash Flow: week 2’s Payroll figure is now editable in place, same as Payables already was — click it to zero out or adjust a figure QuickBooks otherwise carries over unchanged into a week that isn’t actually a payroll week. The edit also now correctly feeds the running Net Position forecast, not just the display.',
+      'Invoices outstanding: BuilderTrend invoices with a deadline already in the past were silently dropped from this list entirely — wkOf() had no bucket for them, so a growing pile of genuinely past-due AR (what the Patti AR report calls its own “PAST DUE AR” block) never showed up anywhere on this screen. Added a dedicated Past Due zone with its own total, pulled straight from those rows, above the current “Due now · two weeks” zone (which now shows its own total too). Folded the sparsely-populated “Projected · weeks three and four” zone into the existing collapsed “Beyond” group — BuilderTrend rarely has reliable data that far out, and the design & construction schedule card below is the real source for that lookahead.',
+      'Also fixed, while in this code: qbApply and arApply both repaint the Net Position row on every load, and only qbApply’s version knew about a week-2 Payables edit — whichever of the two happened to finish last could silently wipe out an active override’s effect on the forecast right after load. Both now apply the same override math, so this can no longer happen to either Payables or the new Payroll edit.',
+    ],
+  },
   {
     version: 'v1161', date: '2026-11-03',
     entries:['PLN simplified: it no longer tries to match a specific plan document — it just opens the project’s Plans folder in SharePoint directly, one click. Dropped the file-picker/matching path for this pill entirely (that machinery stays for MP and SO, which can have several legitimate documents).'],
@@ -20352,6 +20384,10 @@ let _opsBeyondOpen=false; // v1145: "Beyond four weeks" groups (both lists) coll
 // against, so a fresh drop invalidates it automatically (see qbApply).
 let _opsPayablesOverride=null;
 let _opsPayablesRowId=null;
+// v1162: same idea, Payroll's own week-2 edit — lets a non-payroll week 2 drop the
+// standing balance QB otherwise carries over unchanged from week 1.
+let _opsPayrollOverride=null;
+let _opsPayrollRowId=null;
 let OPS_SCENARIOS=[]; let _opsScenarioRowId=null;
 function opsWho(){ try{ const a=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]; return (a&&(a.name||a.username))||''; }catch(_){ return ''; } }
 // Scenarios persist in CORE_Config (row key ops_scenarios), shared by everyone with the OPS role. Last write wins — it's a short list of maybes, not a ledger.
@@ -20396,6 +20432,17 @@ function opsBuildPayablesOverride(newAbsAmount){
   const d=QB_DATA||{};
   const rawAbs=Math.abs(d.payables||0);
   const keepOriginal=(_opsPayablesOverride&&_opsPayablesOverride.qbFile===d.file&&_opsPayablesOverride.qbModified===d.modified)?_opsPayablesOverride.originalAmount:rawAbs;
+  return {amount:-Math.abs(newAbsAmount),qbFile:d.file,qbModified:d.modified,originalAmount:keepOriginal,editedBy:opsWho(),editedAt:new Date().toISOString()};
+}
+// v1162: week-2 Payroll override — identical shape and persistence pattern to Payables above.
+async function opsSavePayrollOverride(){
+  if(!_opsPayrollRowId) throw new Error('payroll override row not loaded');
+  await graphPatch(BWC_SITE+'/CORE_Config/items/'+_opsPayrollRowId+'/fields',{Value:JSON.stringify(_opsPayrollOverride)});
+}
+function opsBuildPayrollOverride(newAbsAmount){
+  const d=QB_DATA||{};
+  const rawAbs=Math.abs(d.payroll||0);
+  const keepOriginal=(_opsPayrollOverride&&_opsPayrollOverride.qbFile===d.file&&_opsPayrollOverride.qbModified===d.modified)?_opsPayrollOverride.originalAmount:rawAbs;
   return {amount:-Math.abs(newAbsAmount),qbFile:d.file,qbModified:d.modified,originalAmount:keepOriginal,editedBy:opsWho(),editedAt:new Date().toISOString()};
 }
 function opsMoney(n){ const neg=n<0; n=Math.abs(Math.round(n)); return (neg?'\u2212$':'$')+n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,','); }
@@ -20636,6 +20683,11 @@ async function qbApply(root){
       _opsPayablesOverride=null;
       opsSavePayablesOverride().catch(e=>console.warn(APP_VER+' Operations: payables override reset failed to save',e));
     }
+    // v1162: same reset rule for the Payroll override — a fresh QB drop means fresh figures.
+    if(_opsPayrollOverride && (_opsPayrollOverride.qbFile!==d.file || _opsPayrollOverride.qbModified!==d.modified)){
+      _opsPayrollOverride=null;
+      opsSavePayrollOverride().catch(e=>console.warn(APP_VER+' Operations: payroll override reset failed to save',e));
+    }
     let n=0;
     // v1150: week 2's Bank Balance is no longer a repeat of the QB snapshot — it's
     // week 1's own ending Net Position carried forward (set below, once that's known).
@@ -20657,7 +20709,32 @@ async function qbApply(root){
         if(src) src.textContent='Week 1: QuickBooks weekly drop · week 2: week 1’s forecast carried forward';
       });
     }
-    if(d.payroll!=null) n+=put(/^PAYROLL$/i,-Math.abs(d.payroll));
+    if(d.payroll!=null){
+      const rawPayroll=-Math.abs(d.payroll);
+      const overrideActive=_opsPayrollOverride&&_opsPayrollOverride.qbFile===d.file&&_opsPayrollOverride.qbModified===d.modified;
+      root.querySelectorAll('.ops-table tbody tr').forEach(tr=>{
+        const lbl=tr.querySelector('td.rl'); if(!lbl) return;
+        const name=(lbl.childNodes[0]&&lbl.childNodes[0].nodeValue||'').trim();
+        if(!/^PAYROLL$/i.test(name)) return;
+        n++;
+        tr.querySelectorAll('td:not(.rl)').forEach((td,i)=>{
+          if(i===1){ // week 2 only — the one editable cell
+            if(td.querySelector('.ops-pay-input')) return; // an edit is in progress — don't clobber it
+            td.innerHTML=opsPayrollCellHtml();
+            td.classList.remove('nodata');
+            const val=overrideActive?_opsPayrollOverride.amount:rawPayroll;
+            td.classList.toggle('pos',val>0); td.classList.toggle('negv',val<0);
+            td.classList.toggle('ops-pay-overridden',!!overrideActive);
+          } else {
+            td.textContent=opsMoney(rawPayroll);
+            td.classList.remove('nodata');
+            td.classList.toggle('pos',rawPayroll>0); td.classList.toggle('negv',rawPayroll<0);
+          }
+        });
+        const src=lbl.querySelector('.ops-src');
+        if(src) src.textContent='QuickBooks weekly drop'+(overrideActive?' · week 2 edited'+(_opsPayrollOverride.editedBy?' by '+_opsPayrollOverride.editedBy.split(' ')[0]:'')+' — resets on next drop':'');
+      });
+    }
     if(d.payables!=null){
       const rawPayables=-Math.abs(d.payables);
       const overrideActive=_opsPayablesOverride&&_opsPayablesOverride.qbFile===d.file&&_opsPayablesOverride.qbModified===d.modified;
@@ -20693,11 +20770,16 @@ async function qbApply(root){
     if(d.bank!=null){
       const rawPayablesAbs=Math.abs(d.payables||0);
       const payOverrideActive=_opsPayablesOverride&&_opsPayablesOverride.qbFile===d.file&&_opsPayablesOverride.qbModified===d.modified;
-      let bal=d.bank-Math.abs(d.payroll||0)-rawPayablesAbs;
+      const rawPayrollAbs=Math.abs(d.payroll||0);
+      const payrollOverrideActive=_opsPayrollOverride&&_opsPayrollOverride.qbFile===d.file&&_opsPayrollOverride.qbModified===d.modified;
+      let bal=d.bank-rawPayrollAbs-rawPayablesAbs;
       root.querySelectorAll('[data-ops-net]').forEach(td=>{
         const i=parseInt(td.dataset.opsNet,10);
         if(i===1&&payOverrideActive){
           bal += rawPayablesAbs-Math.abs(_opsPayablesOverride.amount);
+        }
+        if(i===1&&payrollOverrideActive){
+          bal += rawPayrollAbs-Math.abs(_opsPayrollOverride.amount);
         }
         bal += (parseFloat(td.dataset.opsAr)||0) + (parseFloat(td.dataset.opsSc)||0);
         td.textContent=opsMoney(bal);
@@ -20953,6 +21035,46 @@ function opsPayStartEdit(root,cell){
   });
   inp.addEventListener('blur',commit);
 }
+// v1162: week-2 Payroll edit — identical mechanics to the Payables cell above, so a
+// non-payroll week 2 can be zeroed out instead of silently carrying week 1's figure.
+function opsPayrollCellHtml(){
+  const d=QB_DATA||{};
+  const rawAbs=Math.abs(d.payroll||0);
+  const overrideActive=_opsPayrollOverride&&_opsPayrollOverride.qbFile===d.file&&_opsPayrollOverride.qbModified===d.modified;
+  const curVal=overrideActive?_opsPayrollOverride.amount:-rawAbs;
+  const origAbs=overrideActive?Math.abs(_opsPayrollOverride.originalAmount):rawAbs;
+  return opsMoney(curVal)+'<span class="ops-pay-edit-ico" data-tip="Click to edit">✎</span>'
+    +(overrideActive?'<span class="ops-pay-orig" data-tip="Click to restore">Original '+opsMoney(-origAbs)+'</span>':'');
+}
+function opsPayrollRenderCell(root){
+  const cell=root&&root.querySelector('[data-ops-row="payroll"][data-ops-wk="1"]'); if(!cell) return;
+  cell.innerHTML=opsPayrollCellHtml();
+}
+function opsPayrollStartEdit(root,cell){
+  const d=QB_DATA||{};
+  const overrideActive=_opsPayrollOverride&&_opsPayrollOverride.qbFile===d.file&&_opsPayrollOverride.qbModified===d.modified;
+  const curAbs=overrideActive?Math.abs(_opsPayrollOverride.amount):Math.abs(d.payroll||0);
+  cell.innerHTML='<input type="text" inputmode="numeric" class="ops-pay-input" id="opsPayrollInlineInput" value="'+curAbs+'">';
+  const inp=cell.querySelector('#opsPayrollInlineInput');
+  inp.focus(); inp.select();
+  let done=false;
+  const commit=()=>{
+    if(done) return; done=true;
+    const raw=(inp.value||'').replace(/[^0-9.]/g,'');
+    const num=parseFloat(raw);
+    if(!raw||isNaN(num)||num<0){ opsPayrollRenderCell(root); return; } // invalid — quietly revert, nothing to save
+    _opsPayrollOverride=opsBuildPayrollOverride(num);
+    opsPayrollRenderCell(root); // remove the input first — qbApply below won't touch a cell that still has one
+    opsSavePayrollOverride().catch(e=>showToast('Could not save: '+e.message));
+    qbApply(root);
+  };
+  const cancel=()=>{ if(done) return; done=true; opsPayrollRenderCell(root); };
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){ e.preventDefault(); commit(); }
+    else if(e.key==='Escape'){ e.preventDefault(); cancel(); }
+  });
+  inp.addEventListener('blur',commit);
+}
 async function arApply(root){
   if(_arBusy) return; _arBusy=true;
   const W=opsWeeks();
@@ -20996,8 +21118,18 @@ async function arApply(root){
     // Recalculate Net Position using whatever QB data is already applied
     const qbBank=QB_DATA&&QB_DATA.bank!=null?QB_DATA.bank:null;
     if(qbBank!=null){
-      let bal=qbBank-Math.abs(QB_DATA.payroll||0)-Math.abs(QB_DATA.payables||0);
+      // v1162: qbApply and arApply both repaint this row (whichever settles last wins),
+      // so both need the same week-2 override math or the other one's edit gets silently
+      // reverted on load — this used to happen to a Payables edit; now it's shared logic.
+      const rawPayablesAbs=Math.abs(QB_DATA.payables||0);
+      const payOverrideActive=_opsPayablesOverride&&_opsPayablesOverride.qbFile===QB_DATA.file&&_opsPayablesOverride.qbModified===QB_DATA.modified;
+      const rawPayrollAbs=Math.abs(QB_DATA.payroll||0);
+      const payrollOverrideActive=_opsPayrollOverride&&_opsPayrollOverride.qbFile===QB_DATA.file&&_opsPayrollOverride.qbModified===QB_DATA.modified;
+      let bal=qbBank-rawPayrollAbs-rawPayablesAbs;
       root.querySelectorAll('[data-ops-net]').forEach(td=>{
+        const i=parseInt(td.dataset.opsNet,10);
+        if(i===1&&payOverrideActive) bal+=rawPayablesAbs-Math.abs(_opsPayablesOverride.amount);
+        if(i===1&&payrollOverrideActive) bal+=rawPayrollAbs-Math.abs(_opsPayrollOverride.amount);
         bal+=(parseFloat(td.dataset.opsAr)||0)+(parseFloat(td.dataset.opsSc)||0);
         td.textContent=opsMoney(bal);
         td.classList.remove('nodata');
@@ -21008,14 +21140,23 @@ async function arApply(root){
     const today=new Date(); today.setHours(0,0,0,0);
     const btDiv=root.querySelector('#opsBtInv');
     if(btDiv){
-      const beyond=d.invoices.filter(x=>x.deadline&&wkOf(x.deadline)===4).sort((a,b)=>a.deadline-b.deadline);
-      const inWin=d.invoices.filter(x=>x.deadline&&wkOf(x.deadline)>=0&&wkOf(x.deadline)<4).sort((a,b)=>a.deadline-b.deadline);
+      // v1162: wkOf returns -2 for a real, past deadline that falls before this window
+      // even starts — these used to match no filter below at all and silently vanish,
+      // which is why genuinely past-due AR (the report's own "PAST DUE AR" block) never
+      // showed up here. Past Due is now its own zone, pulled straight from those rows.
+      const pastDue=d.invoices.filter(x=>x.deadline&&wkOf(x.deadline)===-2).sort((a,b)=>a.deadline-b.deadline);
+      const beyond=d.invoices.filter(x=>x.deadline&&wkOf(x.deadline)>=2).sort((a,b)=>a.deadline-b.deadline);
+      const inWin=d.invoices.filter(x=>x.deadline&&wkOf(x.deadline)>=0&&wkOf(x.deadline)<2).sort((a,b)=>a.deadline-b.deadline);
       const undated=d.invoices.filter(x=>!x.deadline);
-      const acc=inWin.filter(x=>wkOf(x.deadline)<2), prj=inWin.filter(x=>wkOf(x.deadline)>=2);
       const btRow=opsBtInvRowHtml;
-      let html='<div class="ops-group zone-acc">Now · two weeks · '+W[0].lab+' – '+W[1].sub.split(' – ')[1]+'</div>'+(acc.length?acc.map((x,i)=>btRow(x,' zone-acc'+(i===acc.length-1?' zone-acc-last':''))).join(''):'<div class="ops-empty zone-acc-last">Nothing outstanding in this window.</div>');
-      html+='<div class="ops-group zone-proj">Projected · weeks three and four · '+W[2].lab+' – '+W[3].sub.split(' – ')[1]+'</div>'+(prj.length?prj.map(x=>btRow(x,' zone-proj')).join(''):'<div class="ops-empty">Nothing outstanding in this window.</div>');
-      if(beyond.length) html+='<div class="ops-group zone-beyond ops-group-collapsible ops-beyond-hd"><span class="ops-collapse-caret'+(_opsBeyondOpen?' open':'')+'">▾</span>Beyond four weeks</div>'
+      const total=list=>list.reduce((s,x)=>s+x.balance,0);
+      let html='<div class="ops-group zone-past">Past due<span class="ops-group-total">'+opsMoney(total(pastDue))+'</span></div>'
+        +(pastDue.length?pastDue.map((x,i)=>btRow(x,' zone-past'+(i===pastDue.length-1?' zone-past-last':''))).join(''):'<div class="ops-empty zone-past-last">Nothing past due.</div>');
+      html+='<div class="ops-group zone-acc">Due now · two weeks · '+W[0].lab+' – '+W[1].sub.split(' – ')[1]+'<span class="ops-group-total">'+opsMoney(total(inWin))+'</span></div>'+(inWin.length?inWin.map((x,i)=>btRow(x,' zone-acc'+(i===inWin.length-1?' zone-acc-last':''))).join(''):'<div class="ops-empty zone-acc-last">Nothing outstanding in this window.</div>');
+      // v1162: weeks three-on folded into one collapsed reference group — BT rarely has
+      // reliable data that far out, and the design & construction schedule card below is
+      // the real source for that lookahead; this just keeps nothing silently hidden.
+      if(beyond.length) html+='<div class="ops-group zone-beyond ops-group-collapsible ops-beyond-hd"><span class="ops-collapse-caret'+(_opsBeyondOpen?' open':'')+'">▾</span>Beyond two weeks</div>'
         +'<div class="ops-beyond-body'+(_opsBeyondOpen?' open':'')+'">'+beyond.map(x=>btRow(x,' zone-beyond')).join('')+'</div>';
       if(undated.length) html+='<div class="ops-group zone-beyond">No due date</div>'+undated.map(x=>btRow(x,' zone-beyond')).join('');
       btDiv.innerHTML=html;
@@ -21055,7 +21196,7 @@ function opsHowItWorksHtml(){
   return '<div style="margin-top:14px;padding-top:10px;border-top:1px solid #e4dac4;">'
     +'<div style="font-size:11px;font-weight:700;color:#1f2e3e;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">How the numbers work</div>'
     +faqRow('Why is Payroll and Payables the same figure every week?',
-      'They’re a snapshot of what’s owed right now on the latest QuickBooks weekly drop, not a recurring weekly cost — so they’re only subtracted from Net Position in Week 1. Weeks 2–4 move on AR Expected and Scenarios alone. There’s no “is this a pay week” setting today; if a future pay week needs to show up, add it as a Scenario (money out, the week it lands).')
+      'They’re a snapshot of what’s owed right now on the latest QuickBooks weekly drop, not a recurring weekly cost — so they’re only subtracted from Net Position in Week 1. Weeks 2–4 move on AR Expected and Scenarios alone. Week 2’s own Payroll and Payables figures can each be edited in place (click the week-2 cell) — useful when week 2 isn’t actually a payroll week and the carried-over figure shouldn’t count; edits reset automatically on the next QuickBooks drop. For anything else landing in a future week, add it as a Scenario (money out, the week it lands).')
     +faqRow('Why does an invoice BuilderTrend shows as Paid still show up as expected here?',
       'AR Expected combines two things: BuilderTrend’s own Pending/Sent invoices (bucketed by their deadline), plus any CORE design-invoice installment that doesn’t currently match a BuilderTrend row by job code and amount. Once BuilderTrend marks an invoice Paid it drops out of Pending/Sent on its own — but CORE’s schedule has no “paid” concept, so if nothing in the export matches it anymore, it gets added back in as a CORE estimate. Check two things: has the AR Two-Week Report actually been re-exported since it was marked paid, and is the figure coming from a CORE line with no BuilderTrend match (click the AR Expected cell for that week to see which invoices make up the total).')
     +faqRow('Why doesn’t AR Expected at the top match the invoice list further down the page?',
@@ -21206,7 +21347,7 @@ function opsRenderInto(root){
     +'</div>'
     // v1084: alerts removed from here — now inline on invoice rows
     // v1137: CA-moved section moved to the standing banner at the top of the page
-    +'<div class="ops-h"><h2>What\u2019s expected \u2014 invoices outstanding</h2><span class="ops-sub ops-ar-sub">AR Two-Week Report \u00b7 reading\u2026</span><div class="ops-rule"></div></div>'
+    +'<div class="ops-h"><h2>Invoices outstanding \u2014 past due &amp; due now</h2><span class="ops-sub ops-ar-sub">AR Two-Week Report \u00b7 reading\u2026</span><div class="ops-rule"></div></div>'
     +'<div class="ops-card ops-expected"><div id="opsBtInv"><div class="ops-empty">Loading AR Two-Week Report\u2026</div></div></div>'
     +'<div class="ops-h"><h2>What\u2019s expected \u2014 design &amp; construction schedule</h2><span class="ops-sub">Week three on, out to about a month \u2014 the two-week cash view above covers what\u2019s due sooner \u00b7 construction schedule via CA and LC entries'+(past?' \u00b7 '+past+' past-dated not shown':'')+'</span><div class="ops-rule"></div></div>'
     +'<div class="ops-card ops-expected">'+invHtml+'</div>'
@@ -21257,8 +21398,13 @@ function opsRenderInto(root){
     const origSpan=e.target.closest('.ops-pay-orig');
     if(origSpan){
       e.stopPropagation();
-      _opsPayablesOverride=null;
-      opsSavePayablesOverride().catch(e=>showToast('Could not save: '+e.message));
+      if(origSpan.closest('[data-ops-row="payroll"]')){
+        _opsPayrollOverride=null;
+        opsSavePayrollOverride().catch(e=>showToast('Could not save: '+e.message));
+      } else {
+        _opsPayablesOverride=null;
+        opsSavePayablesOverride().catch(e=>showToast('Could not save: '+e.message));
+      }
       qbApply(root);
       return;
     }
@@ -21267,6 +21413,13 @@ function opsRenderInto(root){
       if(payCell.querySelector('.ops-pay-input')) return; // already editing
       e.stopPropagation();
       opsPayStartEdit(root,payCell);
+      return;
+    }
+    const payrollCell=e.target.closest('[data-ops-row="payroll"][data-ops-wk="1"]');
+    if(payrollCell){
+      if(payrollCell.querySelector('.ops-pay-input')) return; // already editing
+      e.stopPropagation();
+      opsPayrollStartEdit(root,payrollCell);
       return;
     }
     const cell=e.target.closest('[data-ops-row]'); if(!cell) return;
@@ -21517,8 +21670,11 @@ function opsCellTipHtml(rk,wk,scId){
         // qbApply uses to paint the cell, recomputed here for the tooltip.
         const rawPayablesAbs=Math.abs(QB_DATA.payables||0);
         const overrideActive=_opsPayablesOverride&&_opsPayablesOverride.qbFile===QB_DATA.file&&_opsPayablesOverride.qbModified===QB_DATA.modified;
-        let bal=QB_DATA.bank-Math.abs(QB_DATA.payroll||0)-rawPayablesAbs;
+        const rawPayrollAbs=Math.abs(QB_DATA.payroll||0);
+        const payrollOverrideActive=_opsPayrollOverride&&_opsPayrollOverride.qbFile===QB_DATA.file&&_opsPayrollOverride.qbModified===QB_DATA.modified;
+        let bal=QB_DATA.bank-rawPayrollAbs-rawPayablesAbs;
         if(overrideActive) bal+=rawPayablesAbs-Math.abs(_opsPayablesOverride.amount);
+        if(payrollOverrideActive) bal+=rawPayrollAbs-Math.abs(_opsPayrollOverride.amount);
         const arAmt=AR_DATA&&AR_DATA.invoices?AR_DATA.invoices.filter(x=>wkOf(x.deadline)===0).reduce((s,x)=>s+x.balance,0):opsDesignInvoices().filter(x=>wkOf(x.date)===0&&x.amount!=null).reduce((s,x)=>s+(x.amount||0),0);
         const scAmt=OPS_SCENARIOS.filter(sc=>sc.on).reduce((sum,sc)=>{ const d=opsIsoToDate(sc.weekOf); return d&&wkOf(d)===0?sum+(sc.dir==='in'?1:-1)*(sc.amt||0):sum; },0);
         bal+=arAmt+scAmt;
@@ -21532,8 +21688,16 @@ function opsCellTipHtml(rk,wk,scId){
     let b=head('Payroll');
     if(QB_DATA&&QB_DATA.payroll!=null){
       b+=src(QB_DATA.file||'QB weekly drop');
-      b+=row('Balance owed',fmtV(-Math.abs(QB_DATA.payroll)));
-      b+=note('Standing balance — what is owed right now. Deducted from Net Position in week\u00a01 only, not as a weekly run rate.');
+      const rawAbs=Math.abs(QB_DATA.payroll);
+      const overrideActive=_opsPayrollOverride&&_opsPayrollOverride.qbFile===QB_DATA.file&&_opsPayrollOverride.qbModified===QB_DATA.modified;
+      if(wk===1&&overrideActive){
+        b+=row('Edited for week 2',fmtV(_opsPayrollOverride.amount));
+        b+=row('Original balance owed',fmtV(-rawAbs));
+        b+=note('Edited'+(_opsPayrollOverride.editedBy?' by '+escH(_opsPayrollOverride.editedBy.split(' ')[0]):'')+' — not a payroll week. Resets automatically on the next QuickBooks drop.');
+      } else {
+        b+=row('Balance owed',fmtV(-rawAbs));
+        b+=note('Standing balance — what is owed right now. Deducted from Net Position in week\u00a01 only, not as a weekly run rate.');
+      }
     } else b+=note('Load the QuickBooks weekly drop to see the figure.');
     return b;
   }
