@@ -2518,6 +2518,9 @@ body.admin-mode .fc-ms-row[data-capacity-section="design"]:not(.is-collapsed) .f
 .cj-answer-btn[data-v="pending"].cj-active{background:#8a6d1f;border-color:#8a6d1f;color:#fff;}
 .cj-note{width:100%;box-sizing:border-box;min-height:40px;font:inherit;font-size:11.5px;padding:6px 8px;border:1px solid #ddd;border-radius:5px;resize:vertical;}
 .cj-note-lbl{font-size:9.5px;color:#999;margin-bottom:3px;display:block;}
+.cj-del-row{padding-top:4px;border-top:1px solid #f0f0f0;margin-top:2px;}
+.cj-del-btn{font:inherit;font-size:10.5px;font-weight:600;color:#a03030;background:none;border:none;cursor:pointer;padding:4px 0;}
+.cj-del-btn:hover{text-decoration:underline;}
 
 /* definition rows */
 .arc-row{
@@ -3125,6 +3128,9 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 .ops-checkin-btn.yes:hover{filter:brightness(1.08);}
 .ops-checkin-btn.notyet{background:#f0ece2;color:#7a7a7a;}
 .ops-checkin-btn.notyet:hover{background:#e4dac4;}
+.ops-checkin-ctx{font-size:10.5px;color:#7a7a7a;margin-top:4px;font-style:italic;}
+.ops-checkin-ctx-final{color:#a3651f;font-style:normal;font-weight:600;}
+.ops-checkin-ctx-none{color:#1f7a4c;font-style:normal;}
 /* v1087: CA movement monitor */
 .ops-ca{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #f0ece2;}
 .ops-ca:last-child{border-bottom:none;}
@@ -3659,7 +3665,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1163';
+const CORE_VERSION = 'v1164';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -15605,22 +15611,45 @@ function cjYesToBothCount(){ return COMPLETED_JOBS.filter(j=>j.db==='yes'&&j.rec
 
 // ── OPS check-in card: the automatic trigger. Rendered into opsRenderInto's output;
 // handled by the delegated root click listener down in opsRenderInto itself. ──
+// v1164: corroborating context from the AR Two-Week Report, now that it actually
+// parses (see v1163's column-name fix). This can only ever confirm "still
+// outstanding" or "not currently outstanding" — it can't confirm "paid" on its
+// own, which is why it informs the check-in instead of answering it.
+function cjArContextForProj(proj){
+  if(!AR_DATA||!AR_DATA.invoices||!proj.jobCode) return null;
+  const jc=proj.jobCode.trim().toUpperCase();
+  const matches=AR_DATA.invoices.filter(x=>x.job&&x.job.trim().toUpperCase()===jc);
+  return {all:matches, finalInvoice:matches.find(x=>/substantial completion/i.test(x.title||''))||null};
+}
 function opsCheckinHtml(){
   const cands=cjCheckinCandidates();
   if(!cands.length) return '<div class="ops-empty">Nothing due right now.</div>';
-  return cands.map(({proj,endWk})=>
-    '<div class="ops-checkin-row">'
+  return cands.map(({proj,endWk})=>{
+    const ctx=cjArContextForProj(proj);
+    let ctxHtml;
+    if(ctx&&ctx.finalInvoice){
+      const fi=ctx.finalInvoice;
+      ctxHtml='<div class="ops-checkin-ctx ops-checkin-ctx-final">Still outstanding per the latest AR report: '+escH(fi.title)+' — '+opsMoney(fi.balance)+(fi.deadline?', due '+fi.deadline.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')+'</div>';
+    } else if(ctx&&ctx.all.length){
+      ctxHtml='<div class="ops-checkin-ctx">'+ctx.all.length+' other invoice'+(ctx.all.length===1?'':'s')+' still outstanding for this job per the latest AR report — may not be at Substantial Completion yet</div>';
+    } else if(AR_DATA&&AR_DATA.invoices){
+      ctxHtml='<div class="ops-checkin-ctx ops-checkin-ctx-none">No outstanding invoices for this job in the latest AR report.</div>';
+    } else {
+      ctxHtml='';
+    }
+    return '<div class="ops-checkin-row">'
       +'<div class="ops-checkin-info">'
         +'<div class="ops-checkin-name">'+escH(proj.name||_projShortName(proj))+'</div>'
         +'<div class="ops-checkin-sched">Construction was scheduled to end '+escH(weekToDateStr(endWk))+'</div>'
         +'<div class="ops-checkin-q">Has final payment for Substantial Completion been received?</div>'
+        +ctxHtml
       +'</div>'
       +'<div class="ops-checkin-btns">'
         +'<button type="button" class="ops-checkin-btn yes" data-checkin-act="yes" data-checkin-proj="'+proj.id+'">Yes, received</button>'
         +'<button type="button" class="ops-checkin-btn notyet" data-checkin-act="notyet" data-checkin-proj="'+proj.id+'">Not yet</button>'
       +'</div>'
-    +'</div>'
-  ).join('');
+    +'</div>';
+  }).join('');
 }
 
 // ── Completed Jobs modal ──
@@ -15668,7 +15697,9 @@ function renderCompletedJobsBody(){
         +'</div>'
         +'<div class="cj-job-right">'+cjPillHtml(job.db)+cjPillHtml(job.rec)+(bothYes?'<span class="cj-pill cj-yes">Counts toward 360</span>':'')+'<span class="cj-caret">▸</span></div>'
       +'</div>'
-      +'<div class="cj-job-body">'+qHtml+'</div>'
+      +'<div class="cj-job-body">'+qHtml
+        +'<div class="cj-del-row"><button type="button" class="cj-del-btn" data-cj-del="'+job.id+'">Delete this job — won’t count toward 360</button></div>'
+      +'</div>'
     +'</div>';
   }).join('')||'<div class="archive-empty">No completed jobs logged yet.</div>';
 
@@ -15703,6 +15734,29 @@ document.getElementById('cjBody').addEventListener('click',e=>{
     job[qk]=v; _cjOpenId=id;
     saveCompletedJobs().catch(e=>showToast('Could not save: '+e.message));
     renderCompletedJobsBody();
+    return;
+  }
+  // v1164: delete — e.g. a job logged in error, or one later decided not to
+  // qualify. Removed entirely, not just marked no, so it stops counting toward
+  // both the log and the 360 goal. Routed through the shared confirm dialog,
+  // same as Archive/Cancel/Lost.
+  const delBtn=e.target.closest('.cj-del-btn');
+  if(delBtn){
+    const id=delBtn.getAttribute('data-cj-del');
+    const job=COMPLETED_JOBS.find(j=>j.id===id); if(!job) return;
+    const dlg=document.getElementById('confirmDialog');
+    document.getElementById('confirmTitle').textContent='Delete this job?';
+    document.getElementById('confirmMsg').textContent='"'+job.name+'" will be removed from Completed Jobs and will no longer count toward 360.';
+    document.getElementById('confirmOk').textContent='Delete';
+    dlg.classList.add('open');
+    document.getElementById('confirmOk').onclick=()=>{
+      dlg.classList.remove('open');
+      COMPLETED_JOBS=COMPLETED_JOBS.filter(j=>j.id!==id);
+      _cjOpenId=null;
+      saveCompletedJobs().catch(e=>showToast('Could not save: '+e.message));
+      renderCompletedJobsBody();
+    };
+    document.getElementById('confirmCancel').onclick=()=>{ dlg.classList.remove('open'); };
   }
 });
 document.getElementById('cjBody').addEventListener('change',e=>{
@@ -17219,6 +17273,13 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1164', date: '2026-11-05',
+    entries:[
+      'Completed Jobs: the OPS final-payment check-in now shows AR context under the question when it has any — a Substantial Completion invoice still outstanding, other invoices still outstanding (probably not there yet), or nothing outstanding at all. It’s informational only; the AR report can say "not currently outstanding", never "paid", so a person still answers yes or not yet.',
+      'Completed Jobs: each logged job can now be deleted (inside its expanded row, with a confirm) for cases that shouldn’t count — logged in error, later judged not to qualify, whatever comes up. Removes it from the log and the 360 count entirely, not just marks it no.',
+    ],
+  },
   {
     version: 'v1163', date: '2026-11-05',
     entries:[
@@ -21503,6 +21564,12 @@ async function arApply(root){
       if(undated.length) html+='<div class="ops-group zone-beyond">No due date</div>'+undated.map(x=>btRow(x,' zone-beyond')).join('');
       btDiv.innerHTML=html;
     }
+    // v1164: refresh the Final payment check-in card's AR context now that real
+    // data has landed — opsRenderInto painted it, if at all, from whatever was
+    // cached before this load finished. Only exists in the DOM when there was at
+    // least one candidate at render time; nothing to refresh otherwise.
+    const checkinCard=root.querySelector('#opsCheckinCard');
+    if(checkinCard) checkinCard.innerHTML=opsCheckinHtml();
     note((d.file||'file')+' · '+d.invoices.length+' outstanding');
     if(_arRevealWk!=null && _arRevealWk<OPS_VISIBLE_WEEKS) opsOpenArDetail(root,_arRevealWk); // v1138: refresh the open breakdown once BT data lands
     console.log('[ops] AR Two-Week Report:',d.file,'invoices:',d.invoices.length,'ar totals:',ar);
