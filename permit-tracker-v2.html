@@ -409,7 +409,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v152';
+const CORE_VERSION = 'v153';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -631,10 +631,14 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const phaseIIIStart = hasPipelineAnchor && preConWeeksFromToday!=null
     ? pipelineTodayWeek+preConWeeksFromToday
     : phaseIIStart+phaseIIWidth;
-  // Zoning's own start, unchanged: defaults to phaseIIStart (no overlap
-  // with Phase I at all) when a project hasn't got the field set, clamped
-  // to Phase I's own width so it can never run past it.
-  const zoningOffset=Math.max(0, Math.min(phaseIIStart, zoningStartWeek!=null ? zoningStartWeek : phaseIIStart));
+  // Zoning's own start: defaults to phaseIIStart (no overlap with Phase I
+  // at all) when a project hasn't got the field set. Clamped to the END of
+  // Phase II (phaseIIIStart, Pre-Con's own start), not Phase II's START —
+  // per Byron: "the start can move to before the first week of Phase II,
+  // but not after. It should be permitted to move beyond [it]." A track's
+  // start can land anywhere across Phase I AND Phase II, just not into
+  // Pre-Con.
+  const zoningOffset=Math.max(0, Math.min(phaseIIIStart-1, zoningStartWeek!=null ? zoningStartWeek : phaseIIStart));
   // Permitting's start is now independently settable too — but its DEFAULT
   // (no manual override) has to keep reproducing the historical chained
   // position (phaseIIStart + zoning's own projected length) that every
@@ -649,7 +653,7 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // lets the two tracks overlap. See the overlap check below for how the
   // gantt itself flexes taller/thinner when they do.
   const permitOffset = permitStartWeek!=null
-    ? Math.max(0, Math.min(phaseIIStart, permitStartWeek))
+    ? Math.max(0, Math.min(phaseIIIStart-1, permitStartWeek))
     : phaseIIStart+zoning.endWeek;
   // Each track's real absolute end (its own start plus its own total
   // length) — now meaningful independently of the other track, since
@@ -1264,30 +1268,42 @@ function shiftGradient(pid, delta){
   p.gradientOffset=(p.gradientOffset||0)+delta;
   renderCards();
 }
+// Ceiling is the END of Phase II (Phase I + Phase II's combined width), not
+// Phase II's own START — per Byron: "the start can move to before the first
+// week of Phase II, but not after. [It] should be permitted to move beyond
+// [it]." A track's start can now land anywhere across Phase I AND Phase II,
+// just not into Pre-Con. This mirrors the same phaseIWidth-only
+// approximation renderCombinedTrack's real clamp already accepts for
+// zoningStartWeek (ignoring the Pipeline-anchor nuance phaseIIStart can
+// carry) — consistent, not newly imprecise.
 function shiftZoningStart(pid, delta){
   const p=findProject(pid);
   const phaseIWidth=(p.phaseWeeks&&p.phaseWeeks.I)||6;
+  const maxStart=phaseIWidth+((p.phaseWeeks&&p.phaseWeeks.II)||18)-1;
   const current=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIWidth;
-  p.zoningStartWeek=Math.max(0, Math.min(phaseIWidth, current+delta));
+  p.zoningStartWeek=Math.max(0, Math.min(maxStart, current+delta));
   renderCards();
 }
 // Permitting's own independent start — mirrors shiftZoningStart exactly.
 // Per Byron: "I want to be able to establish start dates for zoning and
 // permitting separately... they could sometimes run in parallel tracks."
 // Before this, permitting's position was hard-pinned to Phase II's start
-// with no override at all; now either track can move into Phase I on its
-// own, and the gantt itself flexes (see renderCombinedTrack's tracksOverlap)
-// whenever that actually puts the two in the same weeks.
+// with no override at all; now either track can move anywhere across Phase
+// I and Phase II on its own, and the gantt itself flexes (see
+// renderCombinedTrack's tracksOverlap) whenever that actually puts the two
+// in the same weeks.
 function shiftPermitStart(pid, delta){
   const p=findProject(pid);
   const phaseIWidth=(p.phaseWeeks&&p.phaseWeeks.I)||6;
+  const maxStart=phaseIWidth+((p.phaseWeeks&&p.phaseWeeks.II)||18)-1;
   const current=p.permitStartWeek!=null ? p.permitStartWeek : phaseIWidth;
-  p.permitStartWeek=Math.max(0, Math.min(phaseIWidth, current+delta));
+  p.permitStartWeek=Math.max(0, Math.min(maxStart, current+delta));
   renderCards();
 }
 function trackStartLabel(startWeek, phaseIWidth){
-  if(startWeek>=phaseIWidth) return 'Start of Phase II';
-  return 'Phase I, wk '+(startWeek+1);
+  if(startWeek<phaseIWidth) return 'Phase I, wk '+(startWeek+1);
+  const intoPhaseII=startWeek-phaseIWidth;
+  return intoPhaseII===0 ? 'Start of Phase II' : 'Phase II, wk '+(intoPhaseII+1);
 }
 /* Posting really does reach Trello when a project carries a real
    trelloCardId — Trello's own comments endpoint (POST .../actions/comments)
