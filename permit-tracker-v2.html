@@ -369,12 +369,36 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .qc-note{font-size:9.5px;color:rgba(255,255,255,.4);margin-top:8px;line-height:1.4;}
 #cmtPopInner textarea{width:100%;min-height:44px;font-size:11.5px;font-family:var(--font-tt);padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:6px;background:rgba(255,255,255,.06);color:#fff;resize:vertical;margin-top:4px;}
 #cmtPopInner button{margin-top:6px;font-size:11px;font-weight:700;padding:5px 12px;border:none;border-radius:6px;background:var(--hdr-gold);color:#2a1c00;cursor:pointer;}
+
+/* ── notes floating popover — same shared-panel/tail-flip pattern as
+   #cmtPop above, its own panel since notes and comments can be open
+   independently. Backed by CORE_PermitNotes (SharePoint), not a local mock. ── */
+#notePop{display:none;position:fixed;z-index:600;}
+#notePop.open{display:block;}
+#notePopInner{background:var(--hdr-bg);color:#fff;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.30);padding:14px 16px;overflow-y:auto;}
+#notePop::before{content:'';position:absolute;right:16px;width:0;height:0;border:8px solid transparent;}
+#notePop.tail-down::before{bottom:-15px;border-top-color:var(--hdr-bg);}
+#notePop.tail-up::before{top:-15px;border-bottom-color:var(--hdr-bg);}
+.nt-item{font-size:11.5px;margin-bottom:10px;line-height:1.4;}
+.nt-meta{color:rgba(255,255,255,.5);font-size:10px;margin-bottom:2px;}
+.nt-empty{color:rgba(255,255,255,.5);font-size:11.5px;}
+#notePopInner textarea{width:100%;min-height:44px;font-size:11.5px;font-family:var(--font-tt);padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:6px;background:rgba(255,255,255,.06);color:#fff;resize:vertical;margin-top:4px;}
+#notePopInner button{margin-top:6px;font-size:11px;font-weight:700;padding:5px 12px;border:none;border-radius:6px;background:var(--hdr-gold);color:#2a1c00;cursor:pointer;}
+#notePopInner button.nt-cancel{background:none;color:rgba(255,255,255,.65);margin-left:6px;font-weight:600;}
+.note-group{align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;}
+.note-icon{position:relative;display:inline-flex;flex-shrink:0;color:var(--mut);cursor:pointer;transition:color .12s;transform:translateY(-6px);}
+.note-icon svg{width:21px;height:21px;}
+.note-icon:hover{color:var(--navy);}
+.note-glyph{position:relative;display:inline-flex;}
+.note-count{position:absolute;left:50%;top:calc(44% + 1.5px);transform:translate(-50%,-50%);color:inherit;font-size:9px;font-weight:600;line-height:1;pointer-events:none;}
+.note-lbl{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.6;color:var(--mut);line-height:1;}
 </style>
 </head>
 <body>
 
 <div id="tt"></div>
 <div id="cmtPop"><div id="cmtPopInner"></div></div>
+<div id="notePop"><div id="notePopInner"></div></div>
 
 <div id="authOverlay">
   <div class="auth-card">
@@ -493,7 +517,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v161';
+const CORE_VERSION = 'v162';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1518,6 +1542,7 @@ const EXT_ICON_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" s
 // non-uniformly (2px wider, same height) — by default SVG scaling
 // preserves aspect ratio and would just letterbox instead of stretching.
 const CMT_ICON_SVG='<svg viewBox="0 0 16 16" preserveAspectRatio="none" fill="#fff" stroke="currentColor" stroke-width="0.7" stroke-linejoin="round"><path d="M14 3H2v10h8l4 3z"/></svg>';
+const NOTE_ICON_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h7l3 3v9H3z"/><path d="M10 2v3h3"/><path d="M5.5 8h5M5.5 10.5h5"/></svg>';
 // path drawn first (solid white body, gray outline), then the center
 // circle drawn ON TOP filled with the surrounding background color — the
 // path has no real cutout at the center, so a white-filled circle there was
@@ -1550,6 +1575,12 @@ function cardIcons(p){
     ? `<a class="ext-icon" href="https://trello.com/c/${encodeURIComponent(p.trelloShortLink||p.trelloCardId)}" target="_blank" rel="noopener" data-tip="Open Trello card" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span></a>`
     : `<span class="ext-icon" style="opacity:.4;cursor:default;" data-tip="No Trello card linked yet" aria-label="Open Trello card"><span class="icon-glyph">${EXT_ICON_SVG}</span></span>`;
   return `<span class="trello-group"><span class="trello-icons">${cmt}${ext}</span><span class="trello-lbl">Trello</span></span>`;
+}
+
+function noteGroupHtml(p){
+  const pid=pidOf(p.proj);
+  const n=parseNoteEntries(permitNotesPeek(p.proj)).length;
+  return `<span class="note-group"><span class="note-icon" data-pid="${pid}" onclick="event.stopPropagation();openNotePopover('${pid}',this)" data-tip="Notes" aria-label="Notes"><span class="note-glyph">${NOTE_ICON_SVG}${n?`<span class="note-count">${n}</span>`:''}</span></span><span class="note-lbl">Notes</span></span>`;
 }
 
 /* ───────── comment popover — a single shared floating panel (#cmtPop),
@@ -1608,6 +1639,109 @@ window.addEventListener('scroll', e=>{
   if(e.target && pop.contains(e.target)) return;
   closeQuickComments();
 }, true);
+
+/* ───────── notes popover (#notePop) — same shared-floating-panel/tail-flip
+   mechanics as the comment popover above, backed by CORE_PermitNotes
+   (durable, SharePoint) rather than the in-memory COMMENTS mock. Mirrors
+   project-pipeline.html's own notes feature in entry format and feel
+   (history + "add a note" textarea + auto-attribution), deliberately
+   simplified relative to Pipeline's: read-only history, append-only — no
+   admin-mode inline edit/delete, since permit-tracker has no admin-mode
+   concept. ───────── */
+let _noteOpenFor=null;
+function histUser(){
+  try{
+    const a=SherpaAuth.getAccount();
+    const full=(a&&(a.name||a.username))||'Unknown';
+    return full.split(' ')[0]; // first name only
+  }catch(e){ return 'Unknown'; }
+}
+function parseNoteEntries(text){
+  return (text||'').split(/\n\n+/).filter(e=>e.trim()).map(entry=>{
+    const m=entry.match(/\n— (.+)$/);
+    return m ? {body:entry.slice(0,m.index), attr:m[1]} : {body:entry, attr:null};
+  });
+}
+function notePopoverHtml(pid, p){
+  const entries=parseNoteEntries(permitNotesPeek(p.proj));
+  const items=entries.length
+    ? entries.map(e=>`<div class="nt-item">${e.attr?`<div class="nt-meta">${esc(e.attr)}</div>`:''}<div>${esc(e.body)}</div></div>`).join('')
+    : '<div class="nt-empty">No notes yet.</div>';
+  return items+`<textarea id="nt-new-${pid}" placeholder="Add a note…"></textarea>`
+    +`<div><button onclick="saveNote('${pid}','${esc(p.proj)}')">Save</button>`
+    +`<button class="nt-cancel" onclick="closeNotePopover()">Cancel</button></div>`;
+}
+async function openNotePopover(pid, anchorEl){
+  const pop=document.getElementById('notePop');
+  if(_noteOpenFor===pid && pop.classList.contains('open')){ closeNotePopover(); return; }
+  const p=findProject(pid); if(!p) return;
+  document.getElementById('notePopInner').innerHTML='<div class="nt-empty">Loading…</div>';
+  pop.classList.add('open');
+  _noteOpenFor=pid;
+  positionNotePopover(anchorEl);
+  try{
+    await permitNotesAll();
+  }catch(e){
+    console.error('[permit notes]', e);
+    if(_noteOpenFor===pid) document.getElementById('notePopInner').innerHTML='<div class="nt-empty">Couldn’t load notes: '+esc(e.message)+'</div>';
+    return;
+  }
+  if(_noteOpenFor!==pid) return; // closed, or switched to another card, while loading
+  document.getElementById('notePopInner').innerHTML=notePopoverHtml(pid, p);
+  positionNotePopover(anchorEl);
+}
+function positionNotePopover(anchorEl){
+  const pop=document.getElementById('notePop'), inner=document.getElementById('notePopInner');
+  const r=anchorEl.getBoundingClientRect();
+  const vw=window.innerWidth, vh=window.innerHeight, pw=300, gap=10, tailInset=16;
+  const spaceAbove=r.top-gap-10, spaceBelow=vh-r.bottom-gap-10;
+  inner.style.maxHeight='none';
+  const natural=inner.scrollHeight;
+  const tailDown = spaceAbove>=Math.min(natural,300) || spaceAbove>=spaceBelow;
+  const cap=Math.max(80,Math.min(300, tailDown?spaceAbove:spaceBelow));
+  inner.style.maxHeight=cap+'px';
+  const h=Math.min(natural,cap);
+  const top = tailDown ? (r.top-gap-h) : (r.bottom+gap);
+  let left=r.right-pw+tailInset-5;
+  left=Math.max(10, Math.min(left, vw-10-pw));
+  pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.width=pw+'px';
+  pop.classList.toggle('tail-down', tailDown);
+  pop.classList.toggle('tail-up', !tailDown);
+}
+function closeNotePopover(){ document.getElementById('notePop').classList.remove('open'); _noteOpenFor=null; }
+document.addEventListener('click', e=>{
+  const pop=document.getElementById('notePop');
+  if(!pop.classList.contains('open')) return;
+  if(e.target.closest('#notePop')||e.target.closest('.note-icon')) return;
+  closeNotePopover();
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeNotePopover(); });
+window.addEventListener('scroll', e=>{
+  const pop=document.getElementById('notePop');
+  if(!pop.classList.contains('open')) return;
+  if(e.target && pop.contains(e.target)) return;
+  closeNotePopover();
+}, true);
+async function saveNote(pid, projName){
+  const ta=document.getElementById('nt-new-'+pid), text=ta.value.trim();
+  if(!text) return;
+  const existing=permitNotesPeek(projName);
+  const stamp=now().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const entry=text+'\n— '+histUser()+', '+stamp;
+  const combined=existing ? existing+'\n\n'+entry : entry;
+  ta.disabled=true;
+  try{
+    await permitNotesSave(projName, combined);
+    await permitActivityRecord(projName, 'note', histUser()+' added a note on '+projName+': "'+text+'"', histUser());
+  }catch(e){
+    alert('Saving note failed: '+e.message);
+    ta.disabled=false;
+    return;
+  }
+  renderCards();
+  const anchor=document.querySelector('.note-icon[data-pid="'+pid+'"]');
+  if(anchor){ _noteOpenFor=null; openNotePopover(pid, anchor); }
+}
 
 const TIER_CLS={'On Track':'tier-on','At Risk':'tier-risk','Off Track':'tier-off'};
 function visibleProjects(){
@@ -1674,6 +1808,7 @@ function renderCards(){
         <div class="proj-hdr-sp"></div>
         ${ownersInfo(p)}
         ${cardIcons(p)}
+        ${noteGroupHtml(p)}
         <span class="gear-group">
           <button class="gear-btn" onclick="toggleGear('${pid}')" aria-label="Stage settings">${GEAR_ICON_SVG}</button>
           <span class="gear-lbl">Stages</span>
@@ -1791,6 +1926,97 @@ async function stageEventsRecord(cardId, category, stageKey, projectName, entere
   if(stageEventsPeek(cardId, stageKey)) return; // write-once — never overwrite a recorded moment
   const fields={ Title:projectName+' — '+category+' — '+stageKey, CardId:cardId, Category:category, StageKey:stageKey, EnteredAt:enteredAt.toISOString(), Backfilled:!!backfilled };
   const created=await SherpaAuth.graph(BWC_SITE+'/CORE_PermitStageEvents/items',{method:'POST',body:JSON.stringify({fields})});
+  items.push({id:created.id, fields});
+}
+
+/* ═══ Per-project notes (CORE_PermitNotes) — mirrors project-pipeline.html's
+   own notes feature: same plain-text, attribution-suffixed entry format
+   ("<text>\n— <FirstName>, <Mon D, YYYY>", entries joined by a blank line),
+   but in its own list rather than sharing Pipeline's GanttData blob — two
+   independently-deployed tools both PATCHing the same JSON blob would race.
+   One row per project (ProjectName is the match key), upserted on save.
+   Auto-creates on first use, same 404-catch-and-create pattern as
+   CORE_PermitStageEvents above. Columns:
+     Title        single line of text — project name (SharePoint convention)
+     ProjectName  single line of text — the match key
+     Notes        multiple lines of text — full concatenated note history */
+let _permitNotesCache=null, _permitNotesPromise=null;
+async function createPermitNotesList(){
+  await SherpaAuth.graph(BWC_SITE,{method:'POST', body:JSON.stringify({
+    displayName:'CORE_PermitNotes',
+    list:{template:'genericList'},
+    columns:[
+      {name:'ProjectName', text:{}},
+      {name:'Notes', text:{allowMultipleLines:true}},
+    ],
+  })});
+}
+async function permitNotesAll(){
+  if(_permitNotesCache) return _permitNotesCache;
+  const fetchItems=()=>graphGetAll(BWC_SITE+'/CORE_PermitNotes/items?$expand=fields($select=ProjectName,Notes)&$select=id,fields');
+  if(!_permitNotesPromise) _permitNotesPromise=fetchItems().catch(async e=>{
+    if(e.status!==404) throw e; // anything other than "list not found" is a real error — surface it, don't paper over it
+    await createPermitNotesList();
+    return fetchItems();
+  }).then(items=>{ _permitNotesCache=items; return items; }).catch(e=>{ _permitNotesPromise=null; throw e; });
+  return _permitNotesPromise;
+}
+// Synchronous cache read — only safe to call after permitNotesAll() has
+// been awaited at least once this session.
+function permitNotesPeek(projectName){
+  const row=(_permitNotesCache||[]).find(it=>(it.fields||{}).ProjectName===projectName);
+  return row ? (row.fields.Notes||'') : '';
+}
+async function permitNotesSave(projectName, notesText){
+  const items=await permitNotesAll();
+  const row=items.find(it=>(it.fields||{}).ProjectName===projectName);
+  if(row){
+    await SherpaAuth.graph(BWC_SITE+'/CORE_PermitNotes/items/'+row.id+'/fields',{method:'PATCH',body:JSON.stringify({Notes:notesText})});
+    row.fields.Notes=notesText;
+  }else{
+    const created=await SherpaAuth.graph(BWC_SITE+'/CORE_PermitNotes/items',{method:'POST',body:JSON.stringify({fields:{Title:projectName, ProjectName:projectName, Notes:notesText}})});
+    items.push({id:created.id, fields:{ProjectName:projectName, Notes:notesText}});
+  }
+}
+
+/* ═══ Activity log (CORE_PermitActivity) — append-only record of tier
+   changes (emphasizing moves into At Risk/Off Track) and note saves, read
+   read-only by project-pipeline.html's Weekly Review under a new "Zoning &
+   Permit Activity" category. Same auto-create-on-404 pattern. Columns:
+     Title        single line of text — ProjectName + Kind, for readability in SharePoint itself
+     EntryDate    date and time
+     ProjectName  single line of text
+     Kind         single line of text — 'tier-change' | 'note'
+     Text         multiple lines of text — the human-readable line Pipeline displays verbatim
+     Author       single line of text */
+let _permitActivityCache=null, _permitActivityPromise=null;
+async function createPermitActivityList(){
+  await SherpaAuth.graph(BWC_SITE,{method:'POST', body:JSON.stringify({
+    displayName:'CORE_PermitActivity',
+    list:{template:'genericList'},
+    columns:[
+      {name:'EntryDate', dateTime:{}},
+      {name:'ProjectName', text:{}},
+      {name:'Kind', text:{}},
+      {name:'Text', text:{allowMultipleLines:true}},
+      {name:'Author', text:{}},
+    ],
+  })});
+}
+async function permitActivityAll(){
+  if(_permitActivityCache) return _permitActivityCache;
+  const fetchItems=()=>graphGetAll(BWC_SITE+'/CORE_PermitActivity/items?$expand=fields($select=EntryDate,ProjectName,Kind,Text,Author)&$select=id,fields');
+  if(!_permitActivityPromise) _permitActivityPromise=fetchItems().catch(async e=>{
+    if(e.status!==404) throw e;
+    await createPermitActivityList();
+    return fetchItems();
+  }).then(items=>{ _permitActivityCache=items; return items; }).catch(e=>{ _permitActivityPromise=null; throw e; });
+  return _permitActivityPromise;
+}
+async function permitActivityRecord(projectName, kind, text, author){
+  const items=await permitActivityAll();
+  const fields={ Title:projectName+' — '+kind, EntryDate:new Date().toISOString(), ProjectName:projectName, Kind:kind, Text:text, Author:author };
+  const created=await SherpaAuth.graph(BWC_SITE+'/CORE_PermitActivity/items',{method:'POST',body:JSON.stringify({fields})});
   items.push({id:created.id, fields});
 }
 
@@ -2076,6 +2302,7 @@ async function loadTrelloProjects(){
 
   const liveNow=now();
   await stageEventsAll(); // warm the cache once — every stageEventsPeek() below reads it synchronously
+  await permitNotesAll(); // warm the cache once — every permitNotesPeek() below reads it synchronously
   // Pipeline read failing (no CORE_Projects match ever needed, permission
   // hiccup, whatever) must never take down the Trello sync itself — it
   // just means every project falls back to the {I:6,II:18,III:6}
@@ -2211,6 +2438,42 @@ function setSyncStatus(kind, text){
   statusEl.style.display='flex';
   statusEl.innerHTML='<span class="dot"></span>'+esc(text);
 }
+/* Tier-change detection — logs to CORE_PermitActivity whenever a project's
+   computed tier (On Track / At Risk / Off Track / Approved) differs from
+   what was last observed, with emphasis on moves into At Risk/Off Track.
+   "Last observed" is bookkept in CORE_Config (key 'permit_tier:'+project
+   name) — the first-ever observation just seeds that value silently (no
+   activity row), since there's no real "change" to report the very first
+   time a project is seen. Deliberately only called from here, not from
+   renderCards(), which fires on every cosmetic UI interaction and would
+   over-log. */
+async function detectTierChanges(){
+  for(const p of PROJECTS){
+    const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
+    let tierLabel;
+    if(isWhollyApproved(zoningStages, permitStages)){
+      tierLabel='Approved';
+    }else{
+      const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, permitStartWeek:p.permitStartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
+      tierLabel=r.tier.label;
+    }
+    const cfgKey='permit_tier:'+p.proj;
+    let prior;
+    try{ prior=await cfgGet(cfgKey); }catch(e){ console.warn('[tier detect]', e); continue; }
+    if(prior===null){
+      try{ await cfgSet(cfgKey, tierLabel); }catch(e){ console.warn('[tier detect seed]', e); }
+      continue;
+    }
+    if(prior!==tierLabel){
+      const emphasize=(tierLabel==='At Risk'||tierLabel==='Off Track');
+      const text=(emphasize?'⚠ ':'')+p.proj+' moved from '+prior+' to '+tierLabel+'.';
+      try{
+        await permitActivityRecord(p.proj, 'tier-change', text, 'System');
+        await cfgSet(cfgKey, tierLabel);
+      }catch(e){ console.warn('[tier detect record]', e); }
+    }
+  }
+}
 async function syncTrelloAndRender(){
   if(!_trelloCfg) return;
   try{
@@ -2229,6 +2492,7 @@ async function syncTrelloAndRender(){
         if(p.comments) COMMENTS[p.proj]=p.comments;
         PROJECTS.push(p);
       });
+      try{ await detectTierChanges(); }catch(e){ console.warn('[tier detect]', e); }
       setSyncStatus('ok', 'Synced from Trello — '+projects.length+' project'+(projects.length===1?'':'s')+'.');
     }else{
       setSyncStatus('warn', 'Connected to Trello, but no card carries a "Project" value yet — showing demo data.');
