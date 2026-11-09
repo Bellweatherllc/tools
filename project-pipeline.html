@@ -3662,7 +3662,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1166';
+const CORE_VERSION = 'v1167';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -12890,6 +12890,32 @@ async function _fetchPMReviews(){
     console.warn('[pmReviews] fetch failed:',e);
   }
 }
+
+// Recent CORE_PermitActivity entries for the Weekly Review's "Zoning & Permit
+// Activity" category — read-only, same external-list polling pattern as
+// _pmReviews above. CORE_PermitActivity is owned and written entirely by
+// permit-tracker-v2.html (tier changes + note saves); Pipeline just relays it.
+let _permitActivity=[];
+async function _fetchPermitActivity(){
+  try{
+    const token=await getToken().catch(()=>null);
+    if(!token) return;
+    const since=new Date(Date.now()-14*24*3600*1000).toISOString();
+    const url=BWC_SITE+`/CORE_PermitActivity/items?$expand=fields($select=EntryDate,ProjectName,Kind,Text,Author)&$select=id,fields&$top=200`;
+    const r=await fetch(url,{headers:{Authorization:'Bearer '+token,'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'}});
+    if(!r.ok) return;
+    const data=await r.json();
+    _permitActivity=(data.value||[])
+      .map(item=>({...item.fields,spItemId:item.id}))
+      .filter(f=>{
+        if(!f.EntryDate) return false;
+        return new Date(f.EntryDate)>=new Date(since);
+      })
+      .sort((a,b)=>new Date(b.EntryDate)-new Date(a.EntryDate));
+  }catch(e){
+    console.warn('[permitActivity] fetch failed:',e);
+  }
+}
 let _isBgSyncing=false;
 let _staleSections=new Set(); // lenses whose data changed via bg sync while hidden; rebuilt on focus entry
 const BG_SYNC_MS=30_000;
@@ -13086,6 +13112,7 @@ async function _bgSync(){
     }
     if(maxServerTs)_lastSyncTs=maxServerTs;
     _fetchPMReviews(); // refresh PM review entries alongside project sync
+    _fetchPermitActivity(); // refresh Zoning & Permit Activity entries alongside project sync
   }catch(e){
     console.warn('[bgSync] error:',e);
   }finally{
@@ -13760,6 +13787,7 @@ if(PROD_PANEL_OPEN&&PANEL_ACTIVE_SECTION){ const pp=document.getElementById('pro
     // Local clock is only a fallback — a fast local clock would silently skip colleagues' updates.
     _lastSyncTs=_maxLoadedModified||new Date().toISOString();
     _fetchPMReviews(); // load PM review entries for Weekly Review panel
+    _fetchPermitActivity(); // load Zoning & Permit Activity entries for Weekly Review panel
     _startBgSync();
     _presenceTick().catch(()=>{}); // announce ourselves + render peers immediately
     _trelloSync().catch(e=>console.warn('[trelloSync] startup failed:',e));
@@ -17263,6 +17291,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
   {
+    version: 'v1167', date: '2026-11-09',
+    entries:['Weekly Review: added a "Zoning & Permit Activity" category, relaying tier changes (emphasizing moves into At Risk/Off Track) and note saves from permit-tracker-v2.html, read-only.'],
+  },
+  {
     version: 'v1166', date: '2026-11-05',
     entries:['Sales Planning: simplified the CONFIRM button rule — it’s now active whenever a slot has a card attached and a designer chosen, full stop. Removed the Trello-list-readiness gate (required "DA Ready to Sell" or DA/CA-signed status for leads with a Trello card) — humans can judge actual readiness themselves.'],
   },
@@ -19970,6 +20002,36 @@ function generateBriefHTML(){
       if(pmRows.length){ html+=pmRows.join(''); if(prodGroups.length||notesBySection.production.length) html+=`<div style="height:10px;"></div>`; }
       html+=prodGroups.join('');
       if(notesBySection.production.length){ if(prodGroups.length) html+=`<div style="height:10px;"></div>`; html+=notesBySection.production.join(''); }
+      html+='</div>';
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // ZONING & PERMIT ACTIVITY — read-only rows relayed from
+  // permit-tracker-v2.html's CORE_PermitActivity list (tier changes, with
+  // emphasis on moves into At Risk/Off Track, and note saves). Same
+  // dismissible external-list-row pattern as the PM-review rows in
+  // Production Updates above (briefAckRow with no fold argument) — NOT
+  // baseline-diff, since Pipeline doesn't own this data, it only relays it.
+  // ══════════════════════════════════════════════════════════════════
+  {
+    let permitCount=0;
+    const permitRows=[];
+    const fmtD=iso=>{try{return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return iso||'';}};
+    _permitActivity.forEach(r=>{
+      const isNote=r.Kind==='note';
+      const lblCls=isNote?'l-note':(String(r.Text||'').includes('⚠')?'l-urgent':'l-change');
+      const label=isNote?'Note':'Tier';
+      const who=(r.Author&&r.Author!=='System')?` — ${escH(String(r.Author).split(' ')[0])}, ${fmtD(r.EntryDate)}`:` — ${fmtD(r.EntryDate)}`;
+      const h=briefAckRow('permit-act-'+r.spItemId,lblCls,label,escH(r.Text||'')+who);
+      if(h){permitCount++;permitRows.push(h);}
+    });
+    if(permitRows.length){
+      html+=`<div class="brief-section"><div class="brief-section-hd">`
+        +`<span class="brief-section-title">Zoning & Permit Activity</span>`
+        +`<span class="brief-section-count" style="margin-left:8px;background:${permitCount?'#ac2828':'#a3a3a3'}">${permitCount}</span>`
+        +`</div>`;
+      html+=permitRows.join('');
       html+='</div>';
     }
   }
