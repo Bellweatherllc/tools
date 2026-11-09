@@ -379,8 +379,12 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 #notePop::before{content:'';position:absolute;right:16px;width:0;height:0;border:8px solid transparent;}
 #notePop.tail-down::before{bottom:-15px;border-top-color:var(--hdr-bg);}
 #notePop.tail-up::before{top:-15px;border-bottom-color:var(--hdr-bg);}
-.nt-item{font-size:11.5px;margin-bottom:10px;line-height:1.4;}
+.nt-entry{display:flex;gap:6px;align-items:flex-start;margin-bottom:8px;}
+.nt-entry-body{flex:1;min-width:0;}
 .nt-meta{color:rgba(255,255,255,.5);font-size:10px;margin-bottom:2px;}
+.nt-entry-ta{min-height:36px!important;margin-top:0!important;}
+#notePopInner button.nt-entry-del{flex-shrink:0;margin-top:2px;background:none;border:none;padding:3px;font-weight:400;cursor:pointer;color:rgba(255,255,255,.35);border-radius:4px;display:flex;align-items:center;justify-content:center;}
+#notePopInner button.nt-entry-del:hover{color:#ff8e8e;background:rgba(255,255,255,.08);}
 .nt-empty{color:rgba(255,255,255,.5);font-size:11.5px;}
 #notePopInner textarea{width:100%;min-height:44px;font-size:11.5px;font-family:var(--font-tt);padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:6px;background:rgba(255,255,255,.06);color:#fff;resize:vertical;margin-top:4px;}
 #notePopInner button{margin-top:6px;font-size:11px;font-weight:700;padding:5px 12px;border:none;border-radius:6px;background:var(--hdr-gold);color:#2a1c00;cursor:pointer;}
@@ -518,7 +522,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v166';
+const CORE_VERSION = 'v167';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1566,6 +1570,8 @@ const EXT_ICON_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" s
 const CMT_ICON_SVG='<svg viewBox="0 0 16 16" preserveAspectRatio="none" fill="#fff" stroke="currentColor" stroke-width="0.7" stroke-linejoin="round"><path d="M14 3H2v10h8l4 3z"/></svg>';
 // Same pencil glyph as project-pipeline.html's own note button (.fc-note-btn), per Byron.
 const NOTE_ICON_SVG='<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
+// Same trash glyph as project-pipeline.html's own note-entry delete button.
+const NOTE_TRASH_SVG='<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1M7 7v5M9 7v5M4 4l1 8a1 1 0 001 1h4a1 1 0 001-1l1-8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 // path drawn first (solid white body, gray outline), then the center
 // circle drawn ON TOP filled with the surrounding background color — the
 // path has no real cutout at the center, so a white-filled circle there was
@@ -1689,10 +1695,16 @@ function parseNoteEntries(text){
     return m ? {body:entry.slice(0,m.index), attr:m[1]} : {body:entry, attr:null};
   });
 }
+// Each past entry is an always-editable textarea plus a delete button — no
+// admin-mode gating (unlike Pipeline's own version), since permit-tracker
+// has no admin/non-admin distinction at all. The trash button only removes
+// the entry's DOM node (a staged delete); nothing is actually saved until
+// Save is clicked, which re-reads whatever's left in the DOM — same
+// staged-edit/staged-delete pattern as Pipeline's own note popover.
 function notePopoverHtml(pid, p){
   const entries=parseNoteEntries(permitNotesPeek(p.proj));
   const items=entries.length
-    ? entries.map(e=>`<div class="nt-item">${e.attr?`<div class="nt-meta">${esc(e.attr)}</div>`:''}<div>${esc(e.body)}</div></div>`).join('')
+    ? entries.map((e,idx)=>`<div class="nt-entry" data-nt-idx="${idx}"><div class="nt-entry-body">${e.attr?`<div class="nt-meta">${esc(e.attr)}</div>`:''}<textarea class="nt-entry-ta">${esc(e.body)}</textarea></div><button type="button" class="nt-entry-del" data-nt-del="${idx}" data-tip="Delete entry" aria-label="Delete entry">${NOTE_TRASH_SVG}</button></div>`).join('')
     : '<div class="nt-empty">No notes yet.</div>';
   return items+`<textarea id="nt-new-${pid}" placeholder="Add a note…"></textarea>`
     +`<div><button onclick="saveNote('${pid}','${esc(p.proj)}')">Save</button>`
@@ -1749,25 +1761,50 @@ window.addEventListener('scroll', e=>{
   if(e.target && pop.contains(e.target)) return;
   closeNotePopover();
 }, true);
+// Trash = staged delete (DOM only); Save commits whatever's left. Bound
+// once on the stable #notePop container (not re-bound on every render),
+// same delegation Pipeline's own note popover uses.
+document.getElementById('notePop').addEventListener('click', e=>{
+  const delBtn=e.target.closest('[data-nt-del]');
+  if(!delBtn) return;
+  e.stopPropagation();
+  const entryDiv=delBtn.closest('.nt-entry');
+  if(entryDiv) entryDiv.remove();
+});
 async function saveNote(pid, projName){
-  const ta=document.getElementById('nt-new-'+pid), text=ta.value.trim();
-  if(!text) return;
+  // Collect whatever's left in the DOM — respects any inline edits and any
+  // staged deletes (a trashed entry's .nt-entry node is already gone).
+  const revisedEntries=[];
+  document.querySelectorAll('#notePopInner .nt-entry').forEach(el=>{
+    const ta=el.querySelector('.nt-entry-ta'), metaEl=el.querySelector('.nt-meta');
+    const t=ta.value.trim();
+    if(t) revisedEntries.push(metaEl ? t+'\n— '+metaEl.textContent.trim() : t);
+  });
+  const newTa=document.getElementById('nt-new-'+pid), newText=newTa.value.trim();
+  if(newText) revisedEntries.push(newText+'\n— '+histUser()+', '+now().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}));
   const existing=permitNotesPeek(projName);
-  const stamp=now().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  const entry=text+'\n— '+histUser()+', '+stamp;
-  const combined=existing ? existing+'\n\n'+entry : entry;
-  ta.disabled=true;
+  if(!revisedEntries.length && !existing){ closeNotePopover(); return; } // nothing to save, was already empty
+  const combined=revisedEntries.join('\n\n');
+  newTa.disabled=true;
   try{
     await permitNotesSave(projName, combined);
   }catch(e){
     alert('Saving note failed: '+e.message);
-    ta.disabled=false;
+    newTa.disabled=false;
     return;
   }
   // The note itself is already durably saved above — relaying it to the
   // Pipeline's activity feed is a best-effort side channel, not something
   // that should alarm the user (via alert()) if it fails on its own.
-  permitActivityRecord(projName, 'note', histUser()+' added a note on '+projName+': "'+text+'"', histUser())
+  // A pure append (everything before the new entry is byte-identical to
+  // what was there before) keeps the specific "added a note" line; an
+  // edit or delete falls back to a generic summary rather than guessing
+  // at exactly what changed.
+  const priorPortion = newText ? revisedEntries.slice(0,-1).join('\n\n') : combined;
+  const activityText = (newText && priorPortion===(existing||''))
+    ? histUser()+' added a note on '+projName+': "'+newText+'"'
+    : histUser()+' updated the notes on '+projName+'.';
+  permitActivityRecord(projName, 'note', activityText, histUser())
     .catch(e=>console.warn('[permit activity note]', e));
   renderCards();
   const anchor=document.querySelector('.note-pencil-btn[data-pid="'+pid+'"]');
@@ -2569,12 +2606,53 @@ async function detectTierChanges(){
     try{ await detectTierChangeForProject(p); }catch(e){ console.warn('[tier detect]', e); }
   }
 }
+/* Per-stage change detection — a stage's duration expanding/contracting, or
+   a stage being completed, each get their own CORE_PermitActivity line,
+   same "note any changes" scope Byron originally asked for (tier moves are
+   the emphasized subset, not the only thing logged). Diffs the CURRENT
+   stageState against a prior snapshot shaped the same way (either the
+   in-memory project this sync is replacing, or the persisted
+   CORE_Config blob) — with no prior snapshot at all (a stage/project never
+   previously observed), nothing is logged, same first-observation-is-silent
+   rule as tier detection. A stage that didn't exist in the prior snapshot
+   (freshly enabled) is left to toggleStage's own enable/disable, which this
+   deliberately doesn't log — Byron asked specifically about duration and
+   completion, not every checkbox flip. */
+function stageChangeLines(p, priorSnapshot){
+  if(!priorSnapshot || !priorSnapshot.stageState) return [];
+  const lines=[];
+  ['zoning','permitting'].forEach(category=>{
+    STAGE_CATALOG[category].forEach(c=>{
+      const old=priorSnapshot.stageState[category] && priorSnapshot.stageState[category][c.key];
+      const cur=p.stageState[category] && p.stageState[category][c.key];
+      if(!old || !cur) return;
+      if(old.status!=='done' && cur.status==='done'){
+        lines.push(category+' '+c.fullName+' completed');
+      }
+      if(old.estWeeks!=null && cur.estWeeks!=null && old.estWeeks!==cur.estWeeks){
+        lines.push(category+' '+c.fullName+' duration changed from '+old.estWeeks+' to '+cur.estWeeks+' wks');
+      }
+    });
+  });
+  return lines;
+}
+async function logStageChanges(p, priorSnapshot, author){
+  const lines=stageChangeLines(p, priorSnapshot);
+  if(!lines.length) return;
+  await permitActivityRecord(p.proj, 'stage-change', p.proj+': '+lines.join('; ')+'.', author);
+}
 // Fire-and-forget pairing used by every settings-panel mutator (toggleStage,
 // updateStageWeeks, toggleLock, shiftGradient, shiftZoningStart,
-// shiftPermitStart): persist the edit so it survives a reload, then re-check
-// whether it just moved the project across a tier boundary. Not awaited by
-// its callers — the UI already re-rendered synchronously via renderCards().
+// shiftPermitStart): log any stage-level change, persist the edit so it
+// survives a reload, then re-check whether it just moved the project across
+// a tier boundary. Not awaited by its callers — the UI already re-rendered
+// synchronously via renderCards(). The "prior" snapshot is read BEFORE
+// savePermitSettings overwrites it — a synchronous read, so it's guaranteed
+// to still hold the pre-edit state regardless of how the three promises
+// below actually interleave.
 function persistAndCheck(p){
+  const priorSettings=permitSettingsPeek(p.proj);
+  logStageChanges(p, priorSettings, histUser()).catch(e=>console.warn('[permit activity stage]', e));
   savePermitSettings(p).catch(e=>console.warn('[permit settings save]', e));
   detectTierChangeForProject(p).catch(e=>console.warn('[tier detect]', e));
 }
@@ -2593,6 +2671,10 @@ async function syncTrelloAndRender(){
         // Trello/Pipeline's own defaults.
         const old=prior[pidOf(p.proj)] || permitSettingsPeek(p.proj);
         p.stageState=mergeStageState(p, old);
+        // A real Trello card move (a stage going 'done', say) shows up here
+        // on the next sync — same stage-change log as a manual settings
+        // edit, just attributed to the sync itself rather than a person.
+        logStageChanges(p, old, 'System').catch(e=>console.warn('[permit activity stage]', e));
         if(old){ p.gradientOffset=old.gradientOffset||0; if(old.zoningStartWeek!=null) p.zoningStartWeek=old.zoningStartWeek; if(old.permitStartWeek!=null) p.permitStartWeek=old.permitStartWeek; }
         // Trello is authoritative for comments on a synced project — a
         // full refresh (not an append) so a comment posted through this
