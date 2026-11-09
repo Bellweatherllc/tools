@@ -385,13 +385,14 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 #notePopInner textarea{width:100%;min-height:44px;font-size:11.5px;font-family:var(--font-tt);padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:6px;background:rgba(255,255,255,.06);color:#fff;resize:vertical;margin-top:4px;}
 #notePopInner button{margin-top:6px;font-size:11px;font-weight:700;padding:5px 12px;border:none;border-radius:6px;background:var(--hdr-gold);color:#2a1c00;cursor:pointer;}
 #notePopInner button.nt-cancel{background:none;color:rgba(255,255,255,.65);margin-left:6px;font-weight:600;}
-.note-group{align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;}
-.note-icon{position:relative;display:inline-flex;flex-shrink:0;color:var(--mut);cursor:pointer;transition:color .12s;transform:translateY(-6px);}
-.note-icon svg{width:21px;height:21px;}
-.note-icon:hover{color:var(--navy);}
-.note-glyph{position:relative;display:inline-flex;}
-.note-count{position:absolute;left:50%;top:calc(44% + 1.5px);transform:translate(-50%,-50%);color:inherit;font-size:9px;font-weight:600;line-height:1;pointer-events:none;}
-.note-lbl{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.6;color:var(--mut);line-height:1;}
+/* Pencil sits just left of the project name (in .proj-hdr-title, a
+   baseline-aligned flex row) — align-self:center keeps it from skewing
+   that row's baseline alignment. Gold "has-note" tint matches
+   project-pipeline.html's own .fc-note-btn.has-note convention. */
+.note-pencil-btn{align-self:center;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;flex-shrink:0;border:none;background:none;padding:0;cursor:pointer;color:var(--mut);transition:color .12s,background .12s;border-radius:4px;}
+.note-pencil-btn:hover{color:var(--navy);background:rgba(0,0,0,.06);}
+.note-pencil-btn.has-note{color:var(--hdr-gold);}
+.note-pencil-btn.has-note:hover{color:#b8912e;}
 </style>
 </head>
 <body>
@@ -517,7 +518,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v164';
+const CORE_VERSION = 'v165';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1389,12 +1390,14 @@ function toggleStage(pid, category, key, checked){
   if(!p.stageState[category][key]) p.stageState[category][key]={estWeeks:c.estWeeks, status:'future'};
   p.stageState[category][key].enabled=checked;
   renderCards();
+  persistAndCheck(p);
 }
 function updateStageWeeks(pid, category, key, value){
   const p=findProject(pid), c=STAGE_CATALOG[category].find(x=>x.key===key);
   if(!p.stageState[category][key]) p.stageState[category][key]={enabled:false, estWeeks:c.estWeeks, status:'future'};
   p.stageState[category][key].estWeeks=Math.max(0, parseInt(value,10)||0);
   renderCards();
+  persistAndCheck(p);
 }
 // +/- buttons beside each stage's duration field, mirroring the
 // shift-row controls elsewhere in this panel — just reuses
@@ -1405,13 +1408,16 @@ function shiftStageWeeks(pid, category, key, delta){
   updateStageWeeks(pid, category, key, current+delta);
 }
 function toggleLock(pid, checked){
-  findProject(pid).stageState.locked=checked;
+  const p=findProject(pid);
+  p.stageState.locked=checked;
   renderCards();
+  persistAndCheck(p);
 }
 function shiftGradient(pid, delta){
   const p=findProject(pid);
   p.gradientOffset=(p.gradientOffset||0)+delta;
   renderCards();
+  persistAndCheck(p);
 }
 // Ceiling is the END of Phase II (Phase I + Phase II's combined width), not
 // Phase II's own START — per Byron: "the start can move to before the first
@@ -1428,6 +1434,7 @@ function shiftZoningStart(pid, delta){
   const current=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIWidth;
   p.zoningStartWeek=Math.max(0, Math.min(maxStart, current+delta));
   renderCards();
+  persistAndCheck(p);
 }
 // Permitting's own independent start — mirrors shiftZoningStart exactly.
 // Per Byron: "I want to be able to establish start dates for zoning and
@@ -1444,6 +1451,7 @@ function shiftPermitStart(pid, delta){
   const current=p.permitStartWeek!=null ? p.permitStartWeek : phaseIWidth;
   p.permitStartWeek=Math.max(0, Math.min(maxStart, current+delta));
   renderCards();
+  persistAndCheck(p);
 }
 function trackStartLabel(startWeek, phaseIWidth){
   if(startWeek<phaseIWidth) return 'Phase I, wk '+(startWeek+1);
@@ -1556,7 +1564,8 @@ const EXT_ICON_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" s
 // non-uniformly (2px wider, same height) — by default SVG scaling
 // preserves aspect ratio and would just letterbox instead of stretching.
 const CMT_ICON_SVG='<svg viewBox="0 0 16 16" preserveAspectRatio="none" fill="#fff" stroke="currentColor" stroke-width="0.7" stroke-linejoin="round"><path d="M14 3H2v10h8l4 3z"/></svg>';
-const NOTE_ICON_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h7l3 3v9H3z"/><path d="M10 2v3h3"/><path d="M5.5 8h5M5.5 10.5h5"/></svg>';
+// Same pencil glyph as project-pipeline.html's own note button (.fc-note-btn), per Byron.
+const NOTE_ICON_SVG='<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 4.5l2 2" stroke="currentColor" stroke-width="1.5"/></svg>';
 // path drawn first (solid white body, gray outline), then the center
 // circle drawn ON TOP filled with the surrounding background color — the
 // path has no real cutout at the center, so a white-filled circle there was
@@ -1591,10 +1600,14 @@ function cardIcons(p){
   return `<span class="trello-group"><span class="trello-icons">${cmt}${ext}</span><span class="trello-lbl">Trello</span></span>`;
 }
 
-function noteGroupHtml(p){
+// Sits just left of the project name (per Byron), not in the Trello icon
+// cluster — mirrors project-pipeline.html's own note pencil in placement
+// (its "fc-note-left" convention: pencil rides in the row's left cluster)
+// and glyph alike.
+function notePencilHtml(p){
   const pid=pidOf(p.proj);
-  const n=parseNoteEntries(permitNotesPeek(p.proj)).length;
-  return `<span class="note-group"><span class="note-icon" data-pid="${pid}" onclick="event.stopPropagation();openNotePopover('${pid}',this)" data-tip="Notes" aria-label="Notes"><span class="note-glyph">${NOTE_ICON_SVG}${n?`<span class="note-count">${n}</span>`:''}</span></span><span class="note-lbl">Notes</span></span>`;
+  const hasNotes=!!permitNotesPeek(p.proj);
+  return `<button type="button" class="note-pencil-btn${hasNotes?' has-note':''}" data-pid="${pid}" onclick="event.stopPropagation();openNotePopover('${pid}',this)" data-tip="Notes" aria-label="Edit note">${NOTE_ICON_SVG}</button>`;
 }
 
 /* ───────── comment popover — a single shared floating panel (#cmtPop),
@@ -1726,7 +1739,7 @@ function closeNotePopover(){ document.getElementById('notePop').classList.remove
 document.addEventListener('click', e=>{
   const pop=document.getElementById('notePop');
   if(!pop.classList.contains('open')) return;
-  if(e.target.closest('#notePop')||e.target.closest('.note-icon')) return;
+  if(e.target.closest('#notePop')||e.target.closest('.note-pencil-btn')) return;
   closeNotePopover();
 });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeNotePopover(); });
@@ -1753,7 +1766,7 @@ async function saveNote(pid, projName){
     return;
   }
   renderCards();
-  const anchor=document.querySelector('.note-icon[data-pid="'+pid+'"]');
+  const anchor=document.querySelector('.note-pencil-btn[data-pid="'+pid+'"]');
   if(anchor){ _noteOpenFor=null; openNotePopover(pid, anchor); }
 }
 
@@ -1818,6 +1831,7 @@ function renderCards(){
     <div class="proj-group">
       <div class="proj-hdr">
         <div class="proj-hdr-title">
+          ${notePencilHtml(p)}
           <div class="proj-name">${esc(p.proj)}</div>
           <div class="proj-address">${esc(p.address||'')}</div>
         </div>
@@ -1825,7 +1839,6 @@ function renderCards(){
         <div class="proj-hdr-sp"></div>
         ${ownersInfo(p)}
         ${cardIcons(p)}
-        ${noteGroupHtml(p)}
         <span class="gear-group">
           <button class="gear-btn" onclick="toggleGear('${pid}')" aria-label="Stage settings">${GEAR_ICON_SVG}</button>
           <span class="gear-lbl">Stages</span>
@@ -1887,6 +1900,38 @@ async function cfgSet(key,value){
     const created=await SherpaAuth.graph(BWC_SITE+'/CORE_Config/items',{method:'POST',body:JSON.stringify({fields:{Title:key,Key:key,Value:value}})});
     items.push({id:created.id,fields:{Key:key,Value:value}});
   }
+}
+
+/* ═══ Per-project settings-panel persistence (CORE_Config) — every stage
+   toggle/duration, the lock state, the on/off-track gradient shift, and
+   each track's own start-week override were previously held ONLY in the
+   in-memory PROJECTS array: nothing wrote them anywhere, so a reload (or
+   just the next scheduled Trello sync starting this tab fresh) silently
+   reset every one of them back to whatever Trello/Pipeline said — "changes
+   aren't sticking," per Byron. These now round-trip through CORE_Config,
+   one JSON blob per project under key 'permit_settings:'+projectName,
+   reusing the existing generic key/value store rather than a new list —
+   this is config-shaped (one small blob per project), not an event log.
+   Written by every settings-panel mutator (see persistAndCheck below);
+   read back by syncTrelloAndRender() as the fallback "old" state for a
+   project with no prior in-memory copy yet (i.e. the first sync of a
+   fresh page load). */
+function permitSettingsKey(projectName){ return 'permit_settings:'+projectName; }
+// Synchronous cache read — safe once cfgAll() has been awaited at least
+// once this session (loadAdminFields() does this unconditionally at boot).
+function permitSettingsPeek(projectName){
+  const items=_cfgCache||[];
+  const row=items.find(it=>(it.fields||{}).Key===permitSettingsKey(projectName));
+  if(!row||!row.fields.Value) return null;
+  try{ return JSON.parse(row.fields.Value); }catch(e){ return null; }
+}
+async function savePermitSettings(p){
+  await cfgSet(permitSettingsKey(p.proj), JSON.stringify({
+    stageState: p.stageState,
+    gradientOffset: p.gradientOffset||0,
+    zoningStartWeek: p.zoningStartWeek!=null ? p.zoningStartWeek : null,
+    permitStartWeek: p.permitStartWeek!=null ? p.permitStartWeek : null,
+  }));
 }
 
 /* ═══ Stage-entry event log (CORE_PermitStageEvents) — the durable
@@ -2461,35 +2506,50 @@ function setSyncStatus(kind, text){
    "Last observed" is bookkept in CORE_Config (key 'permit_tier:'+project
    name) — the first-ever observation just seeds that value silently (no
    activity row), since there's no real "change" to report the very first
-   time a project is seen. Deliberately only called from here, not from
-   renderCards(), which fires on every cosmetic UI interaction and would
-   over-log. */
+   time a project is seen. Runs after every Trello sync (detectTierChanges,
+   below) AND after every settings-panel edit (persistAndCheck, below) —
+   a local edit (shifting the gradient, changing a stage duration, locking)
+   can push a project across a tier boundary just as much as a real Trello
+   card move can, and Byron expects that to show up in the Pipeline's
+   Weekly Review without having to wait for the next sync. */
+async function detectTierChangeForProject(p){
+  const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
+  let tierLabel;
+  if(isWhollyApproved(zoningStages, permitStages)){
+    tierLabel='Approved';
+  }else{
+    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, permitStartWeek:p.permitStartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
+    tierLabel=r.tier.label;
+  }
+  const cfgKey='permit_tier:'+p.proj;
+  let prior;
+  try{ prior=await cfgGet(cfgKey); }catch(e){ console.warn('[tier detect]', e); return; }
+  if(prior===null){
+    try{ await cfgSet(cfgKey, tierLabel); }catch(e){ console.warn('[tier detect seed]', e); }
+    return;
+  }
+  if(prior!==tierLabel){
+    const emphasize=(tierLabel==='At Risk'||tierLabel==='Off Track');
+    const text=(emphasize?'⚠ ':'')+p.proj+' moved from '+prior+' to '+tierLabel+'.';
+    try{
+      await permitActivityRecord(p.proj, 'tier-change', text, 'System');
+      await cfgSet(cfgKey, tierLabel);
+    }catch(e){ console.warn('[tier detect record]', e); }
+  }
+}
 async function detectTierChanges(){
   for(const p of PROJECTS){
-    const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
-    let tierLabel;
-    if(isWhollyApproved(zoningStages, permitStages)){
-      tierLabel='Approved';
-    }else{
-      const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, permitStartWeek:p.permitStartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
-      tierLabel=r.tier.label;
-    }
-    const cfgKey='permit_tier:'+p.proj;
-    let prior;
-    try{ prior=await cfgGet(cfgKey); }catch(e){ console.warn('[tier detect]', e); continue; }
-    if(prior===null){
-      try{ await cfgSet(cfgKey, tierLabel); }catch(e){ console.warn('[tier detect seed]', e); }
-      continue;
-    }
-    if(prior!==tierLabel){
-      const emphasize=(tierLabel==='At Risk'||tierLabel==='Off Track');
-      const text=(emphasize?'⚠ ':'')+p.proj+' moved from '+prior+' to '+tierLabel+'.';
-      try{
-        await permitActivityRecord(p.proj, 'tier-change', text, 'System');
-        await cfgSet(cfgKey, tierLabel);
-      }catch(e){ console.warn('[tier detect record]', e); }
-    }
+    try{ await detectTierChangeForProject(p); }catch(e){ console.warn('[tier detect]', e); }
   }
+}
+// Fire-and-forget pairing used by every settings-panel mutator (toggleStage,
+// updateStageWeeks, toggleLock, shiftGradient, shiftZoningStart,
+// shiftPermitStart): persist the edit so it survives a reload, then re-check
+// whether it just moved the project across a tier boundary. Not awaited by
+// its callers — the UI already re-rendered synchronously via renderCards().
+function persistAndCheck(p){
+  savePermitSettings(p).catch(e=>console.warn('[permit settings save]', e));
+  detectTierChangeForProject(p).catch(e=>console.warn('[tier detect]', e));
 }
 async function syncTrelloAndRender(){
   if(!_trelloCfg) return;
@@ -2499,7 +2559,12 @@ async function syncTrelloAndRender(){
       const prior={}; PROJECTS.forEach(p=>{ prior[pidOf(p.proj)]=p; });
       PROJECTS.length=0;
       projects.forEach(p=>{
-        const old=prior[pidOf(p.proj)];
+        // A project already in memory (prior) wins — it reflects edits made
+        // in this tab since the last sync. Otherwise (first sync of a fresh
+        // page load) fall back to whatever was last durably saved for this
+        // project, so a reload doesn't silently reset every setting back to
+        // Trello/Pipeline's own defaults.
+        const old=prior[pidOf(p.proj)] || permitSettingsPeek(p.proj);
         p.stageState=mergeStageState(p, old);
         if(old){ p.gradientOffset=old.gradientOffset||0; if(old.zoningStartWeek!=null) p.zoningStartWeek=old.zoningStartWeek; if(old.permitStartWeek!=null) p.permitStartWeek=old.permitStartWeek; }
         // Trello is authoritative for comments on a synced project — a
