@@ -518,7 +518,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v165';
+const CORE_VERSION = 'v166';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1759,12 +1759,16 @@ async function saveNote(pid, projName){
   ta.disabled=true;
   try{
     await permitNotesSave(projName, combined);
-    await permitActivityRecord(projName, 'note', histUser()+' added a note on '+projName+': "'+text+'"', histUser());
   }catch(e){
     alert('Saving note failed: '+e.message);
     ta.disabled=false;
     return;
   }
+  // The note itself is already durably saved above — relaying it to the
+  // Pipeline's activity feed is a best-effort side channel, not something
+  // that should alarm the user (via alert()) if it fails on its own.
+  permitActivityRecord(projName, 'note', histUser()+' added a note on '+projName+': "'+text+'"', histUser())
+    .catch(e=>console.warn('[permit activity note]', e));
   renderCards();
   const anchor=document.querySelector('.note-pencil-btn[data-pid="'+pid+'"]');
   if(anchor){ _noteOpenFor=null; openNotePopover(pid, anchor); }
@@ -2050,8 +2054,20 @@ async function permitNotesSave(projectName, notesText){
      ProjectName  single line of text
      Kind         single line of text — 'tier-change' | 'note'
      Text         multiple lines of text — the human-readable line Pipeline displays verbatim
-     Author       single line of text */
-let _permitActivityCache=null, _permitActivityPromise=null;
+     AuthorName   single line of text
+   NOTE: this column is named AuthorName, not Author — every SharePoint list
+   carries its own built-in, read-only "Author" system field (the item's
+   actual creator, a person reference, not free text), and a custom column
+   also named Author collides with it: writes were silently rejected
+   ("Field 'Author' is read-only"), which meant EVERY activity row — tier
+   changes and note saves alike — failed to save, invisibly, until Byron
+   hit the alert this throws on a note save. ensurePermitActivityColumns()
+   below self-heals a list that was auto-created before this fix (which
+   would be missing AuthorName entirely, not just carrying the bad column)
+   by adding it once per session; the orphaned old Author column is
+   harmless and left alone — renaming/removing a live list's column isn't
+   worth the risk for a column nothing reads. */
+let _permitActivityCache=null, _permitActivityPromise=null, _permitActivityColumnsEnsured=false;
 async function createPermitActivityList(){
   await SherpaAuth.graph(BWC_SITE,{method:'POST', body:JSON.stringify({
     displayName:'CORE_PermitActivity',
@@ -2061,23 +2077,34 @@ async function createPermitActivityList(){
       {name:'ProjectName', text:{}},
       {name:'Kind', text:{}},
       {name:'Text', text:{allowMultipleLines:true}},
-      {name:'Author', text:{}},
+      {name:'AuthorName', text:{}},
     ],
   })});
 }
+// A list created before this fix exists but lacks AuthorName. Adding a
+// column to an existing list is a normal, additive Graph call — safe to
+// attempt unconditionally once per session; a column that already exists
+// just rejects with a conflict, which is fine to ignore.
+async function ensurePermitActivityColumns(){
+  if(_permitActivityColumnsEnsured) return;
+  _permitActivityColumnsEnsured=true;
+  try{
+    await SherpaAuth.graph(BWC_SITE+'/CORE_PermitActivity/columns', {method:'POST', body:JSON.stringify({name:'AuthorName', text:{}})});
+  }catch(e){ /* already exists (or any other non-fatal response) — nothing more to do */ }
+}
 async function permitActivityAll(){
   if(_permitActivityCache) return _permitActivityCache;
-  const fetchItems=()=>graphGetAll(BWC_SITE+'/CORE_PermitActivity/items?$expand=fields($select=EntryDate,ProjectName,Kind,Text,Author)&$select=id,fields');
+  const fetchItems=()=>graphGetAll(BWC_SITE+'/CORE_PermitActivity/items?$expand=fields($select=EntryDate,ProjectName,Kind,Text,AuthorName)&$select=id,fields');
   if(!_permitActivityPromise) _permitActivityPromise=fetchItems().catch(async e=>{
     if(e.status!==404) throw e;
     await createPermitActivityList();
     return fetchItems();
-  }).then(items=>{ _permitActivityCache=items; return items; }).catch(e=>{ _permitActivityPromise=null; throw e; });
+  }).then(async items=>{ await ensurePermitActivityColumns(); _permitActivityCache=items; return items; }).catch(e=>{ _permitActivityPromise=null; throw e; });
   return _permitActivityPromise;
 }
 async function permitActivityRecord(projectName, kind, text, author){
   const items=await permitActivityAll();
-  const fields={ Title:projectName+' — '+kind, EntryDate:new Date().toISOString(), ProjectName:projectName, Kind:kind, Text:text, Author:author };
+  const fields={ Title:projectName+' — '+kind, EntryDate:new Date().toISOString(), ProjectName:projectName, Kind:kind, Text:text, AuthorName:author };
   const created=await SherpaAuth.graph(BWC_SITE+'/CORE_PermitActivity/items',{method:'POST',body:JSON.stringify({fields})});
   items.push({id:created.id, fields});
 }
