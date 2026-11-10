@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1173 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v54 |
+| Levels of Development | `levels-of-development.html` | v55 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -67,6 +67,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 ## Log
 
 Newest first. One line per delivery.
+
+- **2026-11-10** — Levels of Development v54 → v55: expanded the Assess intro paragraph — review scope first, add notes where useful, skip dimensions with no insight, framed as a quick planning-anticipation pass rather than an exhaustive review.
 
 - **2026-11-10** — Levels of Development v53 → v54: added a short intro paragraph at the top of the Assess tab (what rating a dimension means, that it's an independent submission) and a one-line caption under Scope of Work explaining what it is and that its language comes from the signed Design Agreement or the working notes that will become it.
 - **2026-11-10** — Project Pipeline v1172 → v1173: renamed "Project Basis" to "Levels of Development" in display text (LOD pill tooltip, modal title/placeholder, document-pill label), matching the tool's own rename. The internal `pb` key and the ProjectBasisUrl SharePoint field are untouched.
