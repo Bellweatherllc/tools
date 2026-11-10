@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Project Basis | `project-basis.html` | v42 |
+| Levels of Development | `project-basis.html` | v43 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -36,7 +36,7 @@ Last updated: 2026-10-27
 | Team Members | `team-members.html` | v28 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v4 |
+| BW Tool Index | `bw-tool-index.html` | v5 |
 | CORE System Map | `core-system-map.html` | v17 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
@@ -67,6 +67,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-10** — Project Basis renamed "Levels of Development" in the header (file stays `project-basis.html` — it already has a live URL), v42 → v43: subtitle updated from "Pre-DA Assessment Tool" to "Project Assessment Tool" since Assess's project filter now includes DA Signed projects alongside Lead, not just pre-DA ones — a project signed the same morning was previously invisible once it left Lead stage.
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
 - **2026-11-03** — People Analyzer v24 → v25: Summaries renamed **Session Summary** and narrowed to one session at a time — it starts on "Pick a session…" (no "All Sessions", no "All" button; department buttons filter and clear on a second click), and a person shows only that session with a **Full review history ›** link. The cross-session **Trajectory** (and Download All Sessions) moves to the top of the person's **Review History**; the imported-reviews section leaves Session Summary.
 - **2026-11-03** — People Analyzer v23 → v24: tabs reordered to Evaluate · Summaries · Review History · Compensation. **Review History** is now each person's complete record — reviews done in People Analyzer (tagged In tool / Annual, with each scorer's ratings, status and an Open in Summaries link) alongside imported spreadsheets (tagged Imported), newest first. Review History sits above Add History on the tab. The section inside a person's Summaries view is renamed "Imported reviews".
