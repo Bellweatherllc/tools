@@ -340,7 +340,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v48</span>
+      <span class="header-version">v49</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -601,6 +601,7 @@ const SP_CONFIG = {
   graphBase: 'https://graph.microsoft.com/v1.0',
   projectsUrl:    'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500',
   projectsItemUrl:'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/items',
+  columnsUrl:     'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/columns',
   configUrl:      'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Config/items',
   assessmentsUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Assessments/items',
   teamMembersUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_TeamMembers/items'
@@ -956,7 +957,9 @@ async function fetchProjects() {
         status:   f.PipelineStage || f.Status || '',
         caValue:  caVal,
         // Free text, single amount or a range — Idea Low/High retired per Byron.
-        targetInvestment: f.TargetInvestmentAmount!=null ? String(f.TargetInvestmentAmount) : '',
+        // TargetInvestmentDisplay is the dedicated field this tool writes to; falls
+        // back to the old TargetInvestmentAmount for any pre-existing data there.
+        targetInvestment: f.TargetInvestmentDisplay || (f.TargetInvestmentAmount!=null ? String(f.TargetInvestmentAmount) : ''),
         address:  f.Address || '',
         estimateUrl: f.EstimateUrl || '',
         createdDate: (f.Created || '').slice(0, 10),
@@ -1237,6 +1240,27 @@ function onProjectSelected(){
   }
 }
 
+// Self-healing column setup — mirrors core-projects-manager.html's own NEW_COLUMNS /
+// setupColumns() pattern. "TargetInvestmentAmount is not recognized" means that field
+// either never actually got created or isn't a type that accepts what we're sending;
+// rather than guess a third name, create a dedicated column on first use. Also used
+// to upgrade DesignScope to rich text if it was provisioned as plain multiline text
+// (which would explain saves succeeding but formatting not surviving).
+let _columnsEnsured = {};
+async function ensureColumn(name, displayName, def){
+  if(_columnsEnsured[name]) return;
+  try {
+    const data = await graphFetch(`${SP_CONFIG.columnsUrl}?$select=id,name,text`);
+    const col = (data.value || []).find(c => c.name === name);
+    if(!col){
+      await graphPost(SP_CONFIG.columnsUrl, { name, displayName, ...def });
+    } else if(def.text && def.text.richText && !col.text?.richText){
+      await graphPatch(`${SP_CONFIG.columnsUrl}/${col.id}`, { text: def.text });
+    }
+  } catch(e){ /* best effort — if this truly fails, the save attempt right after surfaces the real error */ }
+  _columnsEnsured[name] = true;
+}
+
 // Scope of Work is set up by a tool admin (Byron/Joey) and read-only for everyone
 // else — same split as block/dimension config, gated on the same Admin toggle.
 //
@@ -1249,6 +1273,31 @@ const SCOPE_ALLOWED_TAGS = new Set(['P','BR','B','STRONG','I','EM','U','UL','OL'
 function sanitizeScopeHtml(html){
   const tmp = document.createElement('div');
   tmp.innerHTML = html || '';
+
+  // Word almost never emits semantic <b>/<i>/<u> — it expresses bold/italic/underline
+  // as an inline style on a <span> (e.g. style="font-weight:bold" or "mso-bidi-font-
+  // weight:bold"). The unwrap pass below would otherwise discard that span — and the
+  // formatting signal along with it, not just the styling. Convert style to real tags
+  // first, so what's left to unwrap is just the (now-empty-of-meaning) wrapper.
+  Array.from(tmp.querySelectorAll('[style]')).forEach(el => {
+    const st = el.style;
+    const weight = (st.fontWeight || '').toLowerCase();
+    const isBold = weight === 'bold' || weight === 'bolder' || (parseInt(weight, 10) || 0) >= 600;
+    const isItalic = (st.fontStyle || '').toLowerCase() === 'italic';
+    const isUnderline = (st.textDecorationLine || st.textDecoration || '').toLowerCase().includes('underline');
+    let wrap = el;
+    const wrapIn = (tag, skipIf) => {
+      if(skipIf) return;
+      const w = document.createElement(tag);
+      while(wrap.firstChild) w.appendChild(wrap.firstChild);
+      wrap.appendChild(w);
+      wrap = w;
+    };
+    wrapIn('u', !isUnderline || wrap.tagName === 'U');
+    wrapIn('i', !isItalic || wrap.tagName === 'I' || wrap.tagName === 'EM');
+    wrapIn('b', !isBold || wrap.tagName === 'B' || wrap.tagName === 'STRONG');
+  });
+
   Array.from(tmp.querySelectorAll('*')).forEach(el => {
     if(el.tagName === 'DIV'){
       // Word/Docs often use one <div> per paragraph instead of <p> — keep the break.
@@ -1318,7 +1367,11 @@ async function saveTargetInvestment(){
     return;
   }
   try {
-    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: { TargetInvestmentAmount: value } });
+    // Dedicated field, not the old currency-typed TargetInvestmentAmount — a range
+    // like "$900,000 – $950,000" can't live in a currency column. Auto-created on
+    // first use, same self-provisioning pattern core-projects-manager.html uses.
+    await ensureColumn('TargetInvestmentDisplay', 'Target Investment', { text: {} });
+    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: { TargetInvestmentDisplay: value } });
     showToast('Target Investment saved.');
   } catch(e) {
     showToast('Target Investment save failed — ' + e.message);
@@ -1362,10 +1415,12 @@ async function saveScopeOfWork(){
     return;
   }
   try {
-    // Confirmed real field via core-projects-manager.html's FIELDS schema. It must be
-    // an "Enhanced rich text" column for this HTML to render as formatting elsewhere
-    // instead of literal tags — if it's plain multiline text, this save may succeed
-    // but other tools reading it will show raw <p>/<b> markup. Flag if so.
+    // Saves to DesignScope were landing as plain text (no formatting surviving),
+    // consistent with the column being plain multiline text rather than Enhanced
+    // rich text. Upgrade it in place — this is additive (existing plain content is
+    // preserved) and matches the exact column-fixing pattern core-projects-manager.html
+    // already uses elsewhere (fixUrlColumns()).
+    await ensureColumn('DesignScope', 'Design Scope', { text: { allowMultipleLines: true, richText: true } });
     await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: { DesignScope: html } });
     showToast('Scope of work saved.');
   } catch(e) {
