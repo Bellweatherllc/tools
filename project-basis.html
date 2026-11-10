@@ -334,7 +334,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v45</span>
+      <span class="header-version">v46</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -377,6 +377,12 @@
           <div style="margin-left:auto">
             <a id="pmeta-estimate-link" href="#" target="_blank" style="font-size:12px;font-weight:600;color:var(--silver);text-decoration:none;padding:5px 12px;border:1.5px dashed var(--cloud);border-radius:6px;white-space:nowrap;cursor:not-allowed;opacity:0.6" title="Estimating tool coming soon">📋 View Estimate</a>
           </div>
+        </div>
+        <div id="pmeta-ti-edit" style="display:none;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:-8px 0 16px">
+          <div class="form-group" style="flex:none"><label class="form-label">Idea Low</label><input type="text" id="ti-idea-low" class="form-input" style="width:120px" placeholder="$"></div>
+          <div class="form-group" style="flex:none"><label class="form-label">Idea High</label><input type="text" id="ti-idea-high" class="form-input" style="width:120px" placeholder="$"></div>
+          <div class="form-group" style="flex:none"><label class="form-label">Target Investment Amount</label><input type="text" id="ti-amount" class="form-input" style="width:140px" placeholder="$ (committed figure)"></div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="saveTargetInvestment()">Save</button>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel)">Scope of Work</div>
@@ -564,7 +570,7 @@ function toggleAdminMode(){
   renderAssessBlocks();
   const selectedId = document.getElementById('assess-project')?.value;
   const proj = selectedId && spProjects.find(p=>p.id===selectedId);
-  if(proj) renderScopeOfWork(proj);
+  if(proj){ renderScopeOfWork(proj); renderTargetInvestment(proj); }
 }
 
 // ══════════════════════════════════════════════════ TABS ═══════
@@ -602,7 +608,9 @@ const MOCK_PROJECT = {
   jobCode: 'DEMO-001',
   status: 'Lead',
   caValue: '$950,000',
-  targetInvestment: '$850,000 – $950,000',
+  ideaLow: 850000,
+  ideaHigh: 950000,
+  targetInvestmentAmount: null,
   address: 'Philadelphia, PA',
   estimateUrl: '',
   createdDate: '',
@@ -921,18 +929,6 @@ async function fetchProjects() {
       // Use ClientName as display name; fall back to Title only if no ClientName
       const name   = client || title;
       const caVal  = f.CaValue ? `$${Number(f.CaValue).toLocaleString()}` : '';
-      // Target Investment is a single committed figure once set; before that, Idea
-      // Low/High hold the range given during the Idea phase. Same fields Projects
-      // Manager already edits — this tool only reads them.
-      const fmtMoney = v => `$${Number(v).toLocaleString()}`;
-      let targetInvestment = '';
-      if(f.TargetInvestmentAmount){
-        targetInvestment = fmtMoney(f.TargetInvestmentAmount);
-      } else if(f.IdeaLow && f.IdeaHigh){
-        targetInvestment = `${fmtMoney(f.IdeaLow)} – ${fmtMoney(f.IdeaHigh)}`;
-      } else if(f.IdeaLow || f.IdeaHigh){
-        targetInvestment = fmtMoney(f.IdeaLow || f.IdeaHigh);
-      }
       return {
         id:       item.id,
         name:     name || `Project #${item.id}`,
@@ -940,11 +936,22 @@ async function fetchProjects() {
         jobCode:  f.Job_x0020_Code || f.JobCode || '',
         status:   f.PipelineStage || f.Status || '',
         caValue:  caVal,
-        targetInvestment,
+        // Target Investment: a single committed figure once TargetInvestmentAmount is
+        // set; before that, Idea Low/High hold the range from the Idea phase. Same
+        // fields Projects Manager edits (core-projects-manager.html FIELDS schema) —
+        // kept as raw numbers here so the admin edit inputs can be pre-filled exactly.
+        ideaLow:  f.IdeaLow!=null && f.IdeaLow!=='' ? Number(f.IdeaLow) : null,
+        ideaHigh: f.IdeaHigh!=null && f.IdeaHigh!=='' ? Number(f.IdeaHigh) : null,
+        targetInvestmentAmount: f.TargetInvestmentAmount!=null && f.TargetInvestmentAmount!=='' ? Number(f.TargetInvestmentAmount) : null,
         address:  f.Address || '',
         estimateUrl: f.EstimateUrl || '',
         createdDate: (f.Created || '').slice(0, 10),
-        scopeText: f.ScopeSummary || ''
+        // "Design Scope" is the real CORE_Projects field for this (confirmed against
+        // core-projects-manager.html's FIELDS schema) — the "ScopeSummary" field this
+        // read/wrote before didn't exist, which is why saves were failing with a
+        // Graph 400. CAScope/ProjectDescription are the other candidates; flag if
+        // DesignScope isn't the right one.
+        scopeText: f.DesignScope || ''
       };
     }).filter(p => {
       // Exclude Slot entries and entries with no meaningful name
@@ -1186,7 +1193,7 @@ function onProjectSelected(){
   if(!proj){ panel.style.display='none'; return; }
   document.getElementById('pmeta-address').textContent  = proj.address  || '—';
   document.getElementById('pmeta-cavalue').textContent  = proj.caValue  || '—';
-  document.getElementById('pmeta-target-investment').textContent = proj.targetInvestment || '—';
+  renderTargetInvestment(proj);
   renderScopeOfWork(proj);
   // Estimate link — live when URL exists, placeholder otherwise
   const estimateLink = document.getElementById('pmeta-estimate-link');
@@ -1228,6 +1235,61 @@ function splitScopeParagraphs(text){
     .split(/\n\s*\n/)
     .map(p => p.split('\n').map(l=>l.trim()).filter(Boolean).join(' ').trim())
     .filter(Boolean);
+}
+
+// Target Investment: a single committed TargetInvestmentAmount once set, otherwise
+// the Idea Low–High range, otherwise whichever one bound exists. Same fields
+// Projects Manager edits — admin-gated here too so setup doesn't require a trip
+// to another tool, same as Scope of Work.
+function formatTargetInvestment(proj){
+  const fmt = v => `$${Number(v).toLocaleString()}`;
+  if(proj.targetInvestmentAmount) return fmt(proj.targetInvestmentAmount);
+  if(proj.ideaLow && proj.ideaHigh) return `${fmt(proj.ideaLow)} – ${fmt(proj.ideaHigh)}`;
+  if(proj.ideaLow || proj.ideaHigh) return fmt(proj.ideaLow || proj.ideaHigh);
+  return '';
+}
+function parseMoney(s){
+  const n = Number(String(s||'').replace(/[^0-9.]/g,''));
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+function renderTargetInvestment(proj){
+  const displayEl = document.getElementById('pmeta-target-investment');
+  const editRow = document.getElementById('pmeta-ti-edit');
+  if(adminMode){
+    displayEl.style.display='none';
+    editRow.style.display='flex';
+    editRow.dataset.projectId = proj.id;
+    document.getElementById('ti-idea-low').value  = proj.ideaLow  || '';
+    document.getElementById('ti-idea-high').value = proj.ideaHigh || '';
+    document.getElementById('ti-amount').value    = proj.targetInvestmentAmount || '';
+  } else {
+    displayEl.style.display='';
+    editRow.style.display='none';
+    displayEl.textContent = formatTargetInvestment(proj) || '—';
+  }
+}
+async function saveTargetInvestment(){
+  const editRow = document.getElementById('pmeta-ti-edit');
+  const projectId = editRow.dataset.projectId;
+  const proj = spProjects.find(p=>p.id===projectId);
+  if(!proj) return;
+  proj.ideaLow  = parseMoney(document.getElementById('ti-idea-low').value);
+  proj.ideaHigh = parseMoney(document.getElementById('ti-idea-high').value);
+  proj.targetInvestmentAmount = parseMoney(document.getElementById('ti-amount').value);
+  if(projectId === MOCK_PROJECT_ID){
+    showToast('Sample project — nothing is saved.');
+    renderTargetInvestment(proj);
+    return;
+  }
+  try {
+    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: {
+      IdeaLow: proj.ideaLow, IdeaHigh: proj.ideaHigh, TargetInvestmentAmount: proj.targetInvestmentAmount
+    } });
+    showToast('Target Investment saved.');
+  } catch(e) {
+    showToast('Target Investment save failed — ' + e.message);
+  }
+  renderTargetInvestment(proj);
 }
 
 function renderScopeOfWork(proj){
