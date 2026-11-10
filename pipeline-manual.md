@@ -69,7 +69,7 @@ Confirming is not casually reversible, so it's done deliberately, usually after 
 
 ### Document pills
 
-Projects carry small labeled chips — **EST**, **PB**, **DA**, **TRL**, **MP**, **SO**, **SS**, **PLN**, **CA** — each one a shortcut to a key document (the estimate, Project Basis, Design Agreement, Trello card, master plan, Scope Outline, selections sheet, plans, Construction Agreement). Click a pill to open that document directly.
+Projects carry small labeled chips — **EST**, **PB**, **DA**, **TRL**, **MP**, **SO**, **SS**, **PLN**, **CA** — each one a shortcut to a key document (the estimate, Levels of Development, Design Agreement, Trello card, master plan, Scope Outline, selections sheet, plans, Construction Agreement). Click a pill to open that document directly.
 
 The Pipeline finds most of these documents by itself — automatically — by looking in the project's folder. A pill's appearance tells you how it got its link — found automatically, pinned by a person, or added by hand. If a pill is missing or points at the wrong file, it can be corrected right on the project; you don't need to go hunting through folders.
 
