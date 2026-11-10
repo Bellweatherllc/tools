@@ -334,7 +334,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v43</span>
+      <span class="header-version">v44</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -377,8 +377,12 @@
             <a id="pmeta-estimate-link" href="#" target="_blank" style="font-size:12px;font-weight:600;color:var(--silver);text-decoration:none;padding:5px 12px;border:1.5px dashed var(--cloud);border-radius:6px;white-space:nowrap;cursor:not-allowed;opacity:0.6" title="Estimating tool coming soon">📋 View Estimate</a>
           </div>
         </div>
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel);margin-bottom:6px">Scope of Work</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel)">Scope of Work</div>
+          <button type="button" id="pmeta-scope-save-btn" class="btn btn-primary btn-sm" style="display:none" onclick="saveScopeOfWork()">Save Scope</button>
+        </div>
         <ul id="pmeta-scope" style="margin:0;padding-left:20px;font-size:13px;color:var(--navy);line-height:1.7"></ul>
+        <textarea id="pmeta-scope-edit" style="display:none;width:100%;min-height:100px;font-size:13px;color:var(--navy);line-height:1.6;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit;resize:vertical" placeholder="One scope item per line..."></textarea>
       </div>
     </div>
     <div id="assess-blocks"></div>
@@ -557,6 +561,9 @@ function toggleAdminMode(){
   document.getElementById('gear-icon').style.color=adminMode?'var(--red)':'var(--silver)';
   document.getElementById('add-block-banner').style.display=adminMode?'block':'none';
   renderAssessBlocks();
+  const selectedId = document.getElementById('assess-project')?.value;
+  const proj = selectedId && spProjects.find(p=>p.id===selectedId);
+  if(proj) renderScopeOfWork(proj);
 }
 
 // ══════════════════════════════════════════════════ TABS ═══════
@@ -576,6 +583,7 @@ const SP_CONFIG = {
   redirectUri: 'https://bellweatherllc.github.io/tools/project-basis.html',
   graphBase: 'https://graph.microsoft.com/v1.0',
   projectsUrl:    'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500',
+  projectsItemUrl:'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/items',
   configUrl:      'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Config/items',
   assessmentsUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Assessments/items',
   teamMembersUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_TeamMembers/items'
@@ -1163,11 +1171,7 @@ function onProjectSelected(){
   if(!proj){ panel.style.display='none'; return; }
   document.getElementById('pmeta-address').textContent  = proj.address  || '—';
   document.getElementById('pmeta-cavalue').textContent  = proj.caValue  || '—';
-  const scopeEl = document.getElementById('pmeta-scope');
-  const bullets = proj.scopeBullets || [];
-  scopeEl.innerHTML = bullets.length
-    ? bullets.map(b=>`<li>${esc(b)}</li>`).join('')
-    : '<li style="list-style:none;margin-left:-20px;color:var(--silver)">No scope summary on file yet.</li>';
+  renderScopeOfWork(proj);
   // Estimate link — live when URL exists, placeholder otherwise
   const estimateLink = document.getElementById('pmeta-estimate-link');
   if(proj.estimateUrl){
@@ -1193,6 +1197,50 @@ function onProjectSelected(){
     applySampleAssessment();
     showToast('Sample ratings loaded — nothing is saved.');
   }
+}
+
+// Scope of Work is set up by a tool admin (Byron/Joey) and read-only for everyone
+// else — same split as block/dimension config, gated on the same Admin toggle.
+function renderScopeOfWork(proj){
+  const listEl = document.getElementById('pmeta-scope');
+  const editEl = document.getElementById('pmeta-scope-edit');
+  const saveBtn = document.getElementById('pmeta-scope-save-btn');
+  const bullets = proj.scopeBullets || [];
+  if(adminMode){
+    listEl.style.display='none';
+    editEl.style.display='';
+    saveBtn.style.display='';
+    editEl.value = bullets.join('\n');
+    editEl.dataset.projectId = proj.id;
+  } else {
+    listEl.style.display='';
+    editEl.style.display='none';
+    saveBtn.style.display='none';
+    listEl.innerHTML = bullets.length
+      ? bullets.map(b=>`<li>${esc(b)}</li>`).join('')
+      : '<li style="list-style:none;margin-left:-20px;color:var(--silver)">No scope summary on file yet.</li>';
+  }
+}
+
+async function saveScopeOfWork(){
+  const editEl = document.getElementById('pmeta-scope-edit');
+  const projectId = editEl.dataset.projectId;
+  const proj = spProjects.find(p=>p.id===projectId);
+  if(!proj) return;
+  const bullets = editEl.value.split('\n').map(s=>s.trim()).filter(Boolean);
+  proj.scopeBullets = bullets;
+  if(projectId === MOCK_PROJECT_ID){
+    showToast('Sample project — nothing is saved.');
+    renderScopeOfWork(proj);
+    return;
+  }
+  try {
+    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: { ScopeSummary: bullets.join('\n') } });
+    showToast('Scope of work saved.');
+  } catch(e) {
+    showToast('Scope save failed — ' + e.message);
+  }
+  renderScopeOfWork(proj);
 }
 
 function applySampleAssessment(){
