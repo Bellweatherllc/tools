@@ -334,7 +334,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v46</span>
+      <span class="header-version">v47</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -379,9 +379,7 @@
           </div>
         </div>
         <div id="pmeta-ti-edit" style="display:none;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:-8px 0 16px">
-          <div class="form-group" style="flex:none"><label class="form-label">Idea Low</label><input type="text" id="ti-idea-low" class="form-input" style="width:120px" placeholder="$"></div>
-          <div class="form-group" style="flex:none"><label class="form-label">Idea High</label><input type="text" id="ti-idea-high" class="form-input" style="width:120px" placeholder="$"></div>
-          <div class="form-group" style="flex:none"><label class="form-label">Target Investment Amount</label><input type="text" id="ti-amount" class="form-input" style="width:140px" placeholder="$ (committed figure)"></div>
+          <div class="form-group" style="flex:none"><label class="form-label">Target Investment</label><input type="text" id="ti-amount" class="form-input" style="width:220px" placeholder="$950,000 or $900,000 – $950,000"></div>
           <button type="button" class="btn btn-primary btn-sm" onclick="saveTargetInvestment()">Save</button>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -608,9 +606,7 @@ const MOCK_PROJECT = {
   jobCode: 'DEMO-001',
   status: 'Lead',
   caValue: '$950,000',
-  ideaLow: 850000,
-  ideaHigh: 950000,
-  targetInvestmentAmount: null,
+  targetInvestment: '$850,000 – $950,000',
   address: 'Philadelphia, PA',
   estimateUrl: '',
   createdDate: '',
@@ -826,6 +822,17 @@ async function getToken() {
   return resp.accessToken;
 }
 
+// Graph error bodies are JSON like {error:{code,message}} — surface that instead of
+// just the status code, so a failed save says *why* instead of just "Graph 400".
+async function graphErrorMessage(resp){
+  let detail = resp.statusText || '';
+  try {
+    const body = await resp.json();
+    if(body?.error?.message) detail = body.error.code ? `${body.error.code}: ${body.error.message}` : body.error.message;
+  } catch(e){ /* body wasn't JSON — keep statusText */ }
+  return `Graph ${resp.status}${detail ? ' — ' + detail : ''}`;
+}
+
 async function graphFetch(url, extraHeaders={}) {
   if (!graphToken) graphToken = await getToken();
   let resp = await fetch(url, { headers: { Authorization: `Bearer ${graphToken}`, ...extraHeaders } });
@@ -833,7 +840,7 @@ async function graphFetch(url, extraHeaders={}) {
     graphToken = await getToken();
     resp = await fetch(url, { headers: { Authorization: `Bearer ${graphToken}`, ...extraHeaders } });
   }
-  if (!resp.ok) throw new Error(`Graph ${resp.status}`);
+  if (!resp.ok) throw new Error(await graphErrorMessage(resp));
   return resp.json();
 }
 
@@ -844,7 +851,7 @@ async function graphPost(url, body) {
     headers: { Authorization: `Bearer ${graphToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  if (!resp.ok) throw new Error(`Graph POST ${resp.status}`);
+  if (!resp.ok) throw new Error(await graphErrorMessage(resp));
   return resp.json();
 }
 
@@ -855,7 +862,7 @@ async function graphPatch(url, body) {
     headers: { Authorization: `Bearer ${graphToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  if (!resp.ok) throw new Error(`Graph PATCH ${resp.status}`);
+  if (!resp.ok) throw new Error(await graphErrorMessage(resp));
   return resp.status === 204 ? null : resp.json();
 }
 
@@ -936,13 +943,8 @@ async function fetchProjects() {
         jobCode:  f.Job_x0020_Code || f.JobCode || '',
         status:   f.PipelineStage || f.Status || '',
         caValue:  caVal,
-        // Target Investment: a single committed figure once TargetInvestmentAmount is
-        // set; before that, Idea Low/High hold the range from the Idea phase. Same
-        // fields Projects Manager edits (core-projects-manager.html FIELDS schema) —
-        // kept as raw numbers here so the admin edit inputs can be pre-filled exactly.
-        ideaLow:  f.IdeaLow!=null && f.IdeaLow!=='' ? Number(f.IdeaLow) : null,
-        ideaHigh: f.IdeaHigh!=null && f.IdeaHigh!=='' ? Number(f.IdeaHigh) : null,
-        targetInvestmentAmount: f.TargetInvestmentAmount!=null && f.TargetInvestmentAmount!=='' ? Number(f.TargetInvestmentAmount) : null,
+        // Free text, single amount or a range — Idea Low/High retired per Byron.
+        targetInvestment: f.TargetInvestmentAmount!=null ? String(f.TargetInvestmentAmount) : '',
         address:  f.Address || '',
         estimateUrl: f.EstimateUrl || '',
         createdDate: (f.Created || '').slice(0, 10),
@@ -1237,20 +1239,14 @@ function splitScopeParagraphs(text){
     .filter(Boolean);
 }
 
-// Target Investment: a single committed TargetInvestmentAmount once set, otherwise
-// the Idea Low–High range, otherwise whichever one bound exists. Same fields
-// Projects Manager edits — admin-gated here too so setup doesn't require a trip
-// to another tool, same as Scope of Work.
+// Target Investment: one free-text field, single amount or a range, admin's choice
+// of wording — not split into Idea Low/High (Idea-phase terminology is retired).
+// NOTE: writes to TargetInvestmentAmount as plain text. If that SharePoint column
+// is still typed as Currency, this will fail (same way ScopeSummary did) — it needs
+// to be a text column, or point this at a different one. The save-failure toast
+// now includes the real Graph error, which will say so explicitly if that's it.
 function formatTargetInvestment(proj){
-  const fmt = v => `$${Number(v).toLocaleString()}`;
-  if(proj.targetInvestmentAmount) return fmt(proj.targetInvestmentAmount);
-  if(proj.ideaLow && proj.ideaHigh) return `${fmt(proj.ideaLow)} – ${fmt(proj.ideaHigh)}`;
-  if(proj.ideaLow || proj.ideaHigh) return fmt(proj.ideaLow || proj.ideaHigh);
-  return '';
-}
-function parseMoney(s){
-  const n = Number(String(s||'').replace(/[^0-9.]/g,''));
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+  return proj.targetInvestment || '';
 }
 function renderTargetInvestment(proj){
   const displayEl = document.getElementById('pmeta-target-investment');
@@ -1259,9 +1255,7 @@ function renderTargetInvestment(proj){
     displayEl.style.display='none';
     editRow.style.display='flex';
     editRow.dataset.projectId = proj.id;
-    document.getElementById('ti-idea-low').value  = proj.ideaLow  || '';
-    document.getElementById('ti-idea-high').value = proj.ideaHigh || '';
-    document.getElementById('ti-amount').value    = proj.targetInvestmentAmount || '';
+    document.getElementById('ti-amount').value = proj.targetInvestment || '';
   } else {
     displayEl.style.display='';
     editRow.style.display='none';
@@ -1273,18 +1267,15 @@ async function saveTargetInvestment(){
   const projectId = editRow.dataset.projectId;
   const proj = spProjects.find(p=>p.id===projectId);
   if(!proj) return;
-  proj.ideaLow  = parseMoney(document.getElementById('ti-idea-low').value);
-  proj.ideaHigh = parseMoney(document.getElementById('ti-idea-high').value);
-  proj.targetInvestmentAmount = parseMoney(document.getElementById('ti-amount').value);
+  const value = document.getElementById('ti-amount').value.trim();
+  proj.targetInvestment = value;
   if(projectId === MOCK_PROJECT_ID){
     showToast('Sample project — nothing is saved.');
     renderTargetInvestment(proj);
     return;
   }
   try {
-    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: {
-      IdeaLow: proj.ideaLow, IdeaHigh: proj.ideaHigh, TargetInvestmentAmount: proj.targetInvestmentAmount
-    } });
+    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: { TargetInvestmentAmount: value } });
     showToast('Target Investment saved.');
   } catch(e) {
     showToast('Target Investment save failed — ' + e.message);
