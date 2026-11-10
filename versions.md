@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `project-basis.html` | v44 |
+| Levels of Development | `project-basis.html` | v45 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -67,6 +67,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-10** — Levels of Development v44 → v45: pasted DA scope text no longer explodes into one bullet per wrapped line — Scope of Work now splits on blank lines into distinct items and merges single line breaks within an item back into flowing prose. Added a Target Investment field (reads Projects Manager's existing TargetInvestmentAmount/IdeaLow/IdeaHigh fields — single amount once committed, Idea Low–High range before that) next to Address/CA Value; read-only here since Projects Manager owns that data.
 - **2026-11-10** — Levels of Development v43 → v44: Scope of Work is now editable (Admin-gated, same toggle as block/dimension config) instead of read-only. Saving PATCHes the same CORE_Projects `ScopeSummary` field Projects Manager reads/writes — no separate copy — so a tool admin (Byron/Joey) can set up a project's scope before everyone else assesses it, without a trip to another tool.
 - **2026-11-10** — Project Basis renamed "Levels of Development" in the header (file stays `project-basis.html` — it already has a live URL), v42 → v43: subtitle updated from "Pre-DA Assessment Tool" to "Project Assessment Tool" since Assess's project filter now includes DA Signed projects alongside Lead, not just pre-DA ones — a project signed the same morning was previously invisible once it left Lead stage.
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
