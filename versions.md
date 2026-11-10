@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `project-basis.html` | v51 |
+| Levels of Development | `project-basis.html` | v52 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-10** — Levels of Development v51 → v52: manual no longer mentions the old "Project Basis" name or explains signing in (standard Microsoft-account auth). Help button moved from the admin cluster to the tab bar's far right edge, matching Pipeline's manual-btn placement.
 - **2026-11-10** — New: Levels of Development Manual (`project-basis-manual.html`/`.md`), matching the house manual template. Linked from the tool's header via a `?` help button next to the gear icon, same pattern as Pipeline/WIP Tracker. BW Tool Index bumped to v6 to list it.
 - **2026-11-10** — Levels of Development v50 → v51: added a `?` help-manual link in the header, next to the gear icon — same pattern every other tool with a manual already uses.
 - **2026-11-10** — Levels of Development v49 → v50: added a "Copy Link to This Project" button in Assessment Setup — the link carries ?project=<id> and auto-selects that project on open, so getting several people to assess the same project no longer means telling each one to find it by name themselves.
