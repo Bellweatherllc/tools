@@ -11,7 +11,7 @@ Last updated: 2026-10-27
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1135 |
+| Project Pipeline | `project-pipeline.html` | v1173 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v53 |
 | Scout Board | `scout-board.html` | v13 |
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-10** — Project Pipeline v1172 → v1173: renamed "Project Basis" to "Levels of Development" in display text (LOD pill tooltip, modal title/placeholder, document-pill label), matching the tool's own rename. The internal `pb` key and the ProjectBasisUrl SharePoint field are untouched.
 - **2026-11-10** — **File renamed**: `project-basis.html` → `levels-of-development.html`, `project-basis-manual.html`/`.md` → `levels-of-development-manual.html`/`.md`. The tool's display name had already been "Levels of Development" since v43; the file now matches. **Requires an Azure AD app-registration update** — the MSAL redirect URI changed from `.../tools/project-basis.html` to `.../tools/levels-of-development.html`; sign-in will fail until that's added in Azure. `project-basis.html` is left in place as a redirect stub (bounces to the new file) so old bookmarks and links don't 404 — not the live tool. BW Tool Index (v7) and CORE System Map (v18) updated to the new name/file/id.
 - **2026-11-10** — Levels of Development v51 → v52: manual no longer mentions the old "Project Basis" name or explains signing in (standard Microsoft-account auth). Help button moved from the admin cluster to the tab bar's far right edge, matching Pipeline's manual-btn placement.
 - **2026-11-10** — New: Levels of Development Manual (`project-basis-manual.html`/`.md`), matching the house manual template. Linked from the tool's header via a `?` help button next to the gear icon, same pattern as Pipeline/WIP Tracker. BW Tool Index bumped to v6 to list it.
