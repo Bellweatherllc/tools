@@ -342,7 +342,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v55</span>
+      <span class="header-version">v56</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -380,6 +380,7 @@
           <div id="assessor-display" style="font-size:13px;color:var(--navy);padding:10px 12px;background:var(--snow);border-radius:6px;border:1.5px solid var(--cloud);white-space:nowrap;min-width:180px">Connecting…</div>
         </div>
       </div>
+      <div id="already-assessed" style="display:none;margin-top:10px;font-size:12.5px;color:var(--steel);line-height:1.6"></div>
       <div id="project-meta-panel" style="display:none;margin-top:4px;padding:16px;background:var(--snow);border-radius:6px;border:1px solid var(--cloud)">
         <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;margin-bottom:16px">
           <div><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel);display:block;margin-bottom:2px">Address</span><span id="pmeta-address" style="font-size:13px;color:var(--navy)">—</span></div>
@@ -1212,13 +1213,15 @@ function onProjectSelected(){
   const id = document.getElementById('assess-project').value;
   currentProjectId = id;
   const panel = document.getElementById('project-meta-panel');
-  if(!id){ panel.style.display='none'; return; }
+  const alreadyEl = document.getElementById('already-assessed');
+  if(!id){ panel.style.display='none'; alreadyEl.style.display='none'; return; }
   const proj = spProjects.find(p => p.id === id);
-  if(!proj){ panel.style.display='none'; return; }
+  if(!proj){ panel.style.display='none'; alreadyEl.style.display='none'; return; }
   document.getElementById('pmeta-address').textContent  = proj.address  || '—';
   document.getElementById('pmeta-cavalue').textContent  = proj.caValue  || '—';
   renderTargetInvestment(proj);
   renderScopeOfWork(proj);
+  renderAlreadyAssessed(id);
   // Estimate link — live when URL exists, placeholder otherwise
   const estimateLink = document.getElementById('pmeta-estimate-link');
   if(proj.estimateUrl){
@@ -1244,6 +1247,29 @@ function onProjectSelected(){
     applySampleAssessment();
     showToast('Sample ratings loaded — nothing is saved.');
   }
+}
+
+// Surfaces who's already assessed this project right on Assess, before anyone
+// has to switch to Raw Results or Analysis to find out.
+async function renderAlreadyAssessed(projectId){
+  const el = document.getElementById('already-assessed');
+  el.style.display = 'none';
+  el.innerHTML = '';
+  let asmts = [];
+  try {
+    asmts = await fetchAssessmentsForProject(projectId);
+  } catch(e) { return; } // informational only — fail quietly, not a toast-worthy error
+  if(document.getElementById('assess-project').value !== projectId) return; // project changed mid-fetch
+  if(!asmts.length) return;
+  const respondents = [...new Map(asmts.map(a=>[a.assessorName, a])).values()];
+  const names = respondents.map(a => `${esc(a.assessorName)}${a.assessorDept ? ' ('+esc(a.assessorDept)+')' : ''}`).join(' · ');
+  const mine = currentUser.name && respondents.find(a => a.assessorName === currentUser.name);
+  let html = `<b style="color:var(--navy)">Already assessed:</b> ${names} · ${respondents.length} submission${respondents.length===1?'':'s'} so far`;
+  if(mine){
+    html += `<div style="color:var(--gold);font-weight:600;margin-top:2px">You already submitted this${mine.submittedDate ? ' on '+esc(mine.submittedDate) : ''}.</div>`;
+  }
+  el.innerHTML = html;
+  el.style.display = '';
 }
 
 // Self-healing column setup — mirrors core-projects-manager.html's own NEW_COLUMNS /
