@@ -10,15 +10,11 @@ For anyone assessing a project, setting one up, or reading the results. No prior
 
 ### What Levels of Development is
 
-Levels of Development (you'll still see it referred to by its file name, Project Basis, in a few places) rates how complex a project is likely to be, across about a dozen dimensions — drawings, site conditions, engineering, selections, client relationship, permit risk, and so on — each on a simple 1 / 2 / 3 scale. Several people weigh in independently on the same project, and the tool rolls their answers up into a composite picture: where the project is genuinely straightforward, where it's going to need extra attention, and what that should mean for timeline, staffing, and the Design Agreement.
+Levels of Development rates how complex a project is likely to be, across about a dozen dimensions — drawings, site conditions, engineering, selections, client relationship, permit risk, and so on — each on a simple 1 / 2 / 3 scale. Several people weigh in independently on the same project, and the tool rolls their answers up into a composite picture: where the project is genuinely straightforward, where it's going to need extra attention, and what that should mean for timeline, staffing, and the Design Agreement.
 
 It's filled out early — once a project is a real Lead, or once the DA is signed — so the people doing the work have a heads-up before they're already in the middle of it.
 
 It lives at [bellweatherllc.github.io/tools/project-basis.html](https://bellweatherllc.github.io/tools/project-basis.html), like every other CORE tool.
-
-### Signing in
-
-Click **Sign In** and use your regular Bellweather Microsoft account — the same one you use for email. Once you're in, the header shows a green **SharePoint** dot and your name appears under "Submitting as."
 
 Anyone with a Bellweather account can sign in, see the project list, and submit an assessment. Setting up a project — writing the Scope of Work, entering Target Investment — is restricted to the **Admin** toggle in the header, covered in Part II.
 
