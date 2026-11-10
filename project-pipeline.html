@@ -3663,7 +3663,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1171';
+const CORE_VERSION = 'v1172';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -9034,6 +9034,18 @@ function initDrag(){
           _toastTimer=setTimeout(()=>{ t.classList.remove('show'); t.classList.remove('bt-big'); t.style.borderLeftColor=''; t.style.borderColor=''; },8000);
         },_msgDelay);
       };
+      // v1172: Confirm stamps salesPerson/designer/productionPM onto the in-memory project
+      // (via _stampPromo) so the Pipeline's own tooltip reads them correctly, but that data
+      // only rides along in the GanttData blob on the next normal save — it was never
+      // patched into the dedicated SalesPerson/DesignerName/PMName SharePoint columns that
+      // core-projects-manager.html reads. Confirmed projects showed a full team in the
+      // Pipeline and a blank team in Projects Manager. Resolve the same columns the
+      // designer/PM drag-assign path writes (_patchPersonNameToSP) and include them here.
+      const _teamFields=proj=>({
+        SalesPerson:proj.salesPerson||'',
+        DesignerName:proj.designer?(personById(proj.designer)?.fullLabel||personById(proj.designer)?.label||''):'',
+        PMName:proj.productionPM?(personById(proj.productionPM)?.fullLabel||personById(proj.productionPM)?.label||''):'',
+      });
       const _persistPromo=(proj,extra)=>{ // v838: the promotion must reach SharePoint
         markDirty(proj); // GanttData rides the normal dirty-save
         setTimeout(()=>{ if(typeof diAutoSeed==='function') diAutoSeed(proj); },1500); // v981
@@ -9055,7 +9067,7 @@ function initDrag(){
         srcLead.collapsed=true;
         const _slotPM=slotProj.productionPM||null;
         _stampPromo(srcLead,_slotPM);
-        _persistPromo(srcLead);
+        _persistPromo(srcLead,_teamFields(srcLead));
         // Consume the slot scaffold — memory and SharePoint (mirrors the slot-delete pattern)
         const _slotIdx=PROJECTS.indexOf(slotProj);
         if(_slotIdx>=0) PROJECTS.splice(_slotIdx,1);
@@ -9096,7 +9108,7 @@ function initDrag(){
         // Set DA milestone to signed
         const daMsSlot=slotProj.milestones.find(m=>m.name==='DA');
         if(daMsSlot) daMsSlot.status='da-signed';
-        _persistPromo(slotProj,{ClientName:pp.name,Title:pp.name}); // v838: row is now a project, Manager included
+        _persistPromo(slotProj,Object.assign({ClientName:pp.name,Title:pp.name},_teamFields(slotProj))); // v838: row is now a project, Manager included
         // Record in history using slot's actual dates
         const caMs=slotProj.milestones.find(m=>m.name==='CA');
         const cPh=slotProj.productionLane.phases.find(ph=>/^construction$/i.test(ph.name.trim()));
@@ -12441,8 +12453,16 @@ function spStageToStatus(stage){
 // further along (e.g. self-healing a CA Signed project found with no row at all).
 async function _persistNewProject(proj,stage){
   try{
+    // v1172: team fields were never written on creation, so a confirmed project's
+    // Sales/Designer/PM showed correctly in the Pipeline (read from the in-memory
+    // object / GanttData) but blank in core-projects-manager.html, which reads these
+    // dedicated columns only. Resolve them the same way the drag-assign path does
+    // (_patchPersonNameToSP) so a new row starts with the team it already has.
     const data=await graphPost(BWC_SITE+'/CORE_Projects/items',{fields:{
       Title:proj.name, ClientName:proj.name, PipelineStage:stage||'DA Signed',
+      SalesPerson:proj.salesPerson||'',
+      DesignerName:proj.designer?(personById(proj.designer)?.fullLabel||personById(proj.designer)?.label||''):'',
+      PMName:proj.productionPM?(personById(proj.productionPM)?.fullLabel||personById(proj.productionPM)?.label||''):'',
       GanttData:JSON.stringify(projectGanttPayload(proj))
     }});
     if(data?.id){ proj._spItemId=data.id; _baseGd.set(data.id,JSON.stringify(projectGanttPayload(proj))); }
@@ -17293,6 +17313,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1172', date: '2026-11-10',
+    entries:['Fixed: confirming a Sales Planning project stamped Sales/Designer/PM onto the project in memory (so the Pipeline’s own tooltip showed them correctly) but never wrote them to the dedicated SalesPerson/DesignerName/PMName SharePoint columns — only the GanttData blob got them, on the next save. core-projects-manager.html reads those columns directly, so a confirmed project showed a full team in the Pipeline and a blank team in Projects Manager. Now written at confirm time, both for a brand-new CORE_Projects row and for an existing one being updated.'],
+  },
   {
     version: 'v1171', date: '2026-11-09',
     entries:['Fixed for real this time: the Production slot trash can was built only `if(IS_ADMIN_MODE)` at render time, so a slot row already on the page before admin mode was switched on never got the button at all — toggling admin mode doesn’t rebuild rows. It’s now always rendered and shown/hidden by CSS off `body.admin-mode`, same pattern as Sales Planning’s delete ×. Also added the missing "Admin mode required" guard on the click handler.'],
