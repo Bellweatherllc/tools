@@ -2,7 +2,7 @@
 
 *How to fill out a review, run one, and fix the usual problems.*
 
-*November 2026 · People Analyzer v25*
+*November 2026 · People Analyzer v26*
 
 ## The basics
 
@@ -51,6 +51,8 @@ In an annual review you'll also rate three parts of the V/TO, and staff answer o
 1. Click the **Admin** switch in the header, type a session name (e.g. *June 2027*), and click **Create**.
 2. Tell people it's open. They score; open **Session Summary**, pick the session, and watch it fill in — who's been scored by how many people, and who still owes a self-evaluation.
 3. When it's done, switch the session off in the Admin panel. Nothing is deleted.
+
+Ratings are **+** or **-**. To also allow **+/-** in a session, tick **Allow the +/- rating** when you create it, or tick **+/-** next to the session in the Admin panel. It's off unless you turn it on.
 
 ### The annual review
 
@@ -110,7 +112,7 @@ The data lives on the **OperationsSecure** SharePoint site. If a list or column 
 
 | List | Columns the tool needs |
 |---|---|
-| `PA_Sessions` | `SessionName`, `CreatedDate`, `IsActive` (Yes/No), `SortOrder` (Number), `SessionType` (text) |
+| `PA_Sessions` | `SessionName`, `CreatedDate`, `IsActive` (Yes/No), `SortOrder` (Number), `SessionType` (text), `AllowPlusMinus` (Yes/No, default No) |
 | `PA_Evaluations` | the ratings, `EmployeeId` (Number), `AnnualData` (multiple lines, plain text) |
 | `PA_ReviewHistory` | `EmployeeId` (Number), `EmployeeName`, `ReviewDate` (Date), `ReviewLabel`, `ReviewType`, `Reviewer`, `SourceFile`, `ReviewData` (multiple lines, plain text) |
 
