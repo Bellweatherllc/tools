@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1173 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v55 |
+| Levels of Development | `levels-of-development.html` | v56 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -67,6 +67,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 ## Log
 
 Newest first. One line per delivery.
+
+- **2026-11-10** — Levels of Development v55 → v56: added an "Already assessed" line under the project picker on Assess, showing every respondent and a submission count (and a callout if you've already submitted yourself) without needing to open Raw Results or Analysis first.
 
 - **2026-11-10** — Levels of Development v54 → v55: expanded the Assess intro paragraph — review scope first, add notes where useful, skip dimensions with no insight, framed as a quick planning-anticipation pass rather than an exhaustive review.
 
