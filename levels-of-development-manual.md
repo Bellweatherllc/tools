@@ -14,7 +14,7 @@ Levels of Development rates how complex a project is likely to be, across about 
 
 It's filled out early — once a project is a real Lead, or once the DA is signed — so the people doing the work have a heads-up before they're already in the middle of it.
 
-It lives at [bellweatherllc.github.io/tools/project-basis.html](https://bellweatherllc.github.io/tools/project-basis.html), like every other CORE tool.
+It lives at [bellweatherllc.github.io/tools/levels-of-development.html](https://bellweatherllc.github.io/tools/levels-of-development.html), like every other CORE tool.
 
 Anyone with a Bellweather account can sign in, see the project list, and submit an assessment. Setting up a project — writing the Scope of Work, entering Target Investment — is restricted to the **Admin** toggle in the header, covered in Part II.
 
