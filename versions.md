@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1135 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `project-basis.html` | v49 |
+| Levels of Development | `project-basis.html` | v51 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -36,7 +36,7 @@ Last updated: 2026-10-27
 | Team Members | `team-members.html` | v28 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v5 |
+| BW Tool Index | `bw-tool-index.html` | v6 |
 | CORE System Map | `core-system-map.html` | v17 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
@@ -52,6 +52,7 @@ Each HTML manual is built from the `.md` file of the same name. The manuals have
 | WIP Tracker Manual | `wip-tracker-manual.html` / `.md` |
 | Team Members Manual | `team-members-manual.html` / `.md` |
 | People Analyzer Manual | `people-analyzer-manual.html` / `.md` |
+| Levels of Development Manual | `project-basis-manual.html` / `.md` |
 
 ## Retired
 
@@ -67,6 +68,9 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-10** — New: Levels of Development Manual (`project-basis-manual.html`/`.md`), matching the house manual template. Linked from the tool's header via a `?` help button next to the gear icon, same pattern as Pipeline/WIP Tracker. BW Tool Index bumped to v6 to list it.
+- **2026-11-10** — Levels of Development v50 → v51: added a `?` help-manual link in the header, next to the gear icon — same pattern every other tool with a manual already uses.
+- **2026-11-10** — Levels of Development v49 → v50: added a "Copy Link to This Project" button in Assessment Setup — the link carries ?project=<id> and auto-selects that project on open, so getting several people to assess the same project no longer means telling each one to find it by name themselves.
 - **2026-11-10** — Levels of Development v48 → v49: self-provisioning SharePoint columns (mirrors core-projects-manager.html's own setupColumns()/fixUrlColumns() pattern) — Target Investment now writes to a dedicated, auto-created TargetInvestmentDisplay text column instead of the apparently-never-real TargetInvestmentAmount; DesignScope gets upgraded to Enhanced rich text in place if it was provisioned as plain text, which is why formatting wasn't surviving saves. Also fixed the paste sanitizer to catch Word's actual bold/italic/underline encoding (inline style on a span, not semantic tags) — the previous version only handled semantic tags and missed Word's real format.
 - **2026-11-10** — Levels of Development v47 → v48: Scope of Work is now a rich-text editor (bold/italic/underline/bullets), not a plain textarea — pasting from Word/a DA keeps its formatting, sanitized down to a safe tag set so clipboard junk (mso- styles, fonts, colors) doesn't come along. Also fixed a real bug: saveScopeOfWork() was still writing to the nonexistent ScopeSummary field even after v46 switched reads to the real DesignScope field — likely why saves kept failing. Needs DesignScope to be an Enhanced-rich-text column for formatting to display correctly outside this tool.
 - **2026-11-10** — Levels of Development v46 → v47: Graph error toasts now show the real {error:{code,message}} from the response body instead of a bare status code, so a failed save says why. Idea Low/High retired (not used anymore); Target Investment collapses to one free-text field — single amount or a range, admin's wording — instead of three separate inputs.
