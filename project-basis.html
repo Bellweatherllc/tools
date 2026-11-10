@@ -82,6 +82,12 @@
   .guide-text{font-size:12px;color:var(--steel);margin-bottom:18px;line-height:1.8;background:var(--snow);padding:12px 16px;border-radius:6px;}
   .guide-text strong{color:var(--navy);}
   .guide-edit{width:100%;border:1.5px solid var(--pink-admin-border);border-radius:6px;padding:10px 12px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--navy);background:white;resize:vertical;min-height:80px;margin-bottom:18px;line-height:1.7;}
+  [contenteditable]:empty:before{content:attr(data-placeholder);color:var(--silver);}
+  #pmeta-scope-view p{margin:0 0 10px;}
+  #pmeta-scope-view p:last-child{margin-bottom:0;}
+  #pmeta-scope-view ul,#pmeta-scope-view ol{margin:0 0 10px;padding-left:20px;}
+  .rt-btn{min-width:30px;height:28px;padding:0 8px;border:1.5px solid var(--cloud);background:var(--white);border-radius:5px;font-size:12px;color:var(--navy);cursor:pointer;}
+  .rt-btn:hover{background:var(--snow);}
   .guide-edit:focus{outline:none;border-color:var(--red);}
   .section-divider{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--silver);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--cloud);}
 
@@ -334,7 +340,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v47</span>
+      <span class="header-version">v48</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -386,8 +392,14 @@
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel)">Scope of Work</div>
           <button type="button" id="pmeta-scope-save-btn" class="btn btn-primary btn-sm" style="display:none" onclick="saveScopeOfWork()">Save Scope</button>
         </div>
-        <ul id="pmeta-scope" style="margin:0;padding-left:20px;font-size:13px;color:var(--navy);line-height:1.7"></ul>
-        <textarea id="pmeta-scope-edit" style="display:none;width:100%;min-height:100px;font-size:13px;color:var(--navy);line-height:1.6;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit;resize:vertical" placeholder="Paste directly from the DA, or type scope items. Separate distinct items with a blank line — wrapped lines within one item will flow together as a single paragraph."></textarea>
+        <div id="pmeta-scope-view" style="font-size:13px;color:var(--navy);line-height:1.7"></div>
+        <div id="pmeta-scope-toolbar" style="display:none;gap:4px;margin-bottom:6px">
+          <button type="button" class="rt-btn" onmousedown="event.preventDefault()" onclick="document.execCommand('bold')" title="Bold"><b>B</b></button>
+          <button type="button" class="rt-btn" onmousedown="event.preventDefault()" onclick="document.execCommand('italic')" title="Italic"><i>I</i></button>
+          <button type="button" class="rt-btn" onmousedown="event.preventDefault()" onclick="document.execCommand('underline')" title="Underline"><u>U</u></button>
+          <button type="button" class="rt-btn" onmousedown="event.preventDefault()" onclick="document.execCommand('insertUnorderedList')" title="Bullet list">&bull; List</button>
+        </div>
+        <div id="pmeta-scope-edit" contenteditable="true" onpaste="onScopePaste(event)" data-placeholder="Paste directly from the DA, or type scope items — bold, italic, and bullet lists carry over from a paste." style="display:none;width:100%;min-height:100px;font-size:13px;color:var(--navy);line-height:1.6;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit"></div>
       </div>
     </div>
     <div id="assess-blocks"></div>
@@ -610,14 +622,14 @@ const MOCK_PROJECT = {
   address: 'Philadelphia, PA',
   estimateUrl: '',
   createdDate: '',
-  scopeText: [
+  scopeHTML: '<ul>'+[
     'Rear addition — approximately 450 SF, two-story, tying into the existing roofline',
     'Full kitchen renovation, relocated into the new addition footprint',
-    'Primary suite reconfiguration, including a new bath layout',
+    '<b>Primary suite reconfiguration</b>, including a new bath layout',
     'Outdoor living area: covered porch and rear patio hardscape',
     'Selective structural work to open the existing kitchen/dining wall',
     'New HVAC zone for the addition; existing systems otherwise remain',
-  ].join('\n\n')
+  ].map(b=>`<li>${b}</li>`).join('')+'</ul>'
 };
 const MOCK_ASSESSMENTS = [
   { id:'mock-1', projectId: MOCK_PROJECT_ID, assessorName:'Alex Rivera', assessorDept:'Design', submittedDate:'9/10/2026',
@@ -952,8 +964,9 @@ async function fetchProjects() {
         // core-projects-manager.html's FIELDS schema) — the "ScopeSummary" field this
         // read/wrote before didn't exist, which is why saves were failing with a
         // Graph 400. CAScope/ProjectDescription are the other candidates; flag if
-        // DesignScope isn't the right one.
-        scopeText: f.DesignScope || ''
+        // DesignScope isn't the right one. Needs to be an Enhanced-rich-text column
+        // for the bold/italic/bullets saved here to render correctly elsewhere.
+        scopeHTML: f.DesignScope || ''
       };
     }).filter(p => {
       // Exclude Slot entries and entries with no meaningful name
@@ -1227,16 +1240,46 @@ function onProjectSelected(){
 // Scope of Work is set up by a tool admin (Byron/Joey) and read-only for everyone
 // else — same split as block/dimension config, gated on the same Admin toggle.
 //
-// Stored and edited as raw text so pasting straight from a DA keeps its structure.
-// Display splits on blank lines into distinct items (so short, one-per-line lists
-// still read as a bulleted list) and merges single line breaks within an item —
-// otherwise a pasted paragraph that wrapped every ~80 characters in the source
-// document explodes into one bullet per wrapped line instead of reading as prose.
-function splitScopeParagraphs(text){
-  return (text || '')
-    .split(/\n\s*\n/)
-    .map(p => p.split('\n').map(l=>l.trim()).filter(Boolean).join(' ').trim())
-    .filter(Boolean);
+// Edited as rich text (bold/italic/underline/bullets) so pasting straight from a DA
+// keeps its formatting, not just its words. Stored as HTML. Pasted content is run
+// through sanitizeScopeHtml so Word/PDF clipboard junk (mso- inline styles, spans,
+// font tags) doesn't come along for the ride — only a small safe tag set survives,
+// with all attributes stripped, so display always matches this tool's own look.
+const SCOPE_ALLOWED_TAGS = new Set(['P','BR','B','STRONG','I','EM','U','UL','OL','LI']);
+function sanitizeScopeHtml(html){
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html || '';
+  Array.from(tmp.querySelectorAll('*')).forEach(el => {
+    if(el.tagName === 'DIV'){
+      // Word/Docs often use one <div> per paragraph instead of <p> — keep the break.
+      const p = document.createElement('p');
+      while(el.firstChild) p.appendChild(el.firstChild);
+      el.parentNode.replaceChild(p, el);
+      return;
+    }
+    if(SCOPE_ALLOWED_TAGS.has(el.tagName)){
+      while(el.attributes.length) el.removeAttribute(el.attributes[0].name);
+      return;
+    }
+    // Disallowed wrapper (span, font, table, style, ...) — unwrap, keep its content.
+    const parent = el.parentNode;
+    if(!parent) return;
+    while(el.firstChild) parent.insertBefore(el.firstChild, el);
+    parent.removeChild(el);
+  });
+  // Word's empty-line-between-paragraphs artifact: a <p> holding only a non-breaking
+  // space. Harmless but reads as a stray blank line — drop it.
+  tmp.querySelectorAll('p').forEach(p => {
+    if(!p.textContent.replace(/ /g,'').trim()) p.remove();
+  });
+  return tmp.innerHTML.trim();
+}
+function onScopePaste(e){
+  e.preventDefault();
+  const html = e.clipboardData.getData('text/html');
+  const text = e.clipboardData.getData('text/plain');
+  const toInsert = html ? sanitizeScopeHtml(html) : esc(text).replace(/\n/g,'<br>');
+  document.execCommand('insertHTML', false, toInsert);
 }
 
 // Target Investment: one free-text field, single amount or a range, admin's choice
@@ -1284,23 +1327,25 @@ async function saveTargetInvestment(){
 }
 
 function renderScopeOfWork(proj){
-  const listEl = document.getElementById('pmeta-scope');
+  const viewEl = document.getElementById('pmeta-scope-view');
   const editEl = document.getElementById('pmeta-scope-edit');
   const saveBtn = document.getElementById('pmeta-scope-save-btn');
+  const toolbar = document.getElementById('pmeta-scope-toolbar');
   if(adminMode){
-    listEl.style.display='none';
+    viewEl.style.display='none';
     editEl.style.display='';
+    toolbar.style.display='flex';
     saveBtn.style.display='';
-    editEl.value = proj.scopeText || '';
+    editEl.innerHTML = proj.scopeHTML || '';
     editEl.dataset.projectId = proj.id;
   } else {
-    listEl.style.display='';
+    viewEl.style.display='';
     editEl.style.display='none';
+    toolbar.style.display='none';
     saveBtn.style.display='none';
-    const paragraphs = splitScopeParagraphs(proj.scopeText);
-    listEl.innerHTML = paragraphs.length
-      ? paragraphs.map(p=>`<li>${esc(p)}</li>`).join('')
-      : '<li style="list-style:none;margin-left:-20px;color:var(--silver)">No scope summary on file yet.</li>';
+    viewEl.innerHTML = (proj.scopeHTML && proj.scopeHTML.trim())
+      ? proj.scopeHTML
+      : '<p style="color:var(--silver)">No scope summary on file yet.</p>';
   }
 }
 
@@ -1309,15 +1354,19 @@ async function saveScopeOfWork(){
   const projectId = editEl.dataset.projectId;
   const proj = spProjects.find(p=>p.id===projectId);
   if(!proj) return;
-  const scopeText = editEl.value;
-  proj.scopeText = scopeText;
+  const html = sanitizeScopeHtml(editEl.innerHTML);
+  proj.scopeHTML = html;
   if(projectId === MOCK_PROJECT_ID){
     showToast('Sample project — nothing is saved.');
     renderScopeOfWork(proj);
     return;
   }
   try {
-    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: { ScopeSummary: scopeText } });
+    // Confirmed real field via core-projects-manager.html's FIELDS schema. It must be
+    // an "Enhanced rich text" column for this HTML to render as formatting elsewhere
+    // instead of literal tags — if it's plain multiline text, this save may succeed
+    // but other tools reading it will show raw <p>/<b> markup. Flag if so.
+    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: { DesignScope: html } });
     showToast('Scope of work saved.');
   } catch(e) {
     showToast('Scope save failed — ' + e.message);
