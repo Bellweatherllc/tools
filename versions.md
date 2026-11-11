@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1173 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v56 |
+| Levels of Development | `levels-of-development.html` | v57 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -67,6 +67,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 ## Log
 
 Newest first. One line per delivery.
+
+- **2026-11-10** — Levels of Development v56 → v57: fixed real submissions not showing up in Raw Results/Analysis after being submitted — a narrowed `$select=id,fields/ProjectId,fields/SubmittedDate` query (inconsistent with the `$select=id,fields` pattern used everywhere else against this same list) was silently coming back with both fields undefined, so every real submission got dropped and only the sample project ever appeared. The assessment itself was saving correctly the whole time — this was a read-side bug. A genuine fetch failure here now also shows an error toast instead of failing silently.
 
 - **2026-11-10** — Levels of Development v55 → v56: added an "Already assessed" line under the project picker on Assess, showing every respondent and a submission count (and a callout if you've already submitted yourself) without needing to open Raw Results or Analysis first.
 
