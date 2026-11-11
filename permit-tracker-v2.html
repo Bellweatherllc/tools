@@ -306,6 +306,9 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .settings-panel input:disabled{opacity:.35;cursor:not-allowed;pointer-events:none;}
 .shift-readout{min-width:44px;text-align:center;font-size:11px;font-weight:700;color:var(--ink);font-family:var(--font-tt);white-space:nowrap;}
 .settings-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+/* A 2nd Permit column (off by default — only present once Trello syncs a
+   PERMIT2 card) adds a third slot rather than squeezing the existing two. */
+.settings-cols.has-permit2{grid-template-columns:1fr 1fr 1fr;}
 /* Per Byron: zoning's and permitting's own control areas should read as
    two distinct, separated regions, not one shared block. */
 .settings-col{border:1px solid var(--line);border-radius:7px;padding:10px 12px;}
@@ -533,7 +536,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v171';
+const CORE_VERSION = 'v172';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1208,6 +1211,19 @@ const STAGE_CATALOG={
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
     {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estWeeks:4},
   ],
+  // A second permitting card, off by default — only present at all once a
+  // project actually has a PERMIT2 card synced from Trello (see
+  // loadTrelloProjects). Per Byron: two permits on one project happen in
+  // SEQUENCE, not in parallel, so this never gets its own lane or its own
+  // prep-start shift control — its derived stages are simply appended onto
+  // the END of the existing permitting lane's sequence (see the
+  // permitStages concat in renderCards/detectTierChangeForProject), the
+  // same single "permitting" row just running longer.
+  permitting2:[
+    {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
+    {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estWeeks:4},
+  ],
 };
 function pidOf(name){ return name.replace(/[^a-z0-9]+/gi,'-').toLowerCase(); }
 
@@ -1222,10 +1238,10 @@ function classificationText(p){
 }
 
 function seedStageState(p){
-  const state={zoning:{}, permitting:{}, locked:true};
+  const state={zoning:{}, permitting:{}, permitting2:{}, locked:true};
   function seed(category, sourceStages){
     const claimed=new Set();
-    sourceStages.forEach(s=>{
+    (sourceStages||[]).forEach(s=>{
       const match=STAGE_CATALOG[category].find(c=>c.fullName===s.name && !claimed.has(c.key));
       if(!match) return;
       claimed.add(match.key);
@@ -1234,6 +1250,7 @@ function seedStageState(p){
   }
   seed('zoning', p.zoningStages);
   seed('permitting', p.permitStages);
+  seed('permitting2', p.permit2Stages);
   return state;
 }
 
@@ -1270,7 +1287,18 @@ const PROJECTS=[
       {name:'With Arch/Eng', estWeeks:4, status:'done', actualWeeks:4},
       {name:'Submitted / In Review', estWeeks:4, status:'active', ageWeeks:3},
     ],
-    note:'Zoning fully done. Permitting is sitting In Review, 3 weeks in against a 4-week estimate.' },
+    // Second permit (off by default elsewhere — demo'd here on purpose):
+    // a demolition permit that runs in SEQUENCE right after this one, per
+    // Byron, not its own lane — its stages append onto the end of the same
+    // permitting bar row once this permit's own Submitted/In Review closes
+    // out. All 'future' since the real demolition card hasn't started yet.
+    permit2Stages:[
+      {name:'Prep', estWeeks:2, status:'future'},
+      {name:'With Arch/Eng', estWeeks:4, status:'future'},
+      {name:'Submitted / In Review', estWeeks:4, status:'future'},
+    ],
+    permit2Label:'Demolition',
+    note:'Zoning fully done. Permitting is sitting In Review, 3 weeks in against a 4-week estimate. A second (demolition) permit is queued to follow it.' },
 
   { proj:'Castor Ave Shop', jur:'City', commercial:false, owner:'Ashley', address:'88 Castor Ave, Philadelphia PA', trelloCardId:null, permitOwner:'Ashley', archEngOwner:null, zoningOwner:'Marcus', phaseWeeks:{I:6,II:18,III:6},
     zoningStages:[
@@ -1549,6 +1577,13 @@ function renderSettingsPanel(p){
   const phaseIIStart=phaseIIStartFor(p);
   const zoningStartWeek=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIIStart;
   const permitStartWeek=p.permitStartWeek!=null ? p.permitStartWeek : defaultPermitStartFor(p);
+  // Off by default — a 2nd Permit column only shows up at all once Trello
+  // has actually synced a PERMIT2 card for this project (see
+  // loadTrelloProjects). No prep-start shift control of its own: it always
+  // runs in sequence right after the first permit (see the permitStages
+  // concat in renderCards/detectTierChangeForProject), never independently
+  // positioned, per Byron.
+  const hasPermit2 = !!(p.permit2Stages && p.permit2Stages.length);
   function stageRow(category, c){
     const st=p.stageState[category][c.key]||{enabled:false, estWeeks:c.estWeeks};
     return `<div class="stage-row">
@@ -1575,7 +1610,7 @@ function renderSettingsPanel(p){
         <span class="shift-readout">${gradOffset===0?'0 wks':(gradOffset>0?'+':'')+gradOffset+' wk'+(Math.abs(gradOffset)===1?'':'s')}</span>
       </div>
     </div>
-    <div class="settings-cols">
+    <div class="settings-cols${hasPermit2?' has-permit2':''}">
       <div class="settings-col">
         <h4>Zoning stages</h4>
         <div class="shift-row">
@@ -1604,6 +1639,10 @@ function renderSettingsPanel(p){
         </div>
         <div class="stage-rows">${STAGE_CATALOG.permitting.map(c=>stageRow('permitting',c)).join('')}</div>
       </div>
+      ${hasPermit2 ? `<div class="settings-col">
+        <h4>${p.permit2Label?'2nd Permit — '+esc(p.permit2Label):'2nd Permit'}</h4>
+        <div class="stage-rows">${STAGE_CATALOG.permitting2.map(c=>stageRow('permitting2',c)).join('')}</div>
+      </div>` : ''}
     </div>
   </div>`;
 }
@@ -1885,7 +1924,14 @@ function visibleProjects(){
 function renderCards(){
   const list=visibleProjects();
   document.getElementById('cards').innerHTML = list.length ? list.map(p=>{
-    const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
+    // A second permit (p.permit2Stages, off by default — only present once
+    // Trello actually syncs a PERMIT2 card for this project) runs in
+    // SEQUENCE after the first, per Byron — so its derived stages are just
+    // appended onto the same permitting sequence rather than given their
+    // own lane; isWhollyApproved/renderCombinedTrack/renderApprovedSummary
+    // all treat it as more of the same "permitting" track, no changes
+    // needed there.
+    const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting').concat(deriveStages(p,'permitting2'));
     const pid=pidOf(p.proj);
     const wholeApproved = isWhollyApproved(zoningStages, permitStages);
     // Permanent column between the row's main content and the stat-band —
@@ -2397,12 +2443,15 @@ function trelloCfValue(card,defs,label){
   return '';
 }
 // "ZONING PREP" -> {category:'zoning', suffix:'prep'}; "PERMIT ARCH/ENG" ->
-// {category:'permitting', suffix:'archeng'}. A list outside this track-
-// prefixed naming (there shouldn't be any on the tracking board) is
-// ignored — not part of the tracker.
+// {category:'permitting', suffix:'archeng'}; "PERMIT2 ARCH/ENG" ->
+// {category:'permitting2', suffix:'archeng'} — a second, optional permit
+// card per project (off by default: only matters for a project that
+// actually has one), per Byron. permit2 is checked BEFORE permit below,
+// since "permit2prep" (normalized) also starts with the substring "permit".
 function parseTrelloListName(name){
   const n=trelloNormName(name);
   if(n.indexOf('zoning')===0) return {category:'zoning', suffix:n.slice('zoning'.length)};
+  if(n.indexOf('permit2')===0) return {category:'permitting2', suffix:n.slice('permit2'.length)};
   if(n.indexOf('permit')===0) return {category:'permitting', suffix:n.slice('permit'.length)};
   return null;
 }
@@ -2411,6 +2460,7 @@ function parseTrelloListName(name){
 const TRELLO_SUFFIX_KEY = {
   zoning: {prep:'prep', survey:'survey', submit:'submitted-review'},
   permitting: {prep:'prep', archeng:'archeng', submitted:'submitted-review'},
+  permitting2: {prep:'prep', archeng:'archeng', submitted:'submitted-review'},
 };
 function trelloStageRank(category, suffix){
   if(suffix==='approved') return STAGE_CATALOG[category].length;
@@ -2433,7 +2483,7 @@ async function loadTrelloProjects(){
   const b=_trelloCfg.boardId;
   const [lists, cards, defs, actions] = await Promise.all([
     tGet('boards/'+b+'/lists', {fields:'name'}),
-    tGet('boards/'+b+'/cards', {fields:'name,idList,dateLastActivity,shortLink', customFieldItems:'true', members:'true', member_fields:'fullName'}),
+    tGet('boards/'+b+'/cards', {fields:'name,idList,dateLastActivity,shortLink,labels', customFieldItems:'true', members:'true', member_fields:'fullName'}),
     tGet('boards/'+b+'/customFields', {}),
     // v1's own comment still applies: Trello only serves the last 200
     // board actions — a done stage whose transition predates that window
@@ -2466,10 +2516,10 @@ async function loadTrelloProjects(){
     }
   });
 
-  const byProject={}; // trelloNormName(project) -> {name, zoning:cardInfo|null, permitting:cardInfo|null}
+  const byProject={}; // trelloNormName(project) -> {name, zoning:cardInfo|null, permitting:cardInfo|null, permitting2:cardInfo|null}
   cards.forEach(c=>{
     const meta=listMeta[c.idList];
-    if(!meta) return; // not one of the 8 tracked lists
+    if(!meta) return; // not one of the tracked lists (8, or 12 on a board that also runs PERMIT2 lists)
     const projectName=String(trelloCfValue(c,defs,'project')||'').trim();
     if(!projectName) return;
     const key=trelloNormName(projectName);
@@ -2481,6 +2531,12 @@ async function loadTrelloProjects(){
       archEngOwner:String(trelloCfValue(c,defs,'arch eng owner')||trelloCfValue(c,defs,'eng owner')||'').trim(),
       jurisdiction:String(trelloCfValue(c,defs,'jurisdiction')||'').trim(),
       permitNumber:String(trelloCfValue(c,defs,'permit number')||'').trim(),
+      // The card's first Trello label, read-only display text for a second
+      // permit card ("Demolition", "Construction", ...) — per Byron: "the
+      // card would carry the label internally." Not used to decide which
+      // track a card belongs to (the list name's PERMIT2 prefix does that);
+      // just what to call it in the settings panel.
+      labelName:(c.labels&&c.labels[0]&&c.labels[0].name)||'',
       // SubmittedDate is NEVER required — Byron doesn't want to hand-enter
       // it. It's read only as a free, optional backfill signal for the
       // Submit stage below, same tier as the Trello history reconstruction.
@@ -2551,7 +2607,7 @@ async function loadTrelloProjects(){
       preConWeeksFromToday:hasSched ? sched.preConWeeksFromToday : null,
       caWeeksFromToday:hasSched ? sched.caWeeksFromToday : null,
       gradientOffset:0, trelloSynced:true };
-    for(const category of ['zoning','permitting']){
+    for(const category of ['zoning','permitting','permitting2']){
       const card=entry[category];
       const stagesOut=[];
       if(card){
@@ -2585,9 +2641,10 @@ async function loadTrelloProjects(){
         if(!p.jurisdictionSet && card.jurisdiction){ p.jur=card.jurisdiction; p.jurisdictionSet=true; }
         if(!p.permitNumber && card.permitNumber) p.permitNumber=card.permitNumber;
         if(category==='zoning') p.zoningOwner=card.owner||null;
-        else { p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
+        else if(category==='permitting'){ p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
+        else { p.permit2Owner=card.owner||null; p.permit2Label=card.labelName||null; }
       }
-      p[category==='zoning'?'zoningStages':'permitStages']=stagesOut;
+      p[category==='zoning'?'zoningStages':category==='permitting'?'permitStages':'permit2Stages']=stagesOut;
     }
     projects.push(p);
   }
@@ -2610,10 +2667,10 @@ async function loadTrelloProjects(){
 function mergeStageState(freshP, oldP){
   const seeded=seedStageState(freshP);
   if(!oldP) return seeded;
-  const state={zoning:{}, permitting:{}, locked:oldP.stageState.locked};
-  ['zoning','permitting'].forEach(category=>{
+  const state={zoning:{}, permitting:{}, permitting2:{}, locked:oldP.stageState.locked};
+  ['zoning','permitting','permitting2'].forEach(category=>{
     STAGE_CATALOG[category].forEach(c=>{
-      const fresh=seeded[category][c.key], old=oldP.stageState[category][c.key];
+      const fresh=seeded[category][c.key], old=oldP.stageState[category] && oldP.stageState[category][c.key];
       if(!fresh && !old) return;
       state[category][c.key]=old
         ? {enabled:old.enabled, estWeeks:old.estWeeks, status:fresh?fresh.status:old.status, actualWeeks:fresh?fresh.actualWeeks:old.actualWeeks, ageWeeks:fresh?fresh.ageWeeks:old.ageWeeks, startDate:fresh?fresh.startDate:old.startDate, endDate:fresh?fresh.endDate:old.endDate}
@@ -2642,7 +2699,7 @@ function setSyncStatus(kind, text){
    card move can, and Byron expects that to show up in the Pipeline's
    Weekly Review without having to wait for the next sync. */
 async function detectTierChangeForProject(p){
-  const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
+  const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting').concat(deriveStages(p,'permitting2'));
   let tierLabel;
   if(isWhollyApproved(zoningStages, permitStages)){
     tierLabel='Approved';
@@ -2686,7 +2743,7 @@ async function detectTierChanges(){
 function stageChangeLines(p, priorSnapshot){
   if(!priorSnapshot || !priorSnapshot.stageState) return [];
   const lines=[];
-  ['zoning','permitting'].forEach(category=>{
+  ['zoning','permitting','permitting2'].forEach(category=>{
     STAGE_CATALOG[category].forEach(c=>{
       const old=priorSnapshot.stageState[category] && priorSnapshot.stageState[category][c.key];
       const cur=p.stageState[category] && p.stageState[category][c.key];
