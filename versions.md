@@ -11,9 +11,9 @@ Last updated: 2026-10-27
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1135 |
+| Project Pipeline | `project-pipeline.html` | v1173 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Project Basis | `project-basis.html` | v42 |
+| Levels of Development | `levels-of-development.html` | v56 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -25,7 +25,7 @@ Last updated: 2026-10-27
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v25 |
+| People Analyzer | `people-analyzer.html` | v26 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v6 |
 | FBA Matrix | `fba-matrix.html` | v4 |
@@ -36,8 +36,8 @@ Last updated: 2026-10-27
 | Team Members | `team-members.html` | v28 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v4 |
-| CORE System Map | `core-system-map.html` | v17 |
+| BW Tool Index | `bw-tool-index.html` | v7 |
+| CORE System Map | `core-system-map.html` | v18 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -52,6 +52,7 @@ Each HTML manual is built from the `.md` file of the same name. The manuals have
 | WIP Tracker Manual | `wip-tracker-manual.html` / `.md` |
 | Team Members Manual | `team-members-manual.html` / `.md` |
 | People Analyzer Manual | `people-analyzer-manual.html` / `.md` |
+| Levels of Development Manual | `levels-of-development-manual.html` / `.md` |
 
 ## Retired
 
@@ -67,7 +68,26 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-10** — Levels of Development v55 → v56: added an "Already assessed" line under the project picker on Assess, showing every respondent and a submission count (and a callout if you've already submitted yourself) without needing to open Raw Results or Analysis first.
+
+- **2026-11-10** — Levels of Development v54 → v55: expanded the Assess intro paragraph — review scope first, add notes where useful, skip dimensions with no insight, framed as a quick planning-anticipation pass rather than an exhaustive review.
+
+- **2026-11-10** — Levels of Development v53 → v54: added a short intro paragraph at the top of the Assess tab (what rating a dimension means, that it's an independent submission) and a one-line caption under Scope of Work explaining what it is and that its language comes from the signed Design Agreement or the working notes that will become it.
+- **2026-11-10** — Project Pipeline v1172 → v1173: renamed "Project Basis" to "Levels of Development" in display text (LOD pill tooltip, modal title/placeholder, document-pill label), matching the tool's own rename. The internal `pb` key and the ProjectBasisUrl SharePoint field are untouched.
+- **2026-11-10** — **File renamed**: `project-basis.html` → `levels-of-development.html`, `project-basis-manual.html`/`.md` → `levels-of-development-manual.html`/`.md`. The tool's display name had already been "Levels of Development" since v43; the file now matches. **Requires an Azure AD app-registration update** — the MSAL redirect URI changed from `.../tools/project-basis.html` to `.../tools/levels-of-development.html`; sign-in will fail until that's added in Azure. `project-basis.html` is left in place as a redirect stub (bounces to the new file) so old bookmarks and links don't 404 — not the live tool. BW Tool Index (v7) and CORE System Map (v18) updated to the new name/file/id.
+- **2026-11-10** — Levels of Development v51 → v52: manual no longer mentions the old "Project Basis" name or explains signing in (standard Microsoft-account auth). Help button moved from the admin cluster to the tab bar's far right edge, matching Pipeline's manual-btn placement.
+- **2026-11-10** — New: Levels of Development Manual (`project-basis-manual.html`/`.md`), matching the house manual template. Linked from the tool's header via a `?` help button next to the gear icon, same pattern as Pipeline/WIP Tracker. BW Tool Index bumped to v6 to list it.
+- **2026-11-10** — Levels of Development v50 → v51: added a `?` help-manual link in the header, next to the gear icon — same pattern every other tool with a manual already uses.
+- **2026-11-10** — Levels of Development v49 → v50: added a "Copy Link to This Project" button in Assessment Setup — the link carries ?project=<id> and auto-selects that project on open, so getting several people to assess the same project no longer means telling each one to find it by name themselves.
+- **2026-11-10** — Levels of Development v48 → v49: self-provisioning SharePoint columns (mirrors core-projects-manager.html's own setupColumns()/fixUrlColumns() pattern) — Target Investment now writes to a dedicated, auto-created TargetInvestmentDisplay text column instead of the apparently-never-real TargetInvestmentAmount; DesignScope gets upgraded to Enhanced rich text in place if it was provisioned as plain text, which is why formatting wasn't surviving saves. Also fixed the paste sanitizer to catch Word's actual bold/italic/underline encoding (inline style on a span, not semantic tags) — the previous version only handled semantic tags and missed Word's real format.
+- **2026-11-10** — Levels of Development v47 → v48: Scope of Work is now a rich-text editor (bold/italic/underline/bullets), not a plain textarea — pasting from Word/a DA keeps its formatting, sanitized down to a safe tag set so clipboard junk (mso- styles, fonts, colors) doesn't come along. Also fixed a real bug: saveScopeOfWork() was still writing to the nonexistent ScopeSummary field even after v46 switched reads to the real DesignScope field — likely why saves kept failing. Needs DesignScope to be an Enhanced-rich-text column for formatting to display correctly outside this tool.
+- **2026-11-10** — Levels of Development v46 → v47: Graph error toasts now show the real {error:{code,message}} from the response body instead of a bare status code, so a failed save says why. Idea Low/High retired (not used anymore); Target Investment collapses to one free-text field — single amount or a range, admin's wording — instead of three separate inputs.
+- **2026-11-10** — Levels of Development v45 → v46: fixed "Scope saved failed... Graph 400" — the field it was reading/writing (`ScopeSummary`) doesn't exist on CORE_Projects; switched to the real field, `DesignScope` (confirmed against core-projects-manager.html's own FIELDS schema). Added Target Investment editing (Admin-gated, same as Scope of Work) — Idea Low/High and Target Investment Amount now writable here, not just viewable.
+- **2026-11-10** — Levels of Development v44 → v45: pasted DA scope text no longer explodes into one bullet per wrapped line — Scope of Work now splits on blank lines into distinct items and merges single line breaks within an item back into flowing prose. Added a Target Investment field (reads Projects Manager's existing TargetInvestmentAmount/IdeaLow/IdeaHigh fields — single amount once committed, Idea Low–High range before that) next to Address/CA Value; read-only here since Projects Manager owns that data.
+- **2026-11-10** — Levels of Development v43 → v44: Scope of Work is now editable (Admin-gated, same toggle as block/dimension config) instead of read-only. Saving PATCHes the same CORE_Projects `ScopeSummary` field Projects Manager reads/writes — no separate copy — so a tool admin (Byron/Joey) can set up a project's scope before everyone else assesses it, without a trip to another tool.
+- **2026-11-10** — Project Basis renamed "Levels of Development" in the header (file stays `project-basis.html` — it already has a live URL), v42 → v43: subtitle updated from "Pre-DA Assessment Tool" to "Project Assessment Tool" since Assess's project filter now includes DA Signed projects alongside Lead, not just pre-DA ones — a project signed the same morning was previously invisible once it left Lead stage.
 - **2026-10-20** — Project Basis v41 → v42: sample data now self-heals against dimensions added via Admin mode (Presentation expectations, Sales Strategy, Quality, Timeline, Contract Scrutiny, Neighbor Relationship were showing blank since they didn't exist in the fixed default set). Added hand-written sample content for those six plus a generic fallback for anything added later, applied everywhere the sample project's data is read (Assess prefill, Raw Results, Analysis) — real-project data paths are untouched.
+- **2026-11-10** — People Analyzer v25 → v26: ratings display with the plain keyboard "-" everywhere (the typographic minus "−" was rendering wrongly). Imported ratings typed as en/em dashes or minus signs (Excel autocorrect) now read as "-" instead of dropping the value. **+/-** is off by default: a per-session switch in the Admin panel (and an "Allow the +/- rating" box when creating a session) turns it on, stored in a new `AllowPlusMinus` Yes/No column on `PA_Sessions`; the Evaluate form and the annual Final ratings follow it, and existing +/- ratings are kept.
 - **2026-11-03** — People Analyzer v24 → v25: Summaries renamed **Session Summary** and narrowed to one session at a time — it starts on "Pick a session…" (no "All Sessions", no "All" button; department buttons filter and clear on a second click), and a person shows only that session with a **Full review history ›** link. The cross-session **Trajectory** (and Download All Sessions) moves to the top of the person's **Review History**; the imported-reviews section leaves Session Summary.
 - **2026-11-03** — People Analyzer v23 → v24: tabs reordered to Evaluate · Summaries · Review History · Compensation. **Review History** is now each person's complete record — reviews done in People Analyzer (tagged In tool / Annual, with each scorer's ratings, status and an Open in Summaries link) alongside imported spreadsheets (tagged Imported), newest first. Review History sits above Add History on the tab. The section inside a person's Summaries view is renamed "Imported reviews".
 - **2026-11-03** — People Analyzer v22 → v23: every menu starts empty — Evaluate session (no longer auto-picked), Compensation Show, Review History Show and the Annual Review Scorers session each open on a "Pick…" prompt. Quick guide: "Two kinds of review" rewritten as two short lists instead of a table; the manual page now styles its tables.
