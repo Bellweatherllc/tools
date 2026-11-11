@@ -550,7 +550,7 @@ body.is-transitioning .section:not(.is-focus-outgoing){animation:hdrFadeIn 200ms
 .ms-overlay{position:absolute;top:0;left:0;right:0;pointer-events:none;z-index:4;}
 
 /* ── MILESTONE MARKER ── */
-.ms-tall{position:absolute;width:28px;cursor:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2213%22 height=%2218%22 viewBox=%220 0 13 18%22><path d=%22M1 1 L1 15 L4 12 L6 17 L8 16 L6 11 L10 11 Z%22 fill=%22%23111%22 stroke=%22white%22 stroke-width=%220.8%22 stroke-linejoin=%22round%22/></svg>') 1 1, auto;user-select:none;pointer-events:auto;border-radius:6px;}
+.ms-tall{position:absolute;width:28px;z-index:3;cursor:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2213%22 height=%2218%22 viewBox=%220 0 13 18%22><path d=%22M1 1 L1 15 L4 12 L6 17 L8 16 L6 11 L10 11 Z%22 fill=%22%23111%22 stroke=%22white%22 stroke-width=%220.8%22 stroke-linejoin=%22round%22/></svg>') 1 1, auto;user-select:none;pointer-events:auto;border-radius:6px;}
 .lanes-wrap.proj-collapsed .ms-tall{cursor:default;} /* pointer-events restored — collapsed mousedown guard handles click pass-through */
 .ms-tall.dragging{cursor:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2213%22 height=%2218%22 viewBox=%220 0 13 18%22><path d=%22M1 1 L1 15 L4 12 L6 17 L8 16 L6 11 L10 11 Z%22 fill=%22%23111%22 stroke=%22white%22 stroke-width=%220.8%22 stroke-linejoin=%22round%22/></svg>') 1 1, auto;z-index:50;filter:brightness(1.3);} /* v1021: no box-shadow — was adding unwanted visual width */
 .admin-mode .tl-ms-row{cursor:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2213%22 height=%2218%22 viewBox=%220 0 13 18%22><path d=%22M1 1 L1 15 L4 12 L6 17 L8 16 L6 11 L10 11 Z%22 fill=%22%23111%22 stroke=%22white%22 stroke-width=%220.8%22 stroke-linejoin=%22round%22/></svg>') 1 1, auto;}
@@ -794,10 +794,14 @@ body.admin-mode .fc-ms-row[data-capacity-section="design"]:not(.is-collapsed) .f
 
 /* ── TIME-OFF BLOCKS ── */
 .person-group-tl{position:relative;}
-.timeoff-overlay-cap{position:absolute;top:0;left:0;height:100%;pointer-events:none;z-index:50;overflow:visible;}
+/* v1175: was z-index:50, above everything in the row stack (phase bars, milestone/tier/
+   pencils-down dots all sit at z-index:3) — the band covered them and ate their clicks/
+   drags. Dropped below those so they're always visible and grabbable through it; the band
+   still catches clicks anywhere else on itself to open the time-off editor. */
+.timeoff-overlay-cap{position:absolute;top:0;left:0;height:100%;pointer-events:none;z-index:2;overflow:visible;}
 .timeoff-block{
   position:absolute;top:0;height:100%;z-index:1;
-  background:rgba(255,255,255,.8);border:1px solid rgba(40,40,40,.20);border-radius:3px;
+  background:rgba(255,255,255,.22);border:1px solid rgba(40,40,40,.20);border-radius:3px;
   cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center;transition:box-shadow .12s;
 }
 .timeoff-block:hover{box-shadow:0 2px 10px rgba(0,0,0,.18);}
@@ -3663,7 +3667,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1173';
+const CORE_VERSION = 'v1175';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5605,7 +5609,8 @@ function _pmWorkbookSvg(){
     +'<line x1="3.6" y1="13.2" x2="9.9" y2="13.2" stroke="#3a3a38" stroke-width="1.1" stroke-linecap="round"/>'
     +'</svg>';
 }
-function buildFcMsRow(proj, capacitySection){
+function buildFcMsRow(proj, capacitySection, opts){
+  opts=opts||{};
   const row=el('div','fc-ms-row');
   const rowH=proj.collapsed?BAND_H:C.laneH;
   row.style.height=rowH+'px';
@@ -5615,6 +5620,9 @@ function buildFcMsRow(proj, capacitySection){
   if(capacitySection) row.dataset.capacitySection=capacitySection;
   if(proj.collapsed) row.classList.add('is-collapsed');
   const rhdl=el('div','proj-reorder-hdl'); rhdl.dataset.reorderProj=proj.id; rhdl.innerHTML=reorderSvg();
+  // v1174: a two-designer project's secondary band drags Secondary Designer, not Designer —
+  // onDown reads this to pick which field a drag from THIS band reassigns.
+  if(opts.reorderField) rhdl.dataset.reorderField=opts.reorderField;
   // v1055: even spacing across the row's leading controls. Boxes are sized to their
   // glyphs and the gaps are set explicitly, rather than falling out of box padding
   // (which gave 10.5px after the handle and 18.5px before the badge).
@@ -7426,7 +7434,9 @@ function buildDesignSection(){
       const collapsed=DESIGN_COLLAPSED.has(person.id);
       if(!collapsed){
         const grp=el('div','person-group-tl'); grp.dataset.personId=person.id; grp.dataset.section='design';
-        const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer===person.id),'design');
+        // v1174: a project with a secondary designer gets a band in both designers' groups —
+        // same shared project object, so phase/milestone edits on either band mirror on the other.
+        const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&(p.designer===person.id||(p.secondaryDesigner&&p.secondaryDesigner===person.id))),'design');
         const topTlSpD=el('div',''); topTlSpD.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(topTlSpD);
         projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['design'],true,true,undefined,-8,null,[],DES_MS_HIDDEN.has(person.id))));
         // Ghost timeline rows matching FC ghost rows — design phases from slot, at reduced opacity
@@ -7441,7 +7451,9 @@ function buildDesignSection(){
         // v932: height:100% of the relative group — the DOM is the truth. The old
         // arithmetic (calcPersonGroupH) overshot when ghost slot rows were counted
         // at full lane height but rendered collapsed, skipped, or double-assigned.
-        ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:100%;pointer-events:none;z-index:10;`;
+        // v1175: was z-index:10, above phase bars and milestone/tier/pencils-down dots
+        // (all z-index:3) — covered them and ate their clicks. Dropped below.
+        ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:100%;pointer-events:none;z-index:2;`;
         appendTimeoffStrips(ov,person,'design');
         grp.appendChild(ov); tc.appendChild(grp);
       }
@@ -7485,9 +7497,14 @@ function buildDesignSection(){
     hdr.insertBefore(dhdl, hdr.firstChild);
     fc.appendChild(hdr);
     if(!DESIGN_COLLAPSED.has(person.id)){
-      const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.designer===person.id),'design');
+      // v1174: a project with a secondary designer gets a band in both designers' groups —
+      // same shared project object, so phase/milestone edits on either band mirror on the other.
+      const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&(p.designer===person.id||(p.secondaryDesigner&&p.secondaryDesigner===person.id))),'design');
       const fcTopSpD=el('div',''); fcTopSpD.style.height='4px'; fc.appendChild(fcTopSpD);
-      projs.forEach(proj=>{ fc.appendChild(buildFcMsRow(proj,'design')); });
+      projs.forEach(proj=>{
+        const _secBand=proj.designer!==person.id; // matched via secondaryDesigner, not designer
+        fc.appendChild(buildFcMsRow(proj,'design',_secBand?{reorderField:'secondaryDesigner'}:null));
+      });
       // Ghost rows: same visual pattern as Production ghost rows
       (PLANNING_PROJECTS||[]).filter(pp=>!pp.parked&&pp.ppStatus!=='lost'&&pp.proposedDesigner===person.id&&pp.slotId).forEach(pp=>{
         const slotProj=PROJECTS.find(p=>p.id===pp.slotId); if(!slotProj) return;
@@ -7730,7 +7747,8 @@ function buildProdSection(){
         const botTlSp=el('div',''); botTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;`;
         grp.appendChild(botTlSp);
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=pmId; ov.dataset.section='production';
-        ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:100%;pointer-events:none;z-index:10;`;
+        // v1175: was z-index:10, above phase bars/milestone dots (z-index:3) — see design's twin above.
+        ov.style.cssText=`position:absolute;top:0;left:0;width:${w2px(C.numWeeks)}px;height:100%;pointer-events:none;z-index:2;`;
         appendTimeoffStrips(ov,person,'production');
         grp.appendChild(ov); tl_els.push(grp);
       }
@@ -8196,13 +8214,18 @@ function calcTally(section,personId){
   const tally=new Array(C.numWeeks).fill(0);
   PROJECTS.forEach(proj=>{
     if(personId!==null){
-      if(section==='design'&&proj.designer!==personId)return;
+      if(section==='design'&&proj.designer!==personId&&!(proj.secondaryDesigner&&proj.secondaryDesigner===personId))return;
       if(section==='production'&&proj.productionPM!==personId)return;
     }
     if(!isVisible(proj)) return; // skip lost/lead — not shown in gantt, can't be zeroed
     const active=proj.status!=='paused';
     if(section==='design'){
-      proj.designLane.phases.forEach(ph=>{ if(active){ const wkly=designPhaseWeeklyHrs(ph,personId); for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w]; } });
+      // v1174: a project with two designers splits its hours in half between them —
+      // each designer's capacity tracking records half the total, trusting whichever
+      // of the two bands the hours were entered on (same shared phase object either way).
+      const _split=!!(proj.designer&&proj.secondaryDesigner&&proj.secondaryDesigner!==proj.designer);
+      const _share=_split?0.5:1;
+      proj.designLane.phases.forEach(ph=>{ if(active){ const wkly=designPhaseWeeklyHrs(ph,personId); for(let w=0;w<C.numWeeks;w++) if(wkly[w]>0) tally[w]+=wkly[w]*_share; } });
     } else {
       proj.productionLane.phases.forEach(ph=>{ if(active&&ph.hours>0&&ph.durWeeks>0){ for(let w=ph.startWeek;w<ph.startWeek+ph.durWeeks&&w<C.numWeeks;w++)tally[w]+=ph.hours; } });
     }
@@ -8562,17 +8585,20 @@ function initDrag(){
     if(rh){
       e.preventDefault();
       const projId=rh.dataset.reorderProj;
+      // v1174: a two-designer project's secondary band carries this so the drag reassigns
+      // Secondary Designer instead of Designer — undefined for every other row, same as before.
+      const reorderField=rh.dataset.reorderField||null;
       const msRow=rh.closest('.fc-ms-row')||rh.closest('[data-capacity-section]'), capSection=msRow?msRow.dataset.capacitySection:null;
       if(!capSection) return;
       // Reorder only works in grouped-PM mode; flat view has no person targets to drop onto
       if(capSection==='production'&&!PROD_SHOW_PMS) return;
       const proj=PROJECTS.find(p=>p.id===projId);
+      const _fld=reorderField||(capSection==='design'?'designer':capSection==='lc'?'lc1':'productionPM');
       // v928: non-admin drag is clamped to the project's current person — reorder only.
       // Cross-person moves and unassign stay admin-only. Unassigned projects have no
       // person to reorder within, so they remain admin-only too.
       let restrictPerson=null;
       if(!canEdit()){
-        const _fld=capSection==='design'?'designer':capSection==='lc'?'lc1':'productionPM';
         restrictPerson=proj?proj[_fld]:null;
         if(!restrictPerson) return;
       }
@@ -8581,7 +8607,7 @@ function initDrag(){
       document.body.appendChild(ghost);
       ghost.style.left=e.clientX+12+'px'; ghost.style.top=e.clientY-14+'px';
       document.body.classList.add('is-reordering');
-      DRAG={type:'projCapacityReorder',projId,ghost,startY:e.clientY,origIdx:PROJECTS.findIndex(p=>p.id===projId),capacitySection:capSection,restrictPerson};
+      DRAG={type:'projCapacityReorder',projId,ghost,startY:e.clientY,origIdx:PROJECTS.findIndex(p=>p.id===projId),capacitySection:capSection,restrictPerson,personField:reorderField};
       capture(rh,e.pointerId); return;
     }
 
@@ -9704,7 +9730,9 @@ function onUp(){
     // ── Drop diagnostic ──
     const _dropLabel=DRAG.targetPerson?personById(DRAG.targetPerson)?.label:'(null/unassigned)';
     if(proj&&DRAG.targetPerson!==undefined){
-      const personField=DRAG.capacitySection==='design'?'designer':DRAG.capacitySection==='lc'?'lc1':'productionPM';
+      // v1174: DRAG.personField carries 'secondaryDesigner' when the dragged band was a
+      // two-designer project's secondary band; otherwise the field is the same as always.
+      const personField=DRAG.personField||(DRAG.capacitySection==='design'?'designer':DRAG.capacitySection==='lc'?'lc1':'productionPM');
       const _reorderMoved=proj[personField]!==DRAG.targetPerson;
       if(_reorderMoved) _dragMoved=true; // person actually changed
       let _reorderPre=null;
@@ -10370,7 +10398,7 @@ function projectGanttPayload(proj){
 // Write person display name to SP column when a project is assigned/unassigned
 function _patchPersonNameToSP(proj, personField, personId) {
   if (!proj._spItemId) return;
-  const spField = personField==='designer'?'DesignerName':personField==='lc1'?'LogisticsCoordinator1':personField==='lc2'?'LogisticsCoordinator2':'PMName';
+  const spField = personField==='designer'?'DesignerName':personField==='secondaryDesigner'?'SecondaryDesigner':personField==='lc1'?'LogisticsCoordinator1':personField==='lc2'?'LogisticsCoordinator2':'PMName';
   const person = personId ? personById(personId) : null;
   // Use fullLabel (full name) not label (first name only)
   const displayName = person ? (person.fullLabel || person.label) : '';
@@ -14965,7 +14993,12 @@ function _placeWeekPopup(cellCX,cellTop,cellBottom){
 // all-designers cross-section both read from here.
 function _designerWeekRows(designerId,wk){
   const rows=[];
-  PROJECTS.filter(p=>isVisible(p)&&p.designer===designerId).forEach(proj=>{
+  PROJECTS.filter(p=>isVisible(p)&&(p.designer===designerId||(p.secondaryDesigner&&p.secondaryDesigner===designerId))).forEach(proj=>{
+    // v1174: a project with two designers splits its hours — flag it so the row can
+    // name the other designer, and halve the hours shown/summed for this popup.
+    const _split=!!(proj.designer&&proj.secondaryDesigner&&proj.secondaryDesigner!==proj.designer);
+    const _otherId=_split?(proj.designer===designerId?proj.secondaryDesigner:proj.designer):null;
+    const _otherLabel=_otherId?(personById(_otherId)?.label||''):'';
     proj.designLane.phases.forEach(ph=>{
       if(!ph.durWeeks||ph.startWeek==null) return;
       if(wk<ph.startWeek||wk>=ph.startWeek+ph.durWeeks) return;
@@ -14976,7 +15009,7 @@ function _designerWeekRows(designerId,wk){
       if(wk>=t3.week) tierLabel='T3';
       else if(wk>=t2.week) tierLabel='T2';
       else if(wk>=t1.week) tierLabel='T1';
-      const weekHours=designPhaseWeeklyHrs(ph,designerId)[wk]||0;
+      const weekHours=(designPhaseWeeklyHrs(ph,designerId)[wk]||0)*(_split?0.5:1);
       const events=[];
       const daMs=proj.milestones.find(m=>m.name==='DA');
       if(daMs&&daMs.week===wk) events.push('DA');
@@ -14988,7 +15021,7 @@ function _designerWeekRows(designerId,wk){
       if(c1.week===wk) events.push('C1');
       if(c2.week===wk) events.push('C2');
       if(proj.pencilsDown?.week===wk) events.push('PD');
-      rows.push({name:proj.name, hours:weekHours, phase:ph.name, da:daMs, ca:caMs, tierLabel,
+      rows.push({name:proj.name+(_split&&_otherLabel?' (split w/ '+_otherLabel+')':''), hours:weekHours, phase:ph.name, da:daMs, ca:caMs, tierLabel,
         pdWeek:proj.pencilsDown?.week??null, events});
     });
   });
@@ -17313,6 +17346,14 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1175', date: '2026-11-11',
+    entries:['Time-off bands (Design and Production Gantt) no longer sit above milestones, tier dots, pencils-down, or phase bars — they were stacked above everything in the row (z-index 10) and caught every click, making it hard to even see, let alone grab and drag, a milestone that fell under a time-off date range. Dropped below those elements (z-index 2) so they’re always visible and grabbable straight through the band; clicking the band anywhere else still opens the time-off editor as before. Also made the band itself much more transparent (white fill 80% → 22% opacity) so it reads as a tint, not a cover.'],
+  },
+  {
+    version: 'v1174', date: '2026-11-11',
+    entries:['Design screen: a project with a Secondary Designer (set in Projects Manager) now gets a band in both designers’ groups — same shared project, so editing phases/milestones/hours on either band updates the other automatically. Whatever hours you enter is split in half for capacity tracking — each designer’s weekly tally records half. The designer-week popup breakdown notes the split (e.g. “Smith House (split w/ Jane) — 80h”) so a half-number doesn’t look like a typo. Both bands are independently drag-reassignable in the Pipeline — dragging the primary band changes Designer, dragging the secondary band changes Secondary Designer.'],
+  },
   {
     version: 'v1173', date: '2026-11-10',
     entries:['Renamed "Project Basis" to "Levels of Development" throughout the display text (LOD pill tooltip, modal title/placeholder, document-pill label) — the tool itself was renamed to levels-of-development.html; only display text changed, the internal `pb` key and the ProjectBasisUrl SharePoint field stay as-is.'],
