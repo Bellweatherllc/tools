@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v65</span>
+      <span class="header-version">v66</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -1041,7 +1041,6 @@ async function fetchProjects() {
     populateAssessSelects();
     populateResultsSelect();
     fetchConfig();
-    fetchMyCompletedProjects();
   } catch (err) {
     setConnected(false);
     showToast('Failed to load projects: ' + err.message);
@@ -1281,31 +1280,13 @@ document.addEventListener('click', closeAllRatePopups);
 
 const ASSESSABLE_STAGES = ['Lead', 'DA Signed'];
 
-// Projects the signed-in user has already submitted an assessment for — shown
-// as a ✅ prefix in the Assess dropdown (see populateAssessSelects()). Plain
-// text/CSS inside a native <option> can't be colored or bolded by the page at
-// all (that popup is OS-rendered chrome); an emoji glyph is the one marker
-// that renders in color regardless, so it's the only way to actually get a
-// green checkmark in there.
-let myCompletedProjectIds = new Set();
-async function fetchMyCompletedProjects(){
-  if(!currentUser.name) return;
-  try {
-    const url = `${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$filter=fields/AssessorName eq '${encodeURIComponent(currentUser.name)}' and fields/IsDraft eq false&$top=500`;
-    const data = await graphFetch(url, {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
-    myCompletedProjectIds = new Set((data.value||[]).map(item => item.fields.ProjectId).filter(Boolean));
-  } catch(e) { /* informational only — dropdown just won't show the checkmark yet */ }
-  populateAssessSelects();
-}
-
 function populateAssessSelects(){
   const filtered = spProjects
     .filter(p => p.id !== MOCK_PROJECT_ID)
     .filter(p => !p.status || ASSESSABLE_STAGES.some(s=>s.toLowerCase()===p.status.toLowerCase()));
   const opts = filtered.map(p => {
     const label = p.shortDesc ? `${esc(p.name)} — ${esc(p.shortDesc)}` : esc(p.name);
-    const prefix = myCompletedProjectIds.has(p.id) ? '✅ ' : '';
-    return `<option value="${p.id}">${prefix}${label}</option>`;
+    return `<option value="${p.id}">${label}</option>`;
   }).join('');
   const noProjects = !spLoaded
     ? '<option value="" disabled>Sign in to load projects</option>'
@@ -1759,13 +1740,17 @@ async function submitAssessment(){
       // already submitted, just re-confirms it in place) — never a second record.
       await graphPatch(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`, { fields });
     } else {
-      await graphPost(SP_CONFIG.assessmentsUrl, { fields });
+      const result = await graphPost(SP_CONFIG.assessmentsUrl, { fields });
+      currentDraftId = result.id; // keep targeting this same row for any further edits/autosave
     }
-    currentDraftId = null;
-    currentRowIsSubmitted = false;
-    myCompletedProjectIds.add(projectId);
-    showToast(wasAlreadySubmitted ? `Submission updated — ${currentUser.name}` : `Submitted — ${currentUser.name}`);
-    clearAssessForm();
+    // Deliberately does NOT clear the form or deselect the project — clicking
+    // Submit/Update shouldn't make the page look like your work just vanished.
+    // It stays exactly as you left it; only the confirmation and labels change.
+    currentRowIsSubmitted = true;
+    updateSubmitClearLabels();
+    setAutosaveStatus('saved', 'Saved · ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+    showToast(wasAlreadySubmitted ? 'Updated and submitted.' : 'Submitted.');
+    renderAlreadyAssessed(projectId); // refreshes the "you submitted this on..." line with the new timestamp
   } catch(e) {
     showToast('Submission failed — ' + e.message);
   }
@@ -1789,10 +1774,10 @@ function clearAssessForm(){
   updateSubmitClearLabels();
   setAutosaveStatus('off');
   currentProjectId = '';
+  document.getElementById('assess-project').value='';
   document.getElementById('project-meta-panel').style.display='none';
   const alreadyEl = document.getElementById('already-assessed'); if(alreadyEl) alreadyEl.style.display='none';
   clearRatingsAndNotes();
-  populateAssessSelects(); // rebuilds the dropdown so a just-submitted project picks up its ✅
 }
 
 // ══════════════════════════════════════════════════ DRAG ═══════
