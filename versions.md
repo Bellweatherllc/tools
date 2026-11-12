@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1173 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v57 |
+| Levels of Development | `levels-of-development.html` | v58 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -67,6 +67,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 ## Log
 
 Newest first. One line per delivery.
+
+- **2026-11-10** — Levels of Development v57 → v58: Risk Assessment's guide text gets its own intro/outro context (delay/cost/friction framing, distinct from Levels of Development's effort-focused one), reviewed as a prototype first. This updates the DEFAULT_BLOCKS fallback only — Byron's live config has its own customized guide text, so applying it there is a manual paste via Admin mode.
 
 - **2026-11-10** — Levels of Development v56 → v57: fixed real submissions not showing up in Raw Results/Analysis after being submitted — a narrowed `$select=id,fields/ProjectId,fields/SubmittedDate` query (inconsistent with the `$select=id,fields` pattern used everywhere else against this same list) was silently coming back with both fields undefined, so every real submission got dropped and only the sample project ever appeared. The assessment itself was saving correctly the whole time — this was a read-side bug. A genuine fetch failure here now also shows an error toast instead of failing silently.
 
