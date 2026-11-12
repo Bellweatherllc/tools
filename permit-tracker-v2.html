@@ -305,7 +305,9 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .settings-panel button:disabled,
 .settings-panel input:disabled{opacity:.35;cursor:not-allowed;pointer-events:none;}
 .shift-readout{min-width:44px;text-align:center;font-size:11px;font-weight:700;color:var(--ink);font-family:var(--font-tt);white-space:nowrap;}
-.settings-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+/* Zoning, Permit A, Permit B — Permit B is always visible (useful for
+   what-if/planning per Byron) even though it starts off/unchecked. */
+.settings-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
 /* Per Byron: zoning's and permitting's own control areas should read as
    two distinct, separated regions, not one shared block. */
 .settings-col{border:1px solid var(--line);border-radius:7px;padding:10px 12px;}
@@ -533,7 +535,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v171';
+const CORE_VERSION = 'v174';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -701,7 +703,7 @@ function barRow(stages, y, barH, groupColor, insetFirst){
   }).join('');
 }
 
-function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffset, phaseWeeks, zoningStartWeek, permitStartWeek, caWeeksFromToday, phaseIWeeksFromToday, phaseIIWeeksFromToday, preConWeeksFromToday }){
+function renderCombinedTrack({ project, zoningStages, permitStages, permit2Stages, gradientOffset, phaseWeeks, zoningStartWeek, permitStartWeek, permit2StartWeek, caWeeksFromToday, phaseIWeeksFromToday, phaseIIWeeksFromToday, preConWeeksFromToday }){
   const TODAY=now();
   // Each track gets its own independent local sequence starting at week 0.
   // Previously permit's cursorStart was zoning.endWeek — baking "permitting
@@ -779,22 +781,42 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   const permitOffset = permitStartWeek!=null
     ? Math.max(0, Math.min(phaseIIIStart-1, permitStartWeek))
     : phaseIIStart+zoning.endWeek;
+  // Permit B's own start — independently shiftable now too, per Byron:
+  // "Permit B needs the ability to shift the stages." Its DEFAULT (no
+  // manual override) chains right after Permit A's own projected end,
+  // keeping the original "one after another, in sequence" default;
+  // shifting it is an explicit choice, same relationship permitStartWeek
+  // already has to zoning's own end.
+  const permit2HasStages = (permit2Stages||[]).length>0;
+  const permit2 = buildLane(permit2Stages||[], 0);
+  const permit2Offset = permit2StartWeek!=null
+    ? Math.max(0, Math.min(phaseIIIStart-1, permit2StartWeek))
+    : permitOffset+permit.endWeek;
   // Each track's real absolute end (its own start plus its own total
   // length) — now meaningful independently of the other track, since
   // neither's position is baked into the other's anymore. The project's
   // real completion point is whichever track finishes LAST, not always
   // permitting's — a project where zoning was pushed out wide (independent
   // start, long duration) could just as easily be the long pole now that
-  // the two can overlap.
+  // the two can overlap. Permit B only contributes when it actually has
+  // stages — an unused Permit B (the common case) must never drag this
+  // forward just because its own (irrelevant) default offset exists.
   const zoningAbsEnd = zoningOffset+zoning.endWeek;
-  const permitAbsEnd = permitOffset+permit.endWeek;
+  const permitAbsEnd = permit2HasStages
+    ? Math.max(permitOffset+permit.endWeek, permit2Offset+permit2.endWeek)
+    : permitOffset+permit.endWeek;
   const approvedWeek = Math.max(zoningAbsEnd, permitAbsEnd);
   // Without a Pipeline anchor: todayWeek is still derived from whichever
   // track has an active stage (old behavior, unchanged) — except neither
   // track being active no longer produces NaN; it parks NOW at the
-  // project's own completion point instead.
-  const todayWeek = hasPipelineAnchor ? pipelineTodayWeek
+  // project's own completion point instead. Permit B is checked first when
+  // it has stages: being later in the sequence, it's the more likely home
+  // for whatever is currently active.
+  const permitTodayWeek = permit2HasStages && permit2.todayWeek!=null ? (permit2Offset+permit2.todayWeek)
     : permit.todayWeek!=null ? (permitOffset+permit.todayWeek)
+    : null;
+  const todayWeek = hasPipelineAnchor ? pipelineTodayWeek
+    : permitTodayWeek!=null ? permitTodayWeek
     : zoning.todayWeek!=null ? (zoningOffset+zoning.todayWeek)
     : approvedWeek;
 
@@ -854,6 +876,13 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // decides the lane's shape just below.
   const shiftedZoning=zoning.positioned.map(s=>({...s,start:s.start+zoningOffset}));
   const shiftedPermit=permit.positioned.map(s=>({...s,start:s.start+permitOffset}));
+  const shiftedPermit2=permit2HasStages ? permit2.positioned.map(s=>({...s,start:s.start+permit2Offset})) : [];
+  // Permit A and Permit B still render on the SAME single bar row — the
+  // two-track system (zoning row, permitting row) doesn't change, per
+  // Byron — just combined into one array for drawing/measuring purposes
+  // now that Permit B's own position can differ from "immediately after
+  // Permit A ends".
+  const shiftedPermitAll=shiftedPermit.concat(shiftedPermit2);
 
   // VH is a RESULT of CFG (topPad + ruler + lane + 1 + band + bottomPad),
   // not an independent input — compressing topPad/bottomPad shrinks the
@@ -865,8 +894,17 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // finishes, then permitting starts) keeps today's single full-height row
   // exactly as it was; the gantt only flexes taller/thinner when the two
   // tracks genuinely overlap, per Byron: "smart enough to flex as needed."
-  const zoningSpan = shiftedZoning.length ? [shiftedZoning[0].start, shiftedZoning[shiftedZoning.length-1].start+shiftedZoning[shiftedZoning.length-1].width] : null;
-  const permitSpan = shiftedPermit.length ? [shiftedPermit[0].start, shiftedPermit[shiftedPermit.length-1].start+shiftedPermit[shiftedPermit.length-1].width] : null;
+  // min/max across every bar, not just the first/last array index — Permit
+  // B can now be shifted to start before Permit A ends, so the array's own
+  // order no longer guarantees the leftmost/rightmost element.
+  function spanOf(arr){
+    if(!arr.length) return null;
+    let lo=Infinity, hi=-Infinity;
+    arr.forEach(s=>{ lo=Math.min(lo,s.start); hi=Math.max(hi,s.start+s.width); });
+    return [lo,hi];
+  }
+  const zoningSpan = spanOf(shiftedZoning);
+  const permitSpan = spanOf(shiftedPermitAll);
   const tracksOverlap = !!(zoningSpan && permitSpan && zoningSpan[0]<permitSpan[1] && permitSpan[0]<zoningSpan[1]);
 
   let laneH, zoningBarY, zoningBarH, permitBarY, permitBarH, zoningLabelY, permitLabelY;
@@ -932,7 +970,7 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     `<text x="${phaseIIRectX+phaseIIRectW-4}" y="${cornerLabelY}" text-anchor="end" font-size="9" font-weight="700" fill="#fff" fill-opacity=".85" font-family="${FONT}">${PHASE_II_WEEKS} wks</text>`;
 
   const sequenceBars=barRow(shiftedZoning, zoningBarY, zoningBarH, 'var(--zoning-gray)', true)
-    + barRow(shiftedPermit, permitBarY, permitBarH, 'var(--permit-gray)', false);
+    + barRow(shiftedPermitAll, permitBarY, permitBarH, 'var(--permit-gray)', false);
 
   // A track is "approved" exactly when every one of its (enabled) stages
   // shows done — for a Trello-synced project that's only true once the
@@ -950,7 +988,10 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // active, which still gets the live gantt plus this quieter "— approved"
   // text label on whichever track has already finished.
   const zoningApproved=shiftedZoning.length>0 && shiftedZoning.every(s=>s.status==='done');
-  const permitApproved=shiftedPermit.length>0 && shiftedPermit.every(s=>s.status==='done');
+  const permitApproved=shiftedPermitAll.length>0 && shiftedPermitAll.every(s=>s.status==='done');
+  // Leftmost bar's start, across Permit A AND Permit B together — not just
+  // index 0 — since Permit B can now be shifted to sit before Permit A.
+  const permitLeftStart = shiftedPermitAll.length ? Math.min(...shiftedPermitAll.map(s=>s.start)) : null;
   let categoryLabels;
   if(tracksOverlap){
     // Each row gets its own label line directly beneath it — a single
@@ -958,7 +999,7 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     // the two bars with no room to breathe once they're stacked this close.
     categoryLabels=
       (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${zoningLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning${zoningApproved?' — approved':''}</text>`:'')+
-      (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${permitLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
+      (shiftedPermitAll.length?`<text x="${permitLeftStart*PX_PER_WEEK+4}" y="${permitLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
   }else{
     // vertically centered within the strip below the stage bars (same
     // centering treatment as CITY/RESIDENTIAL gets in the header), instead
@@ -966,7 +1007,7 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
     const catLabelY=zoningBarY+zoningBarH+(laneBottom-(zoningBarY+zoningBarH))/2+3.5;
     categoryLabels=
       (shiftedZoning.length?`<text x="${shiftedZoning[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning${zoningApproved?' — approved':''}</text>`:'')+
-      (shiftedPermit.length?`<text x="${shiftedPermit[0].start*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
+      (shiftedPermitAll.length?`<text x="${permitLeftStart*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
   }
 
   const MARKER_RISE=CFG.markerRise, PILL_RX=5;
@@ -1026,7 +1067,11 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // A synced project can have a zoning card and no permit card yet (or vice
   // versa) — fall back to whichever track actually has bars, rather than
   // assuming permitting is always populated.
-  const pLast=shiftedPermit.length ? shiftedPermit[shiftedPermit.length-1]
+  // Reduce to the bar with the furthest-right edge, not just the last array
+  // index — Permit B can now end before OR after Permit A, so array order
+  // no longer guarantees which one is really "last".
+  const pLast=shiftedPermitAll.length
+    ? shiftedPermitAll.reduce((best,s)=> (s.start+s.width > best.start+best.width) ? s : best)
     : (shiftedZoning.length ? shiftedZoning[shiftedZoning.length-1] : {start:permitOffset, width:0});
   const pLastBarLeft=pLast.start*PX_PER_WEEK;
   const pLastBarRight=pLastBarLeft+Math.max(1,pLast.width*PX_PER_WEEK-BAR_GAP);
@@ -1050,8 +1095,8 @@ function renderCombinedTrack({ project, zoningStages, permitStages, gradientOffs
   // whichever row pLast's bar actually lives in — permit's row normally,
   // zoning's row in the permit-less fallback above — so this still lands
   // correctly now that the two rows can sit at different y positions.
-  const pLastRowY=shiftedPermit.length ? permitBarY : zoningBarY;
-  const pLastRowH=shiftedPermit.length ? permitBarH : zoningBarH;
+  const pLastRowY=shiftedPermitAll.length ? permitBarY : zoningBarY;
+  const pLastRowH=shiftedPermitAll.length ? permitBarH : zoningBarH;
   const edgeY=pLastRowY+pLastRowH+1.5;
   const submitTrim=5;
   const gradIdSubmit='submitedge-'+project.replace(/[^a-z0-9]+/gi,'-');
@@ -1208,6 +1253,19 @@ const STAGE_CATALOG={
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
     {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estWeeks:4},
   ],
+  // A second permitting card, off by default — only present at all once a
+  // project actually has a PERMIT2 card synced from Trello (see
+  // loadTrelloProjects). Per Byron: two permits on one project happen in
+  // SEQUENCE, not in parallel, so this never gets its own lane or its own
+  // prep-start shift control — its derived stages are simply appended onto
+  // the END of the existing permitting lane's sequence (see the
+  // permitStages concat in renderCards/detectTierChangeForProject), the
+  // same single "permitting" row just running longer.
+  permitting2:[
+    {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
+    {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
+    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submitted', estWeeks:4},
+  ],
 };
 function pidOf(name){ return name.replace(/[^a-z0-9]+/gi,'-').toLowerCase(); }
 
@@ -1222,10 +1280,10 @@ function classificationText(p){
 }
 
 function seedStageState(p){
-  const state={zoning:{}, permitting:{}, locked:true};
+  const state={zoning:{}, permitting:{}, permitting2:{}, locked:true};
   function seed(category, sourceStages){
     const claimed=new Set();
-    sourceStages.forEach(s=>{
+    (sourceStages||[]).forEach(s=>{
       const match=STAGE_CATALOG[category].find(c=>c.fullName===s.name && !claimed.has(c.key));
       if(!match) return;
       claimed.add(match.key);
@@ -1234,6 +1292,7 @@ function seedStageState(p){
   }
   seed('zoning', p.zoningStages);
   seed('permitting', p.permitStages);
+  seed('permitting2', p.permit2Stages);
   return state;
 }
 
@@ -1270,7 +1329,18 @@ const PROJECTS=[
       {name:'With Arch/Eng', estWeeks:4, status:'done', actualWeeks:4},
       {name:'Submitted / In Review', estWeeks:4, status:'active', ageWeeks:3},
     ],
-    note:'Zoning fully done. Permitting is sitting In Review, 3 weeks in against a 4-week estimate.' },
+    // Second permit (off by default elsewhere — demo'd here on purpose):
+    // a demolition permit that runs in SEQUENCE right after this one, per
+    // Byron, not its own lane — its stages append onto the end of the same
+    // permitting bar row once this permit's own Submitted/In Review closes
+    // out. All 'future' since the real demolition card hasn't started yet.
+    permit2Stages:[
+      {name:'Prep', estWeeks:2, status:'future'},
+      {name:'With Arch/Eng', estWeeks:4, status:'future'},
+      {name:'Submitted / In Review', estWeeks:4, status:'future'},
+    ],
+    permit2Label:'Demolition',
+    note:'Zoning fully done. Permitting is sitting In Review, 3 weeks in against a 4-week estimate. A second (demolition) permit is queued to follow it.' },
 
   { proj:'Castor Ave Shop', jur:'City', commercial:false, owner:'Ashley', address:'88 Castor Ave, Philadelphia PA', trelloCardId:null, permitOwner:'Ashley', archEngOwner:null, zoningOwner:'Marcus', phaseWeeks:{I:6,II:18,III:6},
     zoningStages:[
@@ -1478,11 +1548,24 @@ function defaultPermitStartFor(p){
 // week of Phase II, but not after. [It] should be permitted to move beyond
 // [it]." A track's start can now land anywhere across Phase I AND Phase II,
 // just not into Pre-Con.
+//
+// Always clamps its OWN raw input before using it as a base to shift
+// from — not just the final write. A track's chained default (zoning's own
+// end for Permit A; Permit A's own end, which can run long, for Permit B)
+// can itself land past this ceiling on some real projects; reading that
+// unclamped value as "current" meant the very FIRST click computed
+// current+delta, THEN clamped the result down to the ceiling — a multi-week
+// jump on one click, the same bug Byron already caught once for Permit A's
+// own start. Clamping here first means every click, including the first,
+// moves exactly one real week from wherever the control is actually
+// sitting (at or inside the ceiling), never from a position beyond it.
+function clampTrackStart(p, rawWeek){
+  return Math.max(0, Math.min(phaseIIIStartFor(p)-1, rawWeek));
+}
 function shiftZoningStart(pid, delta){
   const p=findProject(pid);
-  const maxStart=phaseIIIStartFor(p)-1;
-  const current=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIIStartFor(p);
-  p.zoningStartWeek=Math.max(0, Math.min(maxStart, current+delta));
+  const current=clampTrackStart(p, p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIIStartFor(p));
+  p.zoningStartWeek=clampTrackStart(p, current+delta);
   renderCards();
   persistAndCheck(p);
 }
@@ -1496,9 +1579,28 @@ function shiftZoningStart(pid, delta){
 // in the same weeks.
 function shiftPermitStart(pid, delta){
   const p=findProject(pid);
-  const maxStart=phaseIIIStartFor(p)-1;
-  const current=p.permitStartWeek!=null ? p.permitStartWeek : defaultPermitStartFor(p);
-  p.permitStartWeek=Math.max(0, Math.min(maxStart, current+delta));
+  const current=clampTrackStart(p, p.permitStartWeek!=null ? p.permitStartWeek : defaultPermitStartFor(p));
+  p.permitStartWeek=clampTrackStart(p, current+delta);
+  renderCards();
+  persistAndCheck(p);
+}
+// Permit B's untouched default chains right after Permit A's own natural
+// length — same relationship defaultPermitStartFor has to zoning's end —
+// so a project that has never touched Permit B's start still reads as
+// "right after Permit A" the first time the column is shown.
+function defaultPermit2StartFor(p){
+  return defaultPermitStartFor(p)+buildLane(deriveStages(p,'permitting'), 0).endWeek;
+}
+// Permit B's own independent start — mirrors shiftPermitStart exactly. Per
+// Byron: "Permit B needs the ability to shift the stages." Permit B still
+// always renders on the SAME bar row as Permit A (see renderCombinedTrack's
+// shiftedPermitAll) — this just lets its own start move away from the
+// "immediately after Permit A" default, same one-week-increment behavior
+// as the other two shift controls.
+function shiftPermit2Start(pid, delta){
+  const p=findProject(pid);
+  const current=clampTrackStart(p, p.permit2StartWeek!=null ? p.permit2StartWeek : defaultPermit2StartFor(p));
+  p.permit2StartWeek=clampTrackStart(p, current+delta);
   renderCards();
   persistAndCheck(p);
 }
@@ -1547,8 +1649,23 @@ function renderSettingsPanel(p){
   const pid=pidOf(p.proj), locked=p.stageState.locked, dis=locked?'disabled':'';
   const gradOffset=p.gradientOffset||0;
   const phaseIIStart=phaseIIStartFor(p);
-  const zoningStartWeek=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIIStart;
-  const permitStartWeek=p.permitStartWeek!=null ? p.permitStartWeek : defaultPermitStartFor(p);
+  // Clamped the same way shiftZoningStart/shiftPermitStart/shiftPermit2Start
+  // clamp their own "current" base — so the readout always shows exactly
+  // where a click would actually shift FROM. An unclamped chained default
+  // (Permit B's especially, chained after Permit A's own possibly-long
+  // real duration) could otherwise display a position beyond where the
+  // track is allowed to start at all.
+  const zoningStartWeek=clampTrackStart(p, p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIIStart);
+  const permitStartWeek=clampTrackStart(p, p.permitStartWeek!=null ? p.permitStartWeek : defaultPermitStartFor(p));
+  // Permit B's column is always visible (per Byron: useful for what-if/
+  // planning even on a project with no real 2nd Trello card) — but OFF by
+  // default, since every stage in it seeds enabled:false until a card
+  // actually syncs one in, or Byron manually checks a box here to model a
+  // hypothetical. It gets its own prep-start shift control too, same as
+  // Zoning and Permit A — default chains right after Permit A's own end,
+  // but can be nudged independently from there.
+  const permit2StartWeek=clampTrackStart(p, p.permit2StartWeek!=null ? p.permit2StartWeek : defaultPermit2StartFor(p));
+  const permit2Heading = p.permit2Label ? 'Permit B — '+esc(p.permit2Label) : 'Permit B';
   function stageRow(category, c){
     const st=p.stageState[category][c.key]||{enabled:false, estWeeks:c.estWeeks};
     return `<div class="stage-row">
@@ -1591,7 +1708,7 @@ function renderSettingsPanel(p){
         <div class="stage-rows">${STAGE_CATALOG.zoning.map(c=>stageRow('zoning',c)).join('')}</div>
       </div>
       <div class="settings-col">
-        <h4>Permitting stages</h4>
+        <h4>Permit A</h4>
         <div class="shift-row">
           <span class="shift-row-icon" data-tip="Permitting prep start">${PREP_START_ICON_SVG}</span>
           <div class="shift-controls">
@@ -1603,6 +1720,20 @@ function renderSettingsPanel(p){
           </div>
         </div>
         <div class="stage-rows">${STAGE_CATALOG.permitting.map(c=>stageRow('permitting',c)).join('')}</div>
+      </div>
+      <div class="settings-col">
+        <h4>${permit2Heading}</h4>
+        <div class="shift-row">
+          <span class="shift-row-icon" data-tip="Permit B prep start">${PREP_START_ICON_SVG}</span>
+          <div class="shift-controls">
+            <span class="shift-btn-cluster">
+              <button type="button" class="shift-btn" ${dis} onclick="shiftPermit2Start('${pid}',-1)" aria-label="Start Permit B one week earlier">&minus;</button>
+              <button type="button" class="shift-btn" ${dis} onclick="shiftPermit2Start('${pid}',1)" aria-label="Start Permit B one week later">&plus;</button>
+            </span>
+            <span class="shift-readout">${esc(trackStartLabel(permit2StartWeek, phaseIIStart))}</span>
+          </div>
+        </div>
+        <div class="stage-rows">${STAGE_CATALOG.permitting2.map(c=>stageRow('permitting2',c)).join('')}</div>
       </div>
     </div>
   </div>`;
@@ -1884,8 +2015,28 @@ function visibleProjects(){
 }
 function renderCards(){
   const list=visibleProjects();
-  document.getElementById('cards').innerHTML = list.length ? list.map(p=>{
-    const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
+  const cardsEl=document.getElementById('cards');
+  // Every stage toggle/shift/lock edit calls renderCards() again, which
+  // rebuilds the whole #cards innerHTML from scratch — a fresh .row-mid
+  // element starts at scrollLeft:0, which on a long timeline snapped the
+  // view back to the left margin on every single adjustment. Per Byron:
+  // "don't reset the view with every stage adjustment." Captured by pid
+  // (not array index) so it survives even if the visible project order
+  // changes between renders.
+  const scrollPositions={};
+  cardsEl.querySelectorAll('.row-mid[data-pid]').forEach(el=>{ scrollPositions[el.dataset.pid]=el.scrollLeft; });
+  cardsEl.innerHTML = list.length ? list.map(p=>{
+    // A second permit (p.permit2Stages, off by default — only present once
+    // Trello actually syncs a PERMIT2 card for this project, or Byron
+    // manually enables it for a what-if) runs in SEQUENCE after Permit A,
+    // per Byron — same single bar row, not its own lane. isWhollyApproved
+    // and renderApprovedSummary just need the full combined stage list
+    // (order doesn't matter for a "done" check or a flat record display);
+    // renderCombinedTrack gets Permit A's and Permit B's stages/start
+    // SEPARATELY below, since Permit B's own start is independently
+    // shiftable now and needs its own offset math.
+    const zoningStages=deriveStages(p,'zoning'), permitAStages=deriveStages(p,'permitting'), permit2Stages=deriveStages(p,'permitting2');
+    const permitStages=permitAStages.concat(permit2Stages);
     const pid=pidOf(p.proj);
     const wholeApproved = isWhollyApproved(zoningStages, permitStages);
     // Permanent column between the row's main content and the stat-band —
@@ -1910,19 +2061,19 @@ function renderCards(){
       // project's tier — "APPROVED" replacing ON TRACK/AT RISK/OFF TRACK —
       // instead of a separate header pill, per Byron.
       appRowHtml = `<div class="app-row">
-        <div class="row-mid row-mid-approved">${renderApprovedSummary(zoningStages, permitStages)}</div>
+        <div class="row-mid row-mid-approved" data-pid="${pid}">${renderApprovedSummary(zoningStages, permitStages)}</div>
         ${permitBandHtml}
         <div class="stat-band tier-on">
           <div class="sb-lbl">APPROVED</div>
         </div>
       </div>`;
     }else{
-      const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, permitStartWeek:p.permitStartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
+      const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages:permitAStages, permit2Stages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, permitStartWeek:p.permitStartWeek, permit2StartWeek:p.permit2StartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
       const wks=Math.round(r.weekDelta);
       const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
       const tierLbl=r.tier.label.split(' ').map(esc).join('<br>');
       appRowHtml = `<div class="app-row">
-        <div class="row-mid">${r.html}</div>
+        <div class="row-mid" data-pid="${pid}">${r.html}</div>
         ${permitBandHtml}
         <div class="stat-band ${TIER_CLS[r.tier.label]||''}">
           <div class="sb-lbl">${tierLbl}</div>
@@ -1954,6 +2105,10 @@ function renderCards(){
       ${renderSettingsPanel(p)}
     </div>`;
   }).join('') : '<div class="empty-note">No projects match this filter.</div>';
+  cardsEl.querySelectorAll('.row-mid[data-pid]').forEach(el=>{
+    const saved=scrollPositions[el.dataset.pid];
+    if(saved) el.scrollLeft=saved;
+  });
   renderOwnerTabs();
   renderJumpPicker();
   wireScrollShadows();
@@ -2037,6 +2192,7 @@ async function savePermitSettings(p){
     gradientOffset: p.gradientOffset||0,
     zoningStartWeek: p.zoningStartWeek!=null ? p.zoningStartWeek : null,
     permitStartWeek: p.permitStartWeek!=null ? p.permitStartWeek : null,
+    permit2StartWeek: p.permit2StartWeek!=null ? p.permit2StartWeek : null,
   }));
 }
 
@@ -2397,12 +2553,15 @@ function trelloCfValue(card,defs,label){
   return '';
 }
 // "ZONING PREP" -> {category:'zoning', suffix:'prep'}; "PERMIT ARCH/ENG" ->
-// {category:'permitting', suffix:'archeng'}. A list outside this track-
-// prefixed naming (there shouldn't be any on the tracking board) is
-// ignored — not part of the tracker.
+// {category:'permitting', suffix:'archeng'}; "PERMIT2 ARCH/ENG" ->
+// {category:'permitting2', suffix:'archeng'} — a second, optional permit
+// card per project (off by default: only matters for a project that
+// actually has one), per Byron. permit2 is checked BEFORE permit below,
+// since "permit2prep" (normalized) also starts with the substring "permit".
 function parseTrelloListName(name){
   const n=trelloNormName(name);
   if(n.indexOf('zoning')===0) return {category:'zoning', suffix:n.slice('zoning'.length)};
+  if(n.indexOf('permit2')===0) return {category:'permitting2', suffix:n.slice('permit2'.length)};
   if(n.indexOf('permit')===0) return {category:'permitting', suffix:n.slice('permit'.length)};
   return null;
 }
@@ -2411,6 +2570,7 @@ function parseTrelloListName(name){
 const TRELLO_SUFFIX_KEY = {
   zoning: {prep:'prep', survey:'survey', submit:'submitted-review'},
   permitting: {prep:'prep', archeng:'archeng', submitted:'submitted-review'},
+  permitting2: {prep:'prep', archeng:'archeng', submitted:'submitted-review'},
 };
 function trelloStageRank(category, suffix){
   if(suffix==='approved') return STAGE_CATALOG[category].length;
@@ -2433,7 +2593,7 @@ async function loadTrelloProjects(){
   const b=_trelloCfg.boardId;
   const [lists, cards, defs, actions] = await Promise.all([
     tGet('boards/'+b+'/lists', {fields:'name'}),
-    tGet('boards/'+b+'/cards', {fields:'name,idList,dateLastActivity,shortLink', customFieldItems:'true', members:'true', member_fields:'fullName'}),
+    tGet('boards/'+b+'/cards', {fields:'name,idList,dateLastActivity,shortLink,labels', customFieldItems:'true', members:'true', member_fields:'fullName'}),
     tGet('boards/'+b+'/customFields', {}),
     // v1's own comment still applies: Trello only serves the last 200
     // board actions — a done stage whose transition predates that window
@@ -2466,10 +2626,10 @@ async function loadTrelloProjects(){
     }
   });
 
-  const byProject={}; // trelloNormName(project) -> {name, zoning:cardInfo|null, permitting:cardInfo|null}
+  const byProject={}; // trelloNormName(project) -> {name, zoning:cardInfo|null, permitting:cardInfo|null, permitting2:cardInfo|null}
   cards.forEach(c=>{
     const meta=listMeta[c.idList];
-    if(!meta) return; // not one of the 8 tracked lists
+    if(!meta) return; // not one of the tracked lists (8, or 12 on a board that also runs PERMIT2 lists)
     const projectName=String(trelloCfValue(c,defs,'project')||'').trim();
     if(!projectName) return;
     const key=trelloNormName(projectName);
@@ -2481,6 +2641,12 @@ async function loadTrelloProjects(){
       archEngOwner:String(trelloCfValue(c,defs,'arch eng owner')||trelloCfValue(c,defs,'eng owner')||'').trim(),
       jurisdiction:String(trelloCfValue(c,defs,'jurisdiction')||'').trim(),
       permitNumber:String(trelloCfValue(c,defs,'permit number')||'').trim(),
+      // The card's first Trello label, read-only display text for a second
+      // permit card ("Demolition", "Construction", ...) — per Byron: "the
+      // card would carry the label internally." Not used to decide which
+      // track a card belongs to (the list name's PERMIT2 prefix does that);
+      // just what to call it in the settings panel.
+      labelName:(c.labels&&c.labels[0]&&c.labels[0].name)||'',
       // SubmittedDate is NEVER required — Byron doesn't want to hand-enter
       // it. It's read only as a free, optional backfill signal for the
       // Submit stage below, same tier as the Trello history reconstruction.
@@ -2551,7 +2717,7 @@ async function loadTrelloProjects(){
       preConWeeksFromToday:hasSched ? sched.preConWeeksFromToday : null,
       caWeeksFromToday:hasSched ? sched.caWeeksFromToday : null,
       gradientOffset:0, trelloSynced:true };
-    for(const category of ['zoning','permitting']){
+    for(const category of ['zoning','permitting','permitting2']){
       const card=entry[category];
       const stagesOut=[];
       if(card){
@@ -2585,9 +2751,10 @@ async function loadTrelloProjects(){
         if(!p.jurisdictionSet && card.jurisdiction){ p.jur=card.jurisdiction; p.jurisdictionSet=true; }
         if(!p.permitNumber && card.permitNumber) p.permitNumber=card.permitNumber;
         if(category==='zoning') p.zoningOwner=card.owner||null;
-        else { p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
+        else if(category==='permitting'){ p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
+        else { p.permit2Owner=card.owner||null; p.permit2Label=card.labelName||null; }
       }
-      p[category==='zoning'?'zoningStages':'permitStages']=stagesOut;
+      p[category==='zoning'?'zoningStages':category==='permitting'?'permitStages':'permit2Stages']=stagesOut;
     }
     projects.push(p);
   }
@@ -2610,10 +2777,10 @@ async function loadTrelloProjects(){
 function mergeStageState(freshP, oldP){
   const seeded=seedStageState(freshP);
   if(!oldP) return seeded;
-  const state={zoning:{}, permitting:{}, locked:oldP.stageState.locked};
-  ['zoning','permitting'].forEach(category=>{
+  const state={zoning:{}, permitting:{}, permitting2:{}, locked:oldP.stageState.locked};
+  ['zoning','permitting','permitting2'].forEach(category=>{
     STAGE_CATALOG[category].forEach(c=>{
-      const fresh=seeded[category][c.key], old=oldP.stageState[category][c.key];
+      const fresh=seeded[category][c.key], old=oldP.stageState[category] && oldP.stageState[category][c.key];
       if(!fresh && !old) return;
       state[category][c.key]=old
         ? {enabled:old.enabled, estWeeks:old.estWeeks, status:fresh?fresh.status:old.status, actualWeeks:fresh?fresh.actualWeeks:old.actualWeeks, ageWeeks:fresh?fresh.ageWeeks:old.ageWeeks, startDate:fresh?fresh.startDate:old.startDate, endDate:fresh?fresh.endDate:old.endDate}
@@ -2642,12 +2809,13 @@ function setSyncStatus(kind, text){
    card move can, and Byron expects that to show up in the Pipeline's
    Weekly Review without having to wait for the next sync. */
 async function detectTierChangeForProject(p){
-  const zoningStages=deriveStages(p,'zoning'), permitStages=deriveStages(p,'permitting');
+  const zoningStages=deriveStages(p,'zoning'), permitAStages=deriveStages(p,'permitting'), permit2Stages=deriveStages(p,'permitting2');
+  const permitStages=permitAStages.concat(permit2Stages);
   let tierLabel;
   if(isWhollyApproved(zoningStages, permitStages)){
     tierLabel='Approved';
   }else{
-    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, permitStartWeek:p.permitStartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
+    const r=renderCombinedTrack({project:p.proj, zoningStages, permitStages:permitAStages, permit2Stages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, permitStartWeek:p.permitStartWeek, permit2StartWeek:p.permit2StartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
     tierLabel=r.tier.label;
   }
   const cfgKey='permit_tier:'+p.proj;
@@ -2686,7 +2854,7 @@ async function detectTierChanges(){
 function stageChangeLines(p, priorSnapshot){
   if(!priorSnapshot || !priorSnapshot.stageState) return [];
   const lines=[];
-  ['zoning','permitting'].forEach(category=>{
+  ['zoning','permitting','permitting2'].forEach(category=>{
     STAGE_CATALOG[category].forEach(c=>{
       const old=priorSnapshot.stageState[category] && priorSnapshot.stageState[category][c.key];
       const cur=p.stageState[category] && p.stageState[category][c.key];
@@ -2740,7 +2908,7 @@ async function syncTrelloAndRender(){
         // on the next sync — same stage-change log as a manual settings
         // edit, just attributed to the sync itself rather than a person.
         logStageChanges(p, old, 'System').catch(e=>console.warn('[permit activity stage]', e));
-        if(old){ p.gradientOffset=old.gradientOffset||0; if(old.zoningStartWeek!=null) p.zoningStartWeek=old.zoningStartWeek; if(old.permitStartWeek!=null) p.permitStartWeek=old.permitStartWeek; }
+        if(old){ p.gradientOffset=old.gradientOffset||0; if(old.zoningStartWeek!=null) p.zoningStartWeek=old.zoningStartWeek; if(old.permitStartWeek!=null) p.permitStartWeek=old.permitStartWeek; if(old.permit2StartWeek!=null) p.permit2StartWeek=old.permit2StartWeek; }
         // Trello is authoritative for comments on a synced project — a
         // full refresh (not an append) so a comment posted through this
         // tool (which also posts straight to Trello) doesn't end up
