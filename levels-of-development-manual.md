@@ -81,6 +81,8 @@ They can still get there manually: sign in, go to Assess, and pick the project f
 
 For each dimension, click the empty circle to open a small popup with **1 / 2 / 3** — pick the one that fits, using the guide text above each section as a reference. Add a note alongside any rating where there's something worth flagging ("client is undecided on selections," "setback variance likely," etc.) — notes are what make Raw Results and Analysis actually useful instead of just a grid of numbers.
 
+Changed your mind about a rating you already gave — want to skip it after all? Click the circle again and pick the dash (**–**) option alongside 1/2/3; that puts it back to unrated, same as a dimension you never touched.
+
 **Open Notes** at the bottom is for anything that doesn't fit a specific dimension — a general concern, a pattern from a similar past project, something that needs to be named before the project moves forward.
 
 Click **Submit Assessment** when done (this reads **Update Assessment** instead if you're revising something you already submitted — see below).

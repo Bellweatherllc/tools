@@ -169,6 +169,8 @@
   .rate-opt.opt-1{background:var(--rate-1);border:1.5px solid rgba(0,0,0,0.11);color:var(--rate-1-ink);}
   .rate-opt.opt-2{background:var(--rate-2);}
   .rate-opt.opt-3{background:var(--rate-3);}
+  .rate-opt.opt-clear{background:var(--white);border:1.5px dashed var(--cloud);color:var(--silver);font-size:20px;font-weight:700;margin-left:4px;}
+  .rate-opt.opt-clear:hover{border-color:var(--steel);color:var(--steel);}
   .dimension-row.rate-style{grid-template-columns:72px 200px 1fr;}
   .guide-num-badge{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;color:#fff;font-weight:800;font-size:11px;font-style:normal;vertical-align:middle;margin-right:6px;flex-shrink:0;}
   .guide-num-badge.gn-1{background:var(--rate-1);color:var(--rate-1-ink);box-shadow:inset 0 0 0 1px rgba(0,0,0,0.11);}
@@ -352,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v63</span>
+      <span class="header-version">v64</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -391,7 +393,7 @@
         </div>
         <div style="flex-shrink:0;padding-bottom:1px">
           <label class="form-label">Submitting as</label>
-          <div id="assessor-display" style="font-size:13px;color:var(--navy);padding:10px 12px;background:var(--snow);border-radius:6px;border:1.5px solid var(--cloud);white-space:nowrap;min-width:180px">Connecting…</div>
+          <div id="assessor-display" style="font-size:13px;font-weight:600;color:var(--navy);padding:10px 0;white-space:nowrap">Connecting…</div>
         </div>
       </div>
       <div id="project-meta-panel" style="display:none;margin-top:4px;padding:16px;background:var(--snow);border-radius:6px;border:1px solid var(--cloud)">
@@ -1166,6 +1168,7 @@ function buildRateControl(blockId, dimId){
       <button type="button" class="rate-opt opt-1" onclick="pickRating(event,'${blockId}','${dimId}','low')">1</button>
       <button type="button" class="rate-opt opt-2" onclick="pickRating(event,'${blockId}','${dimId}','med')">2</button>
       <button type="button" class="rate-opt opt-3" onclick="pickRating(event,'${blockId}','${dimId}','high')">3</button>
+      <button type="button" class="rate-opt opt-clear" data-tip="Skip this dimension" onclick="clearRating(event,'${blockId}','${dimId}')">–</button>
     </div>
   </div>`;
 }
@@ -1227,8 +1230,12 @@ document.getElementById('add-block-modal').addEventListener('click',e=>{if(e.tar
 
 // ══════════════════════════════════════════════════ SCORING ════
 function setScore(btn,blockId,dimId){
+  // Clicking the already-selected value again clears it — same "skip this
+  // dimension" escape hatch the 1/2/3 popup's dash option gives the other
+  // scale type, just without a dedicated extra button.
+  const alreadySelected = btn.classList.contains('sel-'+btn.dataset.val);
   document.querySelector(`.lod-group[data-block="${blockId}"][data-dim="${dimId}"]`).querySelectorAll('.lod-btn').forEach(b=>b.className='lod-btn');
-  btn.classList.add('sel-'+btn.dataset.val);
+  if(!alreadySelected) btn.classList.add('sel-'+btn.dataset.val);
   scheduleAutosave();
 }
 
@@ -1254,6 +1261,18 @@ function pickRating(e,blockId,dimId,val){
   closeAllRatePopups();
   // Called directly (not relied on via bubbling) because e.stopPropagation() above
   // would otherwise swallow it before it reached the delegated listener below.
+  scheduleAutosave();
+}
+// Backs out of an already-picked rating — a dimension someone rated, then
+// decided on reflection they don't actually have insight on. Puts the button
+// back to its original unset state, same as a dimension never touched.
+function clearRating(e,blockId,dimId){
+  e.stopPropagation();
+  const btn=document.getElementById(`ratebtn-${blockId}-${dimId}`);
+  btn.className='rate-btn rate-unset';
+  btn.removeAttribute('data-val');
+  btn.textContent='–';
+  closeAllRatePopups();
   scheduleAutosave();
 }
 document.addEventListener('click', closeAllRatePopups);
