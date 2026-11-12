@@ -352,7 +352,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v61</span>
+      <span class="header-version">v62</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -565,10 +565,40 @@ function saveBlocks(blocks) {
 }
 function save(patch) { if (patch.blocks !== undefined) saveBlocks(patch.blocks); }
 
+// PB_Config should only ever hold one row. Nothing enforced that: if an admin
+// edit ever saved (POSTed a first row) before fetchConfig()'s own read had
+// resolved — a real race, since fetchConfig() only runs after sign-in finishes
+// fetching projects — a second row could get created. After that, a plain
+// $top=1 read has no guaranteed ordering (this repo has hit unreliable
+// $orderby on Graph list-item system fields before — see core_roadmap.html —
+// so we don't lean on that either) and could keep returning the OLD row
+// forever, silently orphaning every real edit made to the newer one. This is
+// almost certainly why a guide-text update (or any admin edit) can look like
+// it saved but never actually shows up again. resolveConfigItem() fetches
+// however many rows exist, sorts client-side by lastModifiedDateTime to find
+// the real one, and quietly deletes the rest so the list self-heals to one.
+async function resolveConfigItem() {
+  const data = await graphFetch(SP_CONFIG.configUrl + '?$expand=fields&$select=id,fields,lastModifiedDateTime&$top=50');
+  const items = data.value || [];
+  if (!items.length) return null;
+  items.sort((a, b) => new Date(b.lastModifiedDateTime) - new Date(a.lastModifiedDateTime));
+  if (items.length > 1) {
+    items.slice(1).forEach(stray => graphDelete(`${SP_CONFIG.configUrl}/${stray.id}`).catch(()=>{}));
+  }
+  return items[0];
+}
+
 async function pushConfigToSP(blocks) {
   if (!graphToken) return;
   const body = { fields: { ConfigData: JSON.stringify(blocks) } };
   try {
+    if (!_pbConfigItemId) {
+      // Don't assume no row exists yet just because this session hasn't seen
+      // one — re-check first, so a save that races ahead of fetchConfig()
+      // patches the real row instead of creating a duplicate.
+      const existing = await resolveConfigItem();
+      if (existing) _pbConfigItemId = existing.id;
+    }
     if (_pbConfigItemId) {
       await graphPatch(SP_CONFIG.configUrl + '/' + _pbConfigItemId, body);
     } else {
@@ -580,9 +610,8 @@ async function pushConfigToSP(blocks) {
 
 async function fetchConfig() {
   try {
-    const data = await graphFetch(SP_CONFIG.configUrl + '?$expand=fields&$select=id,fields&$top=1');
-    if (data.value && data.value.length > 0) {
-      const item = data.value[0];
+    const item = await resolveConfigItem();
+    if (item) {
       _pbConfigItemId = item.id;
       if (item.fields.ConfigData) {
         _blocks = JSON.parse(item.fields.ConfigData);
@@ -1232,7 +1261,9 @@ document.addEventListener('click', closeAllRatePopups);
 const ASSESSABLE_STAGES = ['Lead', 'DA Signed'];
 
 function populateAssessSelects(){
-  const filtered = spProjects.filter(p => !p.status || ASSESSABLE_STAGES.some(s=>s.toLowerCase()===p.status.toLowerCase()));
+  const filtered = spProjects
+    .filter(p => p.id !== MOCK_PROJECT_ID)
+    .filter(p => !p.status || ASSESSABLE_STAGES.some(s=>s.toLowerCase()===p.status.toLowerCase()));
   const opts = filtered.map(p => {
     const label = p.shortDesc ? `${esc(p.name)} — ${esc(p.shortDesc)}` : esc(p.name);
     return `<option value="${p.id}">${label}</option>`;
@@ -1318,7 +1349,7 @@ async function renderAlreadyAssessed(projectId){
   let html = `<b style="color:var(--navy)">Already assessed:</b> ${names} · ${respondents.length} submission${respondents.length===1?'':'s'} so far`;
   if(mine){
     myAssessmentCache = { projectId, ...mine };
-    html += `<div style="color:var(--red);font-weight:600;margin-top:2px">You already submitted this${mine.submittedDate ? ' on '+esc(mine.submittedDate) : ''}. <button type="button" onclick="editSubmission()" style="background:none;border:none;padding:0;font:inherit;font-weight:700;color:var(--red);text-decoration:underline;cursor:pointer">Edit your submission</button></div>`;
+    html += `<div style="color:var(--navy);font-weight:600;margin-top:2px">You already submitted this${mine.submittedDate ? ' on '+esc(mine.submittedDate) : ''}. <button type="button" onclick="editSubmission()" style="background:none;border:none;padding:0;font:inherit;font-weight:700;color:var(--red);text-decoration:underline;cursor:pointer">Edit your submission</button></div>`;
   } else {
     myAssessmentCache = null;
   }
@@ -1814,9 +1845,8 @@ async function populateProjectsWithResults(el){
       });
     } catch(e){ showToast('Could not load submitted assessments — ' + e.message); }
   }
-  latest[MOCK_PROJECT_ID] = latest[MOCK_PROJECT_ID] || '9999-12-31';
   const withResults=spProjects
-    .filter(p=>latest[p.id])
+    .filter(p=>p.id !== MOCK_PROJECT_ID && latest[p.id])
     .sort((a,b)=>(latest[b.id]||'')>(latest[a.id]||'')?1:-1);
   if(!withResults.length){
     el.innerHTML='<option value="">No assessed projects yet</option>';

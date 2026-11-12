@@ -119,16 +119,7 @@ The same data, interpreted:
 - **Design Timeline** and **Production Timeline** guidance — Fast-Track / Standard / Extended ranges, with the one matching the composite score highlighted.
 - **Key Conclusions** — a short library of standing implications (duration, deadline risk, cost exposure, scope-deviation risk) tagged by which departments they're relevant to.
 
-## Part V — The sample project
-
-**Sample: The Hartwell Residence** always appears in the project list, fully filled in with four example assessors. It's there on purpose, for two reasons:
-
-- So you can see what a complete set of results looks like without waiting for real data.
-- So you can click around and try things — rate dimensions, write notes, edit Scope of Work — without worrying about breaking anything.
-
-**Nothing you do to the sample project is saved.** Every action on it shows a toast confirming that. Use it freely to learn the tool or demo it to someone else.
-
-## Part VI — Everyday questions
+## Part V — Everyday questions
 
 **I changed something and it still looks old.** This is almost always the browser serving a cached copy of the page. Hard-refresh (Ctrl+Shift+R / Cmd+Shift+R), or add `?v=<version number shown in the header>` to the end of the URL to force a fresh load.
 
