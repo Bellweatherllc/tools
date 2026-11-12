@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v64</span>
+      <span class="header-version">v65</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -655,6 +655,7 @@ const SP_CONFIG = {
   projectsUrl:    'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/items?$expand=fields&$select=id,fields&$top=500',
   projectsItemUrl:'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/items',
   columnsUrl:     'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Projects/columns',
+  assessmentsColumnsUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Assessments/columns',
   configUrl:      'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Config/items',
   assessmentsUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Assessments/items',
   teamMembersUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_TeamMembers/items'
@@ -1040,6 +1041,7 @@ async function fetchProjects() {
     populateAssessSelects();
     populateResultsSelect();
     fetchConfig();
+    fetchMyCompletedProjects();
   } catch (err) {
     setConnected(false);
     showToast('Failed to load projects: ' + err.message);
@@ -1279,13 +1281,31 @@ document.addEventListener('click', closeAllRatePopups);
 
 const ASSESSABLE_STAGES = ['Lead', 'DA Signed'];
 
+// Projects the signed-in user has already submitted an assessment for — shown
+// as a ✅ prefix in the Assess dropdown (see populateAssessSelects()). Plain
+// text/CSS inside a native <option> can't be colored or bolded by the page at
+// all (that popup is OS-rendered chrome); an emoji glyph is the one marker
+// that renders in color regardless, so it's the only way to actually get a
+// green checkmark in there.
+let myCompletedProjectIds = new Set();
+async function fetchMyCompletedProjects(){
+  if(!currentUser.name) return;
+  try {
+    const url = `${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$filter=fields/AssessorName eq '${encodeURIComponent(currentUser.name)}' and fields/IsDraft eq false&$top=500`;
+    const data = await graphFetch(url, {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
+    myCompletedProjectIds = new Set((data.value||[]).map(item => item.fields.ProjectId).filter(Boolean));
+  } catch(e) { /* informational only — dropdown just won't show the checkmark yet */ }
+  populateAssessSelects();
+}
+
 function populateAssessSelects(){
   const filtered = spProjects
     .filter(p => p.id !== MOCK_PROJECT_ID)
     .filter(p => !p.status || ASSESSABLE_STAGES.some(s=>s.toLowerCase()===p.status.toLowerCase()));
   const opts = filtered.map(p => {
     const label = p.shortDesc ? `${esc(p.name)} — ${esc(p.shortDesc)}` : esc(p.name);
-    return `<option value="${p.id}">${label}</option>`;
+    const prefix = myCompletedProjectIds.has(p.id) ? '✅ ' : '';
+    return `<option value="${p.id}">${prefix}${label}</option>`;
   }).join('');
   const noProjects = !spLoaded
     ? '<option value="" disabled>Sign in to load projects</option>'
@@ -1377,15 +1397,15 @@ async function renderAlreadyAssessed(projectId){
 // to upgrade DesignScope to rich text if it was provisioned as plain multiline text
 // (which would explain saves succeeding but formatting not surviving).
 let _columnsEnsured = {};
-async function ensureColumn(name, displayName, def){
+async function ensureColumn(name, displayName, def, columnsUrl = SP_CONFIG.columnsUrl){
   if(_columnsEnsured[name]) return;
   try {
-    const data = await graphFetch(`${SP_CONFIG.columnsUrl}?$select=id,name,text`);
+    const data = await graphFetch(`${columnsUrl}?$select=id,name,text`);
     const col = (data.value || []).find(c => c.name === name);
     if(!col){
-      await graphPost(SP_CONFIG.columnsUrl, { name, displayName, ...def });
+      await graphPost(columnsUrl, { name, displayName, ...def });
     } else if(def.text && def.text.richText && !col.text?.richText){
-      await graphPatch(`${SP_CONFIG.columnsUrl}/${col.id}`, { text: def.text });
+      await graphPatch(`${columnsUrl}/${col.id}`, { text: def.text });
     }
   } catch(e){ /* best effort — if this truly fails, the save attempt right after surfaces the real error */ }
   _columnsEnsured[name] = true;
@@ -1678,7 +1698,7 @@ async function autosaveDraft(){
     SubmittedDate: new Date().toISOString(), Scores: JSON.stringify(scores), OpenNotes: openNotes
   };
   try {
-    await ensureColumn('IsDraft', 'Is Draft', { boolean: {} });
+    await ensureColumn('IsDraft', 'Is Draft', { boolean: {} }, SP_CONFIG.assessmentsColumnsUrl);
     if(currentDraftId){
       await graphPatch(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`, { fields });
     } else {
@@ -1733,6 +1753,7 @@ async function submitAssessment(){
   };
   const wasAlreadySubmitted = currentRowIsSubmitted;
   try {
+    await ensureColumn('IsDraft', 'Is Draft', { boolean: {} }, SP_CONFIG.assessmentsColumnsUrl);
     if(currentDraftId){
       // Flips the same row autosave was already keeping current (or, if it was
       // already submitted, just re-confirms it in place) — never a second record.
@@ -1742,6 +1763,7 @@ async function submitAssessment(){
     }
     currentDraftId = null;
     currentRowIsSubmitted = false;
+    myCompletedProjectIds.add(projectId);
     showToast(wasAlreadySubmitted ? `Submission updated — ${currentUser.name}` : `Submitted — ${currentUser.name}`);
     clearAssessForm();
   } catch(e) {
@@ -1766,10 +1788,11 @@ function clearAssessForm(){
   currentRowIsSubmitted = false;
   updateSubmitClearLabels();
   setAutosaveStatus('off');
-  document.getElementById('assess-project').value='';
+  currentProjectId = '';
   document.getElementById('project-meta-panel').style.display='none';
   const alreadyEl = document.getElementById('already-assessed'); if(alreadyEl) alreadyEl.style.display='none';
   clearRatingsAndNotes();
+  populateAssessSelects(); // rebuilds the dropdown so a just-submitted project picks up its ✅
 }
 
 // ══════════════════════════════════════════════════ DRAG ═══════

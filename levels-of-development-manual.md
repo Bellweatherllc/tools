@@ -77,6 +77,8 @@ Because each person signs in with their own account, their name and department a
 
 They can still get there manually: sign in, go to Assess, and pick the project from the dropdown by name. The dropdown lists every project in **Lead** or **DA Signed** stage. If a project was signed that same morning and doesn't show up, it's almost certainly a caching issue — tell them to hard-refresh (Ctrl+Shift+R / Cmd+Shift+R) or add `?v=<current version number>` to the end of the URL.
 
+A project you've already submitted an assessment for shows a ✅ next to its name in that same dropdown, so you can tell at a glance what you still need to get to.
+
 ### Submitting an assessment
 
 For each dimension, click the empty circle to open a small popup with **1 / 2 / 3** — pick the one that fits, using the guide text above each section as a reference. Add a note alongside any rating where there's something worth flagging ("client is undecided on selections," "setback variance likely," etc.) — notes are what make Raw Results and Analysis actually useful instead of just a grid of numbers.
