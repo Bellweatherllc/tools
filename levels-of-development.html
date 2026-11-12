@@ -272,6 +272,16 @@
   details > summary::-webkit-details-marker { display: none; }
   .toast{position:fixed;bottom:24px;right:24px;background:var(--navy);color:white;padding:12px 20px;border-radius:var(--radius);font-size:13px;font-weight:500;box-shadow:var(--shadow-lg);transform:translateY(80px);opacity:0;transition:all 0.3s;z-index:9998;}
   .toast.show{transform:translateY(0);opacity:1;}
+  /* Stays visible regardless of scroll position — while working through a
+     long dimension list, the Submit button (and its inline draft status)
+     can be far off-screen for most of the session. */
+  .autosave-badge{position:fixed;bottom:24px;left:24px;background:var(--white);border:1.5px solid var(--cloud);color:var(--steel);padding:8px 14px;border-radius:20px;font-size:12px;font-weight:600;box-shadow:var(--shadow-lg);display:none;align-items:center;gap:7px;z-index:150;}
+  .autosave-badge.visible{display:flex;}
+  .autosave-dot{width:7px;height:7px;border-radius:50%;background:var(--silver);flex-shrink:0;}
+  .autosave-badge.saving .autosave-dot{background:var(--amber);animation:autosave-pulse 1s infinite;}
+  .autosave-badge.saved .autosave-dot{background:var(--green);}
+  .autosave-badge.error .autosave-dot{background:var(--red);}
+  @keyframes autosave-pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
 
   /* ── Add block modal ── */
   .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:500;align-items:center;justify-content:center;}
@@ -342,7 +352,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v59</span>
+      <span class="header-version">v60</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -363,7 +373,7 @@
 
   <!-- ASSESS -->
   <div id="tab-assess">
-    <p style="font-size:13.5px;color:var(--steel);max-width:720px;line-height:1.6;margin:0 0 18px">Review the project's scope below, then rate its complexity, one dimension at a time, on a 1 (straightforward) to 3 (complex) scale. Add a note wherever it's useful or necessary — skip a dimension entirely if you don't have any insight on it. This is meant to be quick: a fast way to surface insights and get ahead of planning needs, not an exhaustive review. Submit your own independent read; everyone else assessing this project is doing the same, and the results come together in Raw Results and Analysis.</p>
+    <p style="font-size:13.5px;color:var(--steel);max-width:720px;line-height:1.6;margin:0 0 18px">Review the project's scope below, then rate its complexity, one dimension at a time, on a 1 (straightforward) to 3 (complex) scale. Add a note wherever it's useful or necessary — skip a dimension entirely if you don't have any insight on it. This is meant to be quick: a fast way to surface insights and get ahead of planning needs, not an exhaustive review. Submit your own independent read; everyone else assessing this project is doing the same, and the results come together in Raw Results and Analysis. Your work autosaves as you go — the floating "Autosave on" badge in the corner confirms it — so you can close this and pick up right where you left off, from any device. After submitting, you can still revise your answers: reselect the project and use "Edit your submission."</p>
     <div class="card">
       <div class="card-header">
         <div class="card-title">Assessment Setup</div>
@@ -419,8 +429,8 @@
       <textarea id="open-notes" class="dim-note" rows="5" placeholder="Anything not captured above — concerns, patterns from similar projects, flags that need to be named before this project moves forward..."></textarea>
     </div>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:36px">
-      <button class="btn btn-success" onclick="submitAssessment()">Submit Assessment</button>
-      <button class="btn btn-secondary" onclick="clearAssessForm()">Clear Form</button>
+      <button id="submit-assess-btn" class="btn btn-success" onclick="submitAssessment()">Submit Assessment</button>
+      <button id="clear-assess-btn" class="btn btn-secondary" onclick="clearAssessForm()">Clear Form</button>
       <span id="draft-status" style="font-size:12px;color:var(--silver)"></span>
     </div>
   </div>
@@ -502,6 +512,7 @@
 
 </div>
 <div id="toast" class="toast"></div>
+<div id="autosave-badge" class="autosave-badge"><span class="autosave-dot"></span><span id="autosave-badge-text">Autosave on</span></div>
 
 <script>
 // ══════════════════════════════════════════════════ DEFAULTS ═══
@@ -896,12 +907,6 @@ async function graphDelete(url) {
   if (!resp.ok) throw new Error(await graphErrorMessage(resp));
 }
 
-async function graphDelete(url) {
-  if (!graphToken) graphToken = await getToken();
-  const resp = await fetch(url, { method:'DELETE', headers:{ Authorization:`Bearer ${graphToken}` } });
-  if (!resp.ok && resp.status !== 204) throw new Error(`Graph DELETE ${resp.status}`);
-}
-
 // Shared by Results and Summary so both read the exact same records.
 async function fetchAssessmentsForProject(pid){
   if(pid===MOCK_PROJECT_ID) return getCompletedMockAssessments();
@@ -1040,8 +1045,15 @@ function buildBlockCard(block){
 
   const deleteEl = `<button class="block-delete-btn" onclick="deleteBlock('${block.id}')">✕ Remove Block</button>`;
 
+  // Lets an admin pull in updated built-in guide copy (e.g. after a tool update
+  // changes the stock Risk Assessment language) without hand-retyping it — only
+  // shown for blocks that still have a matching built-in default to reset to.
+  const hasDefault = DEFAULT_BLOCKS.some(db => db.id === block.id);
+  const resetEl = (adminMode && hasDefault)
+    ? `<button type="button" class="btn btn-ghost btn-sm" style="margin-bottom:8px" onclick="resetGuideTextToDefault('${block.id}')">Reset guide text to current default</button>`
+    : '';
   const guideEl = adminMode
-    ? `<textarea class="guide-edit" oninput="updateBlockField('${block.id}','guideText',this.value)" placeholder="Describe what each rating means...">${esc(block.guideText)}</textarea>`
+    ? `${resetEl}<textarea id="guide-edit-${block.id}" class="guide-edit" oninput="updateBlockField('${block.id}','guideText',this.value)" placeholder="Describe what each rating means...">${esc(block.guideText)}</textarea>`
     : `<div class="guide-text">${formatGuideText(block.guideText)}</div>`;
 
   const rows = block.dims.map(d=>buildDimRow(d,block)).join('');
@@ -1130,6 +1142,14 @@ function buildRateControl(blockId, dimId){
 function updateBlockField(blockId,field,val){
   const s=getStore(); const b=s.blocks.find(x=>x.id===blockId); if(b) b[field]=val; save({blocks:s.blocks});
 }
+function resetGuideTextToDefault(blockId){
+  const defaultBlock = DEFAULT_BLOCKS.find(b => b.id === blockId);
+  if(!defaultBlock) return;
+  if(!confirm('Replace this block\'s guide text with the tool\'s current built-in default? This overwrites any custom wording.')) return;
+  updateBlockField(blockId, 'guideText', defaultBlock.guideText);
+  renderAssessBlocks();
+  showToast('Guide text reset to default.');
+}
 function deleteBlock(blockId){
   if(!confirm('Remove this entire assessment block and all its dimensions?')) return;
   const s=getStore(); s.blocks=s.blocks.filter(b=>b.id!==blockId); save({blocks:s.blocks}); renderAssessBlocks(); showToast('Block removed.');
@@ -1177,6 +1197,7 @@ document.getElementById('add-block-modal').addEventListener('click',e=>{if(e.tar
 function setScore(btn,blockId,dimId){
   document.querySelector(`.lod-group[data-block="${blockId}"][data-dim="${dimId}"]`).querySelectorAll('.lod-btn').forEach(b=>b.className='lod-btn');
   btn.classList.add('sel-'+btn.dataset.val);
+  scheduleAutosave();
 }
 
 // ══════════════════════════════════════════════════ RATING ═════
@@ -1199,6 +1220,9 @@ function pickRating(e,blockId,dimId,val){
   const num = val==='low' ? '1' : val==='med' ? '2' : '3';
   btn.innerHTML = `<span class="rate-num">${num}</span>`;
   closeAllRatePopups();
+  // Called directly (not relied on via bubbling) because e.stopPropagation() above
+  // would otherwise swallow it before it reached the delegated listener below.
+  scheduleAutosave();
 }
 document.addEventListener('click', closeAllRatePopups);
 
@@ -1224,11 +1248,19 @@ function populateAssessSelects(){
 function onProjectSelected(){
   const id = document.getElementById('assess-project').value;
   currentProjectId = id;
+  // Switching projects always exits any in-progress "edit your submission" —
+  // it only makes sense in the context of the project it was opened from.
+  editingExistingSubmission = false;
+  currentDraftId = null;
+  const submitBtn = document.getElementById('submit-assess-btn');
+  const clearBtn = document.getElementById('clear-assess-btn');
+  if(submitBtn) submitBtn.textContent = 'Submit Assessment';
+  if(clearBtn) clearBtn.textContent = 'Clear Form';
   const panel = document.getElementById('project-meta-panel');
   const alreadyEl = document.getElementById('already-assessed');
-  if(!id){ panel.style.display='none'; alreadyEl.style.display='none'; return; }
+  if(!id){ panel.style.display='none'; alreadyEl.style.display='none'; setAutosaveStatus('off'); return; }
   const proj = spProjects.find(p => p.id === id);
-  if(!proj){ panel.style.display='none'; alreadyEl.style.display='none'; return; }
+  if(!proj){ panel.style.display='none'; alreadyEl.style.display='none'; setAutosaveStatus('off'); return; }
   document.getElementById('pmeta-address').textContent  = proj.address  || '—';
   document.getElementById('pmeta-cavalue').textContent  = proj.caValue  || '—';
   renderTargetInvestment(proj);
@@ -1258,7 +1290,9 @@ function onProjectSelected(){
   if(id === MOCK_PROJECT_ID){
     applySampleAssessment();
     showToast('Sample ratings loaded — nothing is saved.');
+    setAutosaveStatus('off');
   } else {
+    setAutosaveStatus('idle', 'Autosave on');
     checkForDraft(id);
   }
 }
@@ -1280,10 +1314,31 @@ async function renderAlreadyAssessed(projectId){
   const mine = currentUser.name && respondents.find(a => a.assessorName === currentUser.name);
   let html = `<b style="color:var(--navy)">Already assessed:</b> ${names} · ${respondents.length} submission${respondents.length===1?'':'s'} so far`;
   if(mine){
-    html += `<div style="color:var(--gold);font-weight:600;margin-top:2px">You already submitted this${mine.submittedDate ? ' on '+esc(mine.submittedDate) : ''}.</div>`;
+    myAssessmentCache = { projectId, ...mine };
+    html += `<div style="color:var(--gold);font-weight:600;margin-top:2px">You already submitted this${mine.submittedDate ? ' on '+esc(mine.submittedDate) : ''}. <button type="button" onclick="editSubmission()" style="background:none;border:none;padding:0;font:inherit;font-weight:600;color:var(--navy);text-decoration:underline;cursor:pointer">Edit your submission</button></div>`;
+  } else {
+    myAssessmentCache = null;
   }
   el.innerHTML = html;
   el.style.display = '';
+}
+
+// Loads the signed-in user's own previously-submitted row (cached by
+// renderAlreadyAssessed) back into the form for revision. Deliberately does not
+// hook into autosave — see editingExistingSubmission above.
+function editSubmission(){
+  const projectId = document.getElementById('assess-project').value;
+  if(!myAssessmentCache || myAssessmentCache.projectId !== projectId) return;
+  clearTimeout(autosaveTimer);
+  currentDraftId = myAssessmentCache.id;
+  editingExistingSubmission = true;
+  applyScoresToForm(myAssessmentCache.scores, myAssessmentCache.openNotes || '');
+  const submitBtn = document.getElementById('submit-assess-btn');
+  const clearBtn = document.getElementById('clear-assess-btn');
+  if(submitBtn) submitBtn.textContent = 'Update Assessment';
+  if(clearBtn) clearBtn.textContent = 'Cancel Edit';
+  setAutosaveStatus('idle', `Editing your submission from ${myAssessmentCache.submittedDate || 'earlier'} — click Update Assessment to save`);
+  showToast('Editing your previous submission.');
 }
 
 // Self-healing column setup — mirrors core-projects-manager.html's own NEW_COLUMNS /
@@ -1507,6 +1562,12 @@ function applySampleAssessment(){
 // memory. Sign in from any device, pick the same project, and it restores.
 let currentDraftId = null;
 let autosaveTimer = null;
+// Set while the form holds someone's previously-submitted assessment, opened via
+// "Edit your submission" rather than restored as an in-progress draft. Autosave
+// is suppressed in this mode — editing is explicit, saved only via Update Assessment —
+// so the official record on display elsewhere never shows a half-finished edit.
+let editingExistingSubmission = false;
+let myAssessmentCache = null; // { projectId, id, scores, openNotes, submittedDate } — set by renderAlreadyAssessed()
 
 function scrapeFormScores(){
   const {blocks}=getStore();
@@ -1530,23 +1591,44 @@ function formHasAnyInput(scores, openNotes){
   return Object.values(scores).some(dims => Object.values(dims).some(d => d.score != null || d.note));
 }
 
+// Single place that drives both the inline "draft-status" text near the
+// Submit button and the always-visible floating badge — so the two never
+// drift out of sync. state: 'off' | 'idle' | 'saving' | 'saved' | 'error'.
+function setAutosaveStatus(state, text){
+  const badge = document.getElementById('autosave-badge');
+  const badgeText = document.getElementById('autosave-badge-text');
+  const inline = document.getElementById('draft-status');
+  if(state === 'off'){
+    if(badge) badge.classList.remove('visible','saving','saved','error');
+    if(inline) inline.textContent = '';
+    return;
+  }
+  if(badge){
+    badge.classList.add('visible');
+    badge.classList.remove('saving','saved','error');
+    if(state !== 'idle') badge.classList.add(state);
+  }
+  if(badgeText) badgeText.textContent = text;
+  if(inline) inline.textContent = text;
+}
+
 // Debounced on every rating click / note keystroke — see the listeners set up
-// in the INIT section below.
+// in the INIT section below. A periodic heartbeat (INIT section) also calls
+// autosaveDraft() directly on an interval, independent of recent activity.
 function scheduleAutosave(){
   const projectId = document.getElementById('assess-project').value;
-  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
+  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name || editingExistingSubmission) return;
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(autosaveDraft, 2000);
 }
 
 async function autosaveDraft(){
   const projectId = document.getElementById('assess-project').value;
-  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
+  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name || editingExistingSubmission) return;
   const scores = scrapeFormScores();
   const openNotes = document.getElementById('open-notes').value.trim();
   if(!formHasAnyInput(scores, openNotes)) return; // don't create an empty draft row
-  const statusEl = document.getElementById('draft-status');
-  if(statusEl) statusEl.textContent = 'Saving draft…';
+  setAutosaveStatus('saving', 'Saving draft…');
   const fields = {
     Title: projectId, ProjectId: projectId, AssessorName: currentUser.name, AssessorDept: currentUser.dept,
     SubmittedDate: new Date().toISOString(), Scores: JSON.stringify(scores), OpenNotes: openNotes, IsDraft: true
@@ -1559,9 +1641,9 @@ async function autosaveDraft(){
       const result = await graphPost(SP_CONFIG.assessmentsUrl, { fields });
       currentDraftId = result.id;
     }
-    if(statusEl) statusEl.textContent = 'Draft saved · ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    setAutosaveStatus('saved', 'Draft saved · ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
   } catch(e) {
-    if(statusEl) statusEl.textContent = 'Draft not saved — will retry';
+    setAutosaveStatus('error', 'Draft not saved — will retry');
   }
 }
 
@@ -1570,8 +1652,6 @@ async function autosaveDraft(){
 async function checkForDraft(projectId){
   currentDraftId = null;
   clearTimeout(autosaveTimer);
-  const statusEl = document.getElementById('draft-status');
-  if(statusEl) statusEl.textContent = '';
   if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
   try {
     const url = `${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$filter=fields/ProjectId eq '${projectId}' and fields/AssessorName eq '${encodeURIComponent(currentUser.name)}' and fields/IsDraft eq true&$top=1`;
@@ -1582,10 +1662,8 @@ async function checkForDraft(projectId){
     currentDraftId = item.id;
     const scores = item.fields.Scores ? JSON.parse(item.fields.Scores) : {};
     applyScoresToForm(scores, item.fields.OpenNotes || '');
-    if(statusEl){
-      const when = item.fields.SubmittedDate ? new Date(item.fields.SubmittedDate).toLocaleString() : '';
-      statusEl.textContent = `Draft restored${when ? ' from ' + when : ''}`;
-    }
+    const when = item.fields.SubmittedDate ? new Date(item.fields.SubmittedDate).toLocaleString() : '';
+    setAutosaveStatus('saved', `Draft restored${when ? ' from ' + when : ''}`);
   } catch(e) { /* no draft, or couldn't check — either way, start from a blank form */ }
 }
 
@@ -1602,15 +1680,18 @@ async function submitAssessment(){
     Title: projectId, ProjectId: projectId, AssessorName: currentUser.name, AssessorDept: currentUser.dept,
     SubmittedDate: new Date().toISOString(), Scores: JSON.stringify(scores), OpenNotes: openNotes, IsDraft: false
   };
+  const wasEditing = editingExistingSubmission;
   try {
     if(currentDraftId){
-      // Flips the same row the autosave was writing into — not a second record.
+      // Flips the same row the autosave was writing into (or, when editing an
+      // existing submission, overwrites that same row in place) — not a second record.
       await graphPatch(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`, { fields });
     } else {
       await graphPost(SP_CONFIG.assessmentsUrl, { fields });
     }
     currentDraftId = null;
-    showToast(`Submitted — ${currentUser.name}`);
+    editingExistingSubmission = false;
+    showToast(wasEditing ? `Submission updated — ${currentUser.name}` : `Submitted — ${currentUser.name}`);
     clearAssessForm();
   } catch(e) {
     showToast('Submission failed — ' + e.message);
@@ -1626,10 +1707,18 @@ function clearRatingsAndNotes(){
 function clearAssessForm(){
   clearTimeout(autosaveTimer);
   if(currentDraftId){
-    graphDelete(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`).catch(()=>{}); // best-effort; stale drafts are harmless
+    // editingExistingSubmission: cancelling an edit — the row is someone's real,
+    // already-submitted assessment, so leave it untouched. Otherwise this is an
+    // in-progress draft being discarded, so delete it (best-effort).
+    if(!editingExistingSubmission) graphDelete(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`).catch(()=>{});
     currentDraftId = null;
   }
-  const statusEl = document.getElementById('draft-status'); if(statusEl) statusEl.textContent = '';
+  editingExistingSubmission = false;
+  const submitBtn = document.getElementById('submit-assess-btn');
+  const clearBtn = document.getElementById('clear-assess-btn');
+  if(submitBtn) submitBtn.textContent = 'Submit Assessment';
+  if(clearBtn) clearBtn.textContent = 'Clear Form';
+  setAutosaveStatus('off');
   document.getElementById('assess-project').value='';
   document.getElementById('project-meta-panel').style.display='none';
   const alreadyEl = document.getElementById('already-assessed'); if(alreadyEl) alreadyEl.style.display='none';
@@ -2229,9 +2318,16 @@ document.getElementById('open-notes').addEventListener('input', scheduleAutosave
 document.getElementById('assess-blocks').addEventListener('input', e => {
   if(e.target.classList.contains('dim-note')) scheduleAutosave();
 });
-document.getElementById('assess-blocks').addEventListener('click', e => {
-  if(e.target.closest('.rate-opt') || e.target.closest('.lod-btn')) scheduleAutosave();
-});
+// (Rating clicks call scheduleAutosave() directly from pickRating()/setScore() —
+// not via delegated click bubbling, since pickRating's e.stopPropagation() would
+// otherwise swallow a bubbled listener before it ever ran.)
+// Periodic heartbeat — independent of the debounced per-keystroke/per-click save
+// above, so a draft is also captured during a long pause mid-thought where nothing
+// triggers the debounce (e.g. reading the scope, deliberating on a rating).
+setInterval(() => {
+  const projectId = document.getElementById('assess-project').value;
+  if(projectId && projectId !== MOCK_PROJECT_ID && currentUser.name && !editingExistingSubmission) autosaveDraft();
+}, 25000);
 document.addEventListener('toggle', e => {
   if (e.target.tagName === 'DETAILS') {
     const arrow = e.target.querySelector('summary span:last-child');
