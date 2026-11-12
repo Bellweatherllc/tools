@@ -83,24 +83,26 @@ For each dimension, click the empty circle to open a small popup with **1 / 2 / 
 
 **Open Notes** at the bottom is for anything that doesn't fit a specific dimension — a general concern, a pattern from a similar past project, something that needs to be named before the project moves forward.
 
-Click **Submit Assessment** when done.
+Click **Submit Assessment** when done (this reads **Update Assessment** instead if you're revising something you already submitted — see below).
 
-**Clear Form** wipes everything you've entered without submitting — use it if you want to start over.
+**Clear Form** clears everything currently showing and deselects the project. If nothing had been submitted yet, this also deletes the in-progress draft, so you're genuinely starting over. If you were looking at something you'd already submitted, nothing is deleted — your submission stays exactly as last saved (see autosave, below) and Clear Form just closes out of the form.
 
-### Autosave and picking up where you left off
+### Autosave — always on, no exceptions
 
-While you're rating dimensions, your in-progress work saves itself automatically — a few seconds after each rating click or note, and again periodically in the background either way. A small floating badge in the bottom-left corner of the screen confirms this:
+Your work saves itself automatically as you go — a couple of seconds after each rating click or note, and again periodically in the background either way. A small floating badge in the bottom-left corner of the screen confirms this:
 
-- **Autosave on** — a project is selected and ready; nothing to save yet.
-- **Saving draft…** (amber, pulsing) — a save is in progress.
-- **Draft saved · [time]** (green) — the last save succeeded.
-- **Draft not saved — will retry** (red) — the last save failed; it'll try again on the next change or the next periodic save.
+- **Autosave on** — a project is selected; nothing new to save yet.
+- **Saving…** (amber, pulsing) — a save is in progress.
+- **Saved · [time]** (green) — the last save succeeded.
+- **Not saved — will retry** (red) — the last save failed; it'll try again on the next change or the next periodic save.
 
-Because this saves to the same place everything else does, you can close the tab, sign out, switch devices, or just come back tomorrow — sign back in, pick the same project, and your ratings and notes are right where you left them, picked up automatically. (The badge will say **Draft restored from [time]** when this happens.) Nothing here is ever saved to your own computer only — it's the same SharePoint record whoever else is reviewing the project would see, which is also why it doesn't show up in Raw Results until you actually submit it.
+This is always on, with no separate mode for a finished assessment versus one still in progress — whatever is in the form is what's saved, the moment you change it. That has one real consequence worth knowing: there's no "cancel" once you start changing something you'd already submitted. The edit is live immediately, same as a brand-new draft; **Clear Form** only resets what's on your screen, it never reverts data that autosave already saved.
 
-### Editing a submission after you've already submitted
+Because this saves to the same place everything else does, you can close the tab, sign out, switch devices, or just come back tomorrow — sign back in, pick the same project, and your ratings and notes are right where you left them, loaded automatically. (The badge will say **Draft restored from [time]**, or, for something you'd already submitted, **Showing your submission from [time]**.) A still-in-progress draft doesn't show up in Raw Results until you click **Submit Assessment**; something you've already submitted stays visible there the whole time, including as you revise it — there's no hidden in-between state.
 
-If you already submitted an assessment for a project and need to change something, go back to **Assess** and select that project again. Under **Already assessed**, your own submission shows an **Edit your submission** link — click it to load your previous ratings and notes back into the form. The Submit button becomes **Update Assessment**; click it to save your changes in place (it doesn't create a second entry — Raw Results and Analysis simply show your latest answers). Autosave is intentionally off while editing a past submission, so a half-finished edit never temporarily overwrites your real, already-submitted answers — nothing changes until you click **Update Assessment**. If you change your mind partway through, **Cancel Edit** discards the in-progress changes and leaves your original submission untouched.
+### Revising a submission after you've already submitted
+
+Go back to **Assess** and select that project again — if you'd already submitted an assessment for it, your ratings and notes load back into the form automatically (no separate click needed, and the form is never blank just because you'd finished it before). The Submit button reads **Update Assessment** to make clear you're revising, not creating a second entry — Raw Results and Analysis always show your latest answers, never duplicates. Anything you change saves immediately via autosave (see above); click **Update Assessment** mainly to confirm you're done and refresh the submitted date.
 
 ## Part IV — Reading the results
 
@@ -139,6 +141,6 @@ The same data, interpreted:
 
 **Who can set up Scope of Work and Target Investment?** Anyone who turns on Admin mode — there's no separate permission check beyond being signed in. In practice, that's been Byron and Joey. If editing isn't saving for you, the underlying SharePoint field may need a permissions check — ask Byron.
 
-**How do I know autosave is actually working?** Watch the floating badge in the bottom-left corner while you're rating dimensions — it should move through "Autosave on" → "Saving draft…" → "Draft saved · [time]" as you go. If it ever shows "Draft not saved — will retry," something's wrong with the connection; it'll keep trying on its own, but if it stays red, send Byron a screenshot.
+**How do I know autosave is actually working?** Watch the floating badge in the bottom-left corner while you're rating dimensions — it should move through "Autosave on" → "Saving…" → "Saved · [time]" as you go. If it ever shows "Not saved — will retry," something's wrong with the connection; it'll keep trying on its own, but if it stays red, send Byron a screenshot.
 
 **The Risk Assessment (or Levels of Development) guide text looks out of date compared to what's in the manual.** A tool update can ship improved guide copy, but if that block's guide text was ever customized in Admin mode, your SharePoint copy keeps the custom wording rather than silently being overwritten. In Admin mode, each block's guide text box has a **Reset guide text to current default** button above it — click it to pull in the tool's current built-in wording (it'll ask you to confirm, since this overwrites whatever is there).

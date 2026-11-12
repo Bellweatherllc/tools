@@ -352,7 +352,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v62</span>
+      <span class="header-version">v63</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -1282,14 +1282,11 @@ function populateAssessSelects(){
 function onProjectSelected(){
   const id = document.getElementById('assess-project').value;
   currentProjectId = id;
-  // Switching projects always exits any in-progress "edit your submission" —
-  // it only makes sense in the context of the project it was opened from.
-  editingExistingSubmission = false;
+  // Switching projects always drops whatever record was loaded — it only
+  // applies to the project it came from.
+  currentRowIsSubmitted = false;
   currentDraftId = null;
-  const submitBtn = document.getElementById('submit-assess-btn');
-  const clearBtn = document.getElementById('clear-assess-btn');
-  if(submitBtn) submitBtn.textContent = 'Submit Assessment';
-  if(clearBtn) clearBtn.textContent = 'Clear Form';
+  updateSubmitClearLabels();
   const panel = document.getElementById('project-meta-panel');
   const alreadyEl = document.getElementById('already-assessed');
   if(!id){ panel.style.display='none'; alreadyEl.style.display='none'; setAutosaveStatus('off'); return; }
@@ -1327,7 +1324,7 @@ function onProjectSelected(){
     setAutosaveStatus('off');
   } else {
     setAutosaveStatus('idle', 'Autosave on');
-    checkForDraft(id);
+    checkForExistingAssessment(id);
   }
 }
 
@@ -1348,31 +1345,10 @@ async function renderAlreadyAssessed(projectId){
   const mine = currentUser.name && respondents.find(a => a.assessorName === currentUser.name);
   let html = `<b style="color:var(--navy)">Already assessed:</b> ${names} · ${respondents.length} submission${respondents.length===1?'':'s'} so far`;
   if(mine){
-    myAssessmentCache = { projectId, ...mine };
-    html += `<div style="color:var(--navy);font-weight:600;margin-top:2px">You already submitted this${mine.submittedDate ? ' on '+esc(mine.submittedDate) : ''}. <button type="button" onclick="editSubmission()" style="background:none;border:none;padding:0;font:inherit;font-weight:700;color:var(--red);text-decoration:underline;cursor:pointer">Edit your submission</button></div>`;
-  } else {
-    myAssessmentCache = null;
+    html += `<div style="color:var(--navy);font-weight:600;margin-top:2px">You submitted this${mine.submittedDate ? ' on '+esc(mine.submittedDate) : ''} — loaded below for you to review or revise.</div>`;
   }
   el.innerHTML = html;
   el.style.display = '';
-}
-
-// Loads the signed-in user's own previously-submitted row (cached by
-// renderAlreadyAssessed) back into the form for revision. Deliberately does not
-// hook into autosave — see editingExistingSubmission above.
-function editSubmission(){
-  const projectId = document.getElementById('assess-project').value;
-  if(!myAssessmentCache || myAssessmentCache.projectId !== projectId) return;
-  clearTimeout(autosaveTimer);
-  currentDraftId = myAssessmentCache.id;
-  editingExistingSubmission = true;
-  applyScoresToForm(myAssessmentCache.scores, myAssessmentCache.openNotes || '');
-  const submitBtn = document.getElementById('submit-assess-btn');
-  const clearBtn = document.getElementById('clear-assess-btn');
-  if(submitBtn) submitBtn.textContent = 'Update Assessment';
-  if(clearBtn) clearBtn.textContent = 'Cancel Edit';
-  setAutosaveStatus('idle', `Editing your submission from ${myAssessmentCache.submittedDate || 'earlier'} — click Update Assessment to save`);
-  showToast('Editing your previous submission.');
 }
 
 // Self-healing column setup — mirrors core-projects-manager.html's own NEW_COLUMNS /
@@ -1596,12 +1572,20 @@ function applySampleAssessment(){
 // memory. Sign in from any device, pick the same project, and it restores.
 let currentDraftId = null;
 let autosaveTimer = null;
-// Set while the form holds someone's previously-submitted assessment, opened via
-// "Edit your submission" rather than restored as an in-progress draft. Autosave
-// is suppressed in this mode — editing is explicit, saved only via Update Assessment —
-// so the official record on display elsewhere never shows a half-finished edit.
-let editingExistingSubmission = false;
-let myAssessmentCache = null; // { projectId, id, scores, openNotes, submittedDate } — set by renderAlreadyAssessed()
+// True once the row currently loaded in the form is an official submission
+// (IsDraft:false on SharePoint) rather than a still-in-progress draft. Autosave
+// behaves identically either way — it just keeps patching whatever row is
+// loaded — this only decides the Submit/Clear button labels and whether
+// Clear Form is allowed to delete the row (never, once it's a real
+// submission — only an unsubmitted draft is ever discarded that way).
+let currentRowIsSubmitted = false;
+
+function updateSubmitClearLabels(){
+  const submitBtn = document.getElementById('submit-assess-btn');
+  const clearBtn = document.getElementById('clear-assess-btn');
+  if(submitBtn) submitBtn.textContent = currentRowIsSubmitted ? 'Update Assessment' : 'Submit Assessment';
+  if(clearBtn) clearBtn.textContent = 'Clear Form';
+}
 
 function scrapeFormScores(){
   const {blocks}=getStore();
@@ -1649,56 +1633,70 @@ function setAutosaveStatus(state, text){
 // Debounced on every rating click / note keystroke — see the listeners set up
 // in the INIT section below. A periodic heartbeat (INIT section) also calls
 // autosaveDraft() directly on an interval, independent of recent activity.
+// Runs identically whether the loaded row is still a draft or already an
+// official submission — autosave has no separate "editing" mode, by design.
 function scheduleAutosave(){
   const projectId = document.getElementById('assess-project').value;
-  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name || editingExistingSubmission) return;
+  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(autosaveDraft, 2000);
 }
 
 async function autosaveDraft(){
   const projectId = document.getElementById('assess-project').value;
-  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name || editingExistingSubmission) return;
+  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
   const scores = scrapeFormScores();
   const openNotes = document.getElementById('open-notes').value.trim();
   if(!formHasAnyInput(scores, openNotes)) return; // don't create an empty draft row
-  setAutosaveStatus('saving', 'Saving draft…');
+  setAutosaveStatus('saving', 'Saving…');
+  // IsDraft is deliberately left out here when patching an existing row — autosave
+  // only ever refreshes the content (Scores/OpenNotes/SubmittedDate), never flips
+  // submitted status in either direction. A row freshly created by autosave (no
+  // prior record at all) always starts as a draft; only Submit/Update Assessment
+  // ever sets IsDraft:false.
   const fields = {
     Title: projectId, ProjectId: projectId, AssessorName: currentUser.name, AssessorDept: currentUser.dept,
-    SubmittedDate: new Date().toISOString(), Scores: JSON.stringify(scores), OpenNotes: openNotes, IsDraft: true
+    SubmittedDate: new Date().toISOString(), Scores: JSON.stringify(scores), OpenNotes: openNotes
   };
   try {
     await ensureColumn('IsDraft', 'Is Draft', { boolean: {} });
     if(currentDraftId){
       await graphPatch(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`, { fields });
     } else {
-      const result = await graphPost(SP_CONFIG.assessmentsUrl, { fields });
+      const result = await graphPost(SP_CONFIG.assessmentsUrl, { fields: { ...fields, IsDraft: true } });
       currentDraftId = result.id;
     }
-    setAutosaveStatus('saved', 'Draft saved · ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+    setAutosaveStatus('saved', 'Saved · ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
   } catch(e) {
-    setAutosaveStatus('error', 'Draft not saved — will retry');
+    setAutosaveStatus('error', 'Not saved — will retry');
   }
 }
 
-// Called from onProjectSelected() — looks for (and restores) a draft this
-// signed-in person already has in progress for this project, from any device.
-async function checkForDraft(projectId){
+// Called from onProjectSelected() — loads this signed-in person's existing
+// record for this project, whatever its state: an in-progress draft, or an
+// assessment they already submitted (reopening never shows a blank form when
+// there's something on record — autosave then keeps it current either way,
+// same as any other draft).
+async function checkForExistingAssessment(projectId){
   currentDraftId = null;
+  currentRowIsSubmitted = false;
   clearTimeout(autosaveTimer);
+  updateSubmitClearLabels();
   if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
   try {
-    const url = `${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$filter=fields/ProjectId eq '${projectId}' and fields/AssessorName eq '${encodeURIComponent(currentUser.name)}' and fields/IsDraft eq true&$top=1`;
+    const url = `${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$filter=fields/ProjectId eq '${projectId}' and fields/AssessorName eq '${encodeURIComponent(currentUser.name)}'&$top=1`;
     const data = await graphFetch(url, {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
     const item = (data.value||[])[0];
     if(!item) return;
     if(document.getElementById('assess-project').value !== projectId) return; // project changed while this was in flight
     currentDraftId = item.id;
+    currentRowIsSubmitted = !item.fields.IsDraft;
+    updateSubmitClearLabels();
     const scores = item.fields.Scores ? JSON.parse(item.fields.Scores) : {};
     applyScoresToForm(scores, item.fields.OpenNotes || '');
     const when = item.fields.SubmittedDate ? new Date(item.fields.SubmittedDate).toLocaleString() : '';
-    setAutosaveStatus('saved', `Draft restored${when ? ' from ' + when : ''}`);
-  } catch(e) { /* no draft, or couldn't check — either way, start from a blank form */ }
+    setAutosaveStatus('saved', currentRowIsSubmitted ? `Showing your submission${when ? ' from ' + when : ''}` : `Draft restored${when ? ' from ' + when : ''}`);
+  } catch(e) { /* no record, or couldn't check — either way, start from a blank form */ }
 }
 
 // ══════════════════════════════════════════════════ SUBMIT ═════
@@ -1714,18 +1712,18 @@ async function submitAssessment(){
     Title: projectId, ProjectId: projectId, AssessorName: currentUser.name, AssessorDept: currentUser.dept,
     SubmittedDate: new Date().toISOString(), Scores: JSON.stringify(scores), OpenNotes: openNotes, IsDraft: false
   };
-  const wasEditing = editingExistingSubmission;
+  const wasAlreadySubmitted = currentRowIsSubmitted;
   try {
     if(currentDraftId){
-      // Flips the same row the autosave was writing into (or, when editing an
-      // existing submission, overwrites that same row in place) — not a second record.
+      // Flips the same row autosave was already keeping current (or, if it was
+      // already submitted, just re-confirms it in place) — never a second record.
       await graphPatch(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`, { fields });
     } else {
       await graphPost(SP_CONFIG.assessmentsUrl, { fields });
     }
     currentDraftId = null;
-    editingExistingSubmission = false;
-    showToast(wasEditing ? `Submission updated — ${currentUser.name}` : `Submitted — ${currentUser.name}`);
+    currentRowIsSubmitted = false;
+    showToast(wasAlreadySubmitted ? `Submission updated — ${currentUser.name}` : `Submitted — ${currentUser.name}`);
     clearAssessForm();
   } catch(e) {
     showToast('Submission failed — ' + e.message);
@@ -1741,17 +1739,13 @@ function clearRatingsAndNotes(){
 function clearAssessForm(){
   clearTimeout(autosaveTimer);
   if(currentDraftId){
-    // editingExistingSubmission: cancelling an edit — the row is someone's real,
-    // already-submitted assessment, so leave it untouched. Otherwise this is an
-    // in-progress draft being discarded, so delete it (best-effort).
-    if(!editingExistingSubmission) graphDelete(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`).catch(()=>{});
+    // A real, already-submitted assessment is never deleted this way — only an
+    // unsubmitted draft gets discarded when you clear the form (best-effort).
+    if(!currentRowIsSubmitted) graphDelete(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`).catch(()=>{});
     currentDraftId = null;
   }
-  editingExistingSubmission = false;
-  const submitBtn = document.getElementById('submit-assess-btn');
-  const clearBtn = document.getElementById('clear-assess-btn');
-  if(submitBtn) submitBtn.textContent = 'Submit Assessment';
-  if(clearBtn) clearBtn.textContent = 'Clear Form';
+  currentRowIsSubmitted = false;
+  updateSubmitClearLabels();
   setAutosaveStatus('off');
   document.getElementById('assess-project').value='';
   document.getElementById('project-meta-panel').style.display='none';
@@ -2359,7 +2353,7 @@ document.getElementById('assess-blocks').addEventListener('input', e => {
 // triggers the debounce (e.g. reading the scope, deliberating on a rating).
 setInterval(() => {
   const projectId = document.getElementById('assess-project').value;
-  if(projectId && projectId !== MOCK_PROJECT_ID && currentUser.name && !editingExistingSubmission) autosaveDraft();
+  if(projectId && projectId !== MOCK_PROJECT_ID && currentUser.name) autosaveDraft();
 }, 25000);
 document.addEventListener('toggle', e => {
   if (e.target.tagName === 'DETAILS') {
