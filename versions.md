@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1173 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v58 |
+| Levels of Development | `levels-of-development.html` | v59 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -67,6 +67,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 ## Log
 
 Newest first. One line per delivery.
+
+- **2026-11-10** — Levels of Development v58 → v59: robust, cross-device autosave for Assess. Ratings/notes debounce-save into PB_Assessments as a draft (new IsDraft column, self-provisions on first use); returning later on any signed-in device and picking the same project restores it. Submitting flips the same draft row to final rather than creating a duplicate; Clear Form deletes it. Drafts are excluded from Raw Results, Analysis, and the Already-assessed indicator until actually submitted.
 
 - **2026-11-10** — Levels of Development v57 → v58: Risk Assessment's guide text gets its own intro/outro context (delay/cost/friction framing, distinct from Levels of Development's effort-focused one), reviewed as a prototype first. This updates the DEFAULT_BLOCKS fallback only — Byron's live config has its own customized guide text, so applying it there is a manual paste via Admin mode.
 
