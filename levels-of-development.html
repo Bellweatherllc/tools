@@ -342,7 +342,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v58</span>
+      <span class="header-version">v59</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -418,9 +418,10 @@
       <div class="card-header"><div class="card-title">Open Notes</div></div>
       <textarea id="open-notes" class="dim-note" rows="5" placeholder="Anything not captured above — concerns, patterns from similar projects, flags that need to be named before this project moves forward..."></textarea>
     </div>
-    <div style="display:flex;gap:12px;margin-bottom:36px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:36px">
       <button class="btn btn-success" onclick="submitAssessment()">Submit Assessment</button>
       <button class="btn btn-secondary" onclick="clearAssessForm()">Clear Form</button>
+      <span id="draft-status" style="font-size:12px;color:var(--silver)"></span>
     </div>
   </div>
 
@@ -888,6 +889,15 @@ async function graphPatch(url, body) {
 
 async function graphDelete(url) {
   if (!graphToken) graphToken = await getToken();
+  const resp = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${graphToken}` }
+  });
+  if (!resp.ok) throw new Error(await graphErrorMessage(resp));
+}
+
+async function graphDelete(url) {
+  if (!graphToken) graphToken = await getToken();
   const resp = await fetch(url, { method:'DELETE', headers:{ Authorization:`Bearer ${graphToken}` } });
   if (!resp.ok && resp.status !== 204) throw new Error(`Graph DELETE ${resp.status}`);
 }
@@ -897,7 +907,9 @@ async function fetchAssessmentsForProject(pid){
   if(pid===MOCK_PROJECT_ID) return getCompletedMockAssessments();
   const url=`${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$filter=fields/ProjectId eq '${pid}'&$top=100`;
   const data=await graphFetch(url, {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
-  return (data.value||[]).map(item=>{
+  return (data.value||[])
+    .filter(item => !item.fields.IsDraft) // in-progress drafts never count as a real submission
+    .map(item=>{
     const f=item.fields;
     return {
       id: item.id,
@@ -1246,6 +1258,8 @@ function onProjectSelected(){
   if(id === MOCK_PROJECT_ID){
     applySampleAssessment();
     showToast('Sample ratings loaded — nothing is saved.');
+  } else {
+    checkForDraft(id);
   }
 }
 
@@ -1461,12 +1475,13 @@ async function saveScopeOfWork(){
   renderScopeOfWork(proj);
 }
 
-function applySampleAssessment(){
-  const asmt = getCompletedMockAssessments()[0];
-  document.getElementById('open-notes').value = asmt.openNotes || '';
-  Object.keys(asmt.scores).forEach(blockId=>{
-    Object.keys(asmt.scores[blockId]).forEach(dimId=>{
-      const {score,note} = asmt.scores[blockId][dimId];
+// Shared by the sample prefill and real draft restoration — paints saved
+// scores/notes onto the live form.
+function applyScoresToForm(scores, openNotes){
+  document.getElementById('open-notes').value = openNotes || '';
+  Object.keys(scores||{}).forEach(blockId=>{
+    Object.keys(scores[blockId]).forEach(dimId=>{
+      const {score,note} = scores[blockId][dimId];
       const btn = document.getElementById(`ratebtn-${blockId}-${dimId}`);
       if(btn && score){
         btn.classList.remove('rate-unset','set-low','set-med','set-high');
@@ -1480,13 +1495,20 @@ function applySampleAssessment(){
     });
   });
 }
+function applySampleAssessment(){
+  const asmt = getCompletedMockAssessments()[0];
+  applyScoresToForm(asmt.scores, asmt.openNotes);
+}
 
-// ══════════════════════════════════════════════════ SUBMIT ═════
-async function submitAssessment(){
-  const projectId=document.getElementById('assess-project').value;
-  if(!projectId){showToast('Select a project.');return;}
-  if(projectId===MOCK_PROJECT_ID){showToast('Sample project — nothing is saved.');clearAssessForm();return;}
-  if(!currentUser.name){showToast('Sign in to submit an assessment.');return;}
+// ══════════════════════════════════════════════════ DRAFTS ═════
+// Robust, cross-device autosave: an in-progress assessment is written to
+// PB_Assessments itself (IsDraft:true), upserted into the same item that
+// becomes the final submission on Submit — not just held in this browser's
+// memory. Sign in from any device, pick the same project, and it restores.
+let currentDraftId = null;
+let autosaveTimer = null;
+
+function scrapeFormScores(){
   const {blocks}=getStore();
   const scores={};
   blocks.forEach(b=>{
@@ -1501,22 +1523,93 @@ async function submitAssessment(){
       }
     });
   });
-  const record = {
-    projectId, assessorName:currentUser.name, assessorDept:currentUser.dept,
-    submittedDate: new Date().toLocaleDateString(),
-    scores: JSON.stringify(scores),
-    openNotes: document.getElementById('open-notes').value.trim()
+  return scores;
+}
+function formHasAnyInput(scores, openNotes){
+  if(openNotes) return true;
+  return Object.values(scores).some(dims => Object.values(dims).some(d => d.score != null || d.note));
+}
+
+// Debounced on every rating click / note keystroke — see the listeners set up
+// in the INIT section below.
+function scheduleAutosave(){
+  const projectId = document.getElementById('assess-project').value;
+  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(autosaveDraft, 2000);
+}
+
+async function autosaveDraft(){
+  const projectId = document.getElementById('assess-project').value;
+  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
+  const scores = scrapeFormScores();
+  const openNotes = document.getElementById('open-notes').value.trim();
+  if(!formHasAnyInput(scores, openNotes)) return; // don't create an empty draft row
+  const statusEl = document.getElementById('draft-status');
+  if(statusEl) statusEl.textContent = 'Saving draft…';
+  const fields = {
+    Title: projectId, ProjectId: projectId, AssessorName: currentUser.name, AssessorDept: currentUser.dept,
+    SubmittedDate: new Date().toISOString(), Scores: JSON.stringify(scores), OpenNotes: openNotes, IsDraft: true
   };
   try {
-    await graphPost(SP_CONFIG.assessmentsUrl, { fields: {
-      Title:         record.projectId,
-      ProjectId:     record.projectId,
-      AssessorName:  record.assessorName,
-      AssessorDept:  record.assessorDept,
-      SubmittedDate: new Date().toISOString(),
-      Scores:        record.scores,
-      OpenNotes:     record.openNotes
-    }});
+    await ensureColumn('IsDraft', 'Is Draft', { boolean: {} });
+    if(currentDraftId){
+      await graphPatch(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`, { fields });
+    } else {
+      const result = await graphPost(SP_CONFIG.assessmentsUrl, { fields });
+      currentDraftId = result.id;
+    }
+    if(statusEl) statusEl.textContent = 'Draft saved · ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  } catch(e) {
+    if(statusEl) statusEl.textContent = 'Draft not saved — will retry';
+  }
+}
+
+// Called from onProjectSelected() — looks for (and restores) a draft this
+// signed-in person already has in progress for this project, from any device.
+async function checkForDraft(projectId){
+  currentDraftId = null;
+  clearTimeout(autosaveTimer);
+  const statusEl = document.getElementById('draft-status');
+  if(statusEl) statusEl.textContent = '';
+  if(!projectId || projectId === MOCK_PROJECT_ID || !currentUser.name) return;
+  try {
+    const url = `${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$filter=fields/ProjectId eq '${projectId}' and fields/AssessorName eq '${encodeURIComponent(currentUser.name)}' and fields/IsDraft eq true&$top=1`;
+    const data = await graphFetch(url, {'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
+    const item = (data.value||[])[0];
+    if(!item) return;
+    if(document.getElementById('assess-project').value !== projectId) return; // project changed while this was in flight
+    currentDraftId = item.id;
+    const scores = item.fields.Scores ? JSON.parse(item.fields.Scores) : {};
+    applyScoresToForm(scores, item.fields.OpenNotes || '');
+    if(statusEl){
+      const when = item.fields.SubmittedDate ? new Date(item.fields.SubmittedDate).toLocaleString() : '';
+      statusEl.textContent = `Draft restored${when ? ' from ' + when : ''}`;
+    }
+  } catch(e) { /* no draft, or couldn't check — either way, start from a blank form */ }
+}
+
+// ══════════════════════════════════════════════════ SUBMIT ═════
+async function submitAssessment(){
+  const projectId=document.getElementById('assess-project').value;
+  if(!projectId){showToast('Select a project.');return;}
+  if(projectId===MOCK_PROJECT_ID){showToast('Sample project — nothing is saved.');clearAssessForm();return;}
+  if(!currentUser.name){showToast('Sign in to submit an assessment.');return;}
+  clearTimeout(autosaveTimer);
+  const scores = scrapeFormScores();
+  const openNotes = document.getElementById('open-notes').value.trim();
+  const fields = {
+    Title: projectId, ProjectId: projectId, AssessorName: currentUser.name, AssessorDept: currentUser.dept,
+    SubmittedDate: new Date().toISOString(), Scores: JSON.stringify(scores), OpenNotes: openNotes, IsDraft: false
+  };
+  try {
+    if(currentDraftId){
+      // Flips the same row the autosave was writing into — not a second record.
+      await graphPatch(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`, { fields });
+    } else {
+      await graphPost(SP_CONFIG.assessmentsUrl, { fields });
+    }
+    currentDraftId = null;
     showToast(`Submitted — ${currentUser.name}`);
     clearAssessForm();
   } catch(e) {
@@ -1531,8 +1624,15 @@ function clearRatingsAndNotes(){
   document.querySelectorAll('.dim-note').forEach(b=>b.value='');
 }
 function clearAssessForm(){
+  clearTimeout(autosaveTimer);
+  if(currentDraftId){
+    graphDelete(`${SP_CONFIG.assessmentsUrl}/${currentDraftId}`).catch(()=>{}); // best-effort; stale drafts are harmless
+    currentDraftId = null;
+  }
+  const statusEl = document.getElementById('draft-status'); if(statusEl) statusEl.textContent = '';
   document.getElementById('assess-project').value='';
   document.getElementById('project-meta-panel').style.display='none';
+  const alreadyEl = document.getElementById('already-assessed'); if(alreadyEl) alreadyEl.style.display='none';
   clearRatingsAndNotes();
 }
 
@@ -1615,6 +1715,7 @@ async function populateProjectsWithResults(el){
       const url=`${SP_CONFIG.assessmentsUrl}?$expand=fields&$select=id,fields&$top=500`;
       const data=await graphFetch(url,{'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'});
       (data.value||[]).forEach(item=>{
+        if(item.fields.IsDraft) return; // in-progress drafts don't make a project "assessed" yet
         const pid=item.fields.ProjectId; const dt=item.fields.SubmittedDate||'';
         if(!pid) return;
         if(!latest[pid]||dt>latest[pid]) latest[pid]=dt;
@@ -2122,6 +2223,15 @@ async function copyAssessLink(){
 })();
 renderAssessBlocks();
 initMsal();
+// Autosave triggers: typing a note, or picking a rating (delegated — the
+// dimension rows themselves are re-rendered, but this container isn't).
+document.getElementById('open-notes').addEventListener('input', scheduleAutosave);
+document.getElementById('assess-blocks').addEventListener('input', e => {
+  if(e.target.classList.contains('dim-note')) scheduleAutosave();
+});
+document.getElementById('assess-blocks').addEventListener('click', e => {
+  if(e.target.closest('.rate-opt') || e.target.closest('.lod-btn')) scheduleAutosave();
+});
 document.addEventListener('toggle', e => {
   if (e.target.tagName === 'DETAILS') {
     const arrow = e.target.querySelector('summary span:last-child');
