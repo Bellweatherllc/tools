@@ -305,10 +305,9 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .settings-panel button:disabled,
 .settings-panel input:disabled{opacity:.35;cursor:not-allowed;pointer-events:none;}
 .shift-readout{min-width:44px;text-align:center;font-size:11px;font-weight:700;color:var(--ink);font-family:var(--font-tt);white-space:nowrap;}
-.settings-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-/* A 2nd Permit column (off by default — only present once Trello syncs a
-   PERMIT2 card) adds a third slot rather than squeezing the existing two. */
-.settings-cols.has-permit2{grid-template-columns:1fr 1fr 1fr;}
+/* Zoning, Permit A, Permit B — Permit B is always visible (useful for
+   what-if/planning per Byron) even though it starts off/unchecked. */
+.settings-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
 /* Per Byron: zoning's and permitting's own control areas should read as
    two distinct, separated regions, not one shared block. */
 .settings-col{border:1px solid var(--line);border-radius:7px;padding:10px 12px;}
@@ -536,7 +535,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v172';
+const CORE_VERSION = 'v173';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1577,13 +1576,15 @@ function renderSettingsPanel(p){
   const phaseIIStart=phaseIIStartFor(p);
   const zoningStartWeek=p.zoningStartWeek!=null ? p.zoningStartWeek : phaseIIStart;
   const permitStartWeek=p.permitStartWeek!=null ? p.permitStartWeek : defaultPermitStartFor(p);
-  // Off by default — a 2nd Permit column only shows up at all once Trello
-  // has actually synced a PERMIT2 card for this project (see
-  // loadTrelloProjects). No prep-start shift control of its own: it always
-  // runs in sequence right after the first permit (see the permitStages
-  // concat in renderCards/detectTierChangeForProject), never independently
-  // positioned, per Byron.
-  const hasPermit2 = !!(p.permit2Stages && p.permit2Stages.length);
+  // Permit B's column is always visible (per Byron: useful for what-if/
+  // planning even on a project with no real 2nd Trello card) — but OFF by
+  // default, since every stage in it seeds enabled:false until a card
+  // actually syncs one in, or Byron manually checks a box here to model a
+  // hypothetical. No prep-start shift control of its own: it always runs
+  // in sequence right after Permit A (see the permitStages concat in
+  // renderCards/detectTierChangeForProject), never independently
+  // positioned.
+  const permit2Heading = p.permit2Label ? 'Permit B — '+esc(p.permit2Label) : 'Permit B';
   function stageRow(category, c){
     const st=p.stageState[category][c.key]||{enabled:false, estWeeks:c.estWeeks};
     return `<div class="stage-row">
@@ -1610,7 +1611,7 @@ function renderSettingsPanel(p){
         <span class="shift-readout">${gradOffset===0?'0 wks':(gradOffset>0?'+':'')+gradOffset+' wk'+(Math.abs(gradOffset)===1?'':'s')}</span>
       </div>
     </div>
-    <div class="settings-cols${hasPermit2?' has-permit2':''}">
+    <div class="settings-cols">
       <div class="settings-col">
         <h4>Zoning stages</h4>
         <div class="shift-row">
@@ -1626,7 +1627,7 @@ function renderSettingsPanel(p){
         <div class="stage-rows">${STAGE_CATALOG.zoning.map(c=>stageRow('zoning',c)).join('')}</div>
       </div>
       <div class="settings-col">
-        <h4>Permitting stages</h4>
+        <h4>Permit A</h4>
         <div class="shift-row">
           <span class="shift-row-icon" data-tip="Permitting prep start">${PREP_START_ICON_SVG}</span>
           <div class="shift-controls">
@@ -1639,10 +1640,10 @@ function renderSettingsPanel(p){
         </div>
         <div class="stage-rows">${STAGE_CATALOG.permitting.map(c=>stageRow('permitting',c)).join('')}</div>
       </div>
-      ${hasPermit2 ? `<div class="settings-col">
-        <h4>${p.permit2Label?'2nd Permit — '+esc(p.permit2Label):'2nd Permit'}</h4>
+      <div class="settings-col">
+        <h4>${permit2Heading}</h4>
         <div class="stage-rows">${STAGE_CATALOG.permitting2.map(c=>stageRow('permitting2',c)).join('')}</div>
-      </div>` : ''}
+      </div>
     </div>
   </div>`;
 }
