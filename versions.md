@@ -13,7 +13,7 @@ Last updated: 2026-10-27
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1173 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v60 |
+| Levels of Development | `levels-of-development.html` | v61 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-12** — Levels of Development v60 → v61: simplified the Assess intro — replaced the dense paragraph with a short boxed callout (same `.guide-text` visual treatment as the Levels of Development/Risk Assessment guide boxes), condensed the autosave/revision note to "Autosave is on. Submissions can be revised." Moved "Already assessed" (and the "you already submitted this" / Edit your submission callout) above the Assessment Setup card instead of buried inside it, and made that callout's text and Edit link red for visibility.
 - **2026-11-12** — Levels of Development v59 → v60: fixed a real bug where autosave silently never fired from a rating click — `pickRating()`'s `e.stopPropagation()` was swallowing the event before it reached the delegated listener that triggered it, so only typing in a note ever actually autosaved. Rating handlers now call the autosave scheduler directly instead of relying on bubbling. Added a persistent floating "autosave" badge (bottom-left, visible whenever a real project is selected) showing live save state — Autosave on / Saving… / Draft saved · time / Draft restored / Draft not saved — and a 25s periodic autosave heartbeat alongside the existing debounce, so a long pause with no clicks still gets captured. Assess intro paragraph now explains autosave and resume. Added editing a submitted assessment: "Edit your submission" under Already-assessed loads your previous answers back into the form (Submit becomes "Update Assessment," Clear Form becomes "Cancel Edit"); autosave is off while editing so a half-finished edit never overwrites the real submitted row — nothing changes until Update Assessment is clicked, and Cancel Edit leaves the original untouched. No revision history is kept — editing overwrites in place. Admin mode gained a "Reset guide text to current default" button per block, so an updated built-in guide (e.g. Risk Assessment's) can be pulled into a live, previously-customized SharePoint config without hand-retyping. Also removed a duplicate `graphDelete()` definition left over from v59. Manual updated to document autosave/resume, editing a submission, and the guide-text reset button.
 - **2026-11-10** — Levels of Development v58 → v59: robust, cross-device autosave for Assess. Ratings/notes debounce-save into PB_Assessments as a draft (new IsDraft column, self-provisions on first use); returning later on any signed-in device and picking the same project restores it. Submitting flips the same draft row to final rather than creating a duplicate; Clear Form deletes it. Drafts are excluded from Raw Results, Analysis, and the Already-assessed indicator until actually submitted.
 
