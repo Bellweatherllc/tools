@@ -27,13 +27,33 @@ place to check.
 
 ---
 
+## A few quick definitions
+
+**GitHub** is where the actual files for these tools live online — the master
+copy of everything, plus a complete history of every change anyone's ever
+made to it. Nothing is ever silently lost; every version of every file is
+kept.
+
+A **repo** (short for "repository") is one project's set of files, together
+with that history. This one — `Bellweatherllc/tools` — holds the source code
+for all the CORE tools.
+
+**Claude Code** is not the same thing as the regular Claude chat you may have
+used at claude.ai for drafting text or answering questions. Regular Claude
+chat can't see or touch a GitHub repo at all. Claude Code is Claude with a
+repo actually open in front of it — it can read the files, edit them, and
+push the changes back to GitHub itself. You still just talk to it in plain
+English; the difference is that it's working inside the real files, not just
+talking about them.
+
+---
+
 ## Step 1 — Get access
 
-1. **A GitHub account.** If you don't have one, go to
-   [github.com](https://github.com) and sign up — it's free.
-2. **Repo access.** Send your GitHub username to Byron and ask him to add you
-   as a collaborator on `Bellweatherllc/tools`.
-3. **Claude Code access.** Confirm with Byron that your claude.ai account has
+1. **Repo access.** Ask Byron to add you to `Bellweatherllc/tools` under the
+   company's GitHub account. You don't need to create your own separate
+   GitHub account for this.
+2. **Claude Code access.** Confirm with Byron that your claude.ai account has
    Claude Code enabled. You don't need to install anything — you'll use it
    from your browser at [claude.ai/code](https://claude.ai/code).
 
@@ -95,6 +115,13 @@ ask Claude to undo or adjust, and it will.
 
 ## Best practices
 
+- **Give every tool an owner.** Pick one person who's the main point of
+  contact for each tool — usually whoever uses it most, or who asked for it
+  originally. If you're about to make a non-trivial change to a tool someone
+  else owns, loop them in first; if it's your tool, you're the one Claude (and
+  everyone else) should check with when something looks off. This keeps
+  changes from colliding and gives everyone a clear first call when something
+  breaks.
 - **One topic per conversation.** Keep each session focused on one change or
   one closely related group of changes. It's easier for you to review, and
   easier for Claude to keep track of what it's doing.
