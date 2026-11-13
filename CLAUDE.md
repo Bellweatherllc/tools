@@ -12,7 +12,7 @@ Single-file HTML tools for Bellweather Design-Build's internal operations system
 
 - Standalone single-file HTML. All JS and CSS inline. CDN dependencies only. **No build step.**
 - Data lives in SharePoint Lists, reached through the Microsoft Graph API.
-- Auth is Azure AD OAuth via MSAL. `lib/sherpa-auth.js` is the shared sign-in helper every tool loads — it wraps the app registration config and exposes `SherpaAuth.init/isSignedIn/signIn/signOut/getToken/getAccount/graph()`. It caches to `sessionStorage` and requires msal-browser to load first.
+- Auth is Azure AD OAuth via MSAL. `lib/sherpa-auth.js` is the shared sign-in helper (loaded today by Sherpa, Sherpa Lookup Tester, WIP Tracker, Permit & Zoning Tracker and the System Map; the other tools still carry their own inline MSAL config) — it wraps the app registration config and exposes `SherpaAuth.init/isSignedIn/signIn/signOut/getToken/getAccount/graph()`. It caches to `sessionStorage` and requires msal-browser to load first.
 - Deployed via GitHub Pages at `bellweatherllc.github.io/tools/`.
 
 Three SharePoint locations — don't confuse them:

@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-10-27
+Last updated: 2026-11-13
 
 ## Live tools
 
@@ -34,10 +34,10 @@ Last updated: 2026-10-27
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v28 |
-| Core Roadmap | `core_roadmap.html` | v57 |
+| Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v7 |
-| CORE System Map | `core-system-map.html` | v18 |
+| CORE System Map | `core-system-map.html` | v19 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
 ## Manuals
@@ -62,6 +62,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 |---|---|
 | `Bellweather-Scope-Tool.html`, `design-deliverables.html` | System Map v6 |
 | `design-intake.html`, `timecard-analyzer.html` | System Map v4 |
+| `project-basis.html` (redirect stub to `levels-of-development.html`) | 2026-11-13 |
 | CA writing tools: `ca-setup.html`, `CA_DataSources.html`, `da_extractor.html`, `estimate_extractor.html`, `plan_note_extractor.html`, `reference_ca_extractor.html`, `scope_outline_extractor.html`, `selections_extractor.html`, `lib/ca-session.js` | System Map v2 |
 
 ## Log
@@ -69,6 +70,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-11-13** — Project Pipeline v1176 → v1177: removed the dead "PT" pill entirely (`UPCOMING_INFO.pt`, `_renderPtPanel()`, the `#tt-up-permits`/`.ptp-*` markup and CSS, and the `type==='pt'` branches in the pill-click popover) — it was fully replaced by the Permit & Zoning hover zone back at v881 and hasn't had a reachable button since (both tooltip builders already generate the pill row without it). The hover zone itself (`PZ_ENABLED`, `CORE_Permits` mirror read, `tt-pz-zone`) is untouched and stays off pending that integration being made reliable, per Byron.
+- **2026-11-13** — Core Roadmap v57 → v58, CORE System Map v18 → v19: removed the dead "Open provisioning tool" link to the non-existent `provision-core-projects.html` from the Roadmap, and its "Linked but missing" node and layout entries from the System Map.
+- **2026-11-13** — Deleted `project-basis.html`, the redirect stub left after the rename to `levels-of-development.html`. Nothing in the repo linked to it.
 - **2026-11-13** — Permit & Zoning Tracker v94 → v175: the rebuilt tracker (previously deployed separately as `permit-tracker-v2.html`) now occupies the canonical `permit-zoning-tracker.html` URL, replacing the original v1 tool, which is retired to `archive/permit-zoning-tracker.html` for reference (not removed from the repo, so not listed under Retired). No Azure AD change needed — the redirect URI is computed from the page's own path, and this exact path was already registered. The original v1-only SharePoint list, `CORE_Permits`, is no longer read or written by this tool; `project-pipeline.html` still reads it for one small read-only "v879" mirror feature, so it has NOT been deleted from SharePoint pending that dependency being resolved.
 - **2026-11-12** — Levels of Development v65 → v66: removed the v65 green-checkmark dropdown marker — didn't land well. Bigger fix: clicking Submit/Update Assessment no longer clears the form and deselects the project — that read as the work disappearing, which it wasn't, but looked exactly like it. The project, ratings, and notes all stay on screen; a toast ("Submitted." or "Updated and submitted.") confirms the save, the button relabels to "Update Assessment," and the "already assessed" line refreshes with the new timestamp. Clear Form is now a fully separate, deliberate action — it no longer runs automatically after a save.
 - **2026-11-12** — Levels of Development v64 → v65: fixed "Update Assessment" failing with "Graph 400 — invalidRequest: Field 'IsDraft' is not recognized" — the shared `ensureColumn()` self-healing helper was checking/creating the IsDraft column against CORE_Projects/columns instead of PB_Assessments/columns (a copy-paste from the TargetInvestmentDisplay/DesignScope calls, which really do belong on CORE_Projects), so IsDraft was never actually being provisioned on the list it's used on. Also closed a gap where `submitAssessment()` never called `ensureColumn` at all before saving, unlike `autosaveDraft()` — both now target the correct list. Added a real green checkmark (✅) next to a project's name in the Assess dropdown once you've submitted an assessment for it — Byron noticed what looked like a checkmark there and asked for it bolder/green, but no such marker existed in the code (what he saw was the browser's native "currently selected" indicator, which a page can't restyle); this adds the real, controllable equivalent.
