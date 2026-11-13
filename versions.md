@@ -22,7 +22,7 @@ Last updated: 2026-10-27
 | Revenue Tracker | `revenue-tracker.html` | v11 |
 | WIP Tracker | `wip-tracker.html` | v30 |
 | **Permits** | | |
-| Permit & Zoning Tracker | `permit-zoning-tracker.html` | v91 |
+| Permit & Zoning Tracker | `permit-zoning-tracker.html` | v175 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
 | People Analyzer | `people-analyzer.html` | v26 |
@@ -68,6 +68,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-13** — Permit & Zoning Tracker v94 → v175: the rebuilt tracker (previously deployed separately as `permit-tracker-v2.html`) now occupies the canonical `permit-zoning-tracker.html` URL, replacing the original v1 tool, which is retired to `archive/permit-zoning-tracker.html` for reference (not removed from the repo, so not listed under Retired). No Azure AD change needed — the redirect URI is computed from the page's own path, and this exact path was already registered. The original v1-only SharePoint list, `CORE_Permits`, is no longer read or written by this tool; `project-pipeline.html` still reads it for one small read-only "v879" mirror feature, so it has NOT been deleted from SharePoint pending that dependency being resolved.
 - **2026-11-10** — Levels of Development v56 → v57: fixed real submissions not showing up in Raw Results/Analysis after being submitted — a narrowed `$select=id,fields/ProjectId,fields/SubmittedDate` query (inconsistent with the `$select=id,fields` pattern used everywhere else against this same list) was silently coming back with both fields undefined, so every real submission got dropped and only the sample project ever appeared. The assessment itself was saving correctly the whole time — this was a read-side bug. A genuine fetch failure here now also shows an error toast instead of failing silently.
 
 - **2026-11-10** — Levels of Development v55 → v56: added an "Already assessed" line under the project picker on Assess, showing every respondent and a submission count (and a callout if you've already submitted yourself) without needing to open Raw Results or Analysis first.
