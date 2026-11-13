@@ -24,7 +24,7 @@ Last updated: 2026-11-13
 | **Permits** | | |
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v175 |
 | **Operations** | | |
-| Fleet Tracker | `fleet-tracker.html` | v1 |
+| Fleet Tracker | `fleet-tracker.html` | v2 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
 | People Analyzer | `people-analyzer.html` | v26 |
@@ -70,6 +70,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-13** — Fleet Tracker v1 → v2: switched type to the brand fonts — TT Norms Pro (sans) and Swear Text (serif, incl. italic for the wordmark), served from `fonts/` — replacing the prototype's Google Fonts Figtree/Newsreader. Header wordmark sized down slightly so the wider Swear keeps the action buttons on one row.
 - **2026-11-13** — Fleet Tracker v1 (new, `fleet-tracker.html`): the local Fleet prototype ported to CORE. UI and logic unchanged; data now lives in BWCore lists `CORE_FleetVehicles` (one item per vehicle; dates as ISO text; `FleetStatus`, never `Status`) and `CORE_FleetSettings` (insurance/EZ Pass/Compass/decals/contacts/drivers as JSON, Title = key). SherpaAuth sign-in; access via the new `FleetRole` column on CORE_TeamMembers (admin = edit + Setup, member = view only, blank = no access; until the column exists PipelineRole admins stand in). Admin Setup creates the lists and column, imports the snapshot .html (never overwrites existing items), and anchors registration/insurance-card links by driveItem id. The prototype's spreadsheet sync and file-upload are removed; Find in SharePoint now uses Graph search. No fleet data is in the repo. Needs `https://bellweatherllc.github.io/tools/fleet-tracker.html` added as an SPA redirect URI on the Azure app registration.
 - **2026-11-13** — Team Members v28 → v29: added `FleetRole` (Fleet) to the Access tab's tool registry.
 - **2026-11-13** — BW Tool Index v7 → v8: added an Operations section with the Fleet Tracker tile.
