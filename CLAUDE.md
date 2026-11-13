@@ -4,6 +4,8 @@ Single-file HTML tools for Bellweather Design-Build's internal operations system
 
 **This repo is PUBLIC.** GitHub Pages serves it, and view-source exposes every file. Never put an API key, token, secret, or connection string in any file here. The Azure `clientId` and `tenantId` are public identifiers and are fine. Reference documentation lives in the private `Bellweatherllc/core-docs` repo, not here.
 
+**New to this repo, or new to GitHub entirely?** See `ONBOARDING.md` — step-by-step setup and best practices for teammates working here via Claude Code, written for people who've never used git or written code before.
+
 ---
 
 ## What these tools are
@@ -115,3 +117,5 @@ When something is genuinely ambiguous (see the list-naming note above), ask rath
 ## Where to look for more
 
 The private `Bellweatherllc/core-docs` repo holds the reference documentation: glossary, roadmap, decision log, tool registry schema, SharePoint routing, budget workbook reference, permit clock design, cost codes. If a question here needs business context rather than code context, that's where it lives.
+
+`ONBOARDING.md` is the getting-started guide for a non-technical teammate collaborating in this repo via Claude Code — repo access, starting a session, review/merge expectations, best practices. Point new teammates there; keep it in sync if the delivery discipline or working-style rules above change in a way that affects what a teammate needs to know.
