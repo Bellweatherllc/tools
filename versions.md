@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-10-27
+Last updated: 2026-11-13
 
 ## Live tools
 
@@ -23,6 +23,8 @@ Last updated: 2026-10-27
 | WIP Tracker | `wip-tracker.html` | v30 |
 | **Permits** | | |
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v175 |
+| **Operations** | | |
+| Fleet Tracker | `fleet-tracker.html` | v1 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
 | People Analyzer | `people-analyzer.html` | v26 |
@@ -33,10 +35,10 @@ Last updated: 2026-10-27
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v28 |
+| Team Members | `team-members.html` | v29 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v7 |
+| BW Tool Index | `bw-tool-index.html` | v8 |
 | CORE System Map | `core-system-map.html` | v18 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
@@ -67,6 +69,10 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 ## Log
 
 Newest first. One line per delivery.
+
+- **2026-11-13** — Fleet Tracker v1 (new, `fleet-tracker.html`): the local Fleet prototype ported to CORE. UI and logic unchanged; data now lives in BWCore lists `CORE_FleetVehicles` (one item per vehicle; dates as ISO text; `FleetStatus`, never `Status`) and `CORE_FleetSettings` (insurance/EZ Pass/Compass/decals/contacts/drivers as JSON, Title = key). SherpaAuth sign-in; access via the new `FleetRole` column on CORE_TeamMembers (admin = edit + Setup, member = view only, blank = no access; until the column exists PipelineRole admins stand in). Admin Setup creates the lists and column, imports the snapshot .html (never overwrites existing items), and anchors registration/insurance-card links by driveItem id. The prototype's spreadsheet sync and file-upload are removed; Find in SharePoint now uses Graph search. No fleet data is in the repo. Needs `https://bellweatherllc.github.io/tools/fleet-tracker.html` added as an SPA redirect URI on the Azure app registration.
+- **2026-11-13** — Team Members v28 → v29: added `FleetRole` (Fleet) to the Access tab's tool registry.
+- **2026-11-13** — BW Tool Index v7 → v8: added an Operations section with the Fleet Tracker tile.
 
 - **2026-11-13** — Project Pipeline v1176 → v1177: removed the dead "PT" pill entirely (`UPCOMING_INFO.pt`, `_renderPtPanel()`, the `#tt-up-permits`/`.ptp-*` markup and CSS, and the `type==='pt'` branches in the pill-click popover) — it was fully replaced by the Permit & Zoning hover zone back at v881 and hasn't had a reachable button since (both tooltip builders already generate the pill row without it). The hover zone itself (`PZ_ENABLED`, `CORE_Permits` mirror read, `tt-pz-zone`) is untouched and stays off pending that integration being made reliable, per Byron.
 - **2026-11-13** — Permit & Zoning Tracker v94 → v175: the rebuilt tracker (previously deployed separately as `permit-tracker-v2.html`) now occupies the canonical `permit-zoning-tracker.html` URL, replacing the original v1 tool, which is retired to `archive/permit-zoning-tracker.html` for reference (not removed from the repo, so not listed under Retired). No Azure AD change needed — the redirect URI is computed from the page's own path, and this exact path was already registered. The original v1-only SharePoint list, `CORE_Permits`, is no longer read or written by this tool; `project-pipeline.html` still reads it for one small read-only "v879" mirror feature, so it has NOT been deleted from SharePoint pending that dependency being resolved.
