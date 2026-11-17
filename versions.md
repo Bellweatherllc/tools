@@ -35,11 +35,12 @@ Last updated: 2026-11-17
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
 | Selections List Setup | `selections/selections-setup.html` | v3 |
+| Selections · LC | `selections/lc-portal.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v29 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v10 |
+| BW Tool Index | `bw-tool-index.html` | v11 |
 | CORE System Map | `core-system-map.html` | v18 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
@@ -72,6 +73,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-17** — Selections · LC v1 (new, `selections/lc-portal.html`): the LC/warehouse selections prototype, **read-only on SharePoint**. A small adapter stands in for the prototype's artifact database: `items` and `jobs` come from `CORE_Selections`, `CORE_SelectionAllowances` and `CORE_SelectionChoices` on BWCore (3 Graph reads, every field named in `$select`); trips, receipts and check-ins return empty; every write is refused. BT's free-text `Ordered` now drives Ordered / Owner supplied. Brand fonts, `data-tip` tooltips, red badge; fixed the empty bulk-edit bar showing. Loads all jobs at once — switch to per-job loading before the lists grow. BW Tool Index v10 → v11: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/lc-portal.html` added as an SPA redirect URI on the Azure app registration.
 - **2026-11-17** — Selections List Setup v2 → v3: `Ordered` is now Text (BT's "Ordered?" is free text like `Yes, Build` / `Owner supplied`). New **Import a job** card: reads a canon JSON file in the browser and adds a job's allowances, selections (linked to allowances) and choices (linked to selections). Add-only, skips what's already there by title, retries throttled requests, refuses to run unless the column check is all green. No job data is in the repo.
 - **2026-11-17** — Selections List Setup v1 → v2: version-history card reworded to match SharePoint's actual labels, and reframed as a check — new BWCore lists already default to versioning on, 50 versions, no content approval.
 - **2026-11-17** — Selections List Setup v1 (new, `selections/selections-setup.html`): admin page that checks and creates the selections backbone on BWCore — `CORE_SelectionAllowances`, `CORE_Selections`, `CORE_SelectionChoices` — with every column (BuilderTrend-canon names, money as integer cents, `SelectionStatus`/`ChoiceStatus`, never `Status`) and index. Add-only: never deletes, renames, retypes, or touches items; wrong-type columns are reported for a person to fix. Version-history limit (50) is a manual step listed on the page. BW Tool Index v9 → v10: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/selections-setup.html` added as an SPA redirect URI on the Azure app registration.
