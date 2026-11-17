@@ -36,6 +36,7 @@ button.primary{background:var(--navy);color:#fff}
 button:disabled{opacity:.5;cursor:default}
 .filebtn{display:inline-block;font:600 14px/1 var(--sans);padding:11px 16px;border-radius:6px;border:1px solid var(--navy);background:#fff;color:var(--navy);cursor:pointer}
 .filebtn input{display:none}
+.chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;cursor:pointer}
 .kv{display:grid;grid-template-columns:auto auto;gap:2px 16px;justify-content:start;margin-top:10px;font-size:14px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--linen);vertical-align:top}
@@ -74,7 +75,7 @@ ol{margin:6px 0 0;padding-left:20px}
 <main id="app" class="wrap hidden">
   <div class="card">
     <h2>What this page does</h2>
-    <p>Creates the three selections lists on <b>BWCore</b>, with every column and index the selections tool expects. Column names follow BuilderTrend's structure.</p>
+    <p>Creates the five selections lists on <b>BWCore</b>, with every column and index the selections tool expects. Column names follow BuilderTrend's structure.</p>
     <p class="muted">It only adds. It never deletes, renames, or changes an existing list or column, and it never touches list items. If a column exists with the wrong type, it's reported here for a person to fix.</p>
     <div class="btns">
       <button id="checkBtn" data-tip="Read-only. Compares SharePoint to the expected setup." >Check</button>
@@ -91,17 +92,18 @@ ol{margin:6px 0 0;padding-left:20px}
   <div class="card">
     <h2>Import a job</h2>
     <p>Loads one job's selections from a canon file (<code>JOB.canon.json</code>, converted from the BuilderTrend print export). The file is read in your browser and goes only to SharePoint.</p>
-    <p class="muted">It only adds. Allowances and selections already in SharePoint for that job (same title) are skipped, and so are choices already on a selection, so it's safe to run again. Runs only when the check above is all green.</p>
+    <p class="muted">Adds allowances, selections, choices, line items and comments. Records already in SharePoint for that job (same title) are skipped unless you tick <b>Also update existing records</b>; then only fields that changed are written. It never deletes, and it runs only when the check above is all green. Safe to run again.</p>
     <div class="btns">
       <label class="filebtn" data-tip="Pick a JOB.canon.json file.">Choose file<input type="file" id="impFile" accept=".json,application/json"></label>
       <button class="primary" id="impBtn" disabled data-tip="Adds what's missing for this job.">Import</button>
     </div>
+    <label class="chk" data-tip="Records already in SharePoint (same title) get any changed fields from this file." data-tip-d="Only fields that differ are written. Nothing is deleted."><input type="checkbox" id="impUpdate"> Also update existing records</label>
     <div id="impSummary" class="muted" style="margin-top:10px"></div>
   </div>
 
   <div class="card">
     <h2>One check per list: version history</h2>
-    <p>The page can't read or set version history. On BWCore, new lists already start with the right settings, so this is a check. For each of the three lists:</p>
+    <p>The page can't read or set version history. On BWCore, new lists already start with the right settings, so this is a check. For each of the five lists:</p>
     <ol>
       <li>Open the list on BWCore, then <b>gear icon → List settings → Versioning settings</b>.</li>
       <li>Confirm: <b>Require content approval</b> = No, <b>Create a version each time you edit an item</b> = Yes, <b>Keep the following number of versions</b> = <b>50</b>.</li>
@@ -120,7 +122,7 @@ ol{margin:6px 0 0;padding-left:20px}
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v3';
+const CORE_VERSION = 'v4';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -179,8 +181,26 @@ const SPEC=[
     ['SelectedBy','text'],
     ['BtChoiceId','text',{idx:true}],
   ]},
+  {list:'CORE_SelectionLineItems', desc:'Selections: one item per BuilderTrend choice line item (cost capture). Title = item name.', builtinIndex:['Modified'], cols:[
+    ['Choice','lookup',{target:'CORE_SelectionChoices',idx:true}],
+    ['Job','text',{idx:true}],
+    ['CostCode','text',{idx:true}],
+    ['CostType','text'],
+    ['Description','note'],
+    ['Qty','num'],
+    ['Unit','text'],
+    ['UnitPriceCents','cents'],
+    ['PriceCents','cents'],
+  ]},
+  {list:'CORE_SelectionComments', desc:'Selections: one item per BuilderTrend discussion comment. Title = author and time.', builtinIndex:['Modified'], cols:[
+    ['Selection','lookup',{target:'CORE_Selections',idx:true}],
+    ['Job','text',{idx:true}],
+    ['Author','text'],
+    ['PostedAt','datetime',{idx:true}],
+    ['Body','note'],
+  ]},
 ];
-const KIND_LABEL={text:'Text',note:'Long text',cents:'Number (cents)',date:'Date',bool:'Yes/No',choice:'Choice',lookup:'Lookup'};
+const KIND_LABEL={text:'Text',note:'Long text',cents:'Number (cents)',num:'Number',date:'Date',datetime:'Date and time',bool:'Yes/No',choice:'Choice',lookup:'Lookup'};
 
 /* ── Graph helpers ── */
 async function gGet(url){ return SherpaAuth.graph(url); }
@@ -196,7 +216,9 @@ function colDef(name,kind,opt,listIds){
   if(kind==='text') d.text={};
   else if(kind==='note') d.text={allowMultipleLines:true,textType:'plain',appendChangesToExistingText:false,linesForEditing:6};
   else if(kind==='cents') d.number={decimalPlaces:'none'};
+  else if(kind==='num') d.number={decimalPlaces:'automatic'};
   else if(kind==='date') d.dateTime={format:'dateOnly',displayAs:'default'};
+  else if(kind==='datetime') d.dateTime={format:'dateTime',displayAs:'default'};
   else if(kind==='bool') d.boolean={};
   else if(kind==='choice') d.choice={allowTextEntry:true,choices:opt.choices,displayAs:'dropDownMenu'};
   else if(kind==='lookup') d.lookup={listId:listIds[opt.target],columnName:'Title'};
@@ -205,8 +227,8 @@ function colDef(name,kind,opt,listIds){
 function kindOf(c){
   if(c.lookup) return 'lookup';
   if(c.text) return c.text.allowMultipleLines?'note':'text';
-  if(c.number) return 'cents';
-  if(c.dateTime) return 'date';
+  if(c.number) return c.number.decimalPlaces==='none'?'cents':'num';
+  if(c.dateTime) return c.dateTime.format==='dateTime'?'datetime':'date';
   if(c.boolean) return 'bool';
   if(c.choice) return 'choice';
   return 'other';
@@ -227,7 +249,6 @@ async function inspect(){
         else{
           row.id=c.id; row.indexed=!!c.indexed; row.actual=kindOf(c);
           let ok=row.actual===kind;
-          if(ok&&kind==='cents'&&c.number&&c.number.decimalPlaces&&c.number.decimalPlaces!=='none'&&c.number.decimalPlaces!=='automatic') ok=false;
           if(ok&&kind==='lookup'&&listIds[opt.target]&&c.lookup.listId&&c.lookup.listId.toLowerCase().replace(/[{}]/g,'')!==listIds[opt.target].toLowerCase().replace(/[{}]/g,'')) ok=false;
           row.state=!ok?'wrongtype':(row.idx&&!row.indexed)?'noindex':'ok';
         }
@@ -317,25 +338,49 @@ async function runApply(){
 let IMP=null;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function gRetry(fn){ for(let a=0;;a++){ try{ return await fn(); }catch(e){ if([429,503,504].includes(e.status)&&a<5){ await sleep(1500*2**a); continue; } throw e; } } }
-const colKinds=list=>new Map(SPEC.find(s=>s.list===list).cols.map(([n,k])=>[n,k]));
+const specCols=list=>SPEC.find(s=>s.list===list).cols;
+const colKinds=list=>new Map(specCols(list).map(([n,k])=>[n,k]));
+function fieldValue(kind,v){
+  if(v==null||v==='') return null;
+  if(kind==='date') return /^\d{4}-\d{2}-\d{2}$/.test(v)?v+'T12:00:00Z':v;
+  if(kind==='datetime') return new Date(v).toISOString();
+  if(kind==='cents') return Math.round(Number(v));
+  if(kind==='num') return Number(v);
+  if(kind==='bool') return !!v;
+  if(kind==='text') return String(v).slice(0,255);
+  return String(v);
+}
+function norm(kind,v){
+  if(v==null||v==='') return null;
+  if(kind==='date') return String(v).slice(0,10);
+  if(kind==='datetime') return new Date(v).toISOString();
+  if(kind==='cents'||kind==='num') return Number(v);
+  if(kind==='bool') return !!v;
+  if(kind==='text') return String(v).slice(0,255).trim();
+  return String(v).replace(/\r\n/g,'\n').trim();
+}
 function toFields(rec,list){
   const kinds=colKinds(list), f={};
   if(rec.Title!=null&&rec.Title!=='') f.Title=String(rec.Title).slice(0,255);
   for(const [k,v] of Object.entries(rec)){
-    if(v==null||v===''||!kinds.has(k)) continue;
-    const kind=kinds.get(k);
-    if(kind==='lookup') continue;
-    if(kind==='date') f[k]=/^\d{4}-\d{2}-\d{2}$/.test(v)?v+'T12:00:00Z':v;
-    else if(kind==='cents') f[k]=Math.round(Number(v));
-    else if(kind==='bool') f[k]=!!v;
-    else if(kind==='text') f[k]=String(v).slice(0,255);
-    else f[k]=v;
+    if(!kinds.has(k)||kinds.get(k)==='lookup') continue;
+    const fv=fieldValue(kinds.get(k),v); if(fv!=null) f[k]=fv;
   }
   return f;
 }
-const SEL={CORE_SelectionAllowances:'Title,Job',CORE_Selections:'Title,Job',CORE_SelectionChoices:'Title,Job,SelectionLookupId'};
+// fields in rec that differ from what SharePoint holds (only keys present in rec)
+function changedFields(rec,list,have){
+  const kinds=colKinds(list), f={};
+  for(const [k,v] of Object.entries(rec)){
+    if(!kinds.has(k)||kinds.get(k)==='lookup') continue;
+    const kind=kinds.get(k);
+    if(norm(kind,v)!==norm(kind,have[k])) f[k]=fieldValue(kind,v);
+  }
+  return f;
+}
+const selectFor=list=>['Title',...specCols(list).map(([n,k])=>k==='lookup'?n+'LookupId':n)].join(',');
 async function jobItems(listId,list,job){
-  return gAll(`${LISTS}/${listId}/items?$filter=fields/Job eq '${job.replace(/'/g,"''")}'&$expand=fields($select=${SEL[list]})&$top=999`);
+  return gAll(`${LISTS}/${listId}/items?$filter=fields/Job eq '${job.replace(/'/g,"''")}'&$expand=fields($select=${selectFor(list)})&$top=999`);
 }
 async function pool(tasks,n,onDone){ let i=0; const run=async()=>{ while(i<tasks.length){ const t=tasks[i++]; await t(); onDone(); } }; await Promise.all(Array.from({length:n},run)); }
 function readImport(text){
@@ -343,36 +388,76 @@ function readImport(text){
   if(!d||typeof d.job!=='string'||!Array.isArray(d.selections)||!Array.isArray(d.allowances)) throw new Error('Not a canon file: expected job, allowances, selections.');
   return d;
 }
+function counts(d){
+  const ch=d.selections.flatMap(s=>s.Choices||[]);
+  return {allowances:d.allowances.length, selections:d.selections.length, choices:ch.length,
+    lineItems:ch.reduce((a,c)=>a+(c.LineItems||[]).length,0), comments:d.selections.reduce((a,s)=>a+(s.Comments||[]).length,0)};
+}
 async function previewImport(){
-  const d=IMP, nC=d.selections.reduce((a,s)=>a+(s.Choices||[]).length,0);
-  $('impSummary').innerHTML=`<div class="kv"><span>Job</span><b>${esc(d.job)}</b><span>Allowances</span><b>${d.allowances.length}</b><span>Selections</span><b>${d.selections.length}</b><span>Choices</span><b>${nC}</b>${d.source&&d.source.printed?`<span>Exported</span><b>${esc(d.source.printed)}</b>`:''}</div>`;
+  const d=IMP, n=counts(d);
+  $('impSummary').innerHTML=`<div class="kv"><span>Job</span><b>${esc(d.job)}</b><span>Allowances</span><b>${n.allowances}</b><span>Selections</span><b>${n.selections}</b><span>Choices</span><b>${n.choices}</b><span>Line items</span><b>${n.lineItems}</b><span>Comments</span><b>${n.comments}</b>${d.source&&d.source.printed?`<span>Exported</span><b>${esc(d.source.printed)}</b>`:''}</div>`;
   $('impBtn').disabled=false;
 }
 async function runImport(){
-  const d=IMP, job=d.job;
+  const d=IMP, job=d.job, update=$('impUpdate').checked;
   $('impBtn').disabled=$('checkBtn').disabled=$('applyBtn').disabled=true;
-  log('— Import '+job+', '+new Date().toLocaleString()+' —');
+  log('— Import '+job+(update?' (add + update)':' (add only)')+', '+new Date().toLocaleString()+' —');
   try{
     const {report,listIds}=await inspect(); const {bad,todo}=render(report);
-    if(bad||todo||Object.keys(listIds).length<3){ log('✗ Not imported: the check above must be all green first.'); $('impSummary').innerHTML+='<p><span class="pill bad">Not imported</span> Fix the check above first.</p>'; return; }
-    const A=listIds.CORE_SelectionAllowances, S_=listIds.CORE_Selections, C=listIds.CORE_SelectionChoices;
-    const aId=new Map((await jobItems(A,'CORE_SelectionAllowances',job)).map(x=>[x.fields.Title,x.id]));
-    const sId=new Map((await jobItems(S_,'CORE_Selections',job)).map(x=>[x.fields.Title,x.id]));
-    const cKey=new Set((await jobItems(C,'CORE_SelectionChoices',job)).map(x=>x.fields.SelectionLookupId+'|'+x.fields.Title));
-    log(`Already in SharePoint for ${job}: ${aId.size} allowances, ${sId.size} selections, ${cKey.size} choices.`);
-    let done=0, total=0, fails=0; const tick=()=>{ done++; $('impSummary').querySelector('.prog')&&( $('impSummary').querySelector('.prog').textContent=`Importing… ${done} / ${total}`); };
+    if(bad||todo||Object.keys(listIds).length<SPEC.length){ log('✗ Not imported: the check above must be all green first.'); $('impSummary').innerHTML+='<p><span class="pill bad">Not imported</span> Fix the check above first.</p>'; return; }
+    const ID={A:listIds.CORE_SelectionAllowances,S:listIds.CORE_Selections,C:listIds.CORE_SelectionChoices,L:listIds.CORE_SelectionLineItems,M:listIds.CORE_SelectionComments};
+    const [eA,eS,eC,eL,eM]=await Promise.all([
+      jobItems(ID.A,'CORE_SelectionAllowances',job),jobItems(ID.S,'CORE_Selections',job),jobItems(ID.C,'CORE_SelectionChoices',job),
+      jobItems(ID.L,'CORE_SelectionLineItems',job),jobItems(ID.M,'CORE_SelectionComments',job)]);
+    const byKey=(arr,key)=>new Map(arr.map(x=>[key(x.fields),x]));
+    const aMap=byKey(eA,f=>f.Title), sMap=byKey(eS,f=>f.Title);
+    const cMap=byKey(eC,f=>f.SelectionLookupId+'|'+f.Title);
+    const lSeen={}, lMap=byKey(eL.slice().sort((x,y)=>Number(x.id)-Number(y.id)),f=>{const k=f.ChoiceLookupId+'|'+f.Title; lSeen[k]=(lSeen[k]||0)+1; return k+'#'+lSeen[k];});
+    const mKey=(sid,f)=>sid+'|'+new Date(f.PostedAt).toISOString()+'|'+f.Author+'|'+String(f.Body||'').replace(/\s+/g,' ').trim().slice(0,80);
+    const mMap=byKey(eM,f=>mKey(f.SelectionLookupId,f));
+    log(`Already in SharePoint for ${job}: ${eA.length} allowances, ${eS.length} selections, ${eC.length} choices, ${eL.length} line items, ${eM.length} comments.`);
+    const tally={}; const bump=(list,what)=>{ (tally[list]=tally[list]||{created:0,updated:0,same:0,failed:0})[what]++; };
+    let done=0, total=0; const tick=()=>{ done++; const p=$('impSummary').querySelector('.prog'); if(p) p.textContent=`Importing… ${done} / ${total}`; };
     $('impSummary').insertAdjacentHTML('beforeend','<p class="prog"></p>');
     const post=(listId,fields)=>gRetry(()=>gSend(`${LISTS}/${listId}/items`,'POST',{fields}));
-    const step=async(label,tasks)=>{ total=done+tasks.length; await pool(tasks,4,tick); log(`${label}: ${tasks.length} attempted.`); };
-    await step('Allowances',d.allowances.filter(a=>!aId.has(a.Title)).map(a=>async()=>{ try{ const r=await post(A,toFields(a,'CORE_SelectionAllowances')); aId.set(a.Title,r.id); }catch(e){ fails++; log('  ✗ allowance '+a.Title+': '+spErr(e)); } }));
-    await step('Selections',d.selections.filter(s=>!sId.has(s.Title)).map(s=>async()=>{ try{ const f=toFields(s,'CORE_Selections'); if(s.AllowanceTitle&&aId.has(s.AllowanceTitle)) f.AllowanceLookupId=aId.get(s.AllowanceTitle); const r=await post(S_,f); sId.set(s.Title,r.id); }catch(e){ fails++; log('  ✗ selection '+s.Title+': '+spErr(e)); } }));
-    const ct=[]; for(const s of d.selections) for(const c of (s.Choices||[])){ const sid=sId.get(s.Title); if(!sid||cKey.has(sid+'|'+c.Title)) continue; ct.push(async()=>{ try{ const f=toFields({...c,Job:job},'CORE_SelectionChoices'); f.SelectionLookupId=sid; await post(C,f); }catch(e){ fails++; log('  ✗ choice '+c.Title+' ('+s.Title+'): '+spErr(e)); } }); }
+    const patch=(listId,id,fields)=>gRetry(()=>gSend(`${LISTS}/${listId}/items/${id}/fields`,'PATCH',fields));
+    // one record: create if new; if it exists, update changed fields when asked
+    async function upsert(label,list,listId,existing,rec,extra){
+      try{
+        if(!existing){ const r=await post(listId,{...toFields(rec,list),...extra}); bump(label,'created'); return r.id; }
+        if(update){
+          const f=changedFields(rec,list,existing.fields);
+          for(const [k,v] of Object.entries(extra)) if(String(existing.fields[k]??'')!==String(v??'')) f[k]=v;
+          if(Object.keys(f).length){ await patch(listId,existing.id,f); bump(label,'updated'); } else bump(label,'same');
+        } else bump(label,'same');
+        return existing.id;
+      }catch(e){ bump(label,'failed'); log('  ✗ '+label+' '+(rec.Title||'')+': '+spErr(e)); return existing&&existing.id; }
+    }
+    const step=async(label,tasks)=>{ total=done+tasks.length; await pool(tasks,4,tick); const t=tally[label]||{}; log(`${label}: ${t.created||0} added, ${t.updated||0} updated, ${t.same||0} unchanged, ${t.failed||0} failed.`); };
+    const aId=new Map([...aMap].map(([k,v])=>[k,v.id])), sId=new Map([...sMap].map(([k,v])=>[k,v.id])), cId=new Map();
+    await step('Allowances',d.allowances.map(a=>async()=>{ const id=await upsert('Allowances','CORE_SelectionAllowances',ID.A,aMap.get(a.Title),a,{}); if(id) aId.set(a.Title,id); }));
+    await step('Selections',d.selections.map(s=>async()=>{ const ex={}; if(s.AllowanceTitle&&aId.has(s.AllowanceTitle)) ex.AllowanceLookupId=aId.get(s.AllowanceTitle);
+      const id=await upsert('Selections','CORE_Selections',ID.S,sMap.get(s.Title),s,ex); if(id) sId.set(s.Title,id); }));
+    const ct=[]; for(const s of d.selections) for(const c of (s.Choices||[])){ const sid=sId.get(s.Title); if(!sid) continue;
+      ct.push(async()=>{ const id=await upsert('Choices','CORE_SelectionChoices',ID.C,cMap.get(sid+'|'+c.Title),{...c,Job:job},{SelectionLookupId:sid}); if(id) cId.set(sid+'|'+c.Title,id); }); }
     await step('Choices',ct);
-    const [na,ns,nc]=await Promise.all([jobItems(A,'CORE_SelectionAllowances',job),jobItems(S_,'CORE_Selections',job),jobItems(C,'CORE_SelectionChoices',job)]).then(r=>r.map(x=>x.length));
-    const want=[d.allowances.length,d.selections.length,d.selections.reduce((a,s)=>a+(s.Choices||[]).length,0)];
-    const ok=!fails&&na>=want[0]&&ns>=want[1]&&nc>=want[2];
-    log(`In SharePoint now for ${job}: ${na} allowances, ${ns} selections, ${nc} choices.`+(fails?` ${fails} failed (see above).`:''));
-    $('impSummary').querySelector('.prog').innerHTML= ok?`<span class="pill ok">Imported</span> ${na} allowances, ${ns} selections, ${nc} choices for ${esc(job)}.`:`<span class="pill bad">Incomplete</span> ${fails} failed. See the log; run Import again to retry.`;
+    const lt=[]; for(const s of d.selections) for(const c of (s.Choices||[])){ const cid=cId.get(sId.get(s.Title)+'|'+c.Title); if(!cid) continue; const seen={};
+      for(const li of (c.LineItems||[])){ const k=cid+'|'+li.Title; seen[k]=(seen[k]||0)+1; const key=k+'#'+seen[k];
+        lt.push(()=>upsert('Line items','CORE_SelectionLineItems',ID.L,lMap.get(key),{...li,Job:job},{ChoiceLookupId:cid})); } }
+    await step('Line items',lt);
+    const mt=[]; for(const s of d.selections){ const sid=sId.get(s.Title); if(!sid) continue;
+      for(const m of (s.Comments||[])){ const key=mKey(sid,m);
+        const rec={...m,Job:job,Title:(m.Author+' · '+new Date(m.PostedAt).toLocaleString('en-US',{timeZone:'America/New_York',dateStyle:'medium',timeStyle:'short'})).slice(0,255)};
+        mt.push(()=>upsert('Comments','CORE_SelectionComments',ID.M,mMap.get(key),rec,{SelectionLookupId:sid})); } }
+    await step('Comments',mt);
+    const fails=Object.values(tally).reduce((a,t)=>a+t.failed,0);
+    const now=await Promise.all([['CORE_SelectionAllowances',ID.A],['CORE_Selections',ID.S],['CORE_SelectionChoices',ID.C],['CORE_SelectionLineItems',ID.L],['CORE_SelectionComments',ID.M]].map(([l,i])=>jobItems(i,l,job).then(x=>x.length)));
+    const n=counts(d), want=[n.allowances,n.selections,n.choices,n.lineItems,n.comments];
+    const ok=!fails&&now.every((v,i)=>v>=want[i]);
+    const summary=`${now[0]} allowances, ${now[1]} selections, ${now[2]} choices, ${now[3]} line items, ${now[4]} comments`;
+    log(`In SharePoint now for ${job}: ${summary}.`+(fails?` ${fails} failed (see above).`:''));
+    const upd=Object.values(tally).reduce((a,t)=>a+t.updated,0);
+    $('impSummary').querySelector('.prog').innerHTML= ok?`<span class="pill ok">Imported</span> ${summary} for ${esc(job)}.${update?` ${upd} records updated.`:''}`:`<span class="pill bad">Incomplete</span> ${fails} failed. See the log; run Import again to retry.`;
   }catch(e){ log('✗ Import stopped: '+spErr(e)); }
   finally{ $('impBtn').disabled=$('checkBtn').disabled=$('applyBtn').disabled=false; }
 }
