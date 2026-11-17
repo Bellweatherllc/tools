@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-14
+Last updated: 2026-11-17
 
 ## Live tools
 
@@ -34,11 +34,12 @@ Last updated: 2026-11-14
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
+| Selections List Setup | `selections/selections-setup.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v29 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v9 |
+| BW Tool Index | `bw-tool-index.html` | v10 |
 | CORE System Map | `core-system-map.html` | v18 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
@@ -71,6 +72,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-17** — Selections List Setup v1 (new, `selections/selections-setup.html`): admin page that checks and creates the selections backbone on BWCore — `CORE_SelectionAllowances`, `CORE_Selections`, `CORE_SelectionChoices` — with every column (BuilderTrend-canon names, money as integer cents, `SelectionStatus`/`ChoiceStatus`, never `Status`) and index. Add-only: never deletes, renames, retypes, or touches items; wrong-type columns are reported for a person to fix. Version-history limit (50) is a manual step listed on the page. BW Tool Index v9 → v10: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/selections-setup.html` added as an SPA redirect URI on the Azure app registration.
 - **2026-11-14** — Fleet Tracker v2 → v3: added the round **?** button (upper right of the header) linking the new Help & Repair manual (`fleet-tracker-manual.html` / `.md`, same shell as the other manuals), plus the shared `data-tip` floating-tooltip engine. BW Tool Index v8 → v9: Fleet Tracker Manual tile under Reference & Manuals.
 - **2026-11-13** — Fleet Tracker v1 → v2: switched type to the brand fonts — TT Norms Pro (sans) and Swear Text (serif, incl. italic for the wordmark), served from `fonts/` — replacing the prototype's Google Fonts Figtree/Newsreader. Header wordmark sized down slightly so the wider Swear keeps the action buttons on one row.
 - **2026-11-13** — Fleet Tracker v1 (new, `fleet-tracker.html`): the local Fleet prototype ported to CORE. UI and logic unchanged; data now lives in BWCore lists `CORE_FleetVehicles` (one item per vehicle; dates as ISO text; `FleetStatus`, never `Status`) and `CORE_FleetSettings` (insurance/EZ Pass/Compass/decals/contacts/drivers as JSON, Title = key). SherpaAuth sign-in; access via the new `FleetRole` column on CORE_TeamMembers (admin = edit + Setup, member = view only, blank = no access; until the column exists PipelineRole admins stand in). Admin Setup creates the lists and column, imports the snapshot .html (never overwrites existing items), and anchors registration/insurance-card links by driveItem id. The prototype's spreadsheet sync and file-upload are removed; Find in SharePoint now uses Graph search. No fleet data is in the repo. Needs `https://bellweatherllc.github.io/tools/fleet-tracker.html` added as an SPA redirect URI on the Azure app registration.
