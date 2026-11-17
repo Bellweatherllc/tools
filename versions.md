@@ -34,8 +34,8 @@ Last updated: 2026-11-17
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
-| Selections List Setup | `selections/selections-setup.html` | v5 |
-| Selections · LC | `selections/lc-portal.html` | v1 |
+| Selections List Setup | `selections/selections-setup.html` | v6 |
+| Selections · LC | `selections/lc-portal.html` | v2 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v29 |
 | Core Roadmap | `core_roadmap.html` | v57 |
@@ -73,6 +73,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-17** — Selections · LC v1 → v2: loads **one job at a time** — every Graph read filters on the indexed `Job` column; the current job loads first, other active jobs follow in the background, archived jobs load only when opened. Job list comes from `CORE_SelectionJobs` (falls back to reading the `Job` column if that list is empty). Detail sheet adds **Cost line items** (`CORE_SelectionLineItems`), **Discussion** (`CORE_SelectionComments`) and **Files** (`CORE_SelectionFiles` library, thumbnails via Graph, links resolved at runtime). Still read-only.
+- **2026-11-17** — Selections List Setup v5 → v6: adds `CORE_SelectionJobs` (one row per job: `Job`, `Archived`, `LastImportedAt`, `SourcePrinted`; written by Import) and the `CORE_SelectionFiles` document library (`Job`, `Selection`, `Choice`, `Kind`: Image / Cut sheet / Quote / Other).
 - **2026-11-17** — Selections List Setup v4 → v5: comment author column is `PostedBy`, not `Author` — `Author` is SharePoint's built-in Created By (person) field on every list, so the check read it as Wrong type. The unused `Author` row no longer appears.
 - **2026-11-17** — Selections List Setup v3 → v4: two new lists — `CORE_SelectionLineItems` (cost capture: `Choice` lookup, `Job`, `CostCode` (indexed), `CostType`, `Description`, `Qty`, `Unit`, `UnitPriceCents`, `PriceCents`) and `CORE_SelectionComments` (BT Discussions: `Selection` lookup, `Job`, `Author`, `PostedAt` (date-time, indexed), `Body`). Import now loads line items and comments too, and has an opt-in **Also update existing records** that patches only changed fields (repeat runs make 0 changes). Still never deletes.
 - **2026-11-17** — Selections · LC v1 (new, `selections/lc-portal.html`): the LC/warehouse selections prototype, **read-only on SharePoint**. A small adapter stands in for the prototype's artifact database: `items` and `jobs` come from `CORE_Selections`, `CORE_SelectionAllowances` and `CORE_SelectionChoices` on BWCore (3 Graph reads, every field named in `$select`); trips, receipts and check-ins return empty; every write is refused. BT's free-text `Ordered` now drives Ordered / Owner supplied. Brand fonts, `data-tip` tooltips, red badge; fixed the empty bulk-edit bar showing. Loads all jobs at once — switch to per-job loading before the lists grow. BW Tool Index v10 → v11: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/lc-portal.html` added as an SPA redirect URI on the Azure app registration.

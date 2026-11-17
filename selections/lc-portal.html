@@ -15,6 +15,21 @@
 .ver{font:700 11px/1 var(--sans);letter-spacing:.08em;color:#ef4444;vertical-align:middle;margin-left:6px;font-style:normal}
 .ro{font:500 11px/1 var(--sans);color:var(--muted);vertical-align:middle;margin-left:8px;font-style:normal;letter-spacing:.02em}
 .bulkbar[hidden]{display:none!important}
+.spscroll{overflow-x:auto}
+.sptab{width:100%;border-collapse:collapse;font-size:13px}
+.sptab th,.sptab td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.sptab th{font-weight:600;color:var(--muted);font-size:12px}
+.sptab .n{text-align:right;white-space:nowrap}
+.sptab tfoot td{font-weight:600;border-bottom:0}
+.spcom{list-style:none;margin:0;padding:0}
+.spcom li{padding:8px 0;border-bottom:1px solid var(--line)}
+.spcom li:last-child{border-bottom:0}
+.spbody{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}
+.spfiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:8px}
+.spfile{display:flex;flex-direction:column;gap:4px;text-decoration:none;color:inherit;font-size:12.5px}
+.spthumb{display:block;aspect-ratio:1;background:var(--wash);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.spthumb img{width:100%;height:100%;object-fit:cover;display:block}
+.spname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #tt{position:fixed;z-index:9999;pointer-events:none;background:#282828;color:#fff;font:400 12px/1.4 var(--sans);padding:6px 9px;border-radius:5px;max-width:280px;opacity:0;transition:opacity .1s}
 #tt.show{opacity:1}
 #tt .tt-d{opacity:.75;margin-top:2px}
@@ -555,7 +570,7 @@ dd .ph{color:var(--muted);font-weight:400;font-style:italic}
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v1';
+const CORE_VERSION = 'v2';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -569,55 +584,147 @@ const CORE_VERSION = 'v1';
 
 /* ── SharePoint adapter ─────────────────────────────────────────────────────
    Stands in for the artifact database the LC code was written against.
-   Read-only. items + jobs come from the BWCore selections lists; trips,
-   receipts and checkins (CORE-only, no lists yet) come back empty.
-   Every write is refused. Field names are canon (see the selections repo).  */
+   Read-only. Loads ONE JOB AT A TIME (every query filters on the indexed Job
+   column): the current job first, then other active jobs in the background;
+   archived jobs only when opened. Jobs come from CORE_SelectionJobs.
+   trips/receipts/checkins (CORE-only, no lists yet) come back empty.        */
 (()=>{
   const GRAPH='https://graph.microsoft.com/v1.0';
   const LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
   async function gAll(url){ let out=[], next=url; while(next){ const j=await SherpaAuth.graph(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; } return out; }
   const day=v=>v?String(v).slice(0,10):null;
   const num=v=>(typeof v==='number'&&isFinite(v))?v:null;
-  let spLoad=null;
-  function loadSP(){
-    if(spLoad) return spLoad;
-    spLoad=(async()=>{
-      const [sel,alw,cho]=await Promise.all([
-        gAll(`${LISTS}/CORE_Selections/items?$expand=fields($select=Title,Job,Category,Location,DueDate,SelectionStatus,SelectionTotalCents,AllowanceLookupId,Ordered,OrderDate,LeadTime,OnHandLocation,ReceivedBy,DateReceived,Notes,ActualCostCents)&$top=999`),
-        gAll(`${LISTS}/CORE_SelectionAllowances/items?$expand=fields($select=Title,Job,AllowanceCents)&$top=999`),
-        gAll(`${LISTS}/CORE_SelectionChoices/items?$expand=fields($select=Title,Job,SelectionLookupId,Description,PriceCents,ChoiceStatus,SelectedDate,SelectedBy)&$top=999`)]);
-      const allow=new Map(alw.map(a=>[String(a.id),a.fields]));
-      const chBy=new Map();
-      for(const c of cho){ const k=String(c.fields.SelectionLookupId); if(!chBy.has(k)) chBy.set(k,[]); chBy.get(k).push(c.fields); }
-      const items=sel.map(x=>{
-        const f=x.fields, chs=(chBy.get(String(x.id))||[]).filter(c=>!c.ChoiceStatus||c.ChoiceStatus==='Selected');
-        const a=f.AllowanceLookupId!=null?allow.get(String(f.AllowanceLookupId)):null;
-        const ord=f.Ordered||'';
-        const fromOrdered=(ord.match(/^(?:yes|no)\s*,\s*(.+)$/i)||[])[1]||'';
-        const fromChoice=(chs[0]&&chs[0].Title&&chs[0].Title.includes(' | '))?chs[0].Title.split(' | ')[0]:'';
-        const notes=[f.Notes,...chs.map(c=>c.Description?(chs.length>1?c.Title+':\n':'')+c.Description:'')].filter(Boolean).join('\n\n');
-        return { id:'sp-'+x.id, Job:f.Job||null, Title:f.Title||null, Category:f.Category||null, Location:f.Location||null,
-          DueDate:day(f.DueDate), SelectionStatus:f.SelectionStatus||null,
-          SelectionTotalCents:num(f.SelectionTotalCents), AllowanceCents:a?num(a.AllowanceCents):null,
-          Ordered:ord||null, OrderDate:day(f.OrderDate), LeadTime:f.LeadTime||null, OnHandLocation:f.OnHandLocation||null,
-          ReceivedBy:f.ReceivedBy||null, DateReceived:day(f.DateReceived), ActualCostCents:num(f.ActualCostCents),
-          type:chs.map(c=>c.Title).filter(Boolean).join(' + ')||null, vendor:(fromOrdered||fromChoice)||null,
-          ownerSupplied:/^owner/i.test(ord), notes:notes||null };
-      });
-      const jobs=[...new Set(items.map(i=>i.Job).filter(Boolean))].sort().map((name,i)=>({name,createdAt:i}));
-      return {items,jobs};
-    })();
-    spLoad.catch(()=>{ spLoad=null; });
-    return spLoad;
+  const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const jobFilter=job=>`$filter=fields/Job eq '${encodeURIComponent(String(job).replace(/'/g,"''"))}'`;
+  const SEL={
+    CORE_Selections:'Title,Job,Category,Location,DueDate,SelectionStatus,SelectionTotalCents,AllowanceLookupId,Ordered,OrderDate,LeadTime,OnHandLocation,ReceivedBy,DateReceived,Notes,ActualCostCents',
+    CORE_SelectionAllowances:'Title,Job,AllowanceCents',
+    CORE_SelectionChoices:'Title,Job,SelectionLookupId,Description,PriceCents,ChoiceStatus,CreatedBy,SelectedDate,SelectedBy',
+    CORE_SelectionLineItems:'Title,Job,ChoiceLookupId,CostCode,CostType,Description,Qty,Unit,UnitPriceCents,PriceCents',
+    CORE_SelectionComments:'Title,Job,SelectionLookupId,PostedBy,PostedAt,Body'};
+  const forJob=(list,job)=>gAll(`${LISTS}/${list}/items?${jobFilter(job)}&$expand=fields($select=${SEL[list]})&$top=999`)
+    .catch(e=>{ if(e&&e.status===404&&list!=='CORE_Selections') return []; throw e; });   // optional lists may not exist yet
+
+  function build(sel,alw,cho,lis,com){
+    const allow=new Map(alw.map(a=>[String(a.id),a.fields]));
+    const chBy=new Map(), liBy=new Map(), coBy=new Map();
+    for(const c of cho){ const k=String(c.fields.SelectionLookupId); if(!chBy.has(k)) chBy.set(k,[]); chBy.get(k).push({id:String(c.id),...c.fields}); }
+    for(const l of lis){ const k=String(l.fields.ChoiceLookupId); if(!liBy.has(k)) liBy.set(k,[]); liBy.get(k).push(l.fields); }
+    for(const m of com){ const k=String(m.fields.SelectionLookupId); if(!coBy.has(k)) coBy.set(k,[]); coBy.get(k).push(m.fields); }
+    return sel.map(x=>{
+      const f=x.fields, chs=(chBy.get(String(x.id))||[]).filter(c=>!c.ChoiceStatus||c.ChoiceStatus==='Selected');
+      const a=f.AllowanceLookupId!=null?allow.get(String(f.AllowanceLookupId)):null;
+      const ord=f.Ordered||'';
+      const fromOrdered=(ord.match(/^(?:yes|no)\s*,\s*(.+)$/i)||[])[1]||'';
+      const fromChoice=(chs[0]&&chs[0].Title&&chs[0].Title.includes(' | '))?chs[0].Title.split(' | ')[0]:'';
+      const notes=[f.Notes,...chs.map(c=>c.Description?(chs.length>1?c.Title+':\n':'')+c.Description:'')].filter(Boolean).join('\n\n');
+      return { id:'sp-'+x.id, spId:String(x.id), Job:f.Job||null, Title:f.Title||null, Category:f.Category||null, Location:f.Location||null,
+        DueDate:day(f.DueDate), SelectionStatus:f.SelectionStatus||null,
+        SelectionTotalCents:num(f.SelectionTotalCents), AllowanceCents:a?num(a.AllowanceCents):null,
+        Ordered:ord||null, OrderDate:day(f.OrderDate), LeadTime:f.LeadTime||null, OnHandLocation:f.OnHandLocation||null,
+        ReceivedBy:f.ReceivedBy||null, DateReceived:day(f.DateReceived), ActualCostCents:num(f.ActualCostCents),
+        type:chs.map(c=>c.Title).filter(Boolean).join(' + ')||null, vendor:(fromOrdered||fromChoice)||null,
+        ownerSupplied:/^owner/i.test(ord), notes:notes||null,
+        lineItems:chs.flatMap(c=>liBy.get(c.id)||[]),
+        comments:(coBy.get(String(x.id))||[]).sort((p,q)=>String(q.PostedAt).localeCompare(String(p.PostedAt))) };
+    });
   }
+
+  let jobsP=null;
+  function loadJobs(){
+    if(jobsP) return jobsP;
+    jobsP=(async()=>{
+      try{
+        const rows=await gAll(`${LISTS}/CORE_SelectionJobs/items?$expand=fields($select=Title,Job,Archived,LastImportedAt)&$top=999`);
+        if(rows.length) return rows.map(x=>({name:x.fields.Job||x.fields.Title, archived:!!x.fields.Archived, createdAt:Date.parse(x.fields.LastImportedAt||'')||0})).filter(j=>j.name);
+      }catch(e){ if(!e||e.status!==404) throw e; }
+      // no jobs list yet: find jobs from the selections themselves (Job column only)
+      const rows=await gAll(`${LISTS}/CORE_Selections/items?$expand=fields($select=Job)&$top=999`);
+      return [...new Set(rows.map(x=>x.fields.Job).filter(Boolean))].sort().map((name,i)=>({name,createdAt:i,archived:false}));
+    })();
+    jobsP.catch(()=>{ jobsP=null; });
+    return jobsP;
+  }
+  const cache=new Map(), inflight=new Map(); let itemsCb=null, itemsErr=null;
+  const emit=()=>{ if(itemsCb){ const rows=[...cache.values()].flat(); itemsCb({docs:rows.map(r=>({id:r.id,data:()=>r}))}); } };
+  function loadJob(job){
+    if(!job||job==='All'||cache.has(job)) return Promise.resolve();
+    if(inflight.has(job)) return inflight.get(job);
+    const p=(async()=>{
+      const lists=['CORE_Selections','CORE_SelectionAllowances','CORE_SelectionChoices','CORE_SelectionLineItems','CORE_SelectionComments'];
+      const [sel,alw,cho,lis,com]=await Promise.all(lists.map(l=>forJob(l,job)));
+      cache.set(job,build(sel,alw,cho,lis,com)); emit();
+    })();
+    inflight.set(job,p); p.catch(()=>{}).finally(()=>inflight.delete(job));
+    return p;
+  }
+  async function loadActive(except){
+    const js=await loadJobs();
+    for(const j of js) if(!j.archived&&j.name!==except){ try{ await loadJob(j.name); }catch(e){ console.warn('Selections: could not load',j.name,e); } }
+  }
+  window.spEnsureJob=job=>{ if(job==='All') loadActive(); else loadJob(job).catch(e=>itemsErr&&itemsErr(e)); };
+  async function startItems(){
+    const js=await loadJobs();
+    let cur=null; try{ cur=localStorage.getItem('bw-job'); }catch(e){}
+    if(!js.some(j=>j.name===cur)) cur=(js.find(j=>!j.archived)||js[0]||{}).name;
+    if(cur) await loadJob(cur);
+    if(!cache.size) emit();
+    loadActive(cur);
+  }
+
+  /* detail sheet: cost line items, discussion, files */
+  const usd2=v=>typeof v==='number'?(v/100).toLocaleString(undefined,{style:'currency',currency:'USD'}):'';
+  const linkify=t=>t.replace(/https?:\/\/[^\s<]+/g,u=>`<a href="${u}" target="_blank" rel="noopener">${u.length>60?u.slice(0,57)+'…':u}</a>`);
+  const when=v=>{ const d=new Date(v); return isNaN(d)?E(v):d.toLocaleString('en-US',{timeZone:'America/New_York',dateStyle:'medium',timeStyle:'short'}); };
+  window.spDetailExtras=r=>{
+    let h='';
+    const L=r.lineItems||[];
+    if(L.length){
+      const tot=L.reduce((a,x)=>a+(x.PriceCents||0),0);
+      h+=`<section class="dsec"><h4>Cost line items</h4><div class="spscroll"><table class="sptab"><thead><tr><th>Item</th><th>Cost code</th><th>Type</th><th class="n">Qty</th><th class="n">Unit price</th><th class="n">Price</th></tr></thead><tbody>${L.map(x=>`<tr><td>${E(x.Title)}${x.Description?`<div class="note">${E(x.Description)}</div>`:''}</td><td>${E(x.CostCode)}</td><td>${E(x.CostType)}</td><td class="n">${x.Qty==null?'':E(x.Qty)}${x.Unit?' '+E(x.Unit):''}</td><td class="n">${usd2(x.UnitPriceCents)}</td><td class="n">${usd2(x.PriceCents)}</td></tr>`).join('')}</tbody>${L.length>1?`<tfoot><tr><td colspan="5">Total</td><td class="n">${usd2(tot)}</td></tr></tfoot>`:''}</table></div></section>`;
+    }
+    const C=r.comments||[];
+    if(C.length) h+=`<section class="dsec"><h4>Discussion</h4><ul class="spcom">${C.map(c=>`<li><div class="note">${E(c.PostedBy)} · ${when(c.PostedAt)}</div><div class="spbody">${linkify(E(c.Body))}</div></li>`).join('')}</ul></section>`;
+    h+=`<section class="dsec" id="spFiles" data-sel="${E(r.spId)}"><h4>Files</h4><div class="note">Loading…</div></section>`;
+    setTimeout(()=>fillFiles(r),0);
+    return h;
+  };
+  const filesByJob=new Map(); let libUrl=null;
+  async function jobFiles(job){
+    if(!filesByJob.has(job)){
+      const p=gAll(`${LISTS}/CORE_SelectionFiles/items?${jobFilter(job)}&$expand=fields($select=Job,SelectionLookupId,ChoiceLookupId,Kind,FileLeafRef),driveItem($select=id,name,webUrl,file,size)&$top=999`)
+        .catch(e=>{ if(e&&e.status===404) return null; throw e; });
+      filesByJob.set(job,p); p.catch(()=>filesByJob.delete(job));
+    }
+    return filesByJob.get(job);
+  }
+  async function fillFiles(r){
+    const box=()=>{ const el=document.getElementById('spFiles'); return el&&el.dataset.sel===String(r.spId)?el:null; };
+    let rows;
+    try{ rows=await jobFiles(r.Job); }catch(e){ const el=box(); if(el) el.innerHTML='<h4>Files</h4><div class="note">Couldn’t load files.</div>'; return; }
+    const el=box(); if(!el) return;
+    if(rows===null){ el.innerHTML='<h4>Files</h4><div class="note">No files library yet.</div>'; return; }
+    if(!libUrl){ try{ libUrl=(await SherpaAuth.graph(`${LISTS}/CORE_SelectionFiles?$select=webUrl`)).webUrl; }catch(e){} }
+    const mine=rows.filter(x=>String(x.fields.SelectionLookupId)===String(r.spId));
+    const add=`<div class="note">Add files in SharePoint${libUrl?`: <a href="${E(libUrl)}" target="_blank" rel="noopener">CORE_SelectionFiles</a>`:''}, tagged with Job <b>${E(r.Job)}</b> and this selection.</div>`;
+    if(!mine.length){ el.innerHTML='<h4>Files</h4><div class="note">No files yet.</div>'+add; return; }
+    el.innerHTML='<h4>Files</h4><div class="spfiles">'+mine.map(x=>{ const d=x.driveItem||{}; const name=d.name||x.fields.FileLeafRef||'File';
+      return `<a class="spfile" href="${E(d.webUrl||'#')}" target="_blank" rel="noopener" data-tip="${E(name)}"><span class="spthumb" data-item="${E(x.id)}"></span><span class="spname">${E(name)}</span>${x.fields.Kind?`<span class="note">${E(x.fields.Kind)}</span>`:''}</a>`; }).join('')+'</div>'+add;
+    for(const x of mine){
+      SherpaAuth.graph(`${LISTS}/CORE_SelectionFiles/items/${x.id}/driveItem/thumbnails?$select=medium`).then(t=>{
+        const u=t&&t.value&&t.value[0]&&t.value[0].medium&&t.value[0].medium.url; const sp=el.querySelector(`.spthumb[data-item="${x.id}"]`);
+        if(u&&sp) sp.innerHTML=`<img src="${E(u)}" alt="">`; }).catch(()=>{});
+    }
+  }
+
   const RO=()=>Promise.reject(Object.assign(new Error('Read-only: this page can’t save changes yet.'),{code:'readonly'}));
   const docRO={update:RO,set:RO,delete:RO,replace:RO,get:()=>Promise.resolve({exists:false,data:()=>undefined})};
   function coll(name){
     const c={ limit:()=>c, doc:()=>docRO, add:RO,
       onSnapshot(cb,err){ let live=true;
-        const src=name==='items'?loadSP().then(d=>d.items):name==='jobs'?loadSP().then(d=>d.jobs):Promise.resolve([]);
-        src.then(rows=>{ if(live) cb({docs:rows.map(r=>({id:r.id||String(r.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),data:()=>r}))}); })
-           .catch(e=>{ if(live&&err) err(e); });
+        if(name==='items'){ itemsCb=d=>{ if(live) cb(d); }; itemsErr=e=>{ if(live&&err) err(e); }; startItems().catch(itemsErr); }
+        else if(name==='jobs') loadJobs().then(js=>{ if(live) cb({docs:js.map(j=>({id:String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),data:()=>j}))}); }).catch(e=>{ if(live&&err) err(e); });
+        else Promise.resolve().then(()=>{ if(live) cb({docs:[]}); });
         return ()=>{ live=false; }; } };
     return c;
   }
@@ -1195,6 +1302,7 @@ function openDetail(id){
   ${sec("Product",cell("Title",r,true)+cell("color",r)+cell("sku",r)+cell("type",r)+cell("vendor",r)+cell("qty",r)+cell("link",r,true))}
   ${sec("Ordering & cost",cell("OrderDate",r)+cell("LeadTime",r)+cell("UnitPriceCents",r)+cell("AllowanceCents",r)+cell("ActualCostCents",r)+moneyNote(r))}
   ${sec("Where it is",cell("OnHandLocation",r)+cell("DateReceived",r)+cell("Location",r)+cell("needFor",{...r,needFor:phaseOf(r)})+(nd?`<div class="dl"><dt>Needed by</dt><dd>${fmtDate(nd)}</dd></div>`:"")+(hist.length?`<div class="dl wide"><dt>History</dt><dd class="hist">${hist.join("<br>")}</dd></div>`:""))}
+  ${window.spDetailExtras?spDetailExtras(r):""}
   ${sec("Notes",cell("notes",r,true)+(r.receiverNote?`<div class="dl wide"><dt>From receiving</dt><dd>${esc(r.receiverNote)}</dd></div>`:"")+cell("partOf",r,true))}
   ${setHtml}
   ${rcpts}
@@ -1650,7 +1758,7 @@ document.addEventListener("click",async e=>{
   if(t.dataset.view){view=t.dataset.view;history.replaceState(null,"","#"+view);render();window.scrollTo(0,0)}
   else if(t.dataset.roomf){roomF=t.dataset.roomf;render();const m=$("#main");if(m)window.scrollTo(0,0)}
   else if(t.hasAttribute("data-roomclear")){roomF=null;render()}
-  else if(t.dataset.job){roomF=null;pStage=null;job=t.dataset.job;try{localStorage.setItem("bw-job",job)}catch(e){};pushRecent(job);if(view==="home"||t.dataset.open){view="overview";history.replaceState(null,"","#overview")}query="";render();window.scrollTo(0,0);if(t.dataset.then)setTimeout(()=>openDetail(t.dataset.then),50)}
+  else if(t.dataset.job){roomF=null;pStage=null;job=t.dataset.job;try{(window.spEnsureJob&&spEnsureJob(job),localStorage.setItem("bw-job",job))}catch(e){};pushRecent(job);if(view==="home"||t.dataset.open){view="overview";history.replaceState(null,"","#overview")}query="";render();window.scrollTo(0,0);if(t.dataset.then)setTimeout(()=>openDetail(t.dataset.then),50)}
   else if(t.hasAttribute("data-home")){view="home";history.replaceState(null,"","#home");render();window.scrollTo(0,0)}
   else if(t.dataset.filter){filter=t.dataset.filter;render()}
   else if(t.dataset.checkin){openSheet(t.dataset.checkin)}
@@ -1684,7 +1792,7 @@ document.addEventListener("click",async e=>{
     if(!db||!canEditSel){toast("Only designers and LCs can add jobs");return}
     closeSheet();
     try{await db.collection("jobs").doc(name.toLowerCase().replace(/[^a-z0-9]+/g,"-")).set({name,address:$("#jAddr").value.trim()||null,client:$("#jClient").value.trim()||null,...readJobFields(),createdAt:Date.now()});
-      job=name;try{localStorage.setItem("bw-job",job)}catch(e){};toast("Added "+name);render()}
+      job=name;try{(window.spEnsureJob&&spEnsureJob(job),localStorage.setItem("bw-job",job))}catch(e){};toast("Added "+name);render()}
     catch(e){toast("Didn't save – try again")}
   }
   else if(t.dataset.collapse){const k=t.dataset.collapse;collapsed.has(k)?collapsed.delete(k):collapsed.add(k);saveCollapsed();render()}
@@ -2020,7 +2128,7 @@ document.addEventListener("change",async e=>{
   if(t.matches&&t.matches("[data-groupsel]")){groupBy=t.value;try{localStorage.setItem("bw-group",groupBy)}catch(err){};render();return}
   if(t.matches&&t.matches("[data-filtersel]")){filter=t.value;render();return}
   if(t.matches&&t.matches("[data-pstage]")){pStage=t.value;render();return}
-  if(t.matches&&t.matches("[data-rscope]")){if(t.value==="all")rScope="all";else{rScope="job";job=t.value.slice(4);try{localStorage.setItem("bw-job",job)}catch(err){}}render();return}
+  if(t.matches&&t.matches("[data-rscope]")){if(t.value==="all")rScope="all";else{rScope="job";job=t.value.slice(4);try{(window.spEnsureJob&&spEnsureJob(job),localStorage.setItem("bw-job",job))}catch(err){}}render();return}
   if(t.id==="filePick"&&attachFor&&t.files.length){
     const id=attachFor; attachFor=null; await attachTo(id,t.files); return;
     const add=[];
