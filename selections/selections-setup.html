@@ -122,7 +122,7 @@ ol{margin:6px 0 0;padding-left:20px}
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v4';
+const CORE_VERSION = 'v5';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -192,10 +192,10 @@ const SPEC=[
     ['UnitPriceCents','cents'],
     ['PriceCents','cents'],
   ]},
-  {list:'CORE_SelectionComments', desc:'Selections: one item per BuilderTrend discussion comment. Title = author and time.', builtinIndex:['Modified'], cols:[
+  {list:'CORE_SelectionComments', desc:'Selections: one item per BuilderTrend discussion comment. Title = who and when.', builtinIndex:['Modified'], cols:[
     ['Selection','lookup',{target:'CORE_Selections',idx:true}],
     ['Job','text',{idx:true}],
-    ['Author','text'],
+    ['PostedBy','text'],   // not 'Author': that's SharePoint's built-in Created By field
     ['PostedAt','datetime',{idx:true}],
     ['Body','note'],
   ]},
@@ -413,7 +413,7 @@ async function runImport(){
     const aMap=byKey(eA,f=>f.Title), sMap=byKey(eS,f=>f.Title);
     const cMap=byKey(eC,f=>f.SelectionLookupId+'|'+f.Title);
     const lSeen={}, lMap=byKey(eL.slice().sort((x,y)=>Number(x.id)-Number(y.id)),f=>{const k=f.ChoiceLookupId+'|'+f.Title; lSeen[k]=(lSeen[k]||0)+1; return k+'#'+lSeen[k];});
-    const mKey=(sid,f)=>sid+'|'+new Date(f.PostedAt).toISOString()+'|'+f.Author+'|'+String(f.Body||'').replace(/\s+/g,' ').trim().slice(0,80);
+    const mKey=(sid,f)=>sid+'|'+new Date(f.PostedAt).toISOString()+'|'+f.PostedBy+'|'+String(f.Body||'').replace(/\s+/g,' ').trim().slice(0,80);
     const mMap=byKey(eM,f=>mKey(f.SelectionLookupId,f));
     log(`Already in SharePoint for ${job}: ${eA.length} allowances, ${eS.length} selections, ${eC.length} choices, ${eL.length} line items, ${eM.length} comments.`);
     const tally={}; const bump=(list,what)=>{ (tally[list]=tally[list]||{created:0,updated:0,same:0,failed:0})[what]++; };
@@ -447,7 +447,7 @@ async function runImport(){
     await step('Line items',lt);
     const mt=[]; for(const s of d.selections){ const sid=sId.get(s.Title); if(!sid) continue;
       for(const m of (s.Comments||[])){ const key=mKey(sid,m);
-        const rec={...m,Job:job,Title:(m.Author+' · '+new Date(m.PostedAt).toLocaleString('en-US',{timeZone:'America/New_York',dateStyle:'medium',timeStyle:'short'})).slice(0,255)};
+        const rec={...m,Job:job,Title:(m.PostedBy+' · '+new Date(m.PostedAt).toLocaleString('en-US',{timeZone:'America/New_York',dateStyle:'medium',timeStyle:'short'})).slice(0,255)};
         mt.push(()=>upsert('Comments','CORE_SelectionComments',ID.M,mMap.get(key),rec,{SelectionLookupId:sid})); } }
     await step('Comments',mt);
     const fails=Object.values(tally).reduce((a,t)=>a+t.failed,0);
