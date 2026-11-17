@@ -34,7 +34,7 @@ Last updated: 2026-11-17
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
-| Selections List Setup | `selections/selections-setup.html` | v2 |
+| Selections List Setup | `selections/selections-setup.html` | v3 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v29 |
 | Core Roadmap | `core_roadmap.html` | v57 |
@@ -72,6 +72,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-17** — Selections List Setup v2 → v3: `Ordered` is now Text (BT's "Ordered?" is free text like `Yes, Build` / `Owner supplied`). New **Import a job** card: reads a canon JSON file in the browser and adds a job's allowances, selections (linked to allowances) and choices (linked to selections). Add-only, skips what's already there by title, retries throttled requests, refuses to run unless the column check is all green. No job data is in the repo.
 - **2026-11-17** — Selections List Setup v1 → v2: version-history card reworded to match SharePoint's actual labels, and reframed as a check — new BWCore lists already default to versioning on, 50 versions, no content approval.
 - **2026-11-17** — Selections List Setup v1 (new, `selections/selections-setup.html`): admin page that checks and creates the selections backbone on BWCore — `CORE_SelectionAllowances`, `CORE_Selections`, `CORE_SelectionChoices` — with every column (BuilderTrend-canon names, money as integer cents, `SelectionStatus`/`ChoiceStatus`, never `Status`) and index. Add-only: never deletes, renames, retypes, or touches items; wrong-type columns are reported for a person to fix. Version-history limit (50) is a manual step listed on the page. BW Tool Index v9 → v10: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/selections-setup.html` added as an SPA redirect URI on the Azure app registration.
 - **2026-11-14** — Fleet Tracker v2 → v3: added the round **?** button (upper right of the header) linking the new Help & Repair manual (`fleet-tracker-manual.html` / `.md`, same shell as the other manuals), plus the shared `data-tip` floating-tooltip engine. BW Tool Index v8 → v9: Fleet Tracker Manual tile under Reference & Manuals.

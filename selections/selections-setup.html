@@ -34,6 +34,9 @@ p{margin:0 0 10px}
 button{font:600 14px/1 var(--sans);padding:11px 16px;border-radius:6px;border:1px solid var(--navy);background:#fff;color:var(--navy);cursor:pointer}
 button.primary{background:var(--navy);color:#fff}
 button:disabled{opacity:.5;cursor:default}
+.filebtn{display:inline-block;font:600 14px/1 var(--sans);padding:11px 16px;border-radius:6px;border:1px solid var(--navy);background:#fff;color:var(--navy);cursor:pointer}
+.filebtn input{display:none}
+.kv{display:grid;grid-template-columns:auto auto;gap:2px 16px;justify-content:start;margin-top:10px;font-size:14px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--linen);vertical-align:top}
 th{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
@@ -86,6 +89,17 @@ ol{margin:6px 0 0;padding-left:20px}
   </div>
 
   <div class="card">
+    <h2>Import a job</h2>
+    <p>Loads one job's selections from a canon file (<code>JOB.canon.json</code>, converted from the BuilderTrend print export). The file is read in your browser and goes only to SharePoint.</p>
+    <p class="muted">It only adds. Allowances and selections already in SharePoint for that job (same title) are skipped, and so are choices already on a selection, so it's safe to run again. Runs only when the check above is all green.</p>
+    <div class="btns">
+      <label class="filebtn" data-tip="Pick a JOB.canon.json file.">Choose file<input type="file" id="impFile" accept=".json,application/json"></label>
+      <button class="primary" id="impBtn" disabled data-tip="Adds what's missing for this job.">Import</button>
+    </div>
+    <div id="impSummary" class="muted" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
     <h2>One check per list: version history</h2>
     <p>The page can't read or set version history. On BWCore, new lists already start with the right settings, so this is a check. For each of the three lists:</p>
     <ol>
@@ -106,7 +120,7 @@ ol{margin:6px 0 0;padding-left:20px}
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v2';
+const CORE_VERSION = 'v3';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -140,7 +154,7 @@ const SPEC=[
     ['SelectionStatus','choice',{choices:['Selected','Completed'],idx:true}],
     ['SelectionTotalCents','cents'],
     ['Allowance','lookup',{target:'CORE_SelectionAllowances'}],
-    ['Ordered','bool',{idx:true}],
+    ['Ordered','text',{idx:true}],
     ['OrderDate','date'],
     ['LeadTime','text'],
     ['OnHandLocation','text',{idx:true}],
@@ -298,6 +312,72 @@ async function runApply(){
   finally{ $('checkBtn').disabled=$('applyBtn').disabled=false; }
   await runCheck();
 }
+
+/* ── Import a job from canon JSON (add-only) ── */
+let IMP=null;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function gRetry(fn){ for(let a=0;;a++){ try{ return await fn(); }catch(e){ if([429,503,504].includes(e.status)&&a<5){ await sleep(1500*2**a); continue; } throw e; } } }
+const colKinds=list=>new Map(SPEC.find(s=>s.list===list).cols.map(([n,k])=>[n,k]));
+function toFields(rec,list){
+  const kinds=colKinds(list), f={};
+  if(rec.Title!=null&&rec.Title!=='') f.Title=String(rec.Title).slice(0,255);
+  for(const [k,v] of Object.entries(rec)){
+    if(v==null||v===''||!kinds.has(k)) continue;
+    const kind=kinds.get(k);
+    if(kind==='lookup') continue;
+    if(kind==='date') f[k]=/^\d{4}-\d{2}-\d{2}$/.test(v)?v+'T12:00:00Z':v;
+    else if(kind==='cents') f[k]=Math.round(Number(v));
+    else if(kind==='bool') f[k]=!!v;
+    else if(kind==='text') f[k]=String(v).slice(0,255);
+    else f[k]=v;
+  }
+  return f;
+}
+const SEL={CORE_SelectionAllowances:'Title,Job',CORE_Selections:'Title,Job',CORE_SelectionChoices:'Title,Job,SelectionLookupId'};
+async function jobItems(listId,list,job){
+  return gAll(`${LISTS}/${listId}/items?$filter=fields/Job eq '${job.replace(/'/g,"''")}'&$expand=fields($select=${SEL[list]})&$top=999`);
+}
+async function pool(tasks,n,onDone){ let i=0; const run=async()=>{ while(i<tasks.length){ const t=tasks[i++]; await t(); onDone(); } }; await Promise.all(Array.from({length:n},run)); }
+function readImport(text){
+  const d=JSON.parse(text);
+  if(!d||typeof d.job!=='string'||!Array.isArray(d.selections)||!Array.isArray(d.allowances)) throw new Error('Not a canon file: expected job, allowances, selections.');
+  return d;
+}
+async function previewImport(){
+  const d=IMP, nC=d.selections.reduce((a,s)=>a+(s.Choices||[]).length,0);
+  $('impSummary').innerHTML=`<div class="kv"><span>Job</span><b>${esc(d.job)}</b><span>Allowances</span><b>${d.allowances.length}</b><span>Selections</span><b>${d.selections.length}</b><span>Choices</span><b>${nC}</b>${d.source&&d.source.printed?`<span>Exported</span><b>${esc(d.source.printed)}</b>`:''}</div>`;
+  $('impBtn').disabled=false;
+}
+async function runImport(){
+  const d=IMP, job=d.job;
+  $('impBtn').disabled=$('checkBtn').disabled=$('applyBtn').disabled=true;
+  log('— Import '+job+', '+new Date().toLocaleString()+' —');
+  try{
+    const {report,listIds}=await inspect(); const {bad,todo}=render(report);
+    if(bad||todo||Object.keys(listIds).length<3){ log('✗ Not imported: the check above must be all green first.'); $('impSummary').innerHTML+='<p><span class="pill bad">Not imported</span> Fix the check above first.</p>'; return; }
+    const A=listIds.CORE_SelectionAllowances, S_=listIds.CORE_Selections, C=listIds.CORE_SelectionChoices;
+    const aId=new Map((await jobItems(A,'CORE_SelectionAllowances',job)).map(x=>[x.fields.Title,x.id]));
+    const sId=new Map((await jobItems(S_,'CORE_Selections',job)).map(x=>[x.fields.Title,x.id]));
+    const cKey=new Set((await jobItems(C,'CORE_SelectionChoices',job)).map(x=>x.fields.SelectionLookupId+'|'+x.fields.Title));
+    log(`Already in SharePoint for ${job}: ${aId.size} allowances, ${sId.size} selections, ${cKey.size} choices.`);
+    let done=0, total=0, fails=0; const tick=()=>{ done++; $('impSummary').querySelector('.prog')&&( $('impSummary').querySelector('.prog').textContent=`Importing… ${done} / ${total}`); };
+    $('impSummary').insertAdjacentHTML('beforeend','<p class="prog"></p>');
+    const post=(listId,fields)=>gRetry(()=>gSend(`${LISTS}/${listId}/items`,'POST',{fields}));
+    const step=async(label,tasks)=>{ total=done+tasks.length; await pool(tasks,4,tick); log(`${label}: ${tasks.length} attempted.`); };
+    await step('Allowances',d.allowances.filter(a=>!aId.has(a.Title)).map(a=>async()=>{ try{ const r=await post(A,toFields(a,'CORE_SelectionAllowances')); aId.set(a.Title,r.id); }catch(e){ fails++; log('  ✗ allowance '+a.Title+': '+spErr(e)); } }));
+    await step('Selections',d.selections.filter(s=>!sId.has(s.Title)).map(s=>async()=>{ try{ const f=toFields(s,'CORE_Selections'); if(s.AllowanceTitle&&aId.has(s.AllowanceTitle)) f.AllowanceLookupId=aId.get(s.AllowanceTitle); const r=await post(S_,f); sId.set(s.Title,r.id); }catch(e){ fails++; log('  ✗ selection '+s.Title+': '+spErr(e)); } }));
+    const ct=[]; for(const s of d.selections) for(const c of (s.Choices||[])){ const sid=sId.get(s.Title); if(!sid||cKey.has(sid+'|'+c.Title)) continue; ct.push(async()=>{ try{ const f=toFields({...c,Job:job},'CORE_SelectionChoices'); f.SelectionLookupId=sid; await post(C,f); }catch(e){ fails++; log('  ✗ choice '+c.Title+' ('+s.Title+'): '+spErr(e)); } }); }
+    await step('Choices',ct);
+    const [na,ns,nc]=await Promise.all([jobItems(A,'CORE_SelectionAllowances',job),jobItems(S_,'CORE_Selections',job),jobItems(C,'CORE_SelectionChoices',job)]).then(r=>r.map(x=>x.length));
+    const want=[d.allowances.length,d.selections.length,d.selections.reduce((a,s)=>a+(s.Choices||[]).length,0)];
+    const ok=!fails&&na>=want[0]&&ns>=want[1]&&nc>=want[2];
+    log(`In SharePoint now for ${job}: ${na} allowances, ${ns} selections, ${nc} choices.`+(fails?` ${fails} failed (see above).`:''));
+    $('impSummary').querySelector('.prog').innerHTML= ok?`<span class="pill ok">Imported</span> ${na} allowances, ${ns} selections, ${nc} choices for ${esc(job)}.`:`<span class="pill bad">Incomplete</span> ${fails} failed. See the log; run Import again to retry.`;
+  }catch(e){ log('✗ Import stopped: '+spErr(e)); }
+  finally{ $('impBtn').disabled=$('checkBtn').disabled=$('applyBtn').disabled=false; }
+}
+$('impFile').onchange=async e=>{ const f=e.target.files[0]; if(!f) return; try{ IMP=readImport(await f.text()); await previewImport(); }catch(err){ IMP=null; $('impBtn').disabled=true; $('impSummary').textContent='Can’t read that file: '+err.message; } };
+$('impBtn').onclick=()=>{ if(IMP) runImport(); };
 
 $('checkBtn').onclick=runCheck;
 $('applyBtn').onclick=runApply;
