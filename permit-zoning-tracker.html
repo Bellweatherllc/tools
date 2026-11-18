@@ -546,7 +546,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v176';
+const CORE_VERSION = 'v177';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -920,20 +920,13 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
   // independent of the other — see zoningOffset/permitOffset above) is
   // needed before we can tell whether the two overlap in time, which
   // decides the lane's shape just below.
-  const shiftedZoning=zoning.positioned.map(s=>({...s,start:s.start+zoningOffset}));
-  const shiftedZoning2=zoning2HasStages ? zoning2.positioned.map(s=>({...s,start:s.start+zoning2Offset})) : [];
-  // Zoning A and Zoning B still render on the SAME single bar row — the
-  // two-track system (zoning row, permitting row) doesn't change, per
-  // Byron — just combined into one array for drawing/measuring purposes,
-  // same pattern as Permit A/B just below.
+  // _sub tags which sub-track each bar came from ('A'/'B') — used below to
+  // decide per-category stacking and to label each bar group.
+  const shiftedZoning=zoning.positioned.map(s=>({...s,start:s.start+zoningOffset,_sub:'A'}));
+  const shiftedZoning2=zoning2HasStages ? zoning2.positioned.map(s=>({...s,start:s.start+zoning2Offset,_sub:'B'})) : [];
   const shiftedZoningAll=shiftedZoning.concat(shiftedZoning2);
-  const shiftedPermit=permit.positioned.map(s=>({...s,start:s.start+permitOffset}));
-  const shiftedPermit2=permit2HasStages ? permit2.positioned.map(s=>({...s,start:s.start+permit2Offset})) : [];
-  // Permit A and Permit B still render on the SAME single bar row — the
-  // two-track system (zoning row, permitting row) doesn't change, per
-  // Byron — just combined into one array for drawing/measuring purposes
-  // now that Permit B's own position can differ from "immediately after
-  // Permit A ends".
+  const shiftedPermit=permit.positioned.map(s=>({...s,start:s.start+permitOffset,_sub:'A'}));
+  const shiftedPermit2=permit2HasStages ? permit2.positioned.map(s=>({...s,start:s.start+permit2Offset,_sub:'B'})) : [];
   const shiftedPermitAll=shiftedPermit.concat(shiftedPermit2);
 
   // VH is a RESULT of CFG (topPad + ruler + lane + 1 + band + bottomPad),
@@ -958,24 +951,75 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
   const zoningSpan = spanOf(shiftedZoningAll);
   const permitSpan = spanOf(shiftedPermitAll);
   const tracksOverlap = !!(zoningSpan && permitSpan && zoningSpan[0]<permitSpan[1] && permitSpan[0]<zoningSpan[1]);
+  // Per Byron: "the permitting tracks are overlapping one another. They
+  // need to either run sequentially, and if their timing intersects,
+  // become stacked." A's and B's own week ranges can now genuinely
+  // overlap (either one can be shifted independently) — when they do,
+  // THAT category splits into its own 2 thinner rows, same treatment the
+  // zoning-vs-permitting split already used. zoningSplit/permitSplit are
+  // each independent of tracksOverlap: a project can have any mix of the
+  // three kinds of overlap.
+  const zoningASpan = spanOf(shiftedZoning), zoningBSpan = spanOf(shiftedZoning2);
+  const zoningSplit = !!(zoningASpan && zoningBSpan && zoningASpan[0]<zoningBSpan[1] && zoningBSpan[0]<zoningASpan[1]);
+  const permitASpan = spanOf(shiftedPermit), permitBSpan = spanOf(shiftedPermit2);
+  const permitSplit = !!(permitASpan && permitBSpan && permitASpan[0]<permitBSpan[1] && permitBSpan[0]<permitASpan[1]);
+  const needsStacking = zoningSplit || permitSplit || tracksOverlap;
 
-  let laneH, zoningBarY, zoningBarH, permitBarY, permitBarH, zoningLabelY, permitLabelY;
-  if(tracksOverlap){
-    zoningBarH=permitBarH=CFG.dualBarH;
+  // One row object per thing that actually needs its OWN horizontal strip:
+  // 2-4 rows depending on how many of the three overlaps above are live.
+  // tag identifies which real sub-track(s) a row represents, for the y/
+  // label lookups built right after sizing. 'Both' means A and B share
+  // this one row (the common, non-overlapping case) — they still each get
+  // their own label (see categoryLabels below), just at the same y.
+  const rows=[
+    zoningSplit
+      ? {bars:shiftedZoning, color:'var(--zoning-gray)', insetFirst:true, tag:'zoningA'}
+      : {bars:shiftedZoningAll, color:'var(--zoning-gray)', insetFirst:true, tag:'zoningBoth'},
+  ];
+  if(zoningSplit) rows.push({bars:shiftedZoning2, color:'var(--zoning-gray)', insetFirst:true, tag:'zoningB'});
+  rows.push(
+    permitSplit
+      ? {bars:shiftedPermit, color:'var(--permit-gray)', insetFirst:false, tag:'permitA'}
+      : {bars:shiftedPermitAll, color:'var(--permit-gray)', insetFirst:false, tag:'permitBoth'}
+  );
+  if(permitSplit) rows.push({bars:shiftedPermit2, color:'var(--permit-gray)', insetFirst:false, tag:'permitB'});
+
+  let laneH, rowH;
+  if(!needsStacking){
+    rowH=Math.min(CFG.bandH, CFG.laneH-4);
+    const y=laneTop+(CFG.laneH-rowH)/2+1;
+    rows.forEach(r=>{ r.y=y; });
+    laneH=CFG.laneH;
+  }else{
+    rowH=CFG.dualBarH;
     // same top clearance below the phase label as the single-row case, so
     // the first row doesn't creep up on "DESIGN PHASE I" etc.
     const topGap=(CFG.laneH-CFG.bandH)/2+1;
-    zoningBarY=laneTop+topGap;
-    zoningLabelY=zoningBarY+zoningBarH+9;
-    permitBarY=zoningBarY+zoningBarH+CFG.dualLabelH+CFG.dualRowGap;
-    permitLabelY=permitBarY+permitBarH+9;
-    laneH=topGap+zoningBarH+CFG.dualLabelH+CFG.dualRowGap+permitBarH+CFG.dualLabelH+CFG.dualBottomGap;
-  }else{
-    zoningBarH=permitBarH=Math.min(CFG.bandH, CFG.laneH-4);
-    zoningBarY=permitBarY=laneTop+(CFG.laneH-zoningBarH)/2+1;
-    laneH=CFG.laneH;
+    let y=laneTop+topGap;
+    rows.forEach((r,i)=>{
+      r.y=y; r.labelY=y+rowH+9;
+      y+=rowH+CFG.dualLabelH+(i<rows.length-1?CFG.dualRowGap:0);
+    });
+    laneH=(y-laneTop)+CFG.dualBottomGap;
   }
   const laneBottom=laneTop+laneH;
+  // y/labelY lookup by real sub-track tag, for pLast (below) and the
+  // per-sub-track labels (categoryLabels, further below) — a 'Both' row
+  // fills in BOTH its A and B keys with the same values, since they share
+  // one row/one label line in that case.
+  const yOf={}, labelYOf={};
+  if(!needsStacking){
+    // centered within the strip below the stage bars (same centering
+    // treatment as CITY/RESIDENTIAL gets in the header), instead of
+    // sitting bottom-anchored against the lane edge — computed once here
+    // since every row shares the identical y/height in this mode.
+    const catLabelY=rows[0].y+rowH+(laneBottom-(rows[0].y+rowH))/2+3.5;
+    rows.forEach(r=>{ r.labelY=catLabelY; });
+  }
+  rows.forEach(r=>{
+    const keys = r.tag==='zoningBoth' ? ['zoningA','zoningB'] : r.tag==='permitBoth' ? ['permitA','permitB'] : [r.tag];
+    keys.forEach(k=>{ yOf[k]=r.y; labelYOf[k]=r.labelY; });
+  });
   const bandTop=laneBottom+1, bandH=CFG.bandH;
   const VH=bandTop+bandH+CFG.bottomPad;
 
@@ -1028,47 +1072,48 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
     `<text x="${phaseIRectX+phaseIRectW-4}" y="${cornerLabelY}" text-anchor="end" font-size="9" font-weight="700" fill="#fff" fill-opacity=".85" font-family="${FONT}">${PHASE_I_WEEKS} wks</text>`+
     `<text x="${phaseIIRectX+phaseIIRectW-4}" y="${cornerLabelY}" text-anchor="end" font-size="9" font-weight="700" fill="#fff" fill-opacity=".85" font-family="${FONT}">${PHASE_II_WEEKS} wks</text>`;
 
-  const sequenceBars=barRow(shiftedZoningAll, zoningBarY, zoningBarH, 'var(--zoning-gray)', true)
-    + barRow(shiftedPermitAll, permitBarY, permitBarH, 'var(--permit-gray)', false);
+  const sequenceBars=rows.map(r=>barRow(r.bars, r.y, rowH, r.color, r.insetFirst)).join('');
 
-  // A track is "approved" exactly when every one of its (enabled) stages
-  // shows done — for a Trello-synced project that's only true once the
-  // card has actually moved into the APPROVED list (see loadTrelloProjects:
-  // the last real stage only gets marked done once currentRank reaches
-  // catalog.length), so this needs no separate flag of its own. Per Byron:
-  // this is a materially different state than "on track" (still in
-  // flight, projected) — it's done, and almost always ahead — so it gets
-  // its own callout rather than just blending into the small per-stage
-  // early-star treatment.
+  // A sub-track is "approved" exactly when every one of its (enabled)
+  // stages shows done — for a Trello-synced project that's only true once
+  // the card has actually moved into the APPROVED list (see
+  // loadTrelloProjects: the last real stage only gets marked done once
+  // currentRank reaches catalog.length), so this needs no separate flag of
+  // its own. Per Byron: this is a materially different state than "on
+  // track" (still in flight, projected) — it's done, and almost always
+  // ahead — so it gets its own callout rather than just blending into the
+  // small per-stage early-star treatment.
   // renderCards() now skips this whole function once a project is WHOLLY
   // approved (every track that exists is fully done) — see
-  // renderApprovedSummary instead. zoningApproved/permitApproved stay
-  // useful here for the PARTIAL case: one track done, the other still
-  // active, which still gets the live gantt plus this quieter "— approved"
-  // text label on whichever track has already finished.
-  const zoningApproved=shiftedZoningAll.length>0 && shiftedZoningAll.every(s=>s.status==='done');
-  const permitApproved=shiftedPermitAll.length>0 && shiftedPermitAll.every(s=>s.status==='done');
-  // Leftmost bar's start, across A AND B together — not just index 0 —
-  // since either track's B can now be shifted to sit before its A.
-  const zoningLeftStart = shiftedZoningAll.length ? Math.min(...shiftedZoningAll.map(s=>s.start)) : null;
-  const permitLeftStart = shiftedPermitAll.length ? Math.min(...shiftedPermitAll.map(s=>s.start)) : null;
-  let categoryLabels;
-  if(tracksOverlap){
-    // Each row gets its own label line directly beneath it — a single
-    // shared line (today's single-row layout) would have to sit between
-    // the two bars with no room to breathe once they're stacked this close.
-    categoryLabels=
-      (shiftedZoningAll.length?`<text x="${zoningLeftStart*PX_PER_WEEK+4}" y="${zoningLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning${zoningApproved?' — approved':''}</text>`:'')+
-      (shiftedPermitAll.length?`<text x="${permitLeftStart*PX_PER_WEEK+4}" y="${permitLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
-  }else{
-    // vertically centered within the strip below the stage bars (same
-    // centering treatment as CITY/RESIDENTIAL gets in the header), instead
-    // of sitting bottom-anchored against the lane edge.
-    const catLabelY=zoningBarY+zoningBarH+(laneBottom-(zoningBarY+zoningBarH))/2+3.5;
-    categoryLabels=
-      (shiftedZoningAll.length?`<text x="${zoningLeftStart*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">zoning${zoningApproved?' — approved':''}</text>`:'')+
-      (shiftedPermitAll.length?`<text x="${permitLeftStart*PX_PER_WEEK+4}" y="${catLabelY}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">permitting${permitApproved?' — approved':''}</text>`:'');
+  // renderApprovedSummary instead. This stays useful here for the PARTIAL
+  // case: one sub-track done, another still active, which still gets the
+  // live gantt plus this quieter "— approved" text label.
+  function subApproved(bars){ return bars.length>0 && bars.every(s=>s.status==='done'); }
+  function leftStartOf(bars){ return bars.length ? Math.min(...bars.map(s=>s.start)) : null; }
+  // Per Byron: "we also need to label the bands A and B - if both are
+  // present" — each sub-track gets ITS OWN label at its own leftmost bar,
+  // whether or not it's actually stacked into its own row (a sequential,
+  // same-row A/B pair still each get their own "zoning a"/"zoning b" tag,
+  // not one shared "zoning" label). Only shown bare ("zoning", no letter)
+  // when there's no B at all — the overwhelming default case.
+  function catLabel(tagPrefix, displayWord, hasB, barsA, barsB){
+    if(!hasB){
+      const ls=leftStartOf(barsA);
+      if(ls==null) return '';
+      const approved=subApproved(barsA);
+      return `<text x="${ls*PX_PER_WEEK+4}" y="${labelYOf[tagPrefix+'A']}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">${esc(displayWord)}${approved?' — approved':''}</text>`;
+    }
+    return ['A','B'].map(sub=>{
+      const bars=sub==='A'?barsA:barsB;
+      const ls=leftStartOf(bars);
+      if(ls==null) return '';
+      const approved=subApproved(bars);
+      return `<text x="${ls*PX_PER_WEEK+4}" y="${labelYOf[tagPrefix+sub]}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}">${esc(displayWord+' '+sub.toLowerCase())}${approved?' — approved':''}</text>`;
+    }).join('');
   }
+  const categoryLabels=
+    catLabel('zoning', 'zoning', zoning2HasStages, shiftedZoning, shiftedZoning2)+
+    catLabel('permit', 'permitting', permit2HasStages, shiftedPermit, shiftedPermit2);
 
   const MARKER_RISE=CFG.markerRise, PILL_RX=5;
   // CA's pill sits INSIDE the gantt, overlapping the top of the lane,
@@ -1132,7 +1177,12 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
   // no longer guarantees which one is really "last".
   const pLast=shiftedPermitAll.length
     ? shiftedPermitAll.reduce((best,s)=> (s.start+s.width > best.start+best.width) ? s : best)
-    : (shiftedZoningAll.length ? shiftedZoningAll.reduce((best,s)=> (s.start+s.width > best.start+best.width) ? s : best) : {start:permitOffset, width:0});
+    : (shiftedZoningAll.length ? shiftedZoningAll.reduce((best,s)=> (s.start+s.width > best.start+best.width) ? s : best) : {start:permitOffset, width:0, _sub:'A'});
+  // Which real row pLast's bar actually lives in — tagged by category
+  // (permit, falling back to zoning) and sub-track (A/B, from _sub) —
+  // looked up in yOf so this still lands correctly whether that row is
+  // combined, split, or the zoning fallback.
+  const pLastTag=(shiftedPermitAll.length?'permit':'zoning')+(pLast._sub||'A');
   const pLastBarLeft=pLast.start*PX_PER_WEEK;
   const pLastBarRight=pLastBarLeft+Math.max(1,pLast.width*PX_PER_WEEK-BAR_GAP);
   // true week boundary (the bar itself stops BAR_GAP short of it) — the
@@ -1155,8 +1205,8 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
   // whichever row pLast's bar actually lives in — permit's row normally,
   // zoning's row in the permit-less fallback above — so this still lands
   // correctly now that the two rows can sit at different y positions.
-  const pLastRowY=shiftedPermitAll.length ? permitBarY : zoningBarY;
-  const pLastRowH=shiftedPermitAll.length ? permitBarH : zoningBarH;
+  const pLastRowY=yOf[pLastTag];
+  const pLastRowH=rowH;
   const edgeY=pLastRowY+pLastRowH+1.5;
   const submitTrim=5;
   const gradIdSubmit='submitedge-'+project.replace(/[^a-z0-9]+/gi,'-');
