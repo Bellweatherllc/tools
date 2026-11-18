@@ -122,7 +122,7 @@ ol{margin:6px 0 0;padding-left:20px}
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v6';
+const CORE_VERSION = 'v7';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -147,6 +147,10 @@ const SPEC=[
   {list:'CORE_SelectionAllowances', desc:'Selections: one item per BuilderTrend allowance. Title = allowance name.', builtinIndex:['Modified'], cols:[
     ['Job','text',{idx:true}],
     ['AllowanceCents','cents'],
+    ['ImportTitle','text'],        // BT title at import; Import matches on this, so renames in CORE don't duplicate
+    ['CoreEditedFields','note'],   // fields a person changed in CORE: Import never overwrites these
+    ['CoreEditedAt','datetime'],
+    ['CoreEditedBy','text'],
   ]},
   {list:'CORE_Selections', desc:'Selections: one item per BuilderTrend selection. Title = selection title.', builtinIndex:['Modified'], cols:[
     ['Job','text',{idx:true}],
@@ -169,6 +173,13 @@ const SPEC=[
     ['CutSheets','text'],
     ['BtJobId','text'],
     ['BtSelectionId','text',{idx:true}],
+    ['ImportTitle','text'],
+    ['DesignKey','text',{idx:true}],   // the Design screen's own id for this record
+    ['DesignStatus','text'],           // open / considering / selected / decided / removed (CORE-only)
+    ['DesignData','note'],             // Design-screen fields BT doesn't have, as JSON
+    ['CoreEditedFields','note'],   // fields a person changed in CORE: Import never overwrites these
+    ['CoreEditedAt','datetime'],
+    ['CoreEditedBy','text'],
   ]},
   {list:'CORE_SelectionChoices', desc:'Selections: one item per BuilderTrend choice. Title = choice title.', builtinIndex:['Modified'], cols:[
     ['Selection','lookup',{target:'CORE_Selections',idx:true}],
@@ -180,6 +191,12 @@ const SPEC=[
     ['SelectedDate','date'],
     ['SelectedBy','text'],
     ['BtChoiceId','text',{idx:true}],
+    ['ImportTitle','text'],
+    ['DesignKey','text',{idx:true}],
+    ['DesignData','note'],
+    ['CoreEditedFields','note'],   // fields a person changed in CORE: Import never overwrites these
+    ['CoreEditedAt','datetime'],
+    ['CoreEditedBy','text'],
   ]},
   {list:'CORE_SelectionLineItems', desc:'Selections: one item per BuilderTrend choice line item (cost capture). Title = item name.', builtinIndex:['Modified'], cols:[
     ['Choice','lookup',{target:'CORE_SelectionChoices',idx:true}],
@@ -204,6 +221,12 @@ const SPEC=[
     ['Archived','bool',{idx:true}],
     ['LastImportedAt','datetime'],
     ['SourcePrinted','text'],
+  ]},
+  {list:'CORE_SelectionDesignDocs', desc:'Selections: Design-screen documents (settings, meetings, mood boards, schedules, choice library). Title = collection/id. Data is JSON.', builtinIndex:['Modified'], cols:[
+    ['Job','text',{idx:true}],          // job name, or _shared for the choice library and room templates
+    ['Collection','text',{idx:true}],
+    ['DocId','text'],
+    ['Data','note'],
   ]},
   {list:'CORE_SelectionFiles', template:'documentLibrary', desc:'Selections: images, cut sheets and quotes. Tag each file with Job, Selection, Kind (and Choice if it applies).', builtinIndex:['Modified'], cols:[
     ['Job','text',{idx:true}],
@@ -422,13 +445,14 @@ async function runImport(){
       jobItems(ID.A,'CORE_SelectionAllowances',job),jobItems(ID.S,'CORE_Selections',job),jobItems(ID.C,'CORE_SelectionChoices',job),
       jobItems(ID.L,'CORE_SelectionLineItems',job),jobItems(ID.M,'CORE_SelectionComments',job)]);
     const byKey=(arr,key)=>new Map(arr.map(x=>[key(x.fields),x]));
-    const aMap=byKey(eA,f=>f.Title), sMap=byKey(eS,f=>f.Title);
-    const cMap=byKey(eC,f=>f.SelectionLookupId+'|'+f.Title);
+    const key=f=>f.ImportTitle||f.Title;   // BT title survives renames made in CORE
+    const aMap=byKey(eA,key), sMap=byKey(eS,key);
+    const cMap=byKey(eC,f=>f.SelectionLookupId+'|'+key(f));
     const lSeen={}, lMap=byKey(eL.slice().sort((x,y)=>Number(x.id)-Number(y.id)),f=>{const k=f.ChoiceLookupId+'|'+f.Title; lSeen[k]=(lSeen[k]||0)+1; return k+'#'+lSeen[k];});
     const mKey=(sid,f)=>sid+'|'+new Date(f.PostedAt).toISOString()+'|'+f.PostedBy+'|'+String(f.Body||'').replace(/\s+/g,' ').trim().slice(0,80);
     const mMap=byKey(eM,f=>mKey(f.SelectionLookupId,f));
     log(`Already in SharePoint for ${job}: ${eA.length} allowances, ${eS.length} selections, ${eC.length} choices, ${eL.length} line items, ${eM.length} comments.`);
-    const tally={}; const bump=(list,what)=>{ (tally[list]=tally[list]||{created:0,updated:0,same:0,failed:0})[what]++; };
+    const tally={}; const bump=(list,what)=>{ (tally[list]=tally[list]||{created:0,updated:0,same:0,failed:0,kept:0})[what]++; };
     let done=0, total=0; const tick=()=>{ done++; const p=$('impSummary').querySelector('.prog'); if(p) p.textContent=`Importing… ${done} / ${total}`; };
     $('impSummary').insertAdjacentHTML('beforeend','<p class="prog"></p>');
     const post=(listId,fields)=>gRetry(()=>gSend(`${LISTS}/${listId}/items`,'POST',{fields}));
@@ -436,16 +460,21 @@ async function runImport(){
     // one record: create if new; if it exists, update changed fields when asked
     async function upsert(label,list,listId,existing,rec,extra){
       try{
-        if(!existing){ const r=await post(listId,{...toFields(rec,list),...extra}); bump(label,'created'); return r.id; }
+        const withIT=colKinds(list).has('ImportTitle')?{...rec,ImportTitle:rec.Title}:rec;
+        if(!existing){ const r=await post(listId,{...toFields(withIT,list),...extra}); bump(label,'created'); return r.id; }
         if(update){
           const f=changedFields(rec,list,existing.fields);
+          // a person edited these in CORE: CORE wins, the import leaves them alone
+          const keep=String(existing.fields.CoreEditedFields||'').split(',').map(x=>x.trim()).filter(Boolean);
+          for(const k of keep) if(k in f){ delete f[k]; bump(label,'kept'); }
+          if(colKinds(list).has('ImportTitle')&&!existing.fields.ImportTitle&&!keep.includes('Title')) f.ImportTitle=String(rec.Title).slice(0,255);
           for(const [k,v] of Object.entries(extra)) if(String(existing.fields[k]??'')!==String(v??'')) f[k]=v;
           if(Object.keys(f).length){ await patch(listId,existing.id,f); bump(label,'updated'); } else bump(label,'same');
         } else bump(label,'same');
         return existing.id;
       }catch(e){ bump(label,'failed'); log('  ✗ '+label+' '+(rec.Title||'')+': '+spErr(e)); return existing&&existing.id; }
     }
-    const step=async(label,tasks)=>{ total=done+tasks.length; await pool(tasks,4,tick); const t=tally[label]||{}; log(`${label}: ${t.created||0} added, ${t.updated||0} updated, ${t.same||0} unchanged, ${t.failed||0} failed.`); };
+    const step=async(label,tasks)=>{ total=done+tasks.length; await pool(tasks,4,tick); const t=tally[label]||{}; log(`${label}: ${t.created||0} added, ${t.updated||0} updated, ${t.same||0} unchanged, ${t.failed||0} failed.`+(t.kept?` ${t.kept} field${t.kept===1?'':'s'} kept as edited in CORE.`:'')); };
     const aId=new Map([...aMap].map(([k,v])=>[k,v.id])), sId=new Map([...sMap].map(([k,v])=>[k,v.id])), cId=new Map();
     await step('Allowances',d.allowances.map(a=>async()=>{ const id=await upsert('Allowances','CORE_SelectionAllowances',ID.A,aMap.get(a.Title),a,{}); if(id) aId.set(a.Title,id); }));
     await step('Selections',d.selections.map(s=>async()=>{ const ex={}; if(s.AllowanceTitle&&aId.has(s.AllowanceTitle)) ex.AllowanceLookupId=aId.get(s.AllowanceTitle);
