@@ -224,12 +224,12 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
         Earned = <b>50%</b> of whatever's actually been invoiced so far. Design payments run about 25% of the projected construction amount over the phase; only half of each payment is booked as earned, the rest is collected ahead of the work.<br>
         <span class="dim">Example — $100,000 job: design invoicing runs ~$25,000 (25% of contract) over the phase. Once that's fully invoiced, Earned = 50% × $25,000 = <b>$12,500</b>.</span></p>
       <p><b>Pre-Con</b> <span class="dim">— CA signed, before construction starts</span><br>
-        Earned = <b>20%</b> of the (current) contract value. A larger deposit — <b>30%</b> — is actually collected at signing, but only 20 of those points count as earned; the rest is collected ahead of the work, same idea as Design. Flat through Pre-Con: progress stays at 0% until construction's first week.<br>
-        <span class="dim">Example — $100,000 job: $30,000 deposit invoiced at signing, but Earned = 20% × $100,000 = <b>$20,000</b> flat, until construction starts.</span></p>
+        Earned = <b>20%</b> of the (current) contract value. A larger deposit — <b>30%</b> — is actually collected at signing, but only 20 of those points count as earned; the rest is collected ahead of the work, same idea as Design. % Complete shows that same 20% flat through Pre-Con — it won't move further until construction's first week.<br>
+        <span class="dim">Example — $100,000 job: $30,000 deposit invoiced at signing, but Earned = 20% × $100,000 = <b>$20,000</b> flat (displayed as 20% Complete), until construction starts.</span></p>
       <p><b>Construction</b> <span class="dim">— the Pipeline's construction phase, start to last week</span><br>
-        Earned = 20% of contract (already earned at signing) + <b>80%</b> of contract × schedule progress (elapsed weeks ÷ construction duration).<br>
-        <span class="dim">Example — $100,000 job, 50% through the construction schedule: Earned = $20,000 (from signing) + 80% × $100,000 × 50% = $20,000 + $40,000 = <b>$60,000</b>.</span></p>
-      <p class="dim">A manual override (✎ next to any project's % Complete) always replaces this — it's for the cases the formula can't reach, like a job whose schedule doesn't match reality.</p>
+        Earned = 20% of contract (already earned at signing) + <b>80%</b> of contract × schedule progress (elapsed weeks ÷ construction duration). % Complete shown is that same total — the 20% signing share plus the 80% portion's own progress, not schedule progress by itself.<br>
+        <span class="dim">Example — $100,000 job, 50% through the construction schedule: Earned = $20,000 (from signing) + 80% × $100,000 × 50% = $20,000 + $40,000 = <b>$60,000</b> (displayed as 60% Complete).</span></p>
+      <p class="dim">A manual override (✎ next to any project's % Complete) always replaces this — it's for the cases the formula can't reach, like a job whose schedule doesn't match reality. Enter the <b>total</b> percentage you want Earned to reflect, not just an increase — e.g. to add 5 points onto Pre-Con's 20% baseline, enter 25%, not 5%.</p>
     </div>
   </details>
 </div>
@@ -298,7 +298,7 @@ table.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1
 <script>
 'use strict';
 // ════════════════════════════════════ VERSION
-const CORE_VERSION='v30';
+const CORE_VERSION='v31';
 (()=>{ const a=document.getElementById('authVersionBadge'); if(a) a.textContent=CORE_VERSION;
        const v=document.getElementById('versionBadge');     if(v) v.textContent=CORE_VERSION; })();
 
@@ -316,9 +316,11 @@ const MS_WEEK=7*24*3600*1000;
 //                 collected at CA signing, but only SIGNING_EARNED_SHARE of the
 //                 contract is recognized as earned — the gap between the two is
 //                 collected ahead of the work, same idea as Design. Flat through
-//                 Pre-Con — 0% schedule progress yet.
+//                 Pre-Con — % Complete shows SIGNING_EARNED_SHARE itself (20%),
+//                 not 0%, since % Complete always equals earned ÷ contract.
 //   Construction: SIGNING_EARNED_SHARE is already earned; the remaining
 //                 REMAINING_SHARE earns out weekly across the construction schedule.
+//                 % Complete shown is that whole total, not schedule progress alone.
 const DESIGN_EARNED_FRACTION=0.50;    // of amount invoiced so far during Design
 const SIGNING_DEPOSIT_SHARE=0.30;     // of contract value, collected at CA signing — informational only, not used in earned math (actual invoiced comes from BuilderTrend)
 const SIGNING_EARNED_SHARE=0.20;      // of contract value, earned at CA signing / flat through Pre-Con
@@ -964,11 +966,17 @@ function projectPhase(p,atWeek){
 //   Pre-Con      — earned = SIGNING_EARNED_SHARE × contract value, flat. A
 //                  larger SIGNING_DEPOSIT_SHARE is collected at signing, but
 //                  only SIGNING_EARNED_SHARE of it counts as earned — same
-//                  collect-ahead-of-earning idea as Design. % Complete is
-//                  literally 0 — construction hasn't started, so no progress yet.
+//                  collect-ahead-of-earning idea as Design. % Complete shows
+//                  that same SIGNING_EARNED_SHARE (20%), flat — construction
+//                  hasn't started, so it doesn't move yet, but it isn't 0
+//                  either: % Complete always equals earned ÷ contract, the
+//                  same number the Earned column is showing in dollars.
 //   Construction — earned = SIGNING_EARNED_SHARE × contract, plus
 //                  REMAINING_SHARE × contract × schedule progress. % Complete
-//                  is that schedule progress (elapsed weeks ÷ construction duration).
+//                  is that whole fraction (signing share + remaining share ×
+//                  schedule progress), not schedule progress alone — so a
+//                  manual override of, say, +5 points over Pre-Con's 20%
+//                  baseline is entered as 25%, not 5%.
 // A schedule-less Construction phase (Pre-Con ended, but no Construction phase
 // found in the Gantt) earns the signing share only — same "no schedule" flag as before.
 // A separate invoiced override (invOverride) replaces the BuilderTrend-matched
@@ -988,16 +996,18 @@ function computeRow(p,matchedEntry,override,invOverride,gapOverride){
   }else if(phase==='DESIGN'){
     if(invoiced!=null) earned=DESIGN_EARNED_FRACTION*invoiced;
   }else if(phase==='PRE-CON'){
-    pct=0;
+    pct=SIGNING_EARNED_SHARE;
     if(p.contract) earned=SIGNING_EARNED_SHARE*p.contract;
   }else if(phase==='CONSTRUCTION'){
+    let scheduleProgress;
     if(p.constr&&p.constr.durWeeks>0){
       const elapsed=weekAsOf()-p.constr.startWeek;
-      pct=Math.max(0,Math.min(1,elapsed/p.constr.durWeeks));
+      scheduleProgress=Math.max(0,Math.min(1,elapsed/p.constr.durWeeks));
     }else{
-      pct=0; noSchedule=true;
+      scheduleProgress=0; noSchedule=true;
     }
-    if(p.contract) earned=p.contract*(SIGNING_EARNED_SHARE+REMAINING_SHARE*pct);
+    pct=SIGNING_EARNED_SHARE+REMAINING_SHARE*scheduleProgress;
+    if(p.contract) earned=p.contract*pct;
   }
   const computedGap=(earned!=null&&invoiced!=null)?invoiced-earned:null;
   const gap=gapOverride?gapOverride.value:computedGap;
@@ -1114,9 +1124,9 @@ function tableHtml(rows,forExport){
         progress='<span class="dim" data-tip="In Design" data-tip-d="No physical schedule yet — earned income is 50% of the amount invoiced so far instead. See the Earned column.">design</span>'+ovrBtn+note;
       }
     }else if(c.phase==='PRE-CON'){
-      progress=progressBar(0,'',' data-tip="Pre-construction" data-tip-d="Construction hasn’t started — progress stays at 0% until its first week. Earned already reflects the deposit."');
+      progress=progressBar(c.pct,'',' data-tip="Pre-construction" data-tip-d="Construction hasn’t started yet, so this already reflects the 20% signing share and won’t move further until its first week."');
     }else if(c.noSchedule){
-      progress=progressBar(0,' <span class="flag bad" data-tip="No construction schedule" data-tip-d="This project has no construction phase in the Pipeline Gantt, so earned revenue is showing the deposit only.">!</span>');
+      progress=progressBar(c.pct,' <span class="flag bad" data-tip="No construction schedule" data-tip-d="This project has no construction phase in the Pipeline Gantt, so earned revenue is showing the 20% signing share only.">!</span>');
     }else{
       progress=progressBar(c.pct);
     }
