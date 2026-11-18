@@ -4,14 +4,14 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 ## Live tools
 
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1177 |
+| Project Pipeline | `project-pipeline.html` | v1181 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v66 |
 | Scout Board | `scout-board.html` | v13 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-11-18** — Permit & Zoning Tracker v179 → v180: per Byron's follow-up on the gray-on-white category-label fix — "I'm talking about something a little more sophisticated where the label is a combination of gray and white, not an either/or situation." A label whose track starts before Phase I can genuinely straddle the one real color boundary on the canvas (where the un-colored pre-Phase-I padding ends and the blue Phase I band begins) — the whole label was previously forced to one color based only on its leftmost bar's position. It now draws the same text twice, once gray once white, each clipped (via an SVG `clipPath`) to its own side of that boundary — wherever a copy's clip region is empty it simply doesn't render, so a label fully on one side looks exactly as before, and a straddling one gets a pixel-exact two-color split with no font-metric guesswork.
+- **2026-11-18** — Project Pipeline v1180 → v1181: per Byron — a crit milestone that lands during time off has no way to move to the other half of its week. Tier and Crit dots can now be dragged into either half of their week (Tier defaulted left, Crit defaulted right, both now overridable per-instance): a normal drag still changes week, a smaller drag within the same week flips the half. Pencils Down is unaffected. The existing C2-auto-shifts-left-when-it-lands-on-C1's-week behavior still applies on top of whichever half is chosen.
 - **2026-11-18** — Permit & Zoning Tracker v178 → v179: per Byron — "I'm seeing two buttons for Stephanie - is there a space in one of the names? Can we loosen up the logic so it's not so strict?" The owner-tab dedup (and the filter that runs once a tab is picked) compared raw Trello "Card Owner" custom-field strings by strict equality — a trailing/double space or an invisible character (zero-width space, BOM) a human can't see in the Trello UI made two cards' identical-looking owner name read as two different people, each getting its own tab. Both the dedup and the filter now go through a new `normOwnerName()` (Unicode-normalized, invisible characters stripped, whitespace collapsed, case-folded), so near-identical spellings collapse into one tab; ordinary distinct names are unaffected.
 - **2026-11-18** — Permit & Zoning Tracker v177 → v178: per Byron — "The language for the submit stage on zoning and permitting is different. One says submit, the other submitted. Change all so it's 'Submit'. Use uppercase letters for the Zoning and Permit options (A & B). If the label for a stage lands on white background, change that specific text to gray." Permitting/Permitting2's `submitted-review` stage now renders `'Submit'` too (zoning/zoning2 already did), so all four tracks read "SUBMIT" consistently. The A/B sub-track category labels now use an uppercase letter ("zoning A"/"permitting B", was "zoning a"/"permitting b"). A category label whose leftmost bar sits in the un-colored padding `originShift` adds before Phase I (a track shifted to start before Design Phase I) now renders in gray (`var(--mut)`) instead of white, since that padding has no colored band under it; every label still on a colored phase band is unaffected.
 - **2026-11-18** — Permit & Zoning Tracker v176 → v177: fixed Permit A/B (and, symmetrically, Zoning A/B) drawing on top of each other once B was shifted to overlap A — per Byron: "the permitting tracks are overlapping one another. They need to either run sequentially, and if their timing intersects, become stacked." Each category now independently checks whether its own A/B spans intersect; overlapping ones split into their own two thinner stacked rows (same treatment the zoning-vs-permitting overlap already used), sequential ones still share one row unchanged. Also labels each sub-track "zoning a"/"zoning b" (or "permitting a"/"permitting b") whenever B is present at all, stacked or not — a category with no B keeps its plain, letterless label.
