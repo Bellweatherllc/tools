@@ -118,7 +118,7 @@ mark{background:#fde9a8;color:inherit;border-radius:2px}
 <div id="app" class="hidden">
   <header class="top" id="top">
     <div class="toprow">
-      <div class="brand">Warehouse<span class="ver" id="versionBadge"></span><span class="ro" data-tip="Showing SharePoint data. Changes can't be saved from this page yet.">Read-only</span></div>
+      <div class="brand">Warehouse<span class="ver" id="versionBadge"></span></div>
       <select class="scope" id="scope" aria-label="Jobs to show"></select>
     </div>
     <nav class="tabs" role="tablist">
@@ -140,7 +140,7 @@ mark{background:#fde9a8;color:inherit;border-radius:2px}
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v2';
+const CORE_VERSION = 'v3';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -158,7 +158,7 @@ const GRAPH='https://graph.microsoft.com/v1.0';
 const LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
 async function gAll(url){ let out=[], next=url; while(next){ const j=await SherpaAuth.graph(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; } return out; }
 const jobFilter=job=>`$filter=fields/Job eq '${encodeURIComponent(String(job).replace(/'/g,"''"))}'`;
-const SEL_FIELDS='Title,Job,Category,Location,Ordered,OrderDate,LeadTime,OnHandLocation,DateReceived,ReceivedBy,Notes,DesignStatus';
+const SEL_FIELDS='Title,Job,Category,Location,Ordered,OrderDate,LeadTime,OnHandLocation,DateReceived,ReceivedBy,Notes,DesignStatus,DesignKey,OpsData,CoreEditedFields';
 const CH_FIELDS='Title,Job,SelectionLookupId,Description,ChoiceStatus';
 const day=v=>v?String(v).slice(0,10):null;
 
@@ -177,7 +177,8 @@ async function loadJob(job){
   const chBy=new Map();
   for(const c of cho){ if(c.fields.ChoiceStatus&&c.fields.ChoiceStatus!=='Selected') continue; const k=String(c.fields.SelectionLookupId); if(!chBy.has(k)) chBy.set(k,[]); chBy.get(k).push(c.fields); }
   return sel.filter(x=>x.fields.DesignStatus!=='removed').map(x=>{ const f=x.fields, room=f.Location||'Unassigned', chs=chBy.get(String(x.id))||[];
-    const i={id:job+'/'+x.id, job:f.Job, title:f.Title||'', room, short:shortTitle(f.Title||'',room), category:f.Category||'',
+    const ops=parseJ(f.OpsData), ck=ops.checkin||{};
+    const i={id:job+'/'+x.id, spId:String(x.id), key:f.DesignKey||('sp-'+x.id), edited:edSet(f.CoreEditedFields), ops, condition:ck.condition||'', installed:ck.installedAt||null, pulled:ck.pulledAt||null, job:f.Job, title:f.Title||'', room, short:shortTitle(f.Title||'',room), category:f.Category||'',
       ordered:f.Ordered||'', orderDate:day(f.OrderDate), leadTime:f.LeadTime||'', onHand:f.OnHandLocation||'', received:day(f.DateReceived), receivedBy:f.ReceivedBy||'',
       notes:f.Notes||'', choices:chs};
     i.models=[...new Set(chs.flatMap(c=>models(c.Description)))];
@@ -185,10 +186,36 @@ async function loadJob(job){
     return i; });
 }
 
+/* ── Saving ── BT fields written here are listed in CoreEditedFields so Import keeps them.
+   The check-in record in OpsData is the one the LC and Field screens use too. ── */
+const parseJ=v=>{ try{ const o=JSON.parse(v||'{}'); return o&&typeof o==='object'?o:{}; }catch(e){ return {}; } };
+const edSet=v=>new Set(String(v||'').split(',').map(x=>x.trim()).filter(Boolean));
+let ME='';
+async function gSend(url,method,body){ for(let a=0;;a++){ try{ return await SherpaAuth.graph(url,{method,body:JSON.stringify(body)}); }catch(e){ if([429,503,504].includes(e.status)&&a<5){ await new Promise(r=>setTimeout(r,1500*2**a)); continue; } throw e; } } }
+const COLS={onHand:'OnHandLocation',received:'DateReceived',receivedBy:'ReceivedBy'};
+async function save(i,changes,checkin){
+  const f={}, prev={...i,ops:JSON.parse(JSON.stringify(i.ops)),edited:new Set(i.edited)};
+  for(const [k,v] of Object.entries(changes)){ const col=COLS[k]; f[col]=col==='DateReceived'?(v?v+'T12:00:00Z':null):(v||null); i.edited.add(col); i[k]=v||''; }
+  if(Object.keys(f).length) Object.assign(f,{CoreEditedFields:[...i.edited].join(','),CoreEditedAt:new Date().toISOString(),CoreEditedBy:ME});
+  if(checkin){ i.ops.checkin={...(i.ops.checkin||{}),...checkin,itemId:i.key}; for(const [k,v] of Object.entries(checkin)) if(v===null) delete i.ops.checkin[k]; f.OpsData=JSON.stringify(i.ops);
+    const ck=i.ops.checkin; i.condition=ck.condition||''; i.installed=ck.installedAt||null; i.pulled=ck.pulledAt||null; }
+  i.state=stateOf(i); i.hay=haystack(i);
+  try{ await gSend(`${LISTS}/CORE_Selections/items/${i.spId}/fields`,'PATCH',f); }catch(e){ Object.assign(i,prev); i.state=stateOf(i); i.hay=haystack(i); throw e; }
+}
+// unknown items, set aside for the LC: CORE-only, kept in CORE_SelectionDesignDocs (Job = _shared)
+let UNKNOWN=[];
+async function loadUnknown(){
+  try{ const rows=await gAll(`${LISTS}/CORE_SelectionDesignDocs/items?$filter=fields/Job eq '_shared'&$expand=fields($select=Title,Job,Collection,DocId,Data)&$top=999`);
+    UNKNOWN=rows.filter(r=>r.fields.Collection==='unknownItems').map(r=>({spId:String(r.id),...parseJ(r.fields.Data)})); }
+  catch(e){ UNKNOWN=[]; }
+}
+const errMsg=e=>e&&e.status===403?'You don’t have permission to change this.':'Didn’t save. Check your connection and try again.';
+
 /* ── Reading BT's free-text fields ──────────────────────────────────────── */
 function shortTitle(t,room){ const m=t.match(/^([^:]+):\s*(.+)$/); return m&&m[1].trim().toLowerCase()===String(room).toLowerCase()?m[2]:t; }
 function stateOf(i){
   const oh=i.onHand.trim(), ord=i.ordered.trim();
+  if(i.installed) return {k:'site',label:'Installed'};
   if(/^on\s?-?site$/i.test(oh)) return {k:'site',label:'On site'};
   if(/^owner/i.test(oh)||/^(no,\s*)?owner/i.test(ord)) return {k:'own',label:'Owner supplied'};
   if(oh) return {k:'store',label:bayOf(oh)||oh};
@@ -272,6 +299,8 @@ function render(){
     const M=L.filter(i=>vendorF==='All'||(i.vendor||'Vendor not noted')===vendorF);
     for(const [v,its] of groups(M,i=>i.vendor||'Vendor not noted')) h+=`<div class="gh"><h2>${esc(v)}</h2><span class="note">${its.length}</span></div>`+its.sort((a,b)=>String(a.orderDate||'').localeCompare(String(b.orderDate||''))).map(i=>card(i,i.orderDate?` <span class="note">· ordered ${fmtDate(i.orderDate)}</span>`:'')).join('');
     if(!M.length) h+='<div class="empty">Nothing on order right now.</div>';
+    const U=UNKNOWN.filter(u=>!u.resolvedAt);
+    if(U.length) h+=`<div class="gh"><h2>Set aside: not matched</h2><span class="note">${U.length}</span></div>`+U.map(u=>`<div class="card"><div class="main"><div class="t">${esc(u.what||'Unknown item')}</div><div class="meta">${esc([u.job,u.model&&('Model '+u.model),u.bay,u.by&&('by '+u.by),u.at&&fmtDate(u.at.slice(0,10))].filter(Boolean).join(' · '))}</div></div><button class="btn ghost" data-resolve="${esc(u.spId)}">Sorted</button></div>`).join('');
   }
   else if(tab==='shelves'){
     const L=all.filter(i=>i.state.k==='store');
@@ -317,8 +346,10 @@ function openItem(id){
       ${suggest?`<p style="margin:0 0 6px">${esc(i.job)} ${roomBay.length?`<b>${esc(i.room)}</b> items are in`:'is stored in'} <b>${esc(suggest)}</b>${bays.length>1?` <span class="note">(job also in ${esc(bays.filter(b=>b!==suggest).join(', '))})</span>`:''}.</p>`:`<p class="note" style="margin:0 0 6px">Nothing for ${esc(i.job)} is on the shelves yet. Pick a free bay.</p>`}
       ${i.rough?'<p class="warnline" style="margin:0 0 6px">Rough-in part: store it with the job’s other rough-in items, not with its finish item.</p>':''}
       <label class="field"><span>Bay</span><input id="bay" value="${esc(suggest)}" placeholder="e.g. Stokley F4" autocomplete="off"></label>
-      <div class="seg">${['OK','Damaged','Wrong item','Short'].map((c,n)=>`<button class="chip" data-cond="${c}" aria-pressed="${n===0}">${c}</button>`).join('')}</div>
-      <div class="actions"><button class="btn" data-checkin data-tip="Not saved yet: this is a prototype.">Check in</button><button class="btn ghost" data-print>Print label</button></div>
+      ${i.state.k==='store'?'':`<div class="seg">${['OK','Damaged','Wrong item','Short'].map((c,n)=>`<button class="chip" data-cond="${c}" aria-pressed="${n===0}">${c}</button>`).join('')}</div>
+      <label class="field"><span>Note (optional)</span><input id="ckNote" placeholder="e.g. 1 of 8 boxes cracked" autocomplete="off"></label>`}
+      ${i.condition&&i.condition!=='OK'?`<p class="warnline">Checked in as: ${esc(i.condition)}${i.ops.checkin&&i.ops.checkin.damageNote?' · '+esc(i.ops.checkin.damageNote):''}</p>`:''}
+      <div class="actions">${i.state.k==='store'?`<button class="btn" data-move="${esc(i.id)}">Move to this bay</button>`:`<button class="btn" data-checkin="${esc(i.id)}">Check in</button>`}<button class="btn ghost" data-print>Print label</button></div>
     </div>
     <div class="sec"><h4>Label</h4><div id="labelPrev">${labelHtml(i,suggest)}</div></div>`);
   const bay=$('bay'); if(bay) bay.addEventListener('input',()=>{ $('labelPrev').innerHTML=labelHtml(i,bay.value.trim()); });
@@ -327,9 +358,10 @@ function openItem(id){
 function openUnknown(){
   current=null;
   showPanel(`<h3>Unknown item</h3><p class="note">Not in BuilderTrend, or the box doesn’t match. Set it aside and tell the LC instead of guessing.</p>
-    <label class="field"><span>Model # on the box</span><input value="${esc(q)}"></label>
-    <label class="field"><span>Which job, if you can tell</span><input placeholder="From the packing slip"></label>
-    <label class="field"><span>What it looks like</span><input placeholder="e.g. chrome pop-up drain, Kohler box"></label>
+    <label class="field"><span>Model # on the box</span><input id="uModel" value="${esc(q)}"></label>
+    <label class="field"><span>Which job, if you can tell</span><input id="uJob" placeholder="From the packing slip"></label>
+    <label class="field"><span>What it looks like</span><input id="uWhat" placeholder="e.g. chrome pop-up drain, Kohler box"></label>
+    <label class="field"><span>Where you put it</span><input id="uBay" placeholder="e.g. Stokley F4"></label>
     <div class="actions"><button class="btn" data-setaside>Set aside for LC</button></div>`);
   if(isWide()) render();
 }
@@ -350,10 +382,30 @@ document.addEventListener('click',e=>{
   const v=t.closest('[data-vendor]'); if(v){ vendorF=v.dataset.vendor; render(); return; }
   const s=t.closest('[data-shelf]'); if(s){ shelfMode=s.dataset.shelf; render(); return; }
   const c=t.closest('[data-cond]'); if(c){ c.parentNode.querySelectorAll('[data-cond]').forEach(b=>b.setAttribute('aria-pressed',String(b===c))); return; }
-  if(t.closest('[data-checkin]')){ const bay=($('bay')||{}).value||''; toast(`Prototype: would check in${bay?' to '+bay:''}. Saving isn’t switched on yet.`); return; }
+  const ci=t.closest('[data-checkin]')||t.closest('[data-move]');
+  if(ci){ const id=ci.dataset.checkin||ci.dataset.move, i=[...byJob.values()].flat().find(x=>x.id===id); if(!i) return;
+    const raw=($('bay')||{}).value.trim(); if(!raw){ $('bay').focus(); toast('Add a bay.'); return; }
+    const bay=/^stokley/i.test(raw)?raw.replace(/^stokley,?\s*/i,'Stokley, ').replace(/, $/,''):(/^on\s?-?site$/i.test(raw)?'Onsite':'Stokley, '+raw.toUpperCase());
+    const today=new Date().toISOString().slice(0,10);
+    ci.disabled=true;
+    (async()=>{ try{
+      if(ci.dataset.move){ await save(i,{onHand:bay},{OnHandLocation:bay}); toast('Moved to '+bay+'.'); }
+      else{ const cond=(document.querySelector('[data-cond][aria-pressed="true"]')||{}).dataset?.cond||'OK', note=(($('ckNote')||{}).value||'').trim();
+        await save(i,{onHand:bay,received:today,receivedBy:ME},{OnHandLocation:bay,DateReceived:today,status:'Received',receivedAt:Date.now(),ReceivedBy:ME,condition:cond,damageNote:cond==='OK'?null:(note||null),receiverNote:cond==='OK'?(note||null):null});
+        toast(`Checked in to ${bay}${cond==='OK'?'':' · '+cond}.`); }
+      render(); openItem(id);
+    }catch(e){ ci.disabled=false; toast(errMsg(e)); render(); } })();
+    return; }
+  const rs=t.closest('[data-resolve]'); if(rs){ const u=UNKNOWN.find(x=>x.spId===rs.dataset.resolve); if(!u) return; const data={...u,resolvedAt:new Date().toISOString(),resolvedBy:ME}; delete data.spId;
+    gSend(`${LISTS}/CORE_SelectionDesignDocs/items/${u.spId}/fields`,'PATCH',{Data:JSON.stringify(data)}).then(()=>{ u.resolvedAt=data.resolvedAt; render(); toast('Marked sorted.'); }).catch(e=>toast(errMsg(e))); return; }
   if(t.closest('[data-print]')){ const p=$('printLabel'); p.innerHTML=$('labelPrev').innerHTML; p.classList.remove('hidden'); window.print(); p.classList.add('hidden'); return; }
   if(t.closest('[data-unknown]')){ openUnknown(); return; }
-  if(t.closest('[data-setaside]')){ toast('Prototype: would add to the LC’s unknown-items list. Saving isn’t switched on yet.'); return; }
+  if(t.closest('[data-setaside]')){ const v=k=>(($(k)||{}).value||'').trim(); const data={model:v('uModel'),job:v('uJob'),what:v('uWhat'),bay:v('uBay'),at:new Date().toISOString(),by:ME};
+    if(!data.model&&!data.what){ toast('Add the model # or what it looks like.'); return; }
+    const id='u'+Date.now().toString(36);
+    gSend(`${LISTS}/CORE_SelectionDesignDocs/items`,'POST',{fields:{Title:('unknownItems/'+id),Job:'_shared',Collection:'unknownItems',DocId:id,Data:JSON.stringify(data)}})
+      .then(r=>{ UNKNOWN.unshift({spId:String(r.id),...data}); closePanel(); $('panel').innerHTML='<div class="placeholder">Set aside. It’s listed under Expecting until someone sorts it.</div>'; toast('Set aside for the LC.'); render(); })
+      .catch(e=>toast(errMsg(e))); return; }
   const op=t.closest('[data-open]'); if(op){ openItem(op.dataset.open); return; }
   if(t.closest('[data-close]')||t===$('scrim')){ closePanel(); return; }
 });
@@ -366,6 +418,8 @@ addEventListener('resize',setHdr);
   try{ await SherpaAuth.init(); }catch(e){ $('gate').classList.remove('hidden'); $('gateMsg').textContent=e.message; return; }
   if(!SherpaAuth.isSignedIn()){ $('gate').classList.remove('hidden'); return; }
   $('app').classList.remove('hidden'); setHdr();
+  { const a=SherpaAuth.getAccount(); ME=(a&&(a.name||a.username))||''; }
+  loadUnknown().then(()=>{ if(tab==='expect') render(); });
   try{ JOBS=await loadJobs(); }catch(e){ $('main').innerHTML=`<div class="empty">Couldn’t reach SharePoint: ${esc(e.message||e)}</div>`; return; }
   const active=JOBS.filter(j=>!j.archived);
   $('scope').innerHTML='<option>All active</option>'+active.map(j=>`<option>${esc(j.name)}</option>`).join('')+(JOBS.length>active.length?`<optgroup label="Archived">${JOBS.filter(j=>j.archived).map(j=>`<option>${esc(j.name)}</option>`).join('')}</optgroup>`:'');

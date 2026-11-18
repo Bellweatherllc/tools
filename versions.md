@@ -34,11 +34,11 @@ Last updated: 2026-11-17
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
-| Selections List Setup | `selections/selections-setup.html` | v7 |
-| Selections · Design | `selections/design.html` | v1 |
-| Selections · LC | `selections/lc-portal.html` | v3 |
-| Selections · Field | `selections/field-view.html` | v2 |
-| Selections · Warehouse | `selections/warehouse.html` | v2 |
+| Selections List Setup | `selections/selections-setup.html` | v8 |
+| Selections · Design | `selections/design.html` | v2 |
+| Selections · LC | `selections/lc-portal.html` | v4 |
+| Selections · Field | `selections/field-view.html` | v3 |
+| Selections · Warehouse | `selections/warehouse.html` | v3 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v29 |
 | Core Roadmap | `core_roadmap.html` | v57 |
@@ -76,6 +76,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-18** — Selections: every screen now saves what it shows. LC v3 → v4 (read + write: items, check-ins, allowances, new/removed items, trips, receipts, job archiving; `notes` is BT NOTES only, choice descriptions in a "What was chosen" section), Warehouse v2 → v3 (check-in with bay/date/condition, move bay, unknown items set aside), Field v2 → v3 (brought to site incl. batch, back to bay, installed, notes). Operational CORE-only data in `CORE_Selections.OpsData`; BT fields edited are listed in `CoreEditedFields`; no hard deletes. Design v1 → v2: T1–T3 selection tier dates come from the Pipeline (`CORE_Projects.JobCode` → `GanttData.tiers`, week → Friday), locked in settings. Setup v7 → v8: `OpsData` column. **Not end-to-end tested** (Byron chose to ship and test in use); Design tier dates tested against a fake SharePoint.
 - **2026-11-18** — Selections · Design v1 (new, `selections/design.html`): the Design screen prototype, **read + write on SharePoint**. Job picker (then `?job=`); items ⇄ `CORE_Selections` + `CORE_SelectionChoices` + `CORE_SelectionAllowances` for that job; settings, meetings, mood boards, internal notes and schedules ⇄ `CORE_SelectionDesignDocs` (choice library and room templates shared across jobs, `Job = _shared`). Saves are optimistic and roll back on failure. BT fields a designer changes are listed in `CoreEditedFields`; approving an option sets `ChoiceStatus` (Selected / Considering) and keeps `SelectionTotalCents` in step; deletes are soft (`DesignStatus = removed`, `ChoiceStatus = Removed`). Category numbers map to BT labels. Uploads aren't wired yet (upload controls hidden). No live sync between two designers on the same job yet; reload to see others' changes. BW Tool Index v13 → v14. Needs `https://bellweatherllc.github.io/tools/selections/design.html` added as an SPA redirect URI.
 - **2026-11-18** — Selections List Setup v6 → v7: adds `ImportTitle`, `DesignKey`, `DesignStatus`, `DesignData`, `CoreEditedFields`, `CoreEditedAt`, `CoreEditedBy` to the selection lists and the `CORE_SelectionDesignDocs` list. Import matches on `ImportTitle` (so renames in CORE don't duplicate) and **never overwrites a field listed in `CoreEditedFields`**; the log reports how many were kept.
 - **2026-11-18** — Selections · LC v2 → v3, Field v1 → v2, Warehouse v1 → v2: hide selections removed on the Design screen (`DesignStatus = removed`).

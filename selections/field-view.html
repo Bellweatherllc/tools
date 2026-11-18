@@ -79,6 +79,8 @@ mark{background:#fde9a8;color:inherit;border-radius:2px;padding:0 1px}
 .kv dt{color:var(--muted)} .kv dd{margin:0;overflow-wrap:anywhere}
 .desc{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px}
 details summary{cursor:pointer;color:var(--navy);font-weight:600;font-size:14.5px;padding:4px 0}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+textarea{width:100%;font:400 15px/1.4 var(--sans);padding:10px;border:1px solid var(--line);border-radius:8px}
 .thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .thumbs a{display:block;aspect-ratio:1;background:var(--cotton);border-radius:8px;overflow:hidden;border:1px solid var(--line)}
 .thumbs img{width:100%;height:100%;object-fit:cover}
@@ -100,7 +102,7 @@ details summary{cursor:pointer;color:var(--navy);font-weight:600;font-size:14.5p
 <div id="app" class="hidden">
   <header class="top" id="top">
     <div class="toprow">
-      <div class="brand">Selections<span class="ver" id="versionBadge"></span><span class="ro" data-tip="Showing SharePoint data. Changes can't be saved from this page yet.">Read-only</span></div>
+      <div class="brand">Selections<span class="ver" id="versionBadge"></span></div>
       <select class="jobsel" id="jobSel" aria-label="Job"></select>
     </div>
     <div class="search">
@@ -115,7 +117,7 @@ details summary{cursor:pointer;color:var(--navy);font-weight:600;font-size:14.5p
     </nav>
   </header>
   <main id="main"><div class="empty">Loading…</div></main>
-  <div class="bar hidden" id="bar"><span id="barTxt"></span><button class="btn" id="barBtn" data-tip="Not saved yet: this is a prototype.">Brought to site</button></div>
+  <div class="bar hidden" id="bar"><span id="barTxt"></span><button class="btn" id="barBtn" data-tip="Marks the selected items On site.">Brought to site</button></div>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -126,7 +128,7 @@ details summary{cursor:pointer;color:var(--navy);font-weight:600;font-size:14.5p
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v2';
+const CORE_VERSION = 'v3';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -143,7 +145,7 @@ const GRAPH='https://graph.microsoft.com/v1.0';
 const LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
 async function gAll(url){ let out=[], next=url; while(next){ const j=await SherpaAuth.graph(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; } return out; }
 const jobFilter=job=>`$filter=fields/Job eq '${encodeURIComponent(String(job).replace(/'/g,"''"))}'`;
-const SEL_FIELDS='Title,Job,Category,Location,DueDate,Ordered,OrderDate,LeadTime,OnHandLocation,DateReceived,Notes,DesignStatus';
+const SEL_FIELDS='Title,Job,Category,Location,DueDate,Ordered,OrderDate,LeadTime,OnHandLocation,DateReceived,Notes,DesignStatus,DesignKey,OpsData,CoreEditedFields';
 const CH_FIELDS='Title,Job,SelectionLookupId,Description,ChoiceStatus';
 const day=v=>v?String(v).slice(0,10):null;
 
@@ -164,11 +166,27 @@ async function loadJob(job){
   const chBy=new Map();
   for(const c of cho){ if(c.fields.ChoiceStatus&&c.fields.ChoiceStatus!=='Selected') continue; const k=String(c.fields.SelectionLookupId); if(!chBy.has(k)) chBy.set(k,[]); chBy.get(k).push(c.fields); }
   const items=sel.filter(x=>x.fields.DesignStatus!=='removed').map(x=>{ const f=x.fields; const loc=f.Location||'Unassigned';
-    return {id:String(x.id), job:f.Job, title:f.Title||'', room:loc, short:shortTitle(f.Title||'',loc), category:f.Category||'',
+    const ops=parseJ(f.OpsData), ck=ops.checkin||{};
+    return {id:String(x.id), key:f.DesignKey||('sp-'+x.id), edited:edSet(f.CoreEditedFields), ops, installed:ck.installedAt||null, job:f.Job, title:f.Title||'', room:loc, short:shortTitle(f.Title||'',loc), category:f.Category||'',
       ordered:f.Ordered||'', orderDate:day(f.OrderDate), leadTime:f.LeadTime||'', onHand:f.OnHandLocation||'', received:day(f.DateReceived), dueDate:day(f.DueDate),
       notes:f.Notes||'', choices:chBy.get(String(x.id))||[]}; });
   items.forEach(i=>{ i.state=stateOf(i); i.specs=i.choices.flatMap(c=>parseSpecs(c.Description)); i.hay=haystack(i); });
   cache.set(job,items); return items;
+}
+/* ── Saving ── BT fields edited here are listed in CoreEditedFields so Import keeps them.
+   The check-in record in OpsData is the same one the LC and Warehouse screens use. */
+const parseJ=v=>{ try{ const o=JSON.parse(v||'{}'); return o&&typeof o==='object'?o:{}; }catch(e){ return {}; } };
+const edSet=v=>new Set(String(v||'').split(',').map(x=>x.trim()).filter(Boolean));
+let ME='';
+async function gPatch(id,fields){ for(let a=0;;a++){ try{ return await SherpaAuth.graph(`${LISTS}/CORE_Selections/items/${id}/fields`,{method:'PATCH',body:JSON.stringify(fields)}); }catch(e){ if([429,503,504].includes(e.status)&&a<5){ await new Promise(r=>setTimeout(r,1500*2**a)); continue; } throw e; } } }
+const COLS={onHand:'OnHandLocation',received:'DateReceived',notes:'Notes'};
+async function save(i,changes,checkin){
+  const f={}, prev={...i, ops:JSON.parse(JSON.stringify(i.ops))};
+  for(const [k,v] of Object.entries(changes)){ const col=COLS[k]; if(!col) continue; f[col]=col==='DateReceived'?(v?v+'T12:00:00Z':null):(v||null); i.edited.add(col); i[k]=v||''; }
+  if(Object.keys(f).length) Object.assign(f,{CoreEditedFields:[...i.edited].join(','),CoreEditedAt:new Date().toISOString(),CoreEditedBy:ME});
+  if(checkin){ i.ops.checkin={...(i.ops.checkin||{}),...checkin,itemId:i.key}; for(const [k,v] of Object.entries(checkin)) if(v===null) delete i.ops.checkin[k]; f.OpsData=JSON.stringify(i.ops); i.installed=i.ops.checkin.installedAt||null; }
+  i.state=stateOf(i); i.hay=haystack(i);
+  try{ await gPatch(i.id,f); }catch(e){ Object.assign(i,prev); i.state=stateOf(i); throw e; }
 }
 // files library is optional; thumbnails come from Graph each time (never stored)
 const filesCache=new Map();
@@ -185,6 +203,7 @@ function shortTitle(t,room){ const m=t.match(/^([^:]+):\s*(.+)$/); if(m&&m[1].tr
 // where the thing physically is, from BT's free-text fields
 function stateOf(i){
   const oh=i.onHand.trim(), ord=i.ordered.trim();
+  if(i.installed) return {k:'site',label:'Installed'};
   if(/^on\s?-?site$/i.test(oh)) return {k:'site',label:'On site'};
   if(/^owner/i.test(oh)||/^(no,\s*)?owner/i.test(ord)) return {k:'own',label:'Owner supplied'};
   if(oh) return {k:'store',label:oh.replace(/^stokley,?\s*/i,'Stokley ')};
@@ -282,7 +301,13 @@ function openSheet(id){
     ${i.choices.map(c=>`<div class="sec"><h4>What it is</h4><div style="font-weight:600;margin-bottom:6px">${esc(c.Title)}</div>`+
       (specs.length?`<dl class="kv">${specs.slice(0,14).map(s=>`<dt>${esc(s.k)}</dt><dd>${esc(s.v)}</dd>`).join('')}</dl>`:'')+
       (c.Description?`<details style="margin-top:8px"><summary>Full description</summary><div class="desc">${esc(c.Description)}</div></details>`:'')+`</div>`).join('')}
-    ${i.notes?`<div class="sec"><h4>Notes</h4><div class="desc">${esc(i.notes)}</div></div>`:''}
+    <div class="sec"><h4>Update</h4><div class="acts">
+      ${i.state.k!=='site'?`<button class="btn" data-act="site" data-id="${i.id}">Brought to site</button>`:''}
+      ${i.state.label==='On site'?`<button class="btn" data-act="installed" data-id="${i.id}">Installed</button>`:''}
+      ${i.state.label==='Installed'?`<button class="btn ghost" data-act="uninstall" data-id="${i.id}">Not installed yet</button>`:''}
+      ${i.state.k==='site'&&i.state.label!=='Installed'?`<button class="btn ghost" data-act="back" data-id="${i.id}">Back to Stokley…</button>`:''}
+    </div></div>
+    <div class="sec"><h4>Notes</h4><textarea id="nNotes" rows="3" placeholder="e.g. 2 of 3 boxes on site, one cracked">${esc(i.notes)}</textarea><div class="acts"><button class="btn ghost" data-act="notes" data-id="${i.id}">Save notes</button></div></div>
     <div class="sec" id="sFiles" data-id="${i.id}"><h4>Photos &amp; cut sheets</h4><div class="note">Loading…</div></div>`;
   $('scrim').classList.add('open'); $('sheet').classList.add('open'); $('sheet').scrollTop=0;
   jobFiles(i.job).then(rows=>{
@@ -306,6 +331,7 @@ function setHdrVar(){ document.documentElement.style.setProperty('--hdr',$('top'
 /* ── Events ─────────────────────────────────────────────────────────────── */
 document.addEventListener('click',e=>{
   const t=e.target;
+  const ac=t.closest('[data-act]'); if(ac){ act(ac.dataset.act,ac.dataset.id); return; }
   if(t.closest('[data-pick]')){ const id=t.closest('[data-pick]').dataset.pick; t.checked?picked.add(id):picked.delete(id); render(); return; }
   const tb=t.closest('[data-tab]'); if(tb){ tab=tb.dataset.tab; pref('tab',tab); render(); window.scrollTo(0,0); return; }
   const tr=t.closest('[data-trade]'); if(tr){ trade=tr.dataset.trade; render(); return; }
@@ -317,7 +343,24 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); if((
 $('q').addEventListener('input',e=>{ q=e.target.value.trim(); render(); });
 $('qClear').onclick=()=>{ q=''; $('q').value=''; render(); $('q').focus(); };
 $('jobSel').onchange=e=>pickJob(e.target.value);
-$('barBtn').onclick=()=>toast(`Prototype: ${picked.size} item${picked.size===1?'':'s'} would be marked “On site”. Saving isn’t switched on yet.`);
+const onSitePatch=i=>({checkin:{pulledAt:Date.now(),pulledFrom:i.onHand||null,pulledBy:ME},changes:{onHand:'Onsite',...(i.received?{}:{received:new Date().toISOString().slice(0,10)})}});
+$('barBtn').onclick=async()=>{
+  const list=items.filter(i=>picked.has(i.id)); const btn=$('barBtn'); btn.disabled=true; let ok=0, bad=0;
+  for(const i of list){ const p=onSitePatch(i); try{ await save(i,p.changes,p.checkin); ok++; picked.delete(i.id); }catch(e){ bad++; } }
+  btn.disabled=false; render(); toast(bad?`${ok} marked on site, ${bad} didn’t save. Try again.`:`${ok} item${ok===1?'':'s'} marked on site.`);
+};
+async function act(kind,id){
+  const i=items.find(x=>x.id===id); if(!i) return;
+  try{
+    if(kind==='site'){ const p=onSitePatch(i); await save(i,p.changes,p.checkin); toast('Marked on site.'); }
+    else if(kind==='installed'){ await save(i,{},{installedAt:new Date().toISOString().slice(0,10),installedBy:ME}); toast('Marked installed.'); }
+    else if(kind==='uninstall'){ await save(i,{},{installedAt:null,installedBy:null}); toast('Marked not installed.'); }
+    else if(kind==='back'){ const bay=prompt('Which bay at Stokley? (e.g. F4)'); if(bay===null) return; const v=bay.trim()?('Stokley, '+bay.trim().replace(/^stokley,?\s*/i,'').toUpperCase()):'Stokley';
+      await save(i,{onHand:v},{pulledAt:null,pulledFrom:null,pulledBy:null}); toast('Back at '+v+'.'); }
+    else if(kind==='notes'){ await save(i,{notes:$('nNotes').value.trim()}); toast('Notes saved.'); }
+    render(); openSheet(id);
+  }catch(e){ render(); toast(e&&e.status===403?'You don’t have permission to change this.':'Didn’t save. Check your connection and try again.'); }
+}
 $('signInBtn').onclick=()=>{ $('signInBtn').disabled=true; $('gateMsg').textContent='Signing in…'; SherpaAuth.signIn().catch(err=>{ $('signInBtn').disabled=false; $('gateMsg').textContent='Sign-in failed: '+err.message; }); };
 addEventListener('resize',setHdrVar);
 
@@ -325,6 +368,7 @@ addEventListener('resize',setHdrVar);
   try{ await SherpaAuth.init(); }catch(e){ $('gate').classList.remove('hidden'); $('gateMsg').textContent=e.message; return; }
   if(!SherpaAuth.isSignedIn()){ $('gate').classList.remove('hidden'); return; }
   $('app').classList.remove('hidden'); setHdrVar();
+  { const a=SherpaAuth.getAccount(); ME=(a&&(a.name||a.username))||''; }
   try{ JOBS=await loadJobs(); }catch(e){ $('main').innerHTML=`<div class="empty">Couldn’t reach SharePoint: ${esc(e.message||e)}</div>`; return; }
   const active=JOBS.filter(j=>!j.archived);
   $('jobSel').innerHTML=active.map(j=>`<option>${esc(j.name)}</option>`).join('')+(JOBS.length>active.length?`<optgroup label="Archived">${JOBS.filter(j=>j.archived).map(j=>`<option>${esc(j.name)}</option>`).join('')}</optgroup>`:'');

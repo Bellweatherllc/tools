@@ -550,7 +550,7 @@ body.mb-dragging,body.mb-dragging *{cursor:grabbing !important;user-select:none}
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v1';
+const CORE_VERSION = 'v2';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -636,6 +636,20 @@ const CORE_VERSION = 'v1';
     for(const d of [...D,...DS]){ const f=d.fields; if(!f.Collection||!f.DocId) continue; if(!docs.has(f.Collection)) docs.set(f.Collection,new Map()); docs.get(f.Collection).set(f.DocId,parseJ(f.Data)); docSp.set(f.Collection+'/'+f.DocId,String(d.id)); }
     if(!docs.has('portal')) docs.set('portal',new Map());
     if(!docs.get('portal').has('settings')) docs.get('portal').set('settings',{projectName:JOB});   // shown until someone saves settings
+    // selection tier dates come from the Pipeline (CORE_Projects → GanttData.tiers) when it has them
+    try{ const t=await pipelineTiers(JOB); if(t&&Object.keys(t.dates).length){ const st=docs.get('portal').get('settings'); st.tierDates={...(st.tierDates||{}),...t.dates}; window.spTierSource=t; } }
+    catch(e){ console.warn('Selections: could not read Pipeline tier dates',e); }
+  }
+  // Pipeline week w → that week's Friday. Week 0 is the week of Monday 2025-01-06 (Pipeline: CAL_ABS_EARLIEST 2025-01-01, weeks start Monday).
+  const tierFriday=w=>new Date(Date.UTC(2025,0,10)+Math.round(w)*7*864e5).toISOString().slice(0,10);
+  async function pipelineTiers(job){
+    const rows=await gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=JobCode)&$top=999`);
+    const hit=rows.find(r=>String(r.fields.JobCode||'').trim().toUpperCase()===String(job).trim().toUpperCase());
+    if(!hit) return null;
+    const it=await g(`${LISTS}/CORE_Projects/items/${hit.id}?$expand=fields($select=Title,JobCode,GanttData)`);
+    const gd=parseJ(it.fields&&it.fields.GanttData), dates={};
+    for(const t of (Array.isArray(gd.tiers)?gd.tiers:[])){ const n=Number(String(t&&t.name||'').replace(/\D/g,'')); if(n>=1&&n<=3&&Number.isFinite(t.week)) dates[n]=tierFriday(t.week); }
+    return {dates,project:(it.fields&&it.fields.Title)||job};
   }
 
   /* writing one selection: canon fields, design data, allowance, choices */
@@ -700,6 +714,7 @@ const CORE_VERSION = 'v1';
   }
   async function persistDoc(c,id,data){
     const key=c+'/'+id, sp=docSp.get(key);
+    if(key==='portal/settings'&&data&&window.spTierSource){ data=clone(data); for(const n of Object.keys(window.spTierSource.dates)) if(data.tierDates) delete data.tierDates[n]; }   // Pipeline owns these
     if(data===undefined){ if(sp){ await del(L.D,sp); docSp.delete(key); } return; }
     const json=JSON.stringify(data);
     if(sp) await patch(L.D,sp,{Data:json});
@@ -1891,9 +1906,10 @@ function settingsDlg() {
     <div class="field"><label class="f" for="s-target">Target material budget ($)</label><input class="input" id="s-target" inputmode="decimal" value="${esc(dollars(s.targetBudgetCents) ?? "")}" style="max-width:220px"></div>
     <h3 style="font-size:15px;margin:22px 0 4px">Selection tiers</h3>
     <p class="muted" style="font-size:14px;margin:0 0 12px">Copy each tier’s date from the project pipeline once its milestones are set.${safeUrl(s.pipelineUrl) ? ` <a href="${esc(safeUrl(s.pipelineUrl))}" target="_blank" rel="noopener">Open the pipeline</a>` : ""}</p>
-    <div class="grid3"><div class="field"><label class="f" for="s-t1">T1</label><input class="input" type="date" id="s-t1" value="${esc((s.tierDates || {})[1] || "")}"></div>
-    <div class="field"><label class="f" for="s-t2">T2</label><input class="input" type="date" id="s-t2" value="${esc((s.tierDates || {})[2] || "")}"></div>
-    <div class="field"><label class="f" for="s-t3">T3</label><input class="input" type="date" id="s-t3" value="${esc((s.tierDates || {})[3] || "")}"></div></div>
+    <div class="grid3"><div class="field"><label class="f" for="s-t1">T1</label><input class="input" type="date" id="s-t1" value="${esc((s.tierDates || {})[1] || "")}" ${window.spTierSource && window.spTierSource.dates[1] ? 'disabled data-tip="Set in the Pipeline"' : ""}></div>
+    <div class="field"><label class="f" for="s-t2">T2</label><input class="input" type="date" id="s-t2" value="${esc((s.tierDates || {})[2] || "")}" ${window.spTierSource && window.spTierSource.dates[2] ? 'disabled data-tip="Set in the Pipeline"' : ""}></div>
+    <div class="field"><label class="f" for="s-t3">T3</label><input class="input" type="date" id="s-t3" value="${esc((s.tierDates || {})[3] || "")}" ${window.spTierSource && window.spTierSource.dates[3] ? 'disabled data-tip="Set in the Pipeline"' : ""}></div></div>
+    ${window.spTierSource ? `<p class="muted" style="font-size:12px;margin:4px 0 0">Tier dates come from the Pipeline (${esc(window.spTierSource.project)}). Change them there.</p>` : ""}
     <div class="field"><label class="f" for="s-pipe">Pipeline link</label><input class="input" id="s-pipe" value="${esc(s.pipelineUrl || "")}" placeholder="https://"></div>
     <h3 style="font-size:15px;margin:22px 0 4px">Default tier by category</h3>
     <p class="muted" style="font-size:14px;margin:0 0 12px">Every line in a category takes this tier automatically, including lines added later. You can still change a single line on the selection sheet.</p>

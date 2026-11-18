@@ -542,7 +542,7 @@ dd .ph{color:var(--muted);font-weight:400;font-style:italic}
 <header class="top">
   <div class="wrap">
     <div class="top-row">
-      <button class="brand" data-home data-tip="All projects">Bell<i class="bw">w</i>eather<em>Selections</em><span class="ver" id="versionBadge"></span></button><span class="ro" data-tip="Showing SharePoint data (BWCore). Changes can’t be saved from this page yet.">Read-only</span>
+      <button class="brand" data-home data-tip="All projects">Bell<i class="bw">w</i>eather<em>Selections</em><span class="ver" id="versionBadge"></span></button>
       <nav class="views" aria-label="Views">
         <button data-home class="homebtn" data-tip="All projects">← All projects</button>
         <button data-view="overview">Overview</button>
@@ -570,7 +570,7 @@ dd .ph{color:var(--muted);font-weight:400;font-style:italic}
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="../lib/sherpa-auth.js"></script>
 <script>
-const CORE_VERSION = 'v3';
+const CORE_VERSION = 'v4';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -582,30 +582,56 @@ const CORE_VERSION = 'v3';
   document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('[data-tip]'); if(t&&!(t.contains&&t.contains(e.relatedTarget))) TT.classList.remove('show');});
 })();
 
-/* ── SharePoint adapter ─────────────────────────────────────────────────────
+/* ── SharePoint adapter: read + write ─────────────────────────────────────
    Stands in for the artifact database the LC code was written against.
-   Read-only. Loads ONE JOB AT A TIME (every query filters on the indexed Job
-   column): the current job first, then other active jobs in the background;
-   archived jobs only when opened. Jobs come from CORE_SelectionJobs.
-   trips/receipts/checkins (CORE-only, no lists yet) come back empty.        */
+   Loads ONE JOB AT A TIME (every query filters on the indexed Job column): the current
+   job first, other active jobs in the background, archived jobs only when opened.
+   items    ⇄ CORE_Selections (+ Choices, Allowances, Line items, Comments for display)
+   checkins ⇄ OpsData.checkin on the selection; its BT fields are also written to their columns
+   trips, receipts ⇄ CORE_SelectionDesignDocs (per job);  jobs ⇄ CORE_SelectionJobs
+   BT fields changed here are listed in CoreEditedFields (Import keeps them).
+   Nothing is hard-deleted: a deleted item gets DesignStatus = removed.                     */
 (()=>{
   const GRAPH='https://graph.microsoft.com/v1.0';
   const LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
-  async function gAll(url){ let out=[], next=url; while(next){ const j=await SherpaAuth.graph(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; } return out; }
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  async function g(url,opts){ for(let a=0;;a++){ try{ return await SherpaAuth.graph(url,opts); }catch(e){ if([429,503,504].includes(e.status)&&a<5){ await sleep(1500*2**a); continue; } if(e&&!e.code) e.code=e.status===403?'permission_denied':'unavailable'; throw e; } } }
+  async function gAll(url){ let out=[], next=url; while(next){ const j=await g(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; } return out; }
+  const post=(list,fields)=>g(`${LISTS}/${list}/items`,{method:'POST',body:JSON.stringify({fields})});
+  const patch=(list,id,fields)=>g(`${LISTS}/${list}/items/${id}/fields`,{method:'PATCH',body:JSON.stringify(fields)});
   const day=v=>v?String(v).slice(0,10):null;
   const num=v=>(typeof v==='number'&&isFinite(v))?v:null;
   const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const parseJ=v=>{ try{ const o=JSON.parse(v||'{}'); return o&&typeof o==='object'?o:{}; }catch(e){ return {}; } };
+  const clone=v=>v==null?v:JSON.parse(JSON.stringify(v));
+  const edSet=v=>new Set(String(v||'').split(',').map(x=>x.trim()).filter(Boolean));
   const jobFilter=job=>`$filter=fields/Job eq '${encodeURIComponent(String(job).replace(/'/g,"''"))}'`;
   const SEL={
-    CORE_Selections:'Title,Job,Category,Location,DueDate,SelectionStatus,SelectionTotalCents,AllowanceLookupId,Ordered,OrderDate,LeadTime,OnHandLocation,ReceivedBy,DateReceived,Notes,ActualCostCents,DesignStatus',
-    CORE_SelectionAllowances:'Title,Job,AllowanceCents',
+    CORE_Selections:'Title,Job,Category,Location,DueDate,SelectionStatus,SelectionTotalCents,AllowanceLookupId,Ordered,OrderDate,LeadTime,OnHandLocation,ReceivedBy,DateReceived,Notes,ActualCostCents,DesignStatus,DesignKey,OpsData,CoreEditedFields',
+    CORE_SelectionAllowances:'Title,Job,AllowanceCents,CoreEditedFields',
     CORE_SelectionChoices:'Title,Job,SelectionLookupId,Description,PriceCents,ChoiceStatus,CreatedBy,SelectedDate,SelectedBy',
     CORE_SelectionLineItems:'Title,Job,ChoiceLookupId,CostCode,CostType,Description,Qty,Unit,UnitPriceCents,PriceCents',
-    CORE_SelectionComments:'Title,Job,SelectionLookupId,PostedBy,PostedAt,Body'};
+    CORE_SelectionComments:'Title,Job,SelectionLookupId,PostedBy,PostedAt,Body',
+    CORE_SelectionDesignDocs:'Title,Job,Collection,DocId,Data'};
   const forJob=(list,job)=>gAll(`${LISTS}/${list}/items?${jobFilter(job)}&$expand=fields($select=${SEL[list]})&$top=999`)
     .catch(e=>{ if(e&&e.status===404&&list!=='CORE_Selections') return []; throw e; });   // optional lists may not exist yet
+  let ME='', MEID='';
+  const stamp=()=>({CoreEditedAt:new Date().toISOString(),CoreEditedBy:ME});
 
-  function build(sel,alw,cho,lis,com){
+  // LC field → CORE_Selections column (BT canon). Everything else the LC stores goes in OpsData.
+  const CANON={Title:'Title',Location:'Location',Category:'Category',OrderDate:'OrderDate',LeadTime:'LeadTime',OnHandLocation:'OnHandLocation',
+    ReceivedBy:'ReceivedBy',DateReceived:'DateReceived',notes:'Notes',ActualCostCents:'ActualCostCents',SelectionTotalCents:'SelectionTotalCents'};
+  const DATES=new Set(['OrderDate','DateReceived']), MONEY=new Set(['ActualCostCents','SelectionTotalCents']);
+  const DERIVED=new Set(['id','spId','Job','DueDate','SelectionStatus','Ordered','lineItems','comments','choices','AllowanceCents','_bt']);
+  const colValue=(col,v)=>{ if(v==null||v==='') return null; if(DATES.has(col)) return /^\d{4}-\d{2}-\d{2}$/.test(v)?v+'T12:00:00Z':v; if(MONEY.has(col)) return Math.round(Number(v)); if(col==='ReceivedBy') return v===MEID?ME:String(v).slice(0,255); return col==='Notes'?String(v):String(v).slice(0,255); };
+
+  const M=new Map();             // item id → {spId, job, base, ops, edited, allowId, allowCents, allowEdited}
+  const docs=new Map();          // 'trips' | 'receipts' → Map(id → data)
+  const docSp=new Map();         // 'collection/id' → SharePoint item id
+  const jobExtra=new Map();      // job name → extra job fields the LC keeps (address, custom milestones…)
+  function compose(m){ const it={...m.base,...(m.ops.item||{})}; it.id=m.id; return it; }
+
+  function build(job,sel,alw,cho,lis,com){
     const allow=new Map(alw.map(a=>[String(a.id),a.fields]));
     const chBy=new Map(), liBy=new Map(), coBy=new Map();
     for(const c of cho){ const k=String(c.fields.SelectionLookupId); if(!chBy.has(k)) chBy.set(k,[]); chBy.get(k).push({id:String(c.id),...c.fields}); }
@@ -617,16 +643,21 @@ const CORE_VERSION = 'v3';
       const ord=f.Ordered||'';
       const fromOrdered=(ord.match(/^(?:yes|no)\s*,\s*(.+)$/i)||[])[1]||'';
       const fromChoice=(chs[0]&&chs[0].Title&&chs[0].Title.includes(' | '))?chs[0].Title.split(' | ')[0]:'';
-      const notes=[f.Notes,...chs.map(c=>c.Description?(chs.length>1?c.Title+':\n':'')+c.Description:'')].filter(Boolean).join('\n\n');
-      return { id:'sp-'+x.id, spId:String(x.id), Job:f.Job||null, Title:f.Title||null, Category:f.Category||null, Location:f.Location||null,
+      const id=f.DesignKey||('sp-'+x.id), ops=parseJ(f.OpsData);
+      const base={ spId:String(x.id), Job:f.Job||job, Title:f.Title||null, Category:f.Category||null, Location:f.Location||null,
         DueDate:day(f.DueDate), SelectionStatus:f.SelectionStatus||null,
         SelectionTotalCents:num(f.SelectionTotalCents), AllowanceCents:a?num(a.AllowanceCents):null,
         Ordered:ord||null, OrderDate:day(f.OrderDate), LeadTime:f.LeadTime||null, OnHandLocation:f.OnHandLocation||null,
         ReceivedBy:f.ReceivedBy||null, DateReceived:day(f.DateReceived), ActualCostCents:num(f.ActualCostCents),
         type:chs.map(c=>c.Title).filter(Boolean).join(' + ')||null, vendor:(fromOrdered||fromChoice)||null,
-        ownerSupplied:/^owner/i.test(ord), notes:notes||null,
+        ownerSupplied:/^owner/i.test(ord), notes:f.Notes||null,
+        choices:chs.map(c=>({Title:c.Title,Description:c.Description||''})),
         lineItems:chs.flatMap(c=>liBy.get(c.id)||[]),
         comments:(coBy.get(String(x.id))||[]).sort((p,q)=>String(q.PostedAt).localeCompare(String(p.PostedAt))) };
+      const m={id,spId:String(x.id),job,base,ops:{item:ops.item||{},checkin:ops.checkin||null},edited:edSet(f.CoreEditedFields),
+        allowId:f.AllowanceLookupId!=null?String(f.AllowanceLookupId):null,allowCents:a?num(a.AllowanceCents):null,allowEdited:a?edSet(a.CoreEditedFields):new Set()};
+      M.set(id,m);
+      return compose(m);
     });
   }
 
@@ -636,24 +667,34 @@ const CORE_VERSION = 'v3';
     jobsP=(async()=>{
       try{
         const rows=await gAll(`${LISTS}/CORE_SelectionJobs/items?$expand=fields($select=Title,Job,Archived,LastImportedAt)&$top=999`);
-        if(rows.length) return rows.map(x=>({name:x.fields.Job||x.fields.Title, archived:!!x.fields.Archived, createdAt:Date.parse(x.fields.LastImportedAt||'')||0})).filter(j=>j.name);
+        if(rows.length) return rows.map(x=>({spId:String(x.id),name:x.fields.Job||x.fields.Title, archived:!!x.fields.Archived, createdAt:Date.parse(x.fields.LastImportedAt||'')||0})).filter(j=>j.name);
       }catch(e){ if(!e||e.status!==404) throw e; }
-      // no jobs list yet: find jobs from the selections themselves (Job column only)
       const rows=await gAll(`${LISTS}/CORE_Selections/items?$expand=fields($select=Job)&$top=999`);
       return [...new Set(rows.map(x=>x.fields.Job).filter(Boolean))].sort().map((name,i)=>({name,createdAt:i,archived:false}));
     })();
     jobsP.catch(()=>{ jobsP=null; });
     return jobsP;
   }
-  const cache=new Map(), inflight=new Map(); let itemsCb=null, itemsErr=null;
-  const emit=()=>{ if(itemsCb){ const rows=[...cache.values()].flat(); itemsCb({docs:rows.map(r=>({id:r.id,data:()=>r}))}); } };
+  const cache=new Map(), inflight=new Map(), subs={items:new Set(),checkins:new Set(),trips:new Set(),receipts:new Set(),jobs:new Set()}; let itemsErr=null;
+  const snap=rows=>({docs:rows.map(([id,d])=>({id,data:()=>clone(d)}))});
+  const views={
+    items:()=>[...cache.values()].flat().map(r=>[r.id,r]),
+    checkins:()=>[...M.values()].filter(m=>m.ops.checkin&&cache.has(m.job)).map(m=>[m.id,m.ops.checkin]),
+    trips:()=>[...(docs.get('trips')||new Map()).entries()],
+    receipts:()=>[...(docs.get('receipts')||new Map()).entries()],
+    jobs:()=>[]};
+  async function jobsView(){ const js=await loadJobs(); return js.map(j=>[String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),{...(jobExtra.get(j.name)||{}),name:j.name,archived:j.archived,createdAt:j.createdAt}]); }
+  function emit(which){ for(const c of which||['items','checkins','trips','receipts']){ if(c==='jobs'){ jobsView().then(r=>subs.jobs.forEach(f=>f(snap(r)))); continue; } const r=views[c](); subs[c].forEach(f=>f(snap(r))); } }
   function loadJob(job){
     if(!job||job==='All'||cache.has(job)) return Promise.resolve();
     if(inflight.has(job)) return inflight.get(job);
     const p=(async()=>{
-      const lists=['CORE_Selections','CORE_SelectionAllowances','CORE_SelectionChoices','CORE_SelectionLineItems','CORE_SelectionComments'];
-      const [sel,alw,cho,lis,com]=await Promise.all(lists.map(l=>forJob(l,job)));
-      cache.set(job,build(sel,alw,cho,lis,com)); emit();
+      const lists=['CORE_Selections','CORE_SelectionAllowances','CORE_SelectionChoices','CORE_SelectionLineItems','CORE_SelectionComments','CORE_SelectionDesignDocs'];
+      const [sel,alw,cho,lis,com,dd]=await Promise.all(lists.map(l=>forJob(l,job)));
+      for(const d of dd){ const f=d.fields; if(!['trips','receipts','jobs'].includes(f.Collection)) continue;
+        if(f.Collection==='jobs'){ jobExtra.set(job,parseJ(f.Data)); docSp.set('jobs/'+job,String(d.id)); continue; }
+        if(!docs.has(f.Collection)) docs.set(f.Collection,new Map()); docs.get(f.Collection).set(f.DocId,parseJ(f.Data)); docSp.set(f.Collection+'/'+f.DocId,String(d.id)); }
+      cache.set(job,build(job,sel,alw,cho,lis,com)); emit();
     })();
     inflight.set(job,p); p.catch(()=>{}).finally(()=>inflight.delete(job));
     return p;
@@ -663,21 +704,138 @@ const CORE_VERSION = 'v3';
     for(const j of js) if(!j.archived&&j.name!==except){ try{ await loadJob(j.name); }catch(e){ console.warn('Selections: could not load',j.name,e); } }
   }
   window.spEnsureJob=job=>{ if(job==='All') loadActive(); else loadJob(job).catch(e=>itemsErr&&itemsErr(e)); };
-  async function startItems(){
-    const js=await loadJobs();
-    let cur=null; try{ cur=localStorage.getItem('bw-job'); }catch(e){}
-    if(!js.some(j=>j.name===cur)) cur=(js.find(j=>!j.archived)||js[0]||{}).name;
-    if(cur) await loadJob(cur);
-    if(!cache.size) emit();
-    loadActive(cur);
+  let started=null;
+  function startItems(){
+    if(started) return started;
+    started=(async()=>{
+      const js=await loadJobs();
+      let cur=null; try{ cur=localStorage.getItem('bw-job'); }catch(e){}
+      if(!js.some(j=>j.name===cur)) cur=(js.find(j=>!j.archived)||js[0]||{}).name;
+      if(cur) await loadJob(cur);
+      if(!cache.size) emit();
+      loadActive(cur);
+    })();
+    return started;
   }
 
-  /* detail sheet: cost line items, discussion, files */
+  /* ── writes ── */
+  const replaceInCache=(m,it)=>{ const arr=cache.get(m.job)||[]; const n=arr.findIndex(x=>x.id===m.id); if(it){ n<0?arr.push(it):arr[n]=it; } else if(n>=0) arr.splice(n,1); cache.set(m.job,arr); };
+  async function saveItem(id,op,data){
+    let m=M.get(id);
+    if(op==='delete'){ if(!m) return; m.edited.add('DesignStatus'); replaceInCache(m,null); emit();
+      try{ await patch('CORE_Selections',m.spId,{DesignStatus:'removed',CoreEditedFields:[...m.edited].join(','),...stamp()}); m.removed=true; }
+      catch(e){ replaceInCache(m,compose(m)); emit(); throw e; } return; }
+    if(!m){ // new item from the LC (add item, duplicate, change selection)
+      const job=data.Job; if(!job) throw Object.assign(new Error('New item needs a job'),{code:'invalid'});
+      const f={Title:String(data.Title||'New item').slice(0,255),Job:job,DesignKey:id,CoreEditedFields:'',...stamp()}, item={}, cols=[];
+      for(const [k,v] of Object.entries(data)){ if(k==='Title'||k==='Job'||k==='id') continue; const col=CANON[k]; if(col){ const cv=colValue(col,v); if(cv!=null){ f[col]=cv; cols.push(col); } } else if(k!=='AllowanceCents'&&!DERIVED.has(k)&&v!==null) item[k]=v; }
+      f.CoreEditedFields=['Title',...cols].join(','); f.OpsData=JSON.stringify({item});
+      const r=await post('CORE_Selections',f);
+      m={id,spId:String(r.id),job,base:{spId:String(r.id),Job:job,Title:f.Title,Category:data.Category||null,Location:data.Location||null,OrderDate:data.OrderDate||null,LeadTime:data.LeadTime||null,OnHandLocation:data.OnHandLocation||null,DateReceived:data.DateReceived||null,ReceivedBy:data.ReceivedBy||null,notes:data.notes||null,ActualCostCents:num(data.ActualCostCents),SelectionTotalCents:num(data.SelectionTotalCents),AllowanceCents:null,choices:[],lineItems:[],comments:[]},
+        ops:{item,checkin:null},edited:new Set(['Title',...cols]),allowId:null,allowCents:null,allowEdited:new Set()};
+      M.set(id,m);
+      if(num(data.AllowanceCents)){ await saveAllowance(m,data.AllowanceCents); }
+      replaceInCache(m,compose(m)); emit(); return;
+    }
+    // update (or set on an existing item, e.g. undo)
+    const before={base:clone(m.base),ops:clone(m.ops),edited:new Set(m.edited),removed:m.removed};
+    const f={}, cols=[];
+    for(const [k,v] of Object.entries(data)){
+      if(DERIVED.has(k)&&k!=='AllowanceCents') continue;
+      if(k==='AllowanceCents') continue;
+      const col=CANON[k];
+      if(col){ const cv=colValue(col,v), cur=colValue(col,m.base[k]); if(String(cv??'')!==String(cur??'')){ f[col]=cv; cols.push(col); } m.base[k]=v??null; }
+      else{ if(v===null) delete m.ops.item[k]; else m.ops.item[k]=clone(v); }
+    }
+    const opsJson=JSON.stringify(m.ops), opsChanged=opsJson!==JSON.stringify(before.ops);
+    if(cols.length){ cols.forEach(c=>m.edited.add(c)); Object.assign(f,{CoreEditedFields:[...m.edited].join(','),...stamp()}); }
+    if(opsChanged) f.OpsData=opsJson;
+    if(op==='set'&&m.removed){ f.DesignStatus=null; m.removed=false; }
+    replaceInCache(m,compose(m)); emit();
+    try{
+      if(Object.keys(f).length) await patch('CORE_Selections',m.spId,f);
+      if('AllowanceCents' in data&&num(data.AllowanceCents)!==m.allowCents) await saveAllowance(m,data.AllowanceCents);
+    }catch(e){ Object.assign(m,before); replaceInCache(m,m.removed?null:compose(m)); emit(); throw e; }
+  }
+  async function saveAllowance(m,v){
+    const c=Math.round(Number(v)||0);
+    if(m.allowId){ m.allowEdited.add('AllowanceCents'); await patch('CORE_SelectionAllowances',m.allowId,{AllowanceCents:c,CoreEditedFields:[...m.allowEdited].join(','),...stamp()}); }
+    else{ const r=await post('CORE_SelectionAllowances',{Title:String(m.base.Title||'Allowance').slice(0,255),Job:m.job,AllowanceCents:c,CoreEditedFields:'AllowanceCents',...stamp()}); m.allowId=String(r.id); m.allowEdited=new Set(['AllowanceCents']); await patch('CORE_Selections',m.spId,{AllowanceLookupId:m.allowId}); }
+    m.allowCents=c; m.base.AllowanceCents=c; replaceInCache(m,compose(m)); emit();
+  }
+  async function saveCheckin(id,op,data){
+    const m=M.get(id); if(!m) throw Object.assign(new Error('Item not loaded'),{code:'not_found'});
+    const before={base:clone(m.base),ops:clone(m.ops),edited:new Set(m.edited)};
+    const next=op==='delete'?null:(op==='update'?{...(m.ops.checkin||{}),...data}:clone(data));
+    const f={}, cols=[], cleared=new Set((next&&next._cleared)||[]);
+    for(const k of Object.keys(CANON)){
+      if(!['OnHandLocation','DateReceived','ReceivedBy','OrderDate','LeadTime','notes'].includes(k)) continue;
+      let v; if(next&&k in next&&next[k]!==undefined) v=next[k]; else if(cleared.has(k)) v=null; else continue;
+      const col=CANON[k], cv=colValue(col,v), cur=colValue(col,m.base[k]);
+      if(String(cv??'')!==String(cur??'')){ f[col]=cv; cols.push(col); m.base[k]=v??null; }
+    }
+    m.ops.checkin=next;
+    if(cols.length){ cols.forEach(c=>m.edited.add(c)); Object.assign(f,{CoreEditedFields:[...m.edited].join(','),...stamp()}); }
+    f.OpsData=JSON.stringify(m.ops);
+    replaceInCache(m,compose(m)); emit();
+    try{ await patch('CORE_Selections',m.spId,f); }
+    catch(e){ Object.assign(m,before); replaceInCache(m,compose(m)); emit(); throw e; }
+  }
+  async function saveDoc(c,id,op,data){
+    if(!docs.has(c)) docs.set(c,new Map()); const map=docs.get(c), before=clone(map.get(id)), key=c+'/'+id;
+    const next=op==='delete'?undefined:(op==='update'?{...(before||{}),...data}:clone(data));
+    for(const [k,v] of Object.entries(next||{})) if(v===null) delete next[k];
+    next===undefined?map.delete(id):map.set(id,next); emit([c]);
+    try{
+      const sp=docSp.get(key);
+      if(next===undefined){ if(sp){ await g(`${LISTS}/CORE_SelectionDesignDocs/items/${sp}`,{method:'DELETE',raw:true}); docSp.delete(key); } return; }
+      const json=JSON.stringify(next);
+      if(sp) await patch('CORE_SelectionDesignDocs',sp,{Data:json});
+      else{ const r=await post('CORE_SelectionDesignDocs',{Title:key.slice(0,255),Job:next.Job||'_shared',Collection:c,DocId:id,Data:json}); docSp.set(key,String(r.id)); }
+    }catch(e){ before===undefined?map.delete(id):map.set(id,before); emit([c]); throw e; }
+  }
+  async function saveJob(slug,op,data){
+    const js=await loadJobs(); let j=js.find(x=>String(x.name).toLowerCase().replace(/[^a-z0-9]+/g,'-')===slug)||(data&&js.find(x=>x.name===data.name));
+    const name=(data&&data.name)||(j&&j.name); if(!name) throw Object.assign(new Error('Job needs a name'),{code:'invalid'});
+    const extra={...(jobExtra.get(name)||{}),...(op==='update'?data:clone(data)||{})}; const archived=!!extra.archived; delete extra.archived; delete extra.name; delete extra.createdAt;
+    if(j){ if(j.archived!==archived){ await patch('CORE_SelectionJobs',j.spId,{Archived:archived}); j.archived=archived; } }
+    else{ const r=await post('CORE_SelectionJobs',{Title:name,Job:name,Archived:archived}); j={spId:String(r.id),name,archived,createdAt:Date.now()}; js.push(j); }
+    jobExtra.set(name,extra);
+    const key='jobs/'+name, json=JSON.stringify(extra), sp=docSp.get(key);
+    if(sp) await patch('CORE_SelectionDesignDocs',sp,{Data:json}); else if(Object.keys(extra).length){ const r=await post('CORE_SelectionDesignDocs',{Title:key,Job:name,Collection:'jobs',DocId:name,Data:json}); docSp.set(key,String(r.id)); }
+    emit(['jobs']);
+  }
+  const chains=new Map();
+  function run(key,fn){ const p=(chains.get(key)||Promise.resolve()).then(fn); chains.set(key,p.catch(()=>{})); return p; }
+  const rid=()=>'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  function write(c,id,op,data){
+    return run(c+'/'+id,async()=>{ await startItems();
+      if(c==='items') return saveItem(id,op,data);
+      if(c==='checkins') return saveCheckin(id,op,data);
+      if(c==='jobs') return saveJob(id,op,data);
+      return saveDoc(c,id,op,data); });
+  }
+  function coll(name){
+    const c={ limit:()=>c,
+      doc:id=>{ id=id||rid(); return {id,set:d=>write(name,id,'set',d),update:d=>write(name,id,'update',d),replace:d=>write(name,id,'set',d),delete:()=>write(name,id,'delete'),
+        get:async()=>{ await startItems(); const r=(name==='jobs'?await jobsView():views[name]()).find(x=>x[0]===id); return {exists:!!r,id,data:()=>r?clone(r[1]):undefined}; }}; },
+      add:async d=>{ const id=rid(); await write(name,id,'set',d); return {id}; },
+      onSnapshot(cb,err){ let live=true; const f=d=>{ if(live) cb(d); }; (subs[name]||new Set()).add(f);
+        if(name==='items'){ itemsErr=e=>{ if(live&&err) err(e); }; startItems().catch(itemsErr); }
+        else if(name==='jobs') jobsView().then(r=>f(snap(r))).catch(e=>{ if(live&&err) err(e); });
+        else startItems().then(()=>f(snap(views[name]?views[name]():[]))).catch(e=>{ if(live&&err) err(e); });
+        return ()=>{ live=false; (subs[name]||new Set()).delete(f); }; } };
+    return c;
+  }
+
+  /* detail sheet: what was chosen, cost line items, discussion, files */
   const usd2=v=>typeof v==='number'?(v/100).toLocaleString(undefined,{style:'currency',currency:'USD'}):'';
   const linkify=t=>t.replace(/https?:\/\/[^\s<]+/g,u=>`<a href="${u}" target="_blank" rel="noopener">${u.length>60?u.slice(0,57)+'…':u}</a>`);
   const when=v=>{ const d=new Date(v); return isNaN(d)?E(v):d.toLocaleString('en-US',{timeZone:'America/New_York',dateStyle:'medium',timeStyle:'short'}); };
   window.spDetailExtras=r=>{
     let h='';
+    const CH=(r.choices||[]).filter(c=>c.Description);
+    if(CH.length) h+=`<section class="dsec"><h4>What was chosen</h4>${CH.map(c=>`<details><summary>${E(c.Title)}</summary><div class="spbody">${linkify(E(c.Description))}</div></details>`).join('')}</section>`;
     const L=r.lineItems||[];
     if(L.length){
       const tot=L.reduce((a,x)=>a+(x.PriceCents||0),0);
@@ -717,22 +875,11 @@ const CORE_VERSION = 'v3';
     }
   }
 
-  const RO=()=>Promise.reject(Object.assign(new Error('Read-only: this page can’t save changes yet.'),{code:'readonly'}));
-  const docRO={update:RO,set:RO,delete:RO,replace:RO,get:()=>Promise.resolve({exists:false,data:()=>undefined})};
-  function coll(name){
-    const c={ limit:()=>c, doc:()=>docRO, add:RO,
-      onSnapshot(cb,err){ let live=true;
-        if(name==='items'){ itemsCb=d=>{ if(live) cb(d); }; itemsErr=e=>{ if(live&&err) err(e); }; startItems().catch(itemsErr); }
-        else if(name==='jobs') loadJobs().then(js=>{ if(live) cb({docs:js.map(j=>({id:String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),data:()=>j}))}); }).catch(e=>{ if(live&&err) err(e); });
-        else Promise.resolve().then(()=>{ if(live) cb({docs:[]}); });
-        return ()=>{ live=false; }; } };
-    return c;
-  }
   const gate=document.getElementById('spGate');
   document.getElementById('spSignIn').onclick=()=>{ const b=document.getElementById('spSignIn'); b.disabled=true; document.getElementById('spGateMsg').textContent='Signing in…'; SherpaAuth.signIn().catch(e=>{ b.disabled=false; document.getElementById('spGateMsg').textContent='Sign-in failed: '+e.message; }); };
   const authReady=(async()=>{
     await SherpaAuth.init();
-    if(SherpaAuth.isSignedIn()) return;
+    if(SherpaAuth.isSignedIn()){ const a=SherpaAuth.getAccount(); ME=(a&&(a.name||a.username))||''; MEID=(a&&(a.username||a.homeAccountId))||''; return; }
     gate.classList.add('show');
     await new Promise(()=>{});   // wait here; sign-in redirects and reloads the page
   })();
@@ -745,12 +892,11 @@ const CORE_VERSION = 'v3';
     await authReady;
     if(name==='db') return {collection:coll};
     if(name==='user'){ const acct=SherpaAuth.getAccount();
-      return { id:async()=>acct&&(acct.username||acct.homeAccountId),
-               profiles:async ids=>Object.fromEntries(ids.map(i=>[i,{name:(acct&&i===acct.username)?(acct.name||i):'Someone'}])),
-               can:async()=>false, canEdit:async()=>false }; }
-    if(name==='assets') return {upload:RO};
+      return { id:async()=>MEID,
+               profiles:async ids=>Object.fromEntries(ids.map(i=>[i,{name:i===MEID?(ME||i):i}])),
+               can:async()=>true, canEdit:async()=>true }; }
     if(name==='downloads') return {save:saveFile};
-    return null;   // AI receipt reading isn't available here
+    return null;   // photo uploads and AI receipt reading aren't wired to SharePoint yet
   }};
 })();
 </script>
