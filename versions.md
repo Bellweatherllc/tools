@@ -37,11 +37,12 @@ Last updated: 2026-11-17
 | Selections List Setup | `selections/selections-setup.html` | v6 |
 | Selections · LC | `selections/lc-portal.html` | v2 |
 | Selections · Field | `selections/field-view.html` | v1 |
+| Selections · Warehouse | `selections/warehouse.html` | v1 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v29 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v12 |
+| BW Tool Index | `bw-tool-index.html` | v13 |
 | CORE System Map | `core-system-map.html` | v18 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
@@ -74,6 +75,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-18** — Selections · Warehouse v1 (new, `selections/warehouse.html`): tablet + phone prototype for receiving and storage, from the warehouse interview. **Match a delivery** searches every active job (mixed shipments) by model #, vendor or description, and offers **close model-number matches** (one character off) plus a *log unknown item* path; **Expecting** replaces the handwritten incoming list, grouped by vendor; **Shelves** by bay or by job → room, with rough-in parts kept apart and a warning when a job is spread across bays. Item panel shows what to check the box against, the job's existing bay for that room, and a printable job/room/model/bay label. Check-in and set-aside are non-saving prototypes. Two-pane at ≥900px, bottom sheet on phones. Each active job loads with its own indexed `Job` query. BW Tool Index v12 → v13. Needs `https://bellweatherllc.github.io/tools/selections/warehouse.html` added as an SPA redirect URI.
 - **2026-11-18** — Selections · Field v1 (new, `selections/field-view.html`): phone-first prototype for field mechanics, from the 11/2 field mechanics session. Search scoped to the current job (all words must match; finds room, item, choice, model numbers, specs); **By room** grouping with spec chips (Model, Finish, Color, Size, Thickness) so details are one tap away; **Install checklist** by room with trade filter and "only what isn't on site"; **Where it is** grouped On site / Stokley bays / Ordered / Not ordered / Owner supplied, with multi-select and a *Brought to site* batch button that's a non-saving prototype. Read-only, one job at a time (indexed `Job`), no prices shown. BW Tool Index v11 → v12: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/field-view.html` added as an SPA redirect URI.
 - **2026-11-17** — Selections · LC v1 → v2: loads **one job at a time** — every Graph read filters on the indexed `Job` column; the current job loads first, other active jobs follow in the background, archived jobs load only when opened. Job list comes from `CORE_SelectionJobs` (falls back to reading the `Job` column if that list is empty). Detail sheet adds **Cost line items** (`CORE_SelectionLineItems`), **Discussion** (`CORE_SelectionComments`) and **Files** (`CORE_SelectionFiles` library, thumbnails via Graph, links resolved at runtime). Still read-only.
 - **2026-11-17** — Selections List Setup v5 → v6: adds `CORE_SelectionJobs` (one row per job: `Job`, `Archived`, `LastImportedAt`, `SourcePrinted`; written by Import) and the `CORE_SelectionFiles` document library (`Job`, `Selection`, `Choice`, `Kind`: Image / Cut sheet / Quote / Other).
