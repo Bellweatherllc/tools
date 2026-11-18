@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-10-27
+Last updated: 2026-11-17
 
 ## Live tools
 
@@ -23,6 +23,8 @@ Last updated: 2026-10-27
 | WIP Tracker | `wip-tracker.html` | v30 |
 | **Permits** | | |
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v175 |
+| **Operations** | | |
+| Fleet Tracker | `fleet-tracker.html` | v3 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
 | People Analyzer | `people-analyzer.html` | v26 |
@@ -32,11 +34,16 @@ Last updated: 2026-10-27
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
+| Selections List Setup | `selections/selections-setup.html` | v9 |
+| Selections · Design | `selections/design.html` | v3 |
+| Selections · LC | `selections/lc-portal.html` | v5 |
+| Selections · Field | `selections/field-view.html` | v4 |
+| Selections · Warehouse | `selections/warehouse.html` | v4 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v28 |
+| Team Members | `team-members.html` | v29 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v7 |
+| BW Tool Index | `bw-tool-index.html` | v14 |
 | CORE System Map | `core-system-map.html` | v18 |
 | Brand Style Guide | `bellweather-style-guide.html` | v12 |
 
@@ -53,6 +60,7 @@ Each HTML manual is built from the `.md` file of the same name. The manuals have
 | Team Members Manual | `team-members-manual.html` / `.md` |
 | People Analyzer Manual | `people-analyzer-manual.html` / `.md` |
 | Levels of Development Manual | `levels-of-development-manual.html` / `.md` |
+| Fleet Tracker Manual | `fleet-tracker-manual.html` / `.md` |
 
 ## Retired
 
@@ -67,6 +75,27 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 ## Log
 
 Newest first. One line per delivery.
+
+- **2026-11-18** — Selections Setup v9, Design v3, LC v5, Warehouse v4, Field v4: every page now opens with the style guide's **Tool Topbar** — navy 56px bar, white Monogram, divider, *Selections* + italic page name in Swear Text, uppercase Teak source line (`BWCore › JOB`), red version pill and SharePoint connection dot (green connected / Teak "Not connected") on the right. Page-specific controls (job picker, Switch job) sit in the topbar's right side; page layouts below are unchanged. Phone: 16px gutter, page name only, dot without label. Design hides the topbar in client preview. LC's old wordmark button removed ("← All projects" stays).
+- **2026-11-18** — Selections: every screen now saves what it shows. LC v3 → v4 (read + write: items, check-ins, allowances, new/removed items, trips, receipts, job archiving; `notes` is BT NOTES only, choice descriptions in a "What was chosen" section), Warehouse v2 → v3 (check-in with bay/date/condition, move bay, unknown items set aside), Field v2 → v3 (brought to site incl. batch, back to bay, installed, notes). Operational CORE-only data in `CORE_Selections.OpsData`; BT fields edited are listed in `CoreEditedFields`; no hard deletes. Design v1 → v2: T1–T3 selection tier dates come from the Pipeline (`CORE_Projects.JobCode` → `GanttData.tiers`, week → Friday), locked in settings. Setup v7 → v8: `OpsData` column. **Not end-to-end tested** (Byron chose to ship and test in use); Design tier dates tested against a fake SharePoint.
+- **2026-11-18** — Selections · Design v1 (new, `selections/design.html`): the Design screen prototype, **read + write on SharePoint**. Job picker (then `?job=`); items ⇄ `CORE_Selections` + `CORE_SelectionChoices` + `CORE_SelectionAllowances` for that job; settings, meetings, mood boards, internal notes and schedules ⇄ `CORE_SelectionDesignDocs` (choice library and room templates shared across jobs, `Job = _shared`). Saves are optimistic and roll back on failure. BT fields a designer changes are listed in `CoreEditedFields`; approving an option sets `ChoiceStatus` (Selected / Considering) and keeps `SelectionTotalCents` in step; deletes are soft (`DesignStatus = removed`, `ChoiceStatus = Removed`). Category numbers map to BT labels. Uploads aren't wired yet (upload controls hidden). No live sync between two designers on the same job yet; reload to see others' changes. BW Tool Index v13 → v14. Needs `https://bellweatherllc.github.io/tools/selections/design.html` added as an SPA redirect URI.
+- **2026-11-18** — Selections List Setup v6 → v7: adds `ImportTitle`, `DesignKey`, `DesignStatus`, `DesignData`, `CoreEditedFields`, `CoreEditedAt`, `CoreEditedBy` to the selection lists and the `CORE_SelectionDesignDocs` list. Import matches on `ImportTitle` (so renames in CORE don't duplicate) and **never overwrites a field listed in `CoreEditedFields`**; the log reports how many were kept.
+- **2026-11-18** — Selections · LC v2 → v3, Field v1 → v2, Warehouse v1 → v2: hide selections removed on the Design screen (`DesignStatus = removed`).
+- **2026-11-18** — Selections · Warehouse v1 (new, `selections/warehouse.html`): tablet + phone prototype for receiving and storage, from the warehouse interview. **Match a delivery** searches every active job (mixed shipments) by model #, vendor or description, and offers **close model-number matches** (one character off) plus a *log unknown item* path; **Expecting** replaces the handwritten incoming list, grouped by vendor; **Shelves** by bay or by job → room, with rough-in parts kept apart and a warning when a job is spread across bays. Item panel shows what to check the box against, the job's existing bay for that room, and a printable job/room/model/bay label. Check-in and set-aside are non-saving prototypes. Two-pane at ≥900px, bottom sheet on phones. Each active job loads with its own indexed `Job` query. BW Tool Index v12 → v13. Needs `https://bellweatherllc.github.io/tools/selections/warehouse.html` added as an SPA redirect URI.
+- **2026-11-18** — Selections · Field v1 (new, `selections/field-view.html`): phone-first prototype for field mechanics, from the 11/2 field mechanics session. Search scoped to the current job (all words must match; finds room, item, choice, model numbers, specs); **By room** grouping with spec chips (Model, Finish, Color, Size, Thickness) so details are one tap away; **Install checklist** by room with trade filter and "only what isn't on site"; **Where it is** grouped On site / Stokley bays / Ordered / Not ordered / Owner supplied, with multi-select and a *Brought to site* batch button that's a non-saving prototype. Read-only, one job at a time (indexed `Job`), no prices shown. BW Tool Index v11 → v12: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/field-view.html` added as an SPA redirect URI.
+- **2026-11-17** — Selections · LC v1 → v2: loads **one job at a time** — every Graph read filters on the indexed `Job` column; the current job loads first, other active jobs follow in the background, archived jobs load only when opened. Job list comes from `CORE_SelectionJobs` (falls back to reading the `Job` column if that list is empty). Detail sheet adds **Cost line items** (`CORE_SelectionLineItems`), **Discussion** (`CORE_SelectionComments`) and **Files** (`CORE_SelectionFiles` library, thumbnails via Graph, links resolved at runtime). Still read-only.
+- **2026-11-17** — Selections List Setup v5 → v6: adds `CORE_SelectionJobs` (one row per job: `Job`, `Archived`, `LastImportedAt`, `SourcePrinted`; written by Import) and the `CORE_SelectionFiles` document library (`Job`, `Selection`, `Choice`, `Kind`: Image / Cut sheet / Quote / Other).
+- **2026-11-17** — Selections List Setup v4 → v5: comment author column is `PostedBy`, not `Author` — `Author` is SharePoint's built-in Created By (person) field on every list, so the check read it as Wrong type. The unused `Author` row no longer appears.
+- **2026-11-17** — Selections List Setup v3 → v4: two new lists — `CORE_SelectionLineItems` (cost capture: `Choice` lookup, `Job`, `CostCode` (indexed), `CostType`, `Description`, `Qty`, `Unit`, `UnitPriceCents`, `PriceCents`) and `CORE_SelectionComments` (BT Discussions: `Selection` lookup, `Job`, `Author`, `PostedAt` (date-time, indexed), `Body`). Import now loads line items and comments too, and has an opt-in **Also update existing records** that patches only changed fields (repeat runs make 0 changes). Still never deletes.
+- **2026-11-17** — Selections · LC v1 (new, `selections/lc-portal.html`): the LC/warehouse selections prototype, **read-only on SharePoint**. A small adapter stands in for the prototype's artifact database: `items` and `jobs` come from `CORE_Selections`, `CORE_SelectionAllowances` and `CORE_SelectionChoices` on BWCore (3 Graph reads, every field named in `$select`); trips, receipts and check-ins return empty; every write is refused. BT's free-text `Ordered` now drives Ordered / Owner supplied. Brand fonts, `data-tip` tooltips, red badge; fixed the empty bulk-edit bar showing. Loads all jobs at once — switch to per-job loading before the lists grow. BW Tool Index v10 → v11: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/lc-portal.html` added as an SPA redirect URI on the Azure app registration.
+- **2026-11-17** — Selections List Setup v2 → v3: `Ordered` is now Text (BT's "Ordered?" is free text like `Yes, Build` / `Owner supplied`). New **Import a job** card: reads a canon JSON file in the browser and adds a job's allowances, selections (linked to allowances) and choices (linked to selections). Add-only, skips what's already there by title, retries throttled requests, refuses to run unless the column check is all green. No job data is in the repo.
+- **2026-11-17** — Selections List Setup v1 → v2: version-history card reworded to match SharePoint's actual labels, and reframed as a check — new BWCore lists already default to versioning on, 50 versions, no content approval.
+- **2026-11-17** — Selections List Setup v1 (new, `selections/selections-setup.html`): admin page that checks and creates the selections backbone on BWCore — `CORE_SelectionAllowances`, `CORE_Selections`, `CORE_SelectionChoices` — with every column (BuilderTrend-canon names, money as integer cents, `SelectionStatus`/`ChoiceStatus`, never `Status`) and index. Add-only: never deletes, renames, retypes, or touches items; wrong-type columns are reported for a person to fix. Version-history limit (50) is a manual step listed on the page. BW Tool Index v9 → v10: tile under SharePoint & Admin. Needs `https://bellweatherllc.github.io/tools/selections/selections-setup.html` added as an SPA redirect URI on the Azure app registration.
+- **2026-11-14** — Fleet Tracker v2 → v3: added the round **?** button (upper right of the header) linking the new Help & Repair manual (`fleet-tracker-manual.html` / `.md`, same shell as the other manuals), plus the shared `data-tip` floating-tooltip engine. BW Tool Index v8 → v9: Fleet Tracker Manual tile under Reference & Manuals.
+- **2026-11-13** — Fleet Tracker v1 → v2: switched type to the brand fonts — TT Norms Pro (sans) and Swear Text (serif, incl. italic for the wordmark), served from `fonts/` — replacing the prototype's Google Fonts Figtree/Newsreader. Header wordmark sized down slightly so the wider Swear keeps the action buttons on one row.
+- **2026-11-13** — Fleet Tracker v1 (new, `fleet-tracker.html`): the local Fleet prototype ported to CORE. UI and logic unchanged; data now lives in BWCore lists `CORE_FleetVehicles` (one item per vehicle; dates as ISO text; `FleetStatus`, never `Status`) and `CORE_FleetSettings` (insurance/EZ Pass/Compass/decals/contacts/drivers as JSON, Title = key). SherpaAuth sign-in; access via the new `FleetRole` column on CORE_TeamMembers (admin = edit + Setup, member = view only, blank = no access; until the column exists PipelineRole admins stand in). Admin Setup creates the lists and column, imports the snapshot .html (never overwrites existing items), and anchors registration/insurance-card links by driveItem id. The prototype's spreadsheet sync and file-upload are removed; Find in SharePoint now uses Graph search. No fleet data is in the repo. Needs `https://bellweatherllc.github.io/tools/fleet-tracker.html` added as an SPA redirect URI on the Azure app registration.
+- **2026-11-13** — Team Members v28 → v29: added `FleetRole` (Fleet) to the Access tab's tool registry.
+- **2026-11-13** — BW Tool Index v7 → v8: added an Operations section with the Fleet Tracker tile.
 
 - **2026-11-13** — Project Pipeline v1176 → v1177: removed the dead "PT" pill entirely (`UPCOMING_INFO.pt`, `_renderPtPanel()`, the `#tt-up-permits`/`.ptp-*` markup and CSS, and the `type==='pt'` branches in the pill-click popover) — it was fully replaced by the Permit & Zoning hover zone back at v881 and hasn't had a reachable button since (both tooltip builders already generate the pill row without it). The hover zone itself (`PZ_ENABLED`, `CORE_Permits` mirror read, `tt-pz-zone`) is untouched and stays off pending that integration being made reliable, per Byron.
 - **2026-11-13** — Permit & Zoning Tracker v94 → v175: the rebuilt tracker (previously deployed separately as `permit-tracker-v2.html`) now occupies the canonical `permit-zoning-tracker.html` URL, replacing the original v1 tool, which is retired to `archive/permit-zoning-tracker.html` for reference (not removed from the repo, so not listed under Retired). No Azure AD change needed — the redirect URI is computed from the page's own path, and this exact path was already registered. The original v1-only SharePoint list, `CORE_Permits`, is no longer read or written by this tool; `project-pipeline.html` still reads it for one small read-only "v879" mirror feature, so it has NOT been deleted from SharePoint pending that dependency being resolved.
