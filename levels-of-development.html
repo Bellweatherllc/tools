@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v66</span>
+      <span class="header-version">v67</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -2133,26 +2133,29 @@ function tierColor(tier){ return tier==='low' ? 'var(--rate-1)' : tier==='med' ?
 function tierInk(tier){ return tier==='low' ? 'var(--rate-1-ink)' : '#fff'; }
 function tierNum(tier){ return tier==='low' ? '1' : tier==='med' ? '2' : '3'; }
 
-function buildScorePie(scores, size){
+// entries: [{score, note, name}] — one per respondent. Each wedge gets a
+// data-tip naming who gave that rating (shared tooltip engine, see INIT).
+function buildScorePie(entries, size){
   size = size || 64;
   const r = size/2, cx = r, cy = r;
-  if(scores.length===1){
-    const tier=scores[0];
+  if(entries.length===1){
+    const tier=entries[0].score;
     return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="${tierColor(tier)}"/>
-      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="'DM Sans',sans-serif" font-weight="800" font-size="${(r*0.9).toFixed(1)}" fill="${tierInk(tier)}">${tierNum(tier)}</text>
+      <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="${tierColor(tier)}" data-tip="${esc(entries[0].name)} — rated ${tierNum(tier)}"/>
+      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="'DM Sans',sans-serif" font-weight="800" font-size="${(r*0.9).toFixed(1)}" fill="${tierInk(tier)}" style="pointer-events:none">${tierNum(tier)}</text>
     </svg>`;
   }
-  const n = scores.length, slice = 360/n;
+  const n = entries.length, slice = 360/n;
   let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
-  scores.forEach((tier,i)=>{
+  entries.forEach((entry,i)=>{
+    const tier = entry.score;
     const startA=-90+i*slice, endA=startA+slice, largeArc=slice>180?1:0;
     const sx=(cx+(r-1)*Math.cos(startA*Math.PI/180)).toFixed(2), sy=(cy+(r-1)*Math.sin(startA*Math.PI/180)).toFixed(2);
     const ex=(cx+(r-1)*Math.cos(endA*Math.PI/180)).toFixed(2),   ey=(cy+(r-1)*Math.sin(endA*Math.PI/180)).toFixed(2);
-    svg += `<path d="M${cx},${cy} L${sx},${sy} A${(r-1).toFixed(2)},${(r-1).toFixed(2)} 0 ${largeArc} 1 ${ex},${ey} Z" fill="${tierColor(tier)}" stroke="#fff" stroke-width="1.5"/>`;
+    svg += `<path d="M${cx},${cy} L${sx},${sy} A${(r-1).toFixed(2)},${(r-1).toFixed(2)} 0 ${largeArc} 1 ${ex},${ey} Z" fill="${tierColor(tier)}" stroke="#fff" stroke-width="1.5" data-tip="${esc(entry.name)} — rated ${tierNum(tier)}"/>`;
     const midA=(startA+endA)/2, lr=r*0.62;
     const lx=(cx+lr*Math.cos(midA*Math.PI/180)).toFixed(2), ly=(cy+lr*Math.sin(midA*Math.PI/180)).toFixed(2);
-    svg += `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="central" font-family="'DM Sans',sans-serif" font-weight="800" font-size="${(r*0.42).toFixed(1)}" fill="${tierInk(tier)}">${tierNum(tier)}</text>`;
+    svg += `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="central" font-family="'DM Sans',sans-serif" font-weight="800" font-size="${(r*0.42).toFixed(1)}" fill="${tierInk(tier)}" style="pointer-events:none">${tierNum(tier)}</text>`;
   });
   svg += `</svg>`;
   return svg;
@@ -2185,10 +2188,9 @@ function renderDimensionAggregate(dataObj, blockId){
   const rows = block.dims.map(d=>{
     const entries = dataObj[d.id];
     if(!entries || !entries.length) return '';
-    const scores = entries.map(e=>e.score);
     const notes = entries.filter(e=>e.note);
     return `<div class="dim-agg-row">
-      <div class="dim-agg-pie">${buildScorePie(scores)}</div>
+      <div class="dim-agg-pie">${buildScorePie(entries)}</div>
       <div class="dim-agg-body">
         <div class="dim-agg-label">${d.label}</div>
         ${notes.map(n=>`<div class="comment-item"><span class="comment-tier-dot" style="background:${tierColor(n.score)}"></span><span class="comment-text">"${n.note}"</span><span class="comment-author">— ${n.name}</span></div>`).join('')}
@@ -2353,6 +2355,55 @@ async function copyAssessLink(){
     prompt('Copy this link:', url);
   }
 }
+
+// ══════════════════════════════════════════════════ TOOLTIP ═════
+// Shared floating-tooltip engine, per CLAUDE.md: hover text goes through
+// data-tip (+ optional data-tip-d for a second line), never title=/.title —
+// so it's one consistent, instant, branded bubble instead of the slow,
+// unstyled native one, and it works on any element, SVG included (e.g. a
+// pie wedge in Analysis naming who gave that rating).
+(function(){
+  let tipEl = null;
+  function ensureTip(){
+    if(tipEl) return tipEl;
+    tipEl = document.createElement('div');
+    tipEl.id = 'shared-tooltip';
+    tipEl.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;background:var(--navy);color:#fff;font-family:"DM Sans",sans-serif;font-size:12px;line-height:1.5;font-weight:600;padding:6px 10px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,0.25);max-width:240px;display:none;';
+    document.body.appendChild(tipEl);
+    return tipEl;
+  }
+  function position(x, y){
+    if(!tipEl) return;
+    const pad = 14;
+    let left = x + pad, top = y + pad;
+    const rect = tipEl.getBoundingClientRect();
+    if(left + rect.width > window.innerWidth - 8) left = x - rect.width - pad;
+    if(top + rect.height > window.innerHeight - 8) top = y - rect.height - pad;
+    tipEl.style.left = left + 'px';
+    tipEl.style.top = top + 'px';
+  }
+  function show(target, x, y){
+    const main = target.getAttribute('data-tip');
+    if(!main) return;
+    const detail = target.getAttribute('data-tip-d');
+    const tip = ensureTip();
+    tip.innerHTML = esc(main) + (detail ? `<div style="font-weight:400;opacity:0.8;margin-top:2px">${esc(detail)}</div>` : '');
+    tip.style.display = 'block';
+    position(x, y);
+  }
+  function hide(){ if(tipEl) tipEl.style.display = 'none'; }
+  document.addEventListener('mouseover', e => {
+    const t = e.target.closest('[data-tip]');
+    if(t) show(t, e.clientX, e.clientY);
+  });
+  document.addEventListener('mousemove', e => {
+    if(tipEl && tipEl.style.display === 'block') position(e.clientX, e.clientY);
+  });
+  document.addEventListener('mouseout', e => {
+    const t = e.target.closest('[data-tip]');
+    if(t && !t.contains(e.relatedTarget)) hide();
+  });
+})();
 
 // ══════════════════════════════════════════════════ INIT ═══════
 // A shareable link (?project=<id>) seeds currentProjectId before sign-in even

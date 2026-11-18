@@ -117,7 +117,7 @@ Pick a project to see every assessment submitted for it, one column per dimensio
 The same data, interpreted:
 
 - A **composite score** and plain-language read of what it means for oversight (standard process, HODs should be informed, or active HOD oversight required).
-- Every dimension shown as a small pie of who-rated-what, with each person's note alongside.
+- Every dimension shown as a small pie of who-rated-what, with each person's note alongside. Hover any wedge to see who gave that particular rating.
 - **Needs Discussion** — dimensions where at least one person rated High, surfaced so they don't get missed before the DA is signed.
 - **Constraints & Shared Expectations** — anything the team flagged as a hard boundary everyone needs to work from.
 - **Design Timeline** and **Production Timeline** guidance — Fast-Track / Standard / Extended ranges, with the one matching the composite score highlighted.
