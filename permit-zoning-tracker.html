@@ -546,7 +546,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v178';
+const CORE_VERSION = 'v179';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1543,19 +1543,34 @@ function projectOwners(p){
   const roles=[p.zoningOwner,p.permitOwner].filter(Boolean);
   return roles.length ? [...new Set(roles)] : (p.owner ? [p.owner] : []);
 }
+// Per Byron: "I'm seeing two buttons for Stephanie - is there a space in
+// one of the names?" — yes: a Trello custom field value can carry a
+// double space or an invisible character a human never sees (the Trello
+// card UI renders it identically either way), and strict string equality
+// then treats it as a second, distinct owner. Every owner comparison
+// below — deduping into tabs, and filtering projects once a tab is
+// picked — goes through this normalized key instead of the raw string,
+// so near-identical spellings collapse into one.
+function normOwnerName(s){
+  return String(s||'').normalize('NFKC').replace(/[​-‍﻿]/g,'').trim().replace(/\s+/g,' ').toLowerCase();
+}
 let ownerFilter=null, jumpProject=null;
 function renderOwnerTabs(){
   const wrap=document.getElementById('ownerTabs'); if(!wrap) return;
-  const names=new Set();
+  const byKey=new Map();
   PROJECTS.forEach(p=>{
     const owners=projectOwners(p);
-    owners.length ? owners.forEach(n=>names.add(n)) : names.add('Unassigned');
+    const names=owners.length ? owners : ['Unassigned'];
+    names.forEach(n=>{
+      const key=n==='Unassigned'?'Unassigned':normOwnerName(n);
+      if(!byKey.has(key)) byKey.set(key, n==='Unassigned'?n:n.trim().replace(/\s+/g,' '));
+    });
   });
-  const list=[...names].sort((a,b)=>{
-    if(a==='Unassigned') return 1; if(b==='Unassigned') return -1;
+  const list=[...byKey.entries()].sort(([ka,a],[kb,b])=>{
+    if(ka==='Unassigned') return 1; if(kb==='Unassigned') return -1;
     return a.localeCompare(b);
   });
-  const tabs=[{key:'',label:'All'}].concat(list.map(d=>({key:d,label:d})));
+  const tabs=[{key:'',label:'All'}].concat(list.map(([key,label])=>({key,label})));
   wrap.innerHTML=tabs.map(t=>{
     const active=jumpProject?false:(t.key===''?!ownerFilter:ownerFilter===t.key);
     return '<button type="button" class="owner-tab'+(active?' active':'')+'" data-owner="'+esc(t.key)+'">'+esc(t.label)+'</button>';
@@ -2196,7 +2211,7 @@ function visibleProjects(){
   if(jumpProject) return PROJECTS.filter(p=>p.proj===jumpProject);
   if(ownerFilter) return PROJECTS.filter(p=>{
     const owners=projectOwners(p);
-    return owners.length ? owners.includes(ownerFilter) : ownerFilter==='Unassigned';
+    return owners.length ? owners.some(o=>normOwnerName(o)===ownerFilter) : ownerFilter==='Unassigned';
   });
   return PROJECTS;
 }
