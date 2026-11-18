@@ -546,7 +546,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v179';
+const CORE_VERSION = 'v180';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1103,23 +1103,40 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
   // Phase I (originShift's left padding), where that band hasn't
   // started yet and the background underneath is the plain white card.
   // Per Byron: "If the label for a stage lands on white background,
-  // change that specific text to gray."
-  function catLabelFill(ls){
-    return ls*PX_PER_WEEK<phaseIRectX ? 'var(--mut)' : 'rgba(255,255,255,.85)';
+  // change that specific text to gray." And per Byron's follow-up: a
+  // label can genuinely straddle that one real color boundary
+  // (phaseIRectX, where the un-colored padding ends and the blue Phase I
+  // band begins) — "something a little more sophisticated where the
+  // label is a combination of gray and white, not an either/or
+  // situation." Rather than measuring text width to split the string at
+  // the right character, draw the SAME text twice — once gray, once
+  // white — each clipped to its own side of that x boundary. Wherever a
+  // copy's clip region is empty it simply doesn't show, so a label fully
+  // on one side renders as if it were never split, and a straddling one
+  // gets a pixel-exact two-color transition for free.
+  function splitColorLabel(x, y, text, clipId){
+    const b=phaseIRectX;
+    return `<clipPath id="${clipId}g"><rect x="${-100000+b}" y="-100000" width="100000" height="200000"/></clipPath>`+
+      `<clipPath id="${clipId}w"><rect x="${b}" y="-100000" width="100000" height="200000"/></clipPath>`+
+      `<text x="${x}" y="${y}" font-size="10" font-weight="700" fill="var(--mut)" font-family="${FONT}" clip-path="url(#${clipId}g)">${text}</text>`+
+      `<text x="${x}" y="${y}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}" clip-path="url(#${clipId}w)">${text}</text>`;
   }
   function catLabel(tagPrefix, displayWord, hasB, barsA, barsB){
+    const clipBase='catlabelclip-'+project.replace(/[^a-z0-9]+/gi,'-')+'-'+tagPrefix;
     if(!hasB){
       const ls=leftStartOf(barsA);
       if(ls==null) return '';
       const approved=subApproved(barsA);
-      return `<text x="${ls*PX_PER_WEEK+4}" y="${labelYOf[tagPrefix+'A']}" font-size="10" font-weight="700" fill="${catLabelFill(ls)}" font-family="${FONT}">${esc(displayWord)}${approved?' — approved':''}</text>`;
+      const text=esc(displayWord)+(approved?' — approved':'');
+      return splitColorLabel(ls*PX_PER_WEEK+4, labelYOf[tagPrefix+'A'], text, clipBase+'A');
     }
     return ['A','B'].map(sub=>{
       const bars=sub==='A'?barsA:barsB;
       const ls=leftStartOf(bars);
       if(ls==null) return '';
       const approved=subApproved(bars);
-      return `<text x="${ls*PX_PER_WEEK+4}" y="${labelYOf[tagPrefix+sub]}" font-size="10" font-weight="700" fill="${catLabelFill(ls)}" font-family="${FONT}">${esc(displayWord+' '+sub)}${approved?' — approved':''}</text>`;
+      const text=esc(displayWord+' '+sub)+(approved?' — approved':'');
+      return splitColorLabel(ls*PX_PER_WEEK+4, labelYOf[tagPrefix+sub], text, clipBase+sub);
     }).join('');
   }
   const categoryLabels=
