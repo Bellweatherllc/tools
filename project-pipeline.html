@@ -3660,7 +3660,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1180';
+const CORE_VERSION = 'v1181';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -6518,7 +6518,7 @@ function msPencilW(h){ return Math.max(3,Math.round(h*MS_PENCIL_RATIO)); }
 // Place a dot in its week. Reads the week width from the dot's OWN section — the same
 // tier dot exists in Design (58px weeks) and in the LC rows under Production (zoomed),
 // and the old repaint loops applied one width to both.
-function msPlaceDot(dot,week,kind){
+function msPlaceDot(dot,week,kind,halfSide){
   const secEl=dot.closest('.section');
   const ww=parseInt(secEl?.dataset.weekW)||C.weekW;
   const x=Math.round(week*ww);
@@ -6529,9 +6529,12 @@ function msPlaceDot(dot,week,kind){
     return;
   }
   // v1029: same width the builders use — no expansion on grab
+  // v1181: halfSide ('left'/'right') overrides the per-type default, so a dragged tier/crit
+  // can sit in either half of its week
+  const side=halfSide||(kind==='crit'?'right':'left');
   const half=Math.max(4,Math.floor(ww/2)), pw=msDotW(ww);
   dot.style.width=pw+'px';
-  dot.style.left=(kind==='crit' ? (x+ww-half+(half-pw)/2) : (x+(half-pw)/2))+'px';
+  dot.style.left=(side==='right' ? (x+ww-half+(half-pw)/2) : (x+(half-pw)/2))+'px';
 }
 
 // Inline badge for the panels and popups, where there is no week grid to divide.
@@ -6555,13 +6558,17 @@ function msPencilBadgeEl(h){
 }
 
 function buildTierDot(proj,tier){
-  // v847: half-cell rectangle, LEFT-justified in its week. Height and vertical centring
-  // come from CSS; width and left are per-zoom and must be inline.
+  // v847: half-cell rectangle, LEFT-justified in its week by default. Height and vertical
+  // centring come from CSS; width and left are per-zoom and must be inline.
+  // v1181: tier.half ('right') overrides the default, so a dragged tier can sit in either half.
   const pw=msPillW();
   const pwS=msDotW(C.weekW); // v1029
   const dot=el('div','tier-dot'+(_msLocked(proj)?'':' ms-unset')); // v1064
   dot.dataset.tierId=tier.id; dot.dataset.projId=proj.id; dot.dataset.tier=tier.name;
-  dot.style.left=(w2px(tier.week)+(pw-pwS)/2)+'px'; // keep centered in the half-cell
+  dot.style.left=(tier.half==='right'
+    ? w2px(tier.week)+C.weekW-pw+(pw-pwS)/2   // right-half
+    : w2px(tier.week)+(pw-pwS)/2              // left-half default, centered in the half-cell
+  )+'px';
   dot.style.width=pwS+'px';
   if(msPillLabelFits(pw)) dot.appendChild(msStackedLabel(tier.name));
   else dot.classList.add('ms-dotonly');
@@ -6570,14 +6577,18 @@ function buildTierDot(proj,tier){
   return dot;
 }
 function buildCritDot(proj,crit){
-  // v847: half-cell rectangle, RIGHT-justified — so a T and a C coexist in one week.
+  // v847: half-cell rectangle, RIGHT-justified by default — so a T and a C coexist in one week.
   // v1016: ghost when C2 hidden; left-half when C2 overlaps C1
+  // v1181: crit.half ('left') overrides the default; the C2-overlaps-C1 flip below still
+  // applies on top, unchanged.
   const pw=msPillW();
   const pwS=msDotW(C.weekW); // v1029
   const dot=el('div','tier-dot crit-dot'+(crit.hidden?' crit-hidden':'')+(_msLocked(proj)?'':' ms-unset')); // v1064
   dot.dataset.critId=crit.id; dot.dataset.projId=proj.id; dot.dataset.tier=crit.name;
   // Positioning — C2 flips to left-half when overlapping C1
-  let _leftPos=w2px(crit.week)+C.weekW-pw+(pw-pwS)/2; // right-half default
+  let _leftPos=crit.half==='left'
+    ? w2px(crit.week)+(pw-pwS)/2                      // left-half
+    : w2px(crit.week)+C.weekW-pw+(pw-pwS)/2;          // right-half default
   if(crit.name==='C2'&&!crit.hidden){
     const _c1=(proj.crits||[]).find(c=>c.name==='C1');
     if(_c1&&_c1.week===crit.week&&crit.week!=null)
@@ -8087,11 +8098,11 @@ function refreshMs(msId){
 }
 function refreshTier(tierId){
   const r=findTier(tierId); if(!r)return;
-  document.querySelectorAll(`.tier-dot[data-tier-id="${tierId}"]`).forEach(dot=>msPlaceDot(dot,r.t.week,'tier'));
+  document.querySelectorAll(`.tier-dot[data-tier-id="${tierId}"]`).forEach(dot=>msPlaceDot(dot,r.t.week,'tier',r.t.half));
 }
 function refreshCrit(critId){
   const r=findCrit(critId); if(!r)return;
-  document.querySelectorAll(`.crit-dot[data-crit-id="${critId}"]`).forEach(dot=>msPlaceDot(dot,r.c.week,'crit'));
+  document.querySelectorAll(`.crit-dot[data-crit-id="${critId}"]`).forEach(dot=>msPlaceDot(dot,r.c.week,'crit',r.c.half));
 }
 function buildPencilsDot(proj){
   // v847: vertical pencil, tip on the floor of the cell, centred in its week. One size in
@@ -8465,7 +8476,7 @@ function initDrag(){
       const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
       ensureCrits(proj);
       const crit=proj.crits.find(c=>c.id===critId); if(!crit) return;
-      DRAG={type:'crit',critId,projId,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:crit.week,minWeek:0,maxWeek:C.numWeeks-1};
+      DRAG={type:'crit',critId,projId,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:crit.week,origHalf:crit.half||'right',minWeek:0,maxWeek:C.numWeeks-1};
       critEl.classList.add('dragging');
       capture(critEl,e.pointerId); return;
     }
@@ -8478,7 +8489,7 @@ function initDrag(){
       const proj=PROJECTS.find(p=>p.id===projId); if(!proj) return;
       ensureTiers(proj);
       const tier=proj.tiers.find(t=>t.id===tierId); if(!tier) return;
-      DRAG={type:'tier',tierId,projId,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:tier.week,minWeek:0,maxWeek:C.numWeeks-1};
+      DRAG={type:'tier',tierId,projId,startX:e.clientX,weekW:_dragWeekW(e.target),origWeek:tier.week,origHalf:tier.half||'left',minWeek:0,maxWeek:C.numWeeks-1};
       tierEl.classList.add('dragging');
       capture(tierEl,e.pointerId); return;
     }
@@ -9686,19 +9697,30 @@ function onMove(e){
 
   if(DRAG.type==='tier'){
     const _tp=PROJECTS.find(p=>p.id===DRAG.projId); const _t=_tp&&_tp.tiers&&_tp.tiers.find(x=>x.id===DRAG.tierId); if(!_t) return;
-    const _newTierWk=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek,DRAG.origWeek+dw));
-    if(_newTierWk!==_t.week) _dragMoved=true;
-    _t.week=_newTierWk; { const _ph=_designPhaseII(_tp); if(_ph.dur>0) _t.frac=(_newTierWk-_ph.start)/_ph.dur; }
-    document.querySelectorAll(`.tier-dot[data-tier-id="${DRAG.tierId}"]`).forEach(dot=>msPlaceDot(dot,_t.week,'tier'));
+    // v1181: continuous (unrounded) position in half-week units, so a finer drag can also
+    // flip which half of the week the dot sits in without crossing into the next week
+    const _tOrigPos=DRAG.origWeek+(DRAG.origHalf==='right'?0.5:0);
+    const _tRawDw=(e.clientX-DRAG.startX)/_dragWW;
+    const _tNewPos=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek+0.5,_tOrigPos+_tRawDw));
+    const _newTierWk=Math.floor(_tNewPos+1e-9);
+    const _newTierHalf=(_tNewPos-_newTierWk)>=0.5?'right':'left';
+    if(_newTierWk!==_t.week||_newTierHalf!==(_t.half||'left')) _dragMoved=true;
+    _t.week=_newTierWk; _t.half=_newTierHalf; { const _ph=_designPhaseII(_tp); if(_ph.dur>0) _t.frac=(_newTierWk-_ph.start)/_ph.dur; }
+    document.querySelectorAll(`.tier-dot[data-tier-id="${DRAG.tierId}"]`).forEach(dot=>msPlaceDot(dot,_t.week,'tier',_t.half));
     _gdbRingDragWeek(`.tier-dot[data-tier-id="${DRAG.tierId}"]`,_t.week); // v1008
   }
 
   if(DRAG.type==='crit'){
     const _cp=PROJECTS.find(p=>p.id===DRAG.projId); const _c=_cp&&_cp.crits&&_cp.crits.find(x=>x.id===DRAG.critId); if(!_c) return;
-    const _newCritWk=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek,DRAG.origWeek+dw));
-    if(_newCritWk!==_c.week) _dragMoved=true;
-    _c.week=_newCritWk; { const _ph=_designPhaseII(_cp); if(_ph.dur>0) _c.frac=(_newCritWk-_ph.start)/_ph.dur; }
-    document.querySelectorAll(`.crit-dot[data-crit-id="${DRAG.critId}"]`).forEach(dot=>msPlaceDot(dot,_c.week,'crit'));
+    // v1181: same continuous half-week positioning as tier, above
+    const _cOrigPos=DRAG.origWeek+(DRAG.origHalf==='right'?0.5:0);
+    const _cRawDw=(e.clientX-DRAG.startX)/_dragWW;
+    const _cNewPos=Math.max(DRAG.minWeek,Math.min(DRAG.maxWeek+0.5,_cOrigPos+_cRawDw));
+    const _newCritWk=Math.floor(_cNewPos+1e-9);
+    const _newCritHalf=(_cNewPos-_newCritWk)>=0.5?'right':'left';
+    if(_newCritWk!==_c.week||_newCritHalf!==(_c.half||'right')) _dragMoved=true;
+    _c.week=_newCritWk; _c.half=_newCritHalf; { const _ph=_designPhaseII(_cp); if(_ph.dur>0) _c.frac=(_newCritWk-_ph.start)/_ph.dur; }
+    document.querySelectorAll(`.crit-dot[data-crit-id="${DRAG.critId}"]`).forEach(dot=>msPlaceDot(dot,_c.week,'crit',_c.half));
     _gdbRingDragWeek(`.crit-dot[data-crit-id="${DRAG.critId}"]`,_c.week); // v1008
   }
 
@@ -17303,6 +17325,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1181', date: '2026-11-18',
+    entries:['Tier and Crit milestone dots can now be dragged into either half of their week, not just the half their type defaults to (Tier left, Crit right) — useful for sidestepping a time-off band that only covers one half. Drag normally to change week as before; a smaller drag within the same week flips which half it sits in. Pencils Down is unaffected — it stays centered in the week. The existing behavior where C2 auto-shifts left when it lands on the same week as C1 still applies on top of whichever half you choose.'],
+  },
   {
     version: 'v1180', date: '2026-11-18',
     entries:['Fixed: crit/tier/milestone/pencils-down dots could still render behind a time-off band. The v1176 fix made each dot z-index:5, above the tint’s z-index:4 — but the dots live inside a per-project .ms-overlay wrapper that was itself still z-index:4, tied with the tint. A tie resolves by DOM order, and the tint (added last) won, so the dots’ own z-index:5 never got outside that wrapper to matter. Bumped the wrapper to z-index:5 so the whole thing outranks the tint as a unit, matching what’s inside it.'],
