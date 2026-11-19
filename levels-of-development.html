@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v66</span>
+      <span class="header-version">v68</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -422,6 +422,13 @@
           <button type="button" class="rt-btn" onmousedown="event.preventDefault()" onclick="document.execCommand('insertUnorderedList')" title="Bullet list">&bull; List</button>
         </div>
         <div id="pmeta-scope-edit" contenteditable="true" onpaste="onScopePaste(event)" data-placeholder="Paste directly from the DA, or type scope items — bold, italic, and bullet lists carry over from a paste." style="display:none;width:100%;min-height:100px;font-size:13px;color:var(--navy);line-height:1.6;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 2px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel)">Requested Assessors</div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="copyAssessorRequest()">📋 Copy Request</button>
+        </div>
+        <div style="font-size:12px;color:var(--silver);line-height:1.5;margin-bottom:8px;max-width:600px">Who's been asked to weigh in. Check names below (Admin), then Copy Request for text to paste into a Trello card — @mentions for whoever has a Trello username on file, plus the link to this project.</div>
+        <div id="pmeta-assessors-view" style="font-size:13px;color:var(--navy)"></div>
+        <div id="pmeta-assessors-edit" style="display:none;flex-wrap:wrap;gap:6px 16px"></div>
       </div>
     </div>
     <div id="assess-blocks"></div>
@@ -633,7 +640,7 @@ function toggleAdminMode(){
   renderAssessBlocks();
   const selectedId = document.getElementById('assess-project')?.value;
   const proj = selectedId && spProjects.find(p=>p.id===selectedId);
-  if(proj){ renderScopeOfWork(proj); renderTargetInvestment(proj); }
+  if(proj){ renderScopeOfWork(proj); renderTargetInvestment(proj); renderRequestedAssessors(proj); }
 }
 
 // ══════════════════════════════════════════════════ TABS ═══════
@@ -831,6 +838,7 @@ let msalInstance = null;
 let graphToken   = null;
 let spProjects   = [MOCK_PROJECT];   // live list from SharePoint — sample project until a real fetch replaces it
 let spLoaded     = false;
+let teamMembersList = []; // [{name, trello}] — active CORE_TeamMembers, for the Requested Assessors picker
 let currentUser  = {name:'', dept:'', email:''};
 let currentProjectId = ''; // shared across Assess/Raw Results/Analysis so switching tabs keeps the project selected
 
@@ -984,6 +992,25 @@ async function fetchCurrentUser() {
   if (el) el.textContent = firstName + (currentUser.dept ? ' · ' + currentUser.dept : '');
 }
 
+// For the Requested Assessors picker. Reads EmployeeName (not Title) — that's
+// the field Team Members (team-members.html) actually writes the person's
+// name to; Title is SharePoint's built-in field and is left blank by that
+// tool, unlike fetchCurrentUser() above which checks it as a fallback only.
+async function fetchTeamMembersList(){
+  try {
+    const url = `${SP_CONFIG.teamMembersUrl}?$expand=fields&$select=id,fields&$top=500`;
+    const data = await graphFetch(url);
+    teamMembersList = (data.value||[])
+      .filter(item => item.fields.Active !== false)
+      .map(item => ({ name: item.fields.EmployeeName || item.fields.Title || '', trello: item.fields.Trello || '' }))
+      .filter(tm => tm.name)
+      .sort((a,b) => a.name.localeCompare(b.name));
+  } catch(e) { /* informational only — the picker just stays empty until reload */ }
+  const selectedId = document.getElementById('assess-project')?.value;
+  const proj = selectedId && spProjects.find(p=>p.id===selectedId);
+  if(proj) renderRequestedAssessors(proj);
+}
+
 function showAuthBanner() {
   setConnected(false);
   document.getElementById('signin-btn').style.display = '';
@@ -1028,7 +1055,9 @@ async function fetchProjects() {
         // Graph 400. CAScope/ProjectDescription are the other candidates; flag if
         // DesignScope isn't the right one. Needs to be an Enhanced-rich-text column
         // for the bold/italic/bullets saved here to render correctly elsewhere.
-        scopeHTML: f.DesignScope || ''
+        scopeHTML: f.DesignScope || '',
+        // Who's been asked to assess this project — see renderRequestedAssessors().
+        requestedAssessors: (() => { try { return f.LODRequestedAssessors ? JSON.parse(f.LODRequestedAssessors) : []; } catch(e) { return []; } })()
       };
     }).filter(p => {
       // Exclude Slot entries and entries with no meaningful name
@@ -1041,6 +1070,7 @@ async function fetchProjects() {
     populateAssessSelects();
     populateResultsSelect();
     fetchConfig();
+    fetchTeamMembersList();
   } catch (err) {
     setConnected(false);
     showToast('Failed to load projects: ' + err.message);
@@ -1316,6 +1346,7 @@ function onProjectSelected(){
   document.getElementById('pmeta-cavalue').textContent  = proj.caValue  || '—';
   renderTargetInvestment(proj);
   renderScopeOfWork(proj);
+  renderRequestedAssessors(proj);
   renderAlreadyAssessed(id);
   // Estimate link — live when URL exists, placeholder otherwise
   const estimateLink = document.getElementById('pmeta-estimate-link');
@@ -1558,6 +1589,69 @@ async function saveScopeOfWork(){
     showToast('Scope save failed — ' + e.message);
   }
   renderScopeOfWork(proj);
+}
+
+// Requested Assessors: who's been asked to weigh in on this project. Double
+// duty, per Byron — it's both the record of who was asked, and the source
+// list for the Copy Request button's @mentions. No Trello API is wired up
+// (deliberately — see Copy Request below); Admin checks names here, then
+// pastes the copied text into a Trello card by hand.
+function renderRequestedAssessors(proj){
+  const viewEl = document.getElementById('pmeta-assessors-view');
+  const editEl = document.getElementById('pmeta-assessors-edit');
+  if(!viewEl || !editEl) return;
+  const requested = proj.requestedAssessors || [];
+  viewEl.textContent = requested.length ? requested.join(', ') : 'No one requested yet.';
+  if(adminMode){
+    editEl.style.display = 'flex';
+    viewEl.style.display = 'none';
+    editEl.innerHTML = teamMembersList.length
+      ? teamMembersList.map(tm => {
+          const checked = requested.includes(tm.name) ? 'checked' : '';
+          return `<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--navy);cursor:pointer"><input type="checkbox" value="${esc(tm.name)}" ${checked} onchange="toggleRequestedAssessor('${proj.id}',this)"> ${esc(tm.name)}</label>`;
+        }).join('')
+      : '<span style="font-size:12px;color:var(--silver)">Loading team members…</span>';
+  } else {
+    editEl.style.display = 'none';
+    viewEl.style.display = '';
+  }
+}
+
+async function toggleRequestedAssessor(projectId, checkbox){
+  const proj = spProjects.find(p=>p.id===projectId);
+  if(!proj) return;
+  const name = checkbox.value;
+  const current = new Set(proj.requestedAssessors || []);
+  if(checkbox.checked) current.add(name); else current.delete(name);
+  proj.requestedAssessors = [...current];
+  renderRequestedAssessors(proj);
+  if(projectId === MOCK_PROJECT_ID){ showToast('Sample project — nothing is saved.'); return; }
+  try {
+    await ensureColumn('LODRequestedAssessors', 'LOD Requested Assessors', { text: {} });
+    await graphPatch(`${SP_CONFIG.projectsItemUrl}/${projectId}`, { fields: { LODRequestedAssessors: JSON.stringify(proj.requestedAssessors) } });
+  } catch(e) {
+    showToast('Could not save requested assessors — ' + e.message);
+  }
+}
+
+async function copyAssessorRequest(){
+  const projectId = document.getElementById('assess-project').value;
+  const proj = spProjects.find(p=>p.id===projectId);
+  if(!proj) return;
+  const requested = proj.requestedAssessors || [];
+  if(!requested.length){ showToast('Check off who you\'re asking before copying a request.'); return; }
+  const mentions = requested.map(name => {
+    const tm = teamMembersList.find(t=>t.name===name);
+    return (tm && tm.trello) ? '@'+tm.trello : name;
+  }).join(' ');
+  const link = `${location.origin}${location.pathname}?project=${encodeURIComponent(projectId)}`;
+  const text = `${mentions}\nPlease complete a Levels of Development assessment for ${proj.name}:\n${link}`;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Request copied — paste it into your Trello card.');
+  } catch(e) {
+    showToast('Could not copy to clipboard — ' + e.message);
+  }
 }
 
 // Shared by the sample prefill and real draft restoration — paints saved
@@ -2133,26 +2227,29 @@ function tierColor(tier){ return tier==='low' ? 'var(--rate-1)' : tier==='med' ?
 function tierInk(tier){ return tier==='low' ? 'var(--rate-1-ink)' : '#fff'; }
 function tierNum(tier){ return tier==='low' ? '1' : tier==='med' ? '2' : '3'; }
 
-function buildScorePie(scores, size){
+// entries: [{score, note, name}] — one per respondent. Each wedge gets a
+// data-tip naming who gave that rating (shared tooltip engine, see INIT).
+function buildScorePie(entries, size){
   size = size || 64;
   const r = size/2, cx = r, cy = r;
-  if(scores.length===1){
-    const tier=scores[0];
+  if(entries.length===1){
+    const tier=entries[0].score;
     return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="${tierColor(tier)}"/>
-      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="'DM Sans',sans-serif" font-weight="800" font-size="${(r*0.9).toFixed(1)}" fill="${tierInk(tier)}">${tierNum(tier)}</text>
+      <circle cx="${cx}" cy="${cy}" r="${r-1}" fill="${tierColor(tier)}" data-tip="${esc(entries[0].name)} — rated ${tierNum(tier)}"/>
+      <text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="'DM Sans',sans-serif" font-weight="800" font-size="${(r*0.9).toFixed(1)}" fill="${tierInk(tier)}" style="pointer-events:none">${tierNum(tier)}</text>
     </svg>`;
   }
-  const n = scores.length, slice = 360/n;
+  const n = entries.length, slice = 360/n;
   let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
-  scores.forEach((tier,i)=>{
+  entries.forEach((entry,i)=>{
+    const tier = entry.score;
     const startA=-90+i*slice, endA=startA+slice, largeArc=slice>180?1:0;
     const sx=(cx+(r-1)*Math.cos(startA*Math.PI/180)).toFixed(2), sy=(cy+(r-1)*Math.sin(startA*Math.PI/180)).toFixed(2);
     const ex=(cx+(r-1)*Math.cos(endA*Math.PI/180)).toFixed(2),   ey=(cy+(r-1)*Math.sin(endA*Math.PI/180)).toFixed(2);
-    svg += `<path d="M${cx},${cy} L${sx},${sy} A${(r-1).toFixed(2)},${(r-1).toFixed(2)} 0 ${largeArc} 1 ${ex},${ey} Z" fill="${tierColor(tier)}" stroke="#fff" stroke-width="1.5"/>`;
+    svg += `<path d="M${cx},${cy} L${sx},${sy} A${(r-1).toFixed(2)},${(r-1).toFixed(2)} 0 ${largeArc} 1 ${ex},${ey} Z" fill="${tierColor(tier)}" stroke="#fff" stroke-width="1.5" data-tip="${esc(entry.name)} — rated ${tierNum(tier)}"/>`;
     const midA=(startA+endA)/2, lr=r*0.62;
     const lx=(cx+lr*Math.cos(midA*Math.PI/180)).toFixed(2), ly=(cy+lr*Math.sin(midA*Math.PI/180)).toFixed(2);
-    svg += `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="central" font-family="'DM Sans',sans-serif" font-weight="800" font-size="${(r*0.42).toFixed(1)}" fill="${tierInk(tier)}">${tierNum(tier)}</text>`;
+    svg += `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="central" font-family="'DM Sans',sans-serif" font-weight="800" font-size="${(r*0.42).toFixed(1)}" fill="${tierInk(tier)}" style="pointer-events:none">${tierNum(tier)}</text>`;
   });
   svg += `</svg>`;
   return svg;
@@ -2185,10 +2282,9 @@ function renderDimensionAggregate(dataObj, blockId){
   const rows = block.dims.map(d=>{
     const entries = dataObj[d.id];
     if(!entries || !entries.length) return '';
-    const scores = entries.map(e=>e.score);
     const notes = entries.filter(e=>e.note);
     return `<div class="dim-agg-row">
-      <div class="dim-agg-pie">${buildScorePie(scores)}</div>
+      <div class="dim-agg-pie">${buildScorePie(entries)}</div>
       <div class="dim-agg-body">
         <div class="dim-agg-label">${d.label}</div>
         ${notes.map(n=>`<div class="comment-item"><span class="comment-tier-dot" style="background:${tierColor(n.score)}"></span><span class="comment-text">"${n.note}"</span><span class="comment-author">— ${n.name}</span></div>`).join('')}
@@ -2353,6 +2449,55 @@ async function copyAssessLink(){
     prompt('Copy this link:', url);
   }
 }
+
+// ══════════════════════════════════════════════════ TOOLTIP ═════
+// Shared floating-tooltip engine, per CLAUDE.md: hover text goes through
+// data-tip (+ optional data-tip-d for a second line), never title=/.title —
+// so it's one consistent, instant, branded bubble instead of the slow,
+// unstyled native one, and it works on any element, SVG included (e.g. a
+// pie wedge in Analysis naming who gave that rating).
+(function(){
+  let tipEl = null;
+  function ensureTip(){
+    if(tipEl) return tipEl;
+    tipEl = document.createElement('div');
+    tipEl.id = 'shared-tooltip';
+    tipEl.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;background:var(--navy);color:#fff;font-family:"DM Sans",sans-serif;font-size:12px;line-height:1.5;font-weight:600;padding:6px 10px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,0.25);max-width:240px;display:none;';
+    document.body.appendChild(tipEl);
+    return tipEl;
+  }
+  function position(x, y){
+    if(!tipEl) return;
+    const pad = 14;
+    let left = x + pad, top = y + pad;
+    const rect = tipEl.getBoundingClientRect();
+    if(left + rect.width > window.innerWidth - 8) left = x - rect.width - pad;
+    if(top + rect.height > window.innerHeight - 8) top = y - rect.height - pad;
+    tipEl.style.left = left + 'px';
+    tipEl.style.top = top + 'px';
+  }
+  function show(target, x, y){
+    const main = target.getAttribute('data-tip');
+    if(!main) return;
+    const detail = target.getAttribute('data-tip-d');
+    const tip = ensureTip();
+    tip.innerHTML = esc(main) + (detail ? `<div style="font-weight:400;opacity:0.8;margin-top:2px">${esc(detail)}</div>` : '');
+    tip.style.display = 'block';
+    position(x, y);
+  }
+  function hide(){ if(tipEl) tipEl.style.display = 'none'; }
+  document.addEventListener('mouseover', e => {
+    const t = e.target.closest('[data-tip]');
+    if(t) show(t, e.clientX, e.clientY);
+  });
+  document.addEventListener('mousemove', e => {
+    if(tipEl && tipEl.style.display === 'block') position(e.clientX, e.clientY);
+  });
+  document.addEventListener('mouseout', e => {
+    const t = e.target.closest('[data-tip]');
+    if(t && !t.contains(e.relatedTarget)) hide();
+  });
+})();
 
 // ══════════════════════════════════════════════════ INIT ═══════
 // A shareable link (?project=<id>) seeds currentProjectId before sign-in even

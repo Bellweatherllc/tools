@@ -55,9 +55,17 @@ Same idea, smaller field. With Admin on, **Target Investment** becomes a single 
 
 There's no required format — write it the way you'd say it out loud. Click **Save** next to the field.
 
+### Requesting assessments (Requested Assessors)
+
+Below Scope of Work, **Requested Assessors** tracks who's been asked to weigh in on a project and gives you a one-click way to actually ask them.
+
+With Admin on, check off names from the team roster — each one saves immediately, no separate Save button. That checked list does double duty: it's the record of who was asked (visible to everyone, Admin or not, right below the checkboxes), and it's what **Copy Request** uses.
+
+Click **Copy Request** to copy a ready-to-paste block of text: an `@mention` for each checked person who has a Trello username on file (plain name if they don't — see Team Members' Roster tab to add one), followed by a line asking them to assess the project and the link to it. Paste that straight into a Trello card — CORE doesn't talk to Trello's API directly, so this is a copy-paste handoff, not an automatic send. A natural workflow: keep a template card in Trello for "LOD assessment requests," duplicate it, paste the copied text into the description, and assign it to whoever you just @mentioned.
+
 ### What assessors see instead
 
-With Admin off, both of these show as plain, read-only text — no edit boxes, no Save buttons. That's the normal view for everyone doing an assessment.
+With Admin off, Scope of Work and Target Investment both show as plain, read-only text — no edit boxes, no Save buttons — and Requested Assessors shows the list of names without checkboxes. Copy Request still works for everyone; checking people off is Admin-only.
 
 ## Part III — Getting several people to assess the same project
 
@@ -117,7 +125,7 @@ Pick a project to see every assessment submitted for it, one column per dimensio
 The same data, interpreted:
 
 - A **composite score** and plain-language read of what it means for oversight (standard process, HODs should be informed, or active HOD oversight required).
-- Every dimension shown as a small pie of who-rated-what, with each person's note alongside.
+- Every dimension shown as a small pie of who-rated-what, with each person's note alongside. Hover any wedge to see who gave that particular rating.
 - **Needs Discussion** — dimensions where at least one person rated High, surfaced so they don't get missed before the DA is signed.
 - **Constraints & Shared Expectations** — anything the team flagged as a hard boundary everyone needs to work from.
 - **Design Timeline** and **Production Timeline** guidance — Fast-Track / Standard / Extended ranges, with the one matching the composite score highlighted.

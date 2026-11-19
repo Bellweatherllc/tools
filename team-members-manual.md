@@ -38,6 +38,8 @@ The add-row at the top of the Roster tab takes a name, an email, and a departmen
 
 **Department** is one of Operations, Sales, Design, or Production. **Role** is a free-form job title (Project Manager, Logistics Coordinator, Designer, and so on) — it's what the Tool Settings tab uses to decide who a setting applies to.
 
+**Trello username** is an optional field next to email — it's what other CORE tools use to @mention someone on a Trello card (Levels of Development's assessment-request feature, for one). It only shows up once the `Trello` column exists on the CORE_TeamMembers list in SharePoint; ask Byron to add it (Single line of text) if you don't see the field.
+
 ### Active and inactive
 
 Turning someone inactive doesn't delete them — it dims their row and excludes them from lists elsewhere in CORE (like the LC capacity panel), while keeping their history and access settings intact in case they come back. Use inactive for someone on leave or between roles; use delete only for a person who was added by mistake or has genuinely left and won't be back.
