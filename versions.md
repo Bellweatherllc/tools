@@ -40,7 +40,7 @@ Last updated: 2026-11-18
 | Selections · Field | `selections/field-view.html` | v4 |
 | Selections · Warehouse | `selections/warehouse.html` | v4 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v29 |
+| Team Members | `team-members.html` | v32 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v14 |
@@ -76,6 +76,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-19** — Team Members v31 → v32: added an optional **Trello username** field next to email (Roster tab, add-row and edit-in-place) — the identifier other CORE tools need to @mention someone on a Trello card (Levels of Development's upcoming assessment-request feature is the first consumer). Requires a `Trello` (Single line of text) column on CORE_TeamMembers in SharePoint, added by hand like the access-role columns always have been — this tool discovers it via the same `/fields` read already used for access columns, so the Trello input and column just don't appear until it exists, rather than the roster failing to load.
 - **2026-11-18** — Levels of Development v66 → v67: the Analysis tab's per-dimension pie charts now show who gave each rating on hover — each wedge (and the single-rater circle case) carries a tooltip naming the respondent and their score. Built this tool's first real shared floating-tooltip engine to back it (CLAUDE.md's data-tip convention existed on two elements already but nothing actually rendered it — this makes it real, and both of those get working tooltips too, for free).
 - **2026-11-18** — Permit & Zoning Tracker v179 → v180: per Byron's follow-up on the gray-on-white category-label fix — "I'm talking about something a little more sophisticated where the label is a combination of gray and white, not an either/or situation." A label whose track starts before Phase I can genuinely straddle the one real color boundary on the canvas (where the un-colored pre-Phase-I padding ends and the blue Phase I band begins) — the whole label was previously forced to one color based only on its leftmost bar's position. It now draws the same text twice, once gray once white, each clipped (via an SVG `clipPath`) to its own side of that boundary — wherever a copy's clip region is empty it simply doesn't render, so a label fully on one side looks exactly as before, and a straddling one gets a pixel-exact two-color split with no font-metric guesswork.
 - **2026-11-18** — Project Pipeline v1180 → v1181: per Byron — a crit milestone that lands during time off has no way to move to the other half of its week. Tier and Crit dots can now be dragged into either half of their week (Tier defaulted left, Crit defaulted right, both now overridable per-instance): a normal drag still changes week, a smaller drag within the same week flips the half. Pencils Down is unaffected. The existing C2-auto-shifts-left-when-it-lands-on-C1's-week behavior still applies on top of whichever half is chosen.
