@@ -45,7 +45,7 @@ Last updated: 2026-11-18
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v14 |
 | CORE System Map | `core-system-map.html` | v18 |
-| Brand Style Guide | `bellweather-style-guide.html` | v12 |
+| Brand Style Guide | `bellweather-style-guide.html` | v13 |
 
 ## Manuals
 
