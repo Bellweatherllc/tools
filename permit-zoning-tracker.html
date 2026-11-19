@@ -546,7 +546,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v183';
+const CORE_VERSION = 'v184';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -893,19 +893,6 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
   // Byron, since Construction is now outside what the gantt depicts.
   const preConEndWeek = phaseIIIStart+PHASE_III_WEEKS;
 
-  // approvedWeek deliberately left OUT of this — it's driven by the sum of
-  // (editable) stage durations, and including it here meant lengthening a
-  // stage could grow the canvas itself. Since the track is horizontally
-  // centered, a wider canvas shifts every fixed element's SCREEN position
-  // (NOW, CA, the whole date ruler) even though none of their own
-  // coordinates changed, which reads as "the dates reset." caWeek and
-  // preConEndWeek are both fixed (derived from the PHASE_* weeks, assigned
-  // by the Pipeline, never from stage durations), so the canvas width is
-  // fixed too. A stage overrunning this far gets visually clipped at the
-  // fixed edge rather than growing the frame.
-  const lastWeek=Math.max(caWeek, preConEndWeek);
-  const VW=lastWeek*PX_PER_WEEK;
-
   // "above" ruler mode adds its own strip ABOVE everything else (NOW/CA
   // included) by growing topPad itself — NOW/CA are both positioned
   // relative to laneTop, so they shift down with it automatically.
@@ -928,6 +915,26 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
   const shiftedPermit=permit.positioned.map(s=>({...s,start:s.start+permitOffset,_sub:'A'}));
   const shiftedPermit2=permit2HasStages ? permit2.positioned.map(s=>({...s,start:s.start+permit2Offset,_sub:'B'})) : [];
   const shiftedPermitAll=shiftedPermit.concat(shiftedPermit2);
+
+  // caWeek and preConEndWeek used to be the WHOLE story here — the canvas
+  // stayed fixed-width and an overrunning stage just got visually clipped
+  // at the edge rather than growing the frame, specifically so an ordinary
+  // duration edit could never shift every fixed element's screen position
+  // (NOW, CA, the date ruler) and read as "the dates reset." With four
+  // chained tracks now routinely in play, that edge gets hit for real —
+  // per Byron: "there's now no longer enough width... to show all four
+  // without clipping on the last Permit stage... make the overall
+  // permitting window a little wider." So a genuine overrun now grows the
+  // canvas RIGHTWARD, the same way originShift already grows it LEFTWARD
+  // for a track shifted to start before Phase I — zero effect unless
+  // something actually reaches past the old fixed edge, but when a stage
+  // edit is itself what pushes a track past that edge, the frame can still
+  // visibly grow at that moment, same tradeoff originShift already accepts
+  // on the left side.
+  const rightEdgeOf=bars=>bars.length ? Math.max(...bars.map(s=>s.start+s.width)) : -Infinity;
+  const contentEndWeek=Math.max(rightEdgeOf(shiftedZoningAll), rightEdgeOf(shiftedPermitAll));
+  const lastWeek=Math.max(caWeek, preConEndWeek, contentEndWeek);
+  const VW=lastWeek*PX_PER_WEEK;
 
   // VH is a RESULT of CFG (topPad + ruler + lane + 1 + band + bottomPad),
   // not an independent input — compressing topPad/bottomPad shrinks the
@@ -1114,10 +1121,16 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
   // copy's clip region is empty it simply doesn't show, so a label fully
   // on one side renders as if it were never split, and a straddling one
   // gets a pixel-exact two-color transition for free.
+  // Two boundaries now, not one — the canvas can grow rightward past
+  // Pre-Con's own end too (see contentEndWeek/lastWeek above), so a label
+  // can just as easily land in white padding on the right as on the left.
+  // The gray clip is the UNION of the far-left and far-right rects (an SVG
+  // clipPath's region is the union of all its children); the white clip is
+  // the single span between them.
   function splitColorLabel(x, y, text, clipId){
-    const b=phaseIRectX;
-    return `<clipPath id="${clipId}g"><rect x="${-100000+b}" y="-100000" width="100000" height="200000"/></clipPath>`+
-      `<clipPath id="${clipId}w"><rect x="${b}" y="-100000" width="100000" height="200000"/></clipPath>`+
+    const l=phaseIRectX, r=phaseIIIRectX+phaseIIIRectW;
+    return `<clipPath id="${clipId}g"><rect x="${-100000+l}" y="-100000" width="100000" height="200000"/><rect x="${r}" y="-100000" width="100000" height="200000"/></clipPath>`+
+      `<clipPath id="${clipId}w"><rect x="${l}" y="-100000" width="${Math.max(0,r-l)}" height="200000"/></clipPath>`+
       `<text x="${x}" y="${y}" font-size="10" font-weight="700" fill="var(--mut)" font-family="${FONT}" clip-path="url(#${clipId}g)">${text}</text>`+
       `<text x="${x}" y="${y}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}" clip-path="url(#${clipId}w)">${text}</text>`;
   }
