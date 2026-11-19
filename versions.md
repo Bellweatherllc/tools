@@ -4,14 +4,14 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-18
+Last updated: 2026-11-19
 
 ## Live tools
 
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1181 |
+| Project Pipeline | `project-pipeline.html` | v1182 |
 | Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v66 |
 | Scout Board | `scout-board.html` | v13 |
@@ -76,6 +76,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-19** — Project Pipeline v1181 → v1182: confirming a Sales project now offers to create its Trello board right after the celebration — a copy of the "AA BWC Project Template" board, named "Project Name - brief description". Default roster = everyone flagged `TrelloAlwaysAdd` on Team Members plus whoever's on the project's own card (Sales, Design, Production PM, LC); editable before creating, never silent. Needs a `TrelloAlwaysAdd` Yes/No column added on `CORE_TeamMembers` (same way the `Trello` column was added) — flip it on for whoever should land on every new project board.
 - **2026-11-18** — Project Pipeline v1180 → v1181: per Byron — a crit milestone that lands during time off has no way to move to the other half of its week. Tier and Crit dots can now be dragged into either half of their week (Tier defaulted left, Crit defaulted right, both now overridable per-instance): a normal drag still changes week, a smaller drag within the same week flips the half. Pencils Down is unaffected. The existing C2-auto-shifts-left-when-it-lands-on-C1's-week behavior still applies on top of whichever half is chosen.
 - **2026-11-18** — Selections Setup v9, Design v3, LC v5, Warehouse v4, Field v4: every page now opens with the style guide's **Tool Topbar** — navy 56px bar, white Monogram, divider, *Selections* + italic page name in Swear Text, uppercase Teak source line (`BWCore › JOB`), red version pill and SharePoint connection dot (green connected / Teak "Not connected") on the right. Page-specific controls (job picker, Switch job) sit in the topbar's right side; page layouts below are unchanged. Phone: 16px gutter, page name only, dot without label. Design hides the topbar in client preview. LC's old wordmark button removed ("← All projects" stays).
 - **2026-11-18** — Selections: every screen now saves what it shows. LC v3 → v4 (read + write: items, check-ins, allowances, new/removed items, trips, receipts, job archiving; `notes` is BT NOTES only, choice descriptions in a "What was chosen" section), Warehouse v2 → v3 (check-in with bay/date/condition, move bay, unknown items set aside), Field v2 → v3 (brought to site incl. batch, back to bay, installed, notes). Operational CORE-only data in `CORE_Selections.OpsData`; BT fields edited are listed in `CoreEditedFields`; no hard deletes. Design v1 → v2: T1–T3 selection tier dates come from the Pipeline (`CORE_Projects.JobCode` → `GanttData.tiers`, week → Friday), locked in settings. Setup v7 → v8: `OpsData` column. **Not end-to-end tested** (Byron chose to ship and test in use); Design tier dates tested against a fake SharePoint.
