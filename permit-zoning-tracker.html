@@ -546,7 +546,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v180';
+const CORE_VERSION = 'v181';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -714,7 +714,7 @@ function barRow(stages, y, barH, groupColor, insetFirst){
   }).join('');
 }
 
-function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStages, permit2Stages, gradientOffset, phaseWeeks, zoningStartWeek, zoning2StartWeek, permitStartWeek, permit2StartWeek, caWeeksFromToday, phaseIWeeksFromToday, phaseIIWeeksFromToday, preConWeeksFromToday }){
+function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStages, permit2Stages, gradientOffset, phaseWeeks, zoningStartWeek, zoning2StartWeek, permitStartWeek, permit2StartWeek, caWeeksFromToday, phaseIWeeksFromToday, phaseIIWeeksFromToday, preConWeeksFromToday, zoningLabel, zoning2Label, permitLabel, permit2Label }){
   const TODAY=now();
   // Each track gets its own independent local sequence starting at week 0.
   // Previously permit's cursorStart was zoning.endWeek — baking "permitting
@@ -1121,13 +1121,24 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
       `<text x="${x}" y="${y}" font-size="10" font-weight="700" fill="var(--mut)" font-family="${FONT}" clip-path="url(#${clipId}g)">${text}</text>`+
       `<text x="${x}" y="${y}" font-size="10" font-weight="700" fill="rgba(255,255,255,.85)" font-family="${FONT}" clip-path="url(#${clipId}w)">${text}</text>`;
   }
-  function catLabel(tagPrefix, displayWord, hasB, barsA, barsB){
+  // Per Byron: "Instead of using generic labels like Zoning a, b, etc,
+  // would it be possible to have a text field... where I just enter the
+  // name? ... could the 'PermitType' field in the Trello card be used to
+  // provide that label?" — each sub-track's own synced PermitType (e.g.
+  // "Variance", "Demolition") replaces the generic wording outright when
+  // it's set; the settings-panel heading already carries the letter
+  // ("Zoning B — Demolition") so the gantt label itself doesn't need to
+  // repeat it. PermitType isn't yet reliably filled in on every card, so
+  // every sub-track still falls back to its old generic text ("zoning",
+  // or "zoning A"/"zoning B" once a B track exists) when its own label is
+  // blank.
+  function catLabel(tagPrefix, displayWord, hasB, barsA, barsB, labelA, labelB){
     const clipBase='catlabelclip-'+project.replace(/[^a-z0-9]+/gi,'-')+'-'+tagPrefix;
     if(!hasB){
       const ls=leftStartOf(barsA);
       if(ls==null) return '';
       const approved=subApproved(barsA);
-      const text=esc(displayWord)+(approved?' — approved':'');
+      const text=esc(labelA||displayWord)+(approved?' — approved':'');
       return splitColorLabel(ls*PX_PER_WEEK+4, labelYOf[tagPrefix+'A'], text, clipBase+'A');
     }
     return ['A','B'].map(sub=>{
@@ -1135,13 +1146,14 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
       const ls=leftStartOf(bars);
       if(ls==null) return '';
       const approved=subApproved(bars);
-      const text=esc(displayWord+' '+sub)+(approved?' — approved':'');
+      const label=sub==='A'?labelA:labelB;
+      const text=esc(label||(displayWord+' '+sub))+(approved?' — approved':'');
       return splitColorLabel(ls*PX_PER_WEEK+4, labelYOf[tagPrefix+sub], text, clipBase+sub);
     }).join('');
   }
   const categoryLabels=
-    catLabel('zoning', 'zoning', zoning2HasStages, shiftedZoning, shiftedZoning2)+
-    catLabel('permit', 'permitting', permit2HasStages, shiftedPermit, shiftedPermit2);
+    catLabel('zoning', 'zoning', zoning2HasStages, shiftedZoning, shiftedZoning2, zoningLabel, zoning2Label)+
+    catLabel('permit', 'permitting', permit2HasStages, shiftedPermit, shiftedPermit2, permitLabel, permit2Label);
 
   const MARKER_RISE=CFG.markerRise, PILL_RX=5;
   // CA's pill sits INSIDE the gantt, overlapping the top of the lane,
@@ -1868,8 +1880,13 @@ function renderSettingsPanel(p){
   // end, but can be nudged independently from there (including to a
   // negative week, before Phase I).
   const zoning2StartWeek=clampTrackStart(p, p.zoning2StartWeek!=null ? p.zoning2StartWeek : defaultZoning2StartFor(p));
+  // Per Byron: "could the 'PermitType' field in the Trello card be used to
+  // provide that label?" — every track's heading now carries its own synced
+  // PermitType (e.g. "Zoning A — Variance"), A tracks included, not just B.
+  const zoningHeading = p.zoningLabel ? 'Zoning A — '+esc(p.zoningLabel) : 'Zoning A';
   const zoning2Heading = p.zoning2Label ? 'Zoning B — '+esc(p.zoning2Label) : 'Zoning B';
   const permit2StartWeek=clampTrackStart(p, p.permit2StartWeek!=null ? p.permit2StartWeek : defaultPermit2StartFor(p));
+  const permitHeading = p.permitLabel ? 'Permit A — '+esc(p.permitLabel) : 'Permit A';
   const permit2Heading = p.permit2Label ? 'Permit B — '+esc(p.permit2Label) : 'Permit B';
   function stageRow(category, c){
     const st=p.stageState[category][c.key]||{enabled:false, estWeeks:c.estWeeks};
@@ -1899,7 +1916,7 @@ function renderSettingsPanel(p){
     </div>
     <div class="settings-cols">
       <div class="settings-col">
-        <h4>Zoning A</h4>
+        <h4>${zoningHeading}</h4>
         <div class="shift-row">
           <span class="shift-row-icon" data-tip="Zoning prep start">${PREP_START_ICON_SVG}</span>
           <div class="shift-controls">
@@ -1927,7 +1944,7 @@ function renderSettingsPanel(p){
         <div class="stage-rows">${STAGE_CATALOG.zoning2.map(c=>stageRow('zoning2',c)).join('')}</div>
       </div>
       <div class="settings-col">
-        <h4>Permit A</h4>
+        <h4>${permitHeading}</h4>
         <div class="shift-row">
           <span class="shift-row-icon" data-tip="Permitting prep start">${PREP_START_ICON_SVG}</span>
           <div class="shift-controls">
@@ -2289,7 +2306,7 @@ function renderCards(){
         </div>
       </div>`;
     }else{
-      const r=renderCombinedTrack({project:p.proj, zoningStages:zoningAStages, zoning2Stages, permitStages:permitAStages, permit2Stages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, zoning2StartWeek:p.zoning2StartWeek, permitStartWeek:p.permitStartWeek, permit2StartWeek:p.permit2StartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
+      const r=renderCombinedTrack({project:p.proj, zoningStages:zoningAStages, zoning2Stages, permitStages:permitAStages, permit2Stages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, zoning2StartWeek:p.zoning2StartWeek, permitStartWeek:p.permitStartWeek, permit2StartWeek:p.permit2StartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday, zoningLabel:p.zoningLabel, zoning2Label:p.zoning2Label, permitLabel:p.permitLabel, permit2Label:p.permit2Label});
       const wks=Math.round(r.weekDelta);
       const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
       const tierLbl=r.tier.label.split(' ').map(esc).join('<br>');
@@ -2865,12 +2882,18 @@ async function loadTrelloProjects(){
       archEngOwner:String(trelloCfValue(c,defs,'arch eng owner')||trelloCfValue(c,defs,'eng owner')||'').trim(),
       jurisdiction:String(trelloCfValue(c,defs,'jurisdiction')||'').trim(),
       permitNumber:String(trelloCfValue(c,defs,'permit number')||'').trim(),
-      // The card's first Trello label, read-only display text for a second
-      // permit card ("Demolition", "Construction", ...) — per Byron: "the
-      // card would carry the label internally." Not used to decide which
-      // track a card belongs to (the list name's PERMIT2 prefix does that);
-      // just what to call it in the settings panel.
-      labelName:(c.labels&&c.labels[0]&&c.labels[0].name)||'',
+      // The "PermitType" custom field on the Design Absolutes board, read-only
+      // display text for what this track actually is ("Variance",
+      // "Demolition", "U&O", ...) — per Byron: "would it be possible to have
+      // a text field in the stages setup where I just enter the name? ...
+      // could the 'PermitType' field in the Trello card be used to provide
+      // that label?" Not used to decide which track/category a card belongs
+      // to (the list name's ZONING2/PERMIT2 prefix does that, and TrackType
+      // is redundant with it per Byron); just what to call the track on the
+      // gantt and in the settings panel. Not yet reliably filled in on every
+      // card — every reader of this falls back to the generic "zoning"/
+      // "permitting" wording when it's blank.
+      permitType:String(trelloCfValue(c,defs,'permit type')||'').trim(),
       // SubmittedDate is NEVER required — Byron doesn't want to hand-enter
       // it. It's read only as a free, optional backfill signal for the
       // Submit stage below, same tier as the Trello history reconstruction.
@@ -2974,10 +2997,10 @@ async function loadTrelloProjects(){
         if(!p.trelloCardId){ p.trelloCardId=card.cardId; p.trelloShortLink=card.shortLink; p.comments=card.comments; }
         if(!p.jurisdictionSet && card.jurisdiction){ p.jur=card.jurisdiction; p.jurisdictionSet=true; }
         if(!p.permitNumber && card.permitNumber) p.permitNumber=card.permitNumber;
-        if(category==='zoning') p.zoningOwner=card.owner||null;
-        else if(category==='zoning2'){ p.zoning2Owner=card.owner||null; p.zoning2Label=card.labelName||null; }
-        else if(category==='permitting'){ p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; }
-        else { p.permit2Owner=card.owner||null; p.permit2Label=card.labelName||null; }
+        if(category==='zoning'){ p.zoningOwner=card.owner||null; p.zoningLabel=card.permitType||null; }
+        else if(category==='zoning2'){ p.zoning2Owner=card.owner||null; p.zoning2Label=card.permitType||null; }
+        else if(category==='permitting'){ p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; p.permitLabel=card.permitType||null; }
+        else { p.permit2Owner=card.owner||null; p.permit2Label=card.permitType||null; }
       }
       p[{zoning:'zoningStages',zoning2:'zoning2Stages',permitting:'permitStages',permitting2:'permit2Stages'}[category]]=stagesOut;
     }
@@ -3042,7 +3065,7 @@ async function detectTierChangeForProject(p){
   if(isWhollyApproved(zoningStages, permitStages)){
     tierLabel='Approved';
   }else{
-    const r=renderCombinedTrack({project:p.proj, zoningStages:zoningAStages, zoning2Stages, permitStages:permitAStages, permit2Stages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, zoning2StartWeek:p.zoning2StartWeek, permitStartWeek:p.permitStartWeek, permit2StartWeek:p.permit2StartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday});
+    const r=renderCombinedTrack({project:p.proj, zoningStages:zoningAStages, zoning2Stages, permitStages:permitAStages, permit2Stages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, zoning2StartWeek:p.zoning2StartWeek, permitStartWeek:p.permitStartWeek, permit2StartWeek:p.permit2StartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday, zoningLabel:p.zoningLabel, zoning2Label:p.zoning2Label, permitLabel:p.permitLabel, permit2Label:p.permit2Label});
     tierLabel=r.tier.label;
   }
   const cfgKey='permit_tier:'+p.proj;
