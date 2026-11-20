@@ -12,7 +12,7 @@ Last updated: 2026-11-20
 |---|---|---|
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1183 |
-| Projects Manager | `core-projects-manager.html` | v63 (`MGR_VERSION`) |
+| Projects Manager | `core-projects-manager.html` | v64 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v68 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-20** — Projects Manager v63 → v64: per Byron's follow-up on the MGR deep-link — the auto-scroll is now instant (not smooth/animated) and lands the project just below the sticky header + Trello Import bar instead of centering it mid-page; the deep link now filters to just the focused project's own stage group instead of switching to "All". Also: the Trello Import chevron moved to just left of the "Trello Import" label (was pushed to the far right), now red and 24px (was 11px, grey); and the detail panel's notes/scope/description fields no longer disappear when empty in view mode (ClientProfile/ClientPain/FitRationale/AdditionalNotes, DesignScope/CAScope, ProjectDescription, and the whole Scope section) — they show "—" like every other field already did.
 - **2026-11-20** — Team Members v38 → v39: the widened page (v38, 800px → 1300px, for the Access matrix) was dragging the Roster tab's layout wide with it — the name column is `1fr` in that tab's grid, so it stretched into a big empty gap before the department/role/active columns. Roster tab capped back to its own 780px, centered independently of the Access tab's width.
 - **2026-11-20** — Projects Manager v61 → v63: the Pipeline's "MGR" hover button (`?focus=<id>` for a confirmed project, `?q=<name>` for a planning-stage lead) landed on these query params doing nothing — the page never read them at all, so opening it meant signing in (if needed) and then manually finding the project by hand every time. It now reads `?focus`/`?q` once the project list loads, switches the stage filter to "All" (the project's own stage may not be in the default "Lead" filter), expands that project inline, and scrolls to it — a name search that matches exactly one project auto-expands the same way; more than one match just leaves the list filtered to the candidates.
 - **2026-11-20** — Team Members v37 → v38: per Byron — the Access tab's Member name column is now sticky left (stays put while scrolling the role columns horizontally, a subtle shadow marks the edge), and the page's own width grew from 800px to 1300px so the matrix only needs to scroll when the actual browser window is narrower than that — plenty of room on a normal desktop window, scrollable on a smaller one.

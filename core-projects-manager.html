@@ -83,8 +83,8 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
 .import-strip-bar:hover .import-strip-label{color:white;}
 .import-strip-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--teak);transition:color 0.2s;}
 .import-strip-status{font-size:11px;color:#ff6b6b;font-weight:600;margin-left:4px;}
-.import-strip-chevron{margin-left:auto;font-size:11px;color:var(--slate);transition:transform 0.2s;}
-.import-strip-chevron.open{transform:rotate(180deg);color:rgba(255,255,255,0.7);}
+.import-strip-chevron{font-size:24px;line-height:1;color:var(--red);transition:transform 0.2s;}
+.import-strip-chevron.open{transform:rotate(180deg);}
 .import-panel{background:var(--cotton);border-bottom:2px solid var(--linen);max-height:0;overflow:hidden;transition:max-height 0.35s ease;}
 .import-panel.open{max-height:4000px;overflow-y:auto;}
 .import-panel-inner{max-width:1100px;margin:0 auto;padding:24px 24px 28px;}
@@ -238,6 +238,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
 .edit-textarea{width:100%;border:1.5px solid var(--linen);border-radius:6px;padding:8px 10px;font-family:'TT Norms Pro',sans-serif;font-size:13px;color:var(--limestone);background:var(--marble);resize:vertical;min-height:80px;max-height:220px;line-height:1.6;transition:border-color 0.15s;}
 .edit-textarea:focus{outline:none;border-color:var(--navy);}
 .long-text-read{font-size:13px;color:var(--limestone);line-height:1.6;white-space:pre-wrap;max-height:110px;overflow-y:auto;padding-right:4px;}
+.long-text-read.empty{color:var(--teak);font-style:italic;}
 .save-btn{background:var(--navy);color:white;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:'TT Norms Pro',sans-serif;}
 .save-btn:hover{background:#1a2a50;}
 .save-btn:disabled{opacity:0.5;cursor:default;}
@@ -436,9 +437,9 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
 <!-- ══ IMPORT ACCORDION ══ -->
 <div class="import-strip">
   <div class="import-strip-bar" onclick="toggleImport()">
+    <span class="import-strip-chevron" id="import-chevron">▼</span>
     <span class="import-strip-label">Trello Import</span>
     <span class="import-strip-status" id="import-strip-status">— manual sync</span>
-    <span class="import-strip-chevron" id="import-chevron">▼</span>
   </div>
   <div class="import-panel" id="import-panel">
     <div class="import-panel-inner">
@@ -1045,7 +1046,7 @@ const SP_CONFIG = {
 // v59 — single version constant stamps both badges (header + splash overlay)
 // so they can never drift apart. The splash badge matters: the overlay blocks
 // the header when testing locally before sign-in.
-const MGR_VERSION='v63';
+const MGR_VERSION='v64';
 (()=>{ const h=document.getElementById('mgrVerBadge'); if(h) h.textContent=MGR_VERSION;
        const p=document.getElementById('mgrVerSplash'); if(p) p.textContent=MGR_VERSION; })();
 const CORE_COLUMNS = [
@@ -1306,35 +1307,48 @@ function applyDeepLinkFocus(){
   const q=params.get('q');
   if(!focusId&&!q) return;
   _deepLinkHandled=true;
-  activeFilters=new Set(['All']); // the project's own stage might not be in the default filter
-  if(focusId){
-    const match=allProjects.find(p=>String(p._id)===String(focusId));
-    if(match){
-      document.getElementById('search-input').value='';
-      buildFilterPills(); applyFilters();
-      expandedId=match._id;
-      renderTable();
-      scrollToExpandedRow();
-      return;
-    }
-    // Fall through to a name search if the id doesn't match anything (e.g. stale link)
+
+  let match=focusId?allProjects.find(p=>String(p._id)===String(focusId)):null;
+  if(!match&&q){
+    // Search every field applyFilters() itself searches, across every stage — independent
+    // of whatever filter happens to be active — so a unique match can be found first and
+    // the right stage filter applied after, rather than guessing the filter up front.
+    const name=decodeURIComponent(q).toLowerCase();
+    const candidates=allProjects.filter(p=>
+      (p.ClientName||'').toLowerCase().includes(name)||
+      (p.Address||'').toLowerCase().includes(name)||
+      (p.ShortDescription||'').toLowerCase().includes(name)||
+      (p.AdditionalNotes||'').toLowerCase().includes(name));
+    if(candidates.length===1) match=candidates[0];
   }
-  if(q){
-    const name=decodeURIComponent(q);
-    document.getElementById('search-input').value=name;
+
+  if(match){
+    // Show just the group of projects sharing the matched project's own stage — not
+    // every project — so the focused one lands in context, not buried in an unfiltered list.
+    activeFilters=new Set([match.PipelineStage||'Lead']);
+    document.getElementById('search-input').value='';
     buildFilterPills(); applyFilters();
-    if(filteredProjects.length===1){
-      expandedId=filteredProjects[0]._id;
-      renderTable();
-      scrollToExpandedRow();
-    }
-    // More than one match (or none) — left filtered to the candidates, not auto-opened
+    expandedId=match._id;
+    renderTable();
+    scrollToExpandedRow();
+  } else if(q){
+    // Couldn't resolve a single match — fall back to a plain name search across every
+    // stage so the candidates are visible, without guessing which one stage to show.
+    document.getElementById('search-input').value=decodeURIComponent(q);
+    activeFilters=new Set(['All']);
+    buildFilterPills(); applyFilters();
   }
 }
 function scrollToExpandedRow(){
   setTimeout(()=>{
     const row=document.querySelector('.expanded-row');
-    if(row) row.scrollIntoView({behavior:'smooth',block:'center'});
+    if(!row) return;
+    const header=document.querySelector('.header');
+    const importStrip=document.querySelector('.import-strip');
+    const offset=(header?header.getBoundingClientRect().height:0)
+      +(importStrip?importStrip.getBoundingClientRect().height:0)+12;
+    const top=row.getBoundingClientRect().top+window.scrollY-offset;
+    window.scrollTo({top:Math.max(0,top)}); // instant, not smooth — lands at the top, not mid-glide
   },0);
 }
 function sortBy(col){
@@ -1530,7 +1544,6 @@ function buildDetailPanel(p){
     const v=p[f.k]||'';
     const isEmpty=!v;
     const needsCls=isEmpty?' needs-value':'';
-    if(!adminMode&&!v)return'';
     if(adminMode){
       return `<div class="detail-notes-section${needsCls}">
         <label>${f.l}</label>
@@ -1539,7 +1552,7 @@ function buildDetailPanel(p){
     }
     return `<div class="detail-notes-section">
       <label>${f.l}</label>
-      <div class="long-text-read">${esc(v)}</div>
+      <div class="long-text-read${isEmpty?' empty':''}">${isEmpty?'—':esc(v)}</div>
     </div>`;
   }).join('');
 
@@ -1565,17 +1578,15 @@ function buildDetailPanel(p){
           <textarea class="edit-textarea" id="ef-ProjectDescription-${id}" style="margin-top:6px" oninput="autoSaveDebounced('${id}','ProjectDescription',this.value)">${esc(descVal)}</textarea>
         </div>
       </div>`
-    : (descVal
-        ? `<div class="detail-notes-section" style="margin-top:10px">
-            <button type="button" class="desc-toggle" onclick="this.querySelector('.desc-toggle-chev').classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
-              <span class="desc-toggle-lbl">Project Description</span>
-              <span class="desc-toggle-chev open">▶</span>
-            </button>
-            <div class="desc-body open">
-              <div class="long-text-read" style="margin-top:6px">${esc(descVal)}</div>
-            </div>
-          </div>`
-        : '');
+    : `<div class="detail-notes-section" style="margin-top:10px">
+          <button type="button" class="desc-toggle" onclick="this.querySelector('.desc-toggle-chev').classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+            <span class="desc-toggle-lbl">Project Description</span>
+            <span class="desc-toggle-chev open">▶</span>
+          </button>
+          <div class="desc-body open">
+            <div class="long-text-read${descVal?'':' empty'}" style="margin-top:6px">${descVal?esc(descVal):'—'}</div>
+          </div>
+        </div>`;
 
   const saveAllRow=adminMode?`
     <div class="save-all-row">
@@ -1603,17 +1614,16 @@ function buildDetailPanel(p){
       <label>${f.l}</label>
       <textarea class="edit-textarea" id="ef-${f.k}-${id}" oninput="autoSaveDebounced('${id}','${f.k}',this.value)">${esc(v)}</textarea>
     </div>`;
-    if(!v) return '';
     return `<div class="detail-notes-section" style="margin-top:10px">
       <label>${f.l}</label>
-      <div class="long-text-read">${esc(v)}</div>
+      <div class="long-text-read${v?'':' empty'}">${v?esc(v):'—'}</div>
     </div>`;
   }).join('');
-  const scopeSection=(adminMode||scopeBlocks)?`<div class="pm-sec pm-sec-scope">
+  const scopeSection=`<div class="pm-sec pm-sec-scope">
     <div class="pm-sec-hd is-toggle" onclick="pmToggleSection(this)"><span class="pm-sec-chev">▶</span>
       <span class="pm-sec-title">Scope</span><span class="pm-sec-rule"></span></div>
     <div class="pm-sec-body">${scopeBlocks}</div>
-  </div>`:'';
+  </div>`;
 
   // ── Documents section ──
   // Order and abbreviations track the pipeline hover card exactly.
