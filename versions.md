@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-19
+Last updated: 2026-11-20
 
 ## Live tools
 
@@ -43,7 +43,7 @@ Last updated: 2026-11-19
 | Team Members | `team-members.html` | v32 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v14 |
+| BW Tool Index | `bw-tool-index.html` | v15 |
 | CORE System Map | `core-system-map.html` | v18 |
 | Brand Style Guide | `bellweather-style-guide.html` | v15 |
 
@@ -61,6 +61,7 @@ Each HTML manual is built from the `.md` file of the same name. The manuals have
 | People Analyzer Manual | `people-analyzer-manual.html` / `.md` |
 | Levels of Development Manual | `levels-of-development-manual.html` / `.md` |
 | Fleet Tracker Manual | `fleet-tracker-manual.html` / `.md` |
+| Permit & Zoning Tracker Manual | `permit-zoning-tracker-manual.html` / `.md` |
 
 ## Retired
 
@@ -76,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-20** — New: Permit & Zoning Tracker Manual (`permit-zoning-tracker-manual.html`/`.md`, the house manual shell). Starts as a stub with one topic — per Byron, a brief write-up of a considered-and-set-aside idea: cross-checking against Philadelphia's own public L&I permit data (Carto SQL API, no key needed — `opendataphilly.org`'s dataset page and the city's `cityofphiladelphia.github.io/carto-api-explorer` are both linked from the manual). Not built: matching by permit number only pays off late (the city doesn't assign one until intake, and Trello usually lags the outcome anyway); matching by address could catch a filed application earlier but needs date-range filtering to stay precise. BW Tool Index v14 → v15 to list it.
 - **2026-11-19** — Permit & Zoning Tracker v183 → v184: per Byron — "with four stages to control, there's now no longer enough width in the design to show all four without clipping on the last Permit stage. I'd like to solve this two ways: make the overall permitting window a little wider, and then reduce the gaps between each of the zoning and permitting areas." The canvas (`VW`) now grows RIGHTWARD when a track's own bars genuinely extend past the old fixed edge (`preConEndWeek`) — the same tradeoff `originShift` already accepts growing it LEFTWARD for a track shifted to start before Phase I: zero effect unless something really overruns, but a stage-duration edit that's itself what causes the overrun can still visibly widen the frame at that moment. The gray/white category-label split (v180) now has a matching right-side boundary too, so a label landing in this new right-side padding reads gray, not white-on-white. On "reduce the gaps": the chaining defaults already place each new track flush against its predecessor's own end with zero deliberate gap — any gap between tracks on screen comes from a manual shift (the +/- start controls), which Byron can already tighten himself; nothing changed there, since it's a real scheduling choice, not a layout constant, and not mine to silently tighten.
 - **2026-11-19** — Permit & Zoning Tracker v182 → v183: root cause of the "PermitType isn't labeling the tracks" report — two real cards (one PermitType "Zoning", one "Lot consolidation") both sat in the single "Zoning Prep" list for the same project, and `loadTrelloProjects` always assumed one card per (project, category); the second one synced silently overwrote the first, dropping its `PermitType`. Per Byron: "I don't want to have another set of lists for a new zoning sequence... I'd prefer to have the cards carry the distinction... What about Card 1 of 1 or 1 of 2 or 2 of 2?" Added a `Card Sequence` custom field (free text; only the leading digit is parsed, so "1 of 1"/"1 of 2"/"2 of 2"/bare "2" all work) — a card tagged "2 of N" now lands in the same `zoning2`/`permitting2` bucket the old ZONING2/PERMIT2-list mechanism already fed (no changes needed anywhere else: settings panel, gantt rows, A/B labels, stacking). Blank defaults to 1, so every existing single-card project is unaffected. Two cards resolving to the same slot (e.g. both left blank) is no longer silent — it's logged and shown in the sync status instead of quietly dropping data.
 - **2026-11-19** — Permit & Zoning Tracker v181 → v182: fixed a regression from v181 — per Byron: "I'm seeing something unexpected that has changed since the last time I looked at the tracker. The PermitType doesn't seem to be labeling the tracks in the tracker. Earlier, it did." v181 replaced `zoning2Label`/`permit2Label`'s old source (the card's Trello color label tag) with the new `PermitType` custom field outright, for all four tracks, with no fallback — so a B-track that had a label tag set (and was showing correctly) but no `PermitType` filled in yet went silently blank. The fallback chain is now `PermitType` → the card's Trello label tag → blank (which every reader already falls back from to the generic "zoning"/"permitting" text), so nothing that worked before regresses while `PermitType` gets backfilled.
