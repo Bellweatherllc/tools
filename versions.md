@@ -11,7 +11,7 @@ Last updated: 2026-11-20
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1184 |
+| Project Pipeline | `project-pipeline.html` | v1185 |
 | Projects Manager | `core-projects-manager.html` | v66 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v68 |
 | Scout Board | `scout-board.html` | v13 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-20** — Project Pipeline v1184 → v1185: per Byron — collapsed project rows on the Design screen were tinting pale "light patches" with no label and no tooltip, unrelated to the designer's own time off. `populateCollapsedRow`'s v966 scoping comment says the Production screen shows only the PM's days off and the Design screen only the designer's, but the code only gated the designer's half of that — the PM's time-off collection ran unconditionally on every screen, so a collapsed row on the Design screen also picked up the production PM's days off (filtered to production-lane weeks) and tinted them in on top of the designer's row, with nothing to identify what they were. Now gated to the same screen-type check as the designer's half.
 - **2026-11-20** — Project Pipeline v1183 → v1184: fixed a blank bubble/tab appearing when hovering the "Permit & Zoning" button on a project hover card. The feature is disabled (`PZ_ENABLED=false`, not reliable enough yet), but the hover bubble element was still being created and CSS still revealed it on `:hover` — empty, since nothing ever filled it. Now the bubble element itself isn't created at all while the feature is disabled.
 - **2026-11-20** — Projects Manager v65 → v66: the Trello Import panel's background is now darker (`--linen` instead of `--cotton`, which matched the page exactly) with an inset top shadow and a darker border, so the open import window reads as a clearly distinct panel instead of blending into the page.
 - **2026-11-20** — Projects Manager v64 → v65: the Trello Import chevron now matches the "manual sync" status text color (`#ff6b6b`, not red), is 35% smaller (15.6px, was 24px), and its direction is reversed — points up when the import panel is closed, down when open. Removed the "How projects get in" Trello import / manual entry explainer text from the import panel (no longer useful). The detail panel no longer shows the Project Description field/section at all — removed, not just hidden-when-empty.
