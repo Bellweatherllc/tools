@@ -40,7 +40,7 @@ Last updated: 2026-11-20
 | Selections · Field | `selections/field-view.html` | v4 |
 | Selections · Warehouse | `selections/warehouse.html` | v4 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v34 |
+| Team Members | `team-members.html` | v35 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v15 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-20** — Team Members v34 → v35: moved **TrelloAlwaysAdd** off the Roster tab (per Byron — a Roster edit-in-place control only let you check it one person at a time, and only showed up for whoever you happened to be editing) and onto the **Access** tab instead, as its own checkbox column alongside the `*Role` matrix — every team member, active and inactive, visible and toggleable at once, same instant-save pattern as the role dropdowns.
 - **2026-11-20** — Team Members v33 → v34: added a **TrelloAlwaysAdd** checkbox next to the Trello username (Roster tab, add-row and edit-in-place), discovered by name the same way the Trello column is — shows as a "★ Always add" badge on the roster when checked. This is the flag Pipeline's new Trello-board feature reads to decide who's added to every new project board regardless of role; requires a `TrelloAlwaysAdd` (Yes/No) column on CORE_TeamMembers, added by hand like `Trello` was.
 - **2026-11-20** — Team Members v33: the Trello column is found by name (`Trello`, or any column whose name or title contains "Trello", e.g. `Trello_x0020_ID`), so Trello usernames/ids show under the email on the roster and save back to that column. A 24-character Trello member id shows as `Trello <id>`; a username as `@name`.
 - **2026-11-20** — New: Permit & Zoning Tracker Manual (`permit-zoning-tracker-manual.html`/`.md`, the house manual shell). Starts as a stub with one topic — per Byron, a brief write-up of a considered-and-set-aside idea: cross-checking against Philadelphia's own public L&I permit data (Carto SQL API, no key needed — `opendataphilly.org`'s dataset page and the city's `cityofphiladelphia.github.io/carto-api-explorer` are both linked from the manual). Not built: matching by permit number only pays off late (the city doesn't assign one until intake, and Trello usually lags the outcome anyway); matching by address could catch a filed application earlier but needs date-range filtering to stay precise. BW Tool Index v14 → v15 to list it.
