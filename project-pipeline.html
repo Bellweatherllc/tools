@@ -3720,7 +3720,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1182';
+const CORE_VERSION = 'v1183';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -14339,61 +14339,40 @@ function _pzTrelloUrl(path,params){
   return 'https://api.trello.com/1/'+path+'?'+p.toString();
 }
 
-// ════════════════════════════════  TRELLO PROJECT BOARDS (v1182) ════════════════════════════════
+// ════════════════════════════════  TRELLO PROJECT BOARDS (v1183) ════════════════════════════════
 // A dedicated Trello board per confirmed project, copied from the "AA BWC Project Template"
-// board, prompted right after the Confirm celebration. Shares TrelloApiKey/TrelloToken with
-// the Permit and Sales Trello features (same CORE_Config rows); the template board's real id
-// and workspace (org) id are resolved once from its public shortlink, then cached in
-// CORE_Config so later confirms don't re-resolve them.
-const TRELLO_TEMPLATE_SHORTLINK='3aTIP21N'; // https://trello.com/b/3aTIP21N/aa-bwc-project-template
-let _trProjCfg=null; // {apiKey,token,templateBoardId,orgId} — false once tried and missing
-async function _trProjLoadCfg(){
-  if(_trProjCfg!==null) return _trProjCfg;
+// board, prompted right after the Confirm celebration. Unlike the Permit and Sales Trello
+// features (which only read, via a key/token shared with the browser), this one WRITES —
+// it creates boards and changes workspace membership — so the Trello key/token never reach
+// the browser at all. The board-copy and member-add happen server-side, in the
+// createTrelloBoard Azure Function (azure-function-proxy/src/functions/createTrelloBoard.js);
+// this tool only knows that function's URL, read from CORE_Config (TrelloProxyUrl).
+let _trProjProxyUrl=null; // cached TrelloProxyUrl from CORE_Config — false once tried and missing
+async function _trProjLoadProxyUrl(){
+  if(_trProjProxyUrl!==null) return _trProjProxyUrl;
   try{
     const data=await graphGet(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields');
-    const rows={}; (data.value||[]).forEach(it=>{ const f=it.fields||{}; const k=f.Title||f.Key; if(k) rows[k]=(f.Value!=null?f.Value:(f.Value0!=null?f.Value0:'')); });
-    const key=rows.TrelloApiKey||'', tok=rows.TrelloToken||'';
-    _trProjCfg=(key&&tok)?{apiKey:key,token:tok,templateBoardId:rows.TrelloTemplateBoardId||'',orgId:rows.TrelloOrgId||''}:false;
-  }catch(e){ console.warn('[trello-proj] cfg load failed:',e.message||e); _trProjCfg=false; }
-  return _trProjCfg;
+    const row=(data.value||[]).find(it=>(it.fields?.Title||it.fields?.Key)==='TrelloProxyUrl');
+    const url=row?(row.fields?.Value||row.fields?.Value0||''):'';
+    _trProjProxyUrl=url||false;
+  }catch(e){ console.warn('[trello-proj] proxy url load failed:',e.message||e); _trProjProxyUrl=false; }
+  return _trProjProxyUrl;
 }
-function _trProjUrl(path,params){
-  const p=new URLSearchParams(params||{});
-  p.set('key',_trProjCfg.apiKey); p.set('token',_trProjCfg.token);
-  return 'https://api.trello.com/1/'+path+'?'+p.toString();
-}
-async function _trProjCfgSetRow(key,value){ // find-or-create a simple {Title,Key,Value} CORE_Config row
-  const items=await graphGetAll(BWC_SITE+'/CORE_Config/items?$expand=fields&$select=id,fields');
-  const row=items.find(it=>(it.fields?.Title||it.fields?.Key)===key);
-  if(row) await graphPatch(BWC_SITE+'/CORE_Config/items/'+row.id+'/fields',{Value:value});
-  else await graphPost(BWC_SITE+'/CORE_Config/items',{fields:{Title:key,Key:key,Value:value}});
-}
-// Resolve (and cache) the template board's real id + its workspace id — the shortlink
-// alone is enough for the copy call, but the org id is needed so the new board lands in
-// the team's Trello workspace instead of whoever's personal one holds the token.
-async function _trProjResolveTemplate(){
-  if(_trProjCfg.templateBoardId&&_trProjCfg.orgId) return;
-  const res=await fetch('https://api.trello.com/1/boards/'+TRELLO_TEMPLATE_SHORTLINK+'?fields=id,idOrganization&key='+_trProjCfg.apiKey+'&token='+_trProjCfg.token);
-  if(!res.ok) throw new Error('Trello template board lookup failed: '+res.status);
-  const b=await res.json();
-  _trProjCfg.templateBoardId=b.id; _trProjCfg.orgId=b.idOrganization||'';
-  await Promise.all([_trProjCfgSetRow('TrelloTemplateBoardId',b.id),_trProjCfgSetRow('TrelloOrgId',_trProjCfg.orgId)])
-    .catch(e=>console.warn('[trello-proj] cfg cache write failed:',e));
-}
-// Copy the template into a new board named `name`, keeping its lists/cards/checklists.
-async function _trProjCreateBoard(name){
-  const res=await fetch(_trProjUrl('boards/',{name,idBoardSource:_trProjCfg.templateBoardId,idOrganization:_trProjCfg.orgId,keepFromSource:'cards'}),{method:'POST'});
-  if(!res.ok) throw new Error('Trello board create failed: '+res.status+' '+(await res.text().catch(()=>'')));
-  return res.json(); // {id,url,shortUrl,...}
-}
-// Add one person (by their Trello @-handle) to a board — resolves username → member id
-// first since the board-members endpoint needs the id, not the handle.
-async function _trProjAddMember(boardId,username){
-  const mRes=await fetch(_trProjUrl('members/'+encodeURIComponent(username),{fields:'id'}));
-  if(!mRes.ok) throw new Error('unknown Trello user "'+username+'"');
-  const member=await mRes.json();
-  const aRes=await fetch(_trProjUrl('boards/'+boardId+'/members/'+member.id,{type:'normal'}),{method:'PUT'});
-  if(!aRes.ok) throw new Error('could not add to board: '+aRes.status);
+// Ask the proxy to copy the template into a new board named `name` and add each Trello
+// @-handle in `usernames` to it. Sends the signed-in user's own Graph token along — not
+// checked by the function today, but there for when it's locked down with Azure AD auth.
+async function _trProjCallProxy(name,usernames){
+  const url=await _trProjLoadProxyUrl();
+  if(!url) throw new Error('Trello proxy isn’t configured yet (TrelloProxyUrl in CORE_Config)');
+  const authTok=await getToken().catch(()=>null);
+  const res=await fetch(url,{
+    method:'POST',
+    headers:Object.assign({'Content-Type':'application/json'},authTok?{'Authorization':'Bearer '+authTok}:{}),
+    body:JSON.stringify({name,usernames}),
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error||('Trello proxy error '+res.status));
+  return data; // {board:{id,url,name},failed:[usernames that couldn't be added]}
 }
 // Default roster for a just-confirmed project: everyone flagged TrelloAlwaysAdd, plus
 // whoever's on the project's own card (Sales, Design + secondary, Production PM, LC1/LC2).
@@ -14471,13 +14450,9 @@ async function _tbCreateBoard(){
   const selected=_tbState.people.filter(p=>p.checked&&p.trello);
   btn.disabled=true; btn.textContent='Creating…';
   try{
-    const cfg=await _trProjLoadCfg();
-    if(!cfg) throw new Error('Trello isn’t configured (TrelloApiKey/TrelloToken missing in CORE_Config)');
-    await _trProjResolveTemplate();
-    const board=await _trProjCreateBoard(name);
-    const results=await Promise.allSettled(selected.map(p=>_trProjAddMember(board.id,p.trello)));
-    const failed=[]; results.forEach((r,i)=>{ if(r.status==='rejected') failed.push(selected[i].fullLabel); });
-    proj.trelloBoardId=board.id; proj.trelloBoardUrl=board.url||board.shortUrl||'';
+    const {board,failed:failedHandles}=await _trProjCallProxy(name,selected.map(p=>p.trello));
+    const failed=selected.filter(p=>(failedHandles||[]).includes(p.trello)).map(p=>p.fullLabel);
+    proj.trelloBoardId=board.id; proj.trelloBoardUrl=board.url||'';
     markDirty(proj); triggerSave(proj);
     document.getElementById('tbDialog').classList.remove('open'); _tbState=null;
     _tbShowResultToast(board,failed);
@@ -17554,6 +17529,10 @@ function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML
 // Each entry appears in the Weekly Brief under Tool Changes until approved.
 // Entries for versions newer than the stored baseline are shown automatically.
 const PIPELINE_CHANGELOG = [
+  {
+    version: 'v1183', date: '2026-11-20',
+    entries:['The v1182 Trello-board feature called Trello’s API directly from the browser, using the same shared key/token as the Permit and Sales Trello features — fine for those, since they only read, but this one writes (creates boards, changes membership), so a leaked token would do more. The board-copy and member-add now happen server-side, in a new createTrelloBoard Azure Function (azure-function-proxy/) that holds the Trello key/token as app settings — never in the browser or in CORE_Config. Pipeline now only knows that function’s URL (CORE_Config: TrelloProxyUrl); everything else about the feature (the prompt, the default roster, editing before you create) is unchanged. Needs the Function App deployed and TrelloProxyUrl set before this works — see azure-function-proxy/ for what the function needs as app settings.'],
+  },
   {
     version: 'v1182', date: '2026-11-19',
     entries:['Confirming a Sales project in Pipeline now offers to spin up its Trello board right after the celebration — a copy of the "AA BWC Project Template" board, named "Project Name - brief description" (the same description shown on the card hover). The default roster is everyone flagged TrelloAlwaysAdd on Team Members plus whoever’s actually on that project’s card (Sales, Design + secondary, Production PM, LC1/LC2) — editable and addable-to before you click Create, never silent. Resolves Trello handles from the new Trello column on CORE_TeamMembers (@-mention name); anyone missing one shows clearly rather than being silently dropped. Reuses the TrelloApiKey/TrelloToken already configured for the Permit and Sales Trello features; the template board’s real id and workspace resolve once and cache in CORE_Config (TrelloTemplateBoardId, TrelloOrgId). Needs a TrelloAlwaysAdd Yes/No column added on CORE_TeamMembers (same way the Trello column was added) — flip it on for whoever should land on every new project board.'],
