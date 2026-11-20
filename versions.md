@@ -40,7 +40,7 @@ Last updated: 2026-11-20
 | Selections · Field | `selections/field-view.html` | v4 |
 | Selections · Warehouse | `selections/warehouse.html` | v4 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v37 |
+| Team Members | `team-members.html` | v38 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v15 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-20** — Team Members v37 → v38: per Byron — the Access tab's Member name column is now sticky left (stays put while scrolling the role columns horizontally, a subtle shadow marks the edge), and the page's own width grew from 800px to 1300px so the matrix only needs to scroll when the actual browser window is narrower than that — plenty of room on a normal desktop window, scrollable on a smaller one.
 - **2026-11-20** — Team Members v36 → v37: per Byron — the Access tab's matrix now scrolls (both directions, inside a 65vh box) instead of squeezing every `*Role` column into the page's 800px width, and its header row is sticky so column names stay visible while scrolling down a long roster. The Trello Always-Add column's label shortened to "Always add to new Trello Project Boards" and wraps onto 2–3 lines in a much narrower column, instead of forcing the table wider with one long unbroken line.
 - **2026-11-20** — Team Members v35 → v36: per Byron — the Access tab's **Trello Always-Add** column now sits right after Pipeline (was tacked onto the far end) and its header/legend read "Trello Always-Add — New Trello Project Boards", spelling out what it's for instead of the bare column name.
 - **2026-11-20** — Team Members v34 → v35: moved **TrelloAlwaysAdd** off the Roster tab (per Byron — a Roster edit-in-place control only let you check it one person at a time, and only showed up for whoever you happened to be editing) and onto the **Access** tab instead, as its own checkbox column alongside the `*Role` matrix — every team member, active and inactive, visible and toggleable at once, same instant-save pattern as the role dropdowns.
