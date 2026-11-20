@@ -505,13 +505,24 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .tb-person-src{font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.32);flex-shrink:0;}
 .tb-person.tb-nohandle{opacity:.45;}
 .tb-person.tb-nohandle .tb-person-name::after{content:' — no Trello handle on file';font-style:italic;font-weight:400;text-transform:none;letter-spacing:0;color:rgba(255,120,120,.75);}
-.tb-add-row{display:flex;gap:6px;margin-bottom:12px;}
+.tb-add-row{display:flex;gap:6px;margin-bottom:12px;position:relative;}
 .tb-add-inp{flex:1;min-width:0;font-family:'TT Norms Pro',sans-serif;font-size:11px;color:#fff;
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:6px 8px;}
 .tb-add-inp:focus{outline:none;border-color:rgba(255,255,255,.4);}
 .tb-add-btn{font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:700;color:rgba(255,255,255,.75);
   background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:6px 10px;cursor:pointer;}
 .tb-add-btn:hover{background:rgba(255,255,255,.14);color:#fff;}
+/* v1187: live Team Member suggestions under the add-someone field */
+.tb-suggest{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:10;
+  background:var(--navy);border:1px solid rgba(255,255,255,.18);border-radius:6px;
+  box-shadow:0 8px 20px rgba(0,0,0,.4);max-height:168px;overflow-y:auto;display:none;}
+.tb-suggest.open{display:block;}
+.tb-suggest-item{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:6px 9px;font-size:11px;color:rgba(255,255,255,.85);cursor:pointer;}
+.tb-suggest-item.active,.tb-suggest-item:hover{background:rgba(255,255,255,.08);}
+.tb-suggest-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tb-suggest-handle{font-size:9px;font-weight:600;letter-spacing:.04em;color:rgba(255,255,255,.4);flex-shrink:0;}
+.tb-suggest-handle.tb-suggest-nohandle{font-style:italic;font-weight:400;letter-spacing:0;color:rgba(255,120,120,.7);}
 .tb-btns{display:flex;justify-content:flex-end;gap:8px;}
 .tb-skip{
   font-family:'TT Norms Pro',sans-serif;font-size:11px;font-weight:600;
@@ -3563,8 +3574,9 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
   <div class="tb-ppl-lbl">Add to board</div>
   <div class="tb-ppl-list" id="tbPplList"></div>
   <div class="tb-add-row">
-    <input class="tb-add-inp" id="tbAddInp" type="text" placeholder="Add someone — name or Trello handle">
+    <input class="tb-add-inp" id="tbAddInp" type="text" placeholder="Add someone — name or Trello handle" autocomplete="off">
     <button class="tb-add-btn" id="tbAddBtn">Add</button>
+    <div class="tb-suggest" id="tbAddSuggest"></div>
   </div>
   <div class="tb-btns">
     <button class="tb-skip" id="tbSkipBtn">Not now</button>
@@ -3720,7 +3732,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1186';
+const CORE_VERSION = 'v1187';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -14422,32 +14434,89 @@ function _tbRenderList(){
     list.appendChild(row);
   });
 }
-function _tbAddPerson(raw){
-  raw=(raw||'').trim(); if(!raw||!_tbState) return;
-  const n=raw.toLowerCase();
-  const match=ALL_TEAM.find(t=>t.fullLabel.trim().toLowerCase()===n)
-    || ALL_TEAM.find(t=>t.fullLabel.trim().toLowerCase().includes(n));
-  const fullLabel=match?match.fullLabel:raw;
-  const trello=match?match.trello:raw.replace(/^@/,'');
+function _tbAddPersonDirect(t){ // add a known ALL_TEAM entry straight through, no name-guessing
+  if(!_tbState||!t) return;
+  const fullLabel=t.fullLabel, trello=t.trello||'';
   const key=(trello||'~'+fullLabel).toLowerCase();
   if(_tbState.people.some(p=>(p.trello||'~'+p.fullLabel).toLowerCase()===key)) return; // already listed
   _tbState.people.push({label:fullLabel.split(' ')[0],fullLabel,trello,source:'Added',checked:true});
   _tbRenderList();
+}
+function _tbAddPerson(raw){ // free-text fallback — exact/substring name match, else treat raw as a Trello handle
+  raw=(raw||'').trim(); if(!raw||!_tbState) return;
+  const n=raw.toLowerCase();
+  const match=ALL_TEAM.find(t=>t.fullLabel.trim().toLowerCase()===n)
+    || ALL_TEAM.find(t=>t.fullLabel.trim().toLowerCase().includes(n));
+  if(match){ _tbAddPersonDirect(match); return; }
+  const fullLabel=raw, trello=raw.replace(/^@/,'');
+  const key=(trello||'~'+fullLabel).toLowerCase();
+  if(_tbState.people.some(p=>(p.trello||'~'+p.fullLabel).toLowerCase()===key)) return; // already listed
+  _tbState.people.push({label:fullLabel.split(' ')[0],fullLabel,trello,source:'Added',checked:true});
+  _tbRenderList();
+}
+// v1187: live Team Member suggestions as you type in "Add someone" — typing a
+// name shouldn't require already knowing the person's Trello handle by heart.
+let _tbSuggestItems=[], _tbSuggestActive=-1;
+function _tbFilterTeam(query){
+  const q=(query||'').trim().toLowerCase().replace(/^@/,''); if(!q) return [];
+  const listedKeys=new Set((_tbState?.people||[]).map(p=>(p.trello||'~'+p.fullLabel).toLowerCase()));
+  return (ALL_TEAM||[]).filter(t=>{
+    const key=(t.trello||'~'+t.fullLabel).toLowerCase();
+    if(listedKeys.has(key)) return false;
+    return t.fullLabel.toLowerCase().includes(q)||(t.trello&&t.trello.toLowerCase().includes(q));
+  }).slice(0,6);
+}
+function _tbRenderSuggest(){
+  const box=document.getElementById('tbAddSuggest'); if(!box) return;
+  if(!_tbSuggestItems.length){ box.classList.remove('open'); box.innerHTML=''; return; }
+  box.innerHTML=_tbSuggestItems.map((t,i)=>
+    `<div class="tb-suggest-item${i===_tbSuggestActive?' active':''}" data-idx="${i}">`
+    +`<span class="tb-suggest-name">${escH(t.fullLabel)}</span>`
+    +(t.trello?`<span class="tb-suggest-handle">@${escH(t.trello)}</span>`:`<span class="tb-suggest-handle tb-suggest-nohandle">no Trello handle</span>`)
+    +`</div>`
+  ).join('');
+  box.classList.add('open');
+}
+function _tbPickSuggest(idx){
+  const t=_tbSuggestItems[idx]; if(!t) return;
+  _tbAddPersonDirect(t);
+  const inp=document.getElementById('tbAddInp'); if(inp) inp.value='';
+  _tbSuggestItems=[]; _tbSuggestActive=-1; _tbRenderSuggest();
 }
 function openTrelloBoardPrompt(proj){
   const dlg=document.getElementById('tbDialog'); if(!dlg) return;
   const scopeText=proj.shortDescription||proj.projectDescription||'';
   _tbState={proj,people:_trelloDefaultRoster(proj).map(p=>Object.assign({checked:true},p))};
   document.getElementById('tbNameInp').value=proj.name+(scopeText?' - '+scopeText:'');
-  document.getElementById('tbAddInp').value='';
+  const addInp=document.getElementById('tbAddInp');
+  addInp.value='';
+  _tbSuggestItems=[]; _tbSuggestActive=-1; _tbRenderSuggest();
   _tbRenderList();
   dlg.classList.add('open');
   document.getElementById('tbSkipBtn').onclick=()=>{ dlg.classList.remove('open'); _tbState=null; };
   document.getElementById('tbAddBtn').onclick=()=>{
-    _tbAddPerson(document.getElementById('tbAddInp').value);
-    document.getElementById('tbAddInp').value='';
+    _tbAddPerson(addInp.value);
+    addInp.value=''; _tbSuggestItems=[]; _tbSuggestActive=-1; _tbRenderSuggest();
   };
-  document.getElementById('tbAddInp').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('tbAddBtn').click(); } };
+  addInp.oninput=()=>{
+    _tbSuggestItems=_tbFilterTeam(addInp.value);
+    _tbSuggestActive=_tbSuggestItems.length?0:-1;
+    _tbRenderSuggest();
+  };
+  addInp.onkeydown=e=>{
+    if(_tbSuggestItems.length){
+      if(e.key==='ArrowDown'){ e.preventDefault(); _tbSuggestActive=Math.min(_tbSuggestActive+1,_tbSuggestItems.length-1); _tbRenderSuggest(); return; }
+      if(e.key==='ArrowUp'){ e.preventDefault(); _tbSuggestActive=Math.max(_tbSuggestActive-1,0); _tbRenderSuggest(); return; }
+      if(e.key==='Escape'){ _tbSuggestItems=[]; _tbSuggestActive=-1; _tbRenderSuggest(); return; }
+      if(e.key==='Enter'&&_tbSuggestActive>=0){ e.preventDefault(); _tbPickSuggest(_tbSuggestActive); return; }
+    }
+    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('tbAddBtn').click(); }
+  };
+  addInp.onblur=()=>{ setTimeout(()=>{ _tbSuggestItems=[]; _tbSuggestActive=-1; _tbRenderSuggest(); },150); };
+  document.getElementById('tbAddSuggest').onmousedown=e=>{
+    const item=e.target.closest('.tb-suggest-item'); if(!item) return;
+    e.preventDefault(); _tbPickSuggest(parseInt(item.dataset.idx,10));
+  };
   document.getElementById('tbCreateBtn').onclick=_tbCreateBoard;
 }
 async function _tbCreateBoard(){
