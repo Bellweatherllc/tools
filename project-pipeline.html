@@ -3720,7 +3720,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1185';
+const CORE_VERSION = 'v1186';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5460,7 +5460,7 @@ const LANE_ORDER=['design','permitting','production'];
 
 // populateCollapsedRow: renders collapsed band content directly into a lane-row element.
 // Used by buildProjTimeline (inline at build time) and renderCollapsedBand (surgical updates).
-function populateCollapsedRow(proj, rowEl, ww, secType){
+function populateCollapsedRow(proj, rowEl, ww, secType, groupPersonId){
   const w2px=n=>Math.round(n*ww);
   rowEl.innerHTML='';
   // v970: NOW-column outline on collapsed bands — drawn after the row clear,
@@ -5550,7 +5550,14 @@ function populateCollapsedRow(proj, rowEl, ww, secType){
   // v929: day-granular OFF strips — collect days whose week overlaps the relevant
   // lanes, then merge consecutive workdays into runs, same math as the overlay.
   const offLin=new Set();
-  const des=personById(proj.designer),pm=personById(proj.productionPM);
+  // v1186: a project shared with a secondary designer renders a collapsed row in
+  // BOTH designers' groups, but proj.designer always names only the primary — so
+  // the secondary's row was tinting the primary's time off instead of its own.
+  // Prefer the DOM group's own person (or the explicit groupPersonId passed at
+  // build time, before the row is attached to that group) over the project's
+  // own designer/PM fields.
+  const _grpPersonId=groupPersonId||rowEl.closest?.('.person-group-tl')?.dataset.personId||'';
+  const des=personById(_grpPersonId)||personById(proj.designer),pm=personById(_grpPersonId)||personById(proj.productionPM);
   const _collectOff=(person,lanes)=>{ if(!person)return; (person.timeOff||[]).forEach(iso=>{ const q=_toParse(iso); if(q&&weekOverlapsLanes(proj,q.week,lanes)) offLin.add(q.lin); }); };
   // v966: scope OFF strips to the screen's own people — the Production screen
   // shows only the PM's days off; designer OFF strips belong to Design.
@@ -6858,7 +6865,7 @@ function _appendProdCue(laneRow,proj,rowH){
     }
   });
 }
-function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,grpNudgeY,skipMsNames,ghostLaneIds,hideTierDots){
+function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,grpNudgeY,skipMsNames,ghostLaneIds,hideTierDots,groupPersonId){
   // grpNudgeY ignored in unified model (parameter kept for call-site compat)
   ovTimeoff=ovTimeoff||[]; ghostLaneIds=ghostLaneIds||[];
   const rowH=proj.collapsed?BAND_H:C.laneH;
@@ -6879,7 +6886,7 @@ function buildProjTimeline(proj,laneIds,includeControls,showJunctions,ovTimeoff,
     });
   } else {
     // Collapsed: band content rendered inline — no separate collapsed-band element needed
-    populateCollapsedRow(proj,laneRow,C.weekW,laneIds.includes('production')?'production':'design');
+    populateCollapsedRow(proj,laneRow,C.weekW,laneIds.includes('production')?'production':'design',groupPersonId);
   }
   // v919 — production cue on the Design row, expanded OR collapsed (it sizes
   // itself from rowH). Collapsed is where it's most often viewed.
@@ -7503,12 +7510,12 @@ function buildDesignSection(){
         // same shared project object, so phase/milestone edits on either band mirror on the other.
         const projs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&(p.designer===person.id||(p.secondaryDesigner&&p.secondaryDesigner===person.id))),'design');
         const topTlSpD=el('div',''); topTlSpD.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(topTlSpD);
-        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['design'],true,true,undefined,-8,null,[],DES_MS_HIDDEN.has(person.id))));
+        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['design'],true,true,undefined,-8,null,[],DES_MS_HIDDEN.has(person.id),person.id)));
         // Ghost timeline rows matching FC ghost rows — design phases from slot, at reduced opacity
         (PLANNING_PROJECTS||[]).filter(pp=>!pp.parked&&pp.ppStatus!=='lost'&&pp.proposedDesigner===person.id&&pp.slotId).forEach(pp=>{
           const slotProj=PROJECTS.find(p=>p.id===pp.slotId); if(!slotProj) return;
           const tlWrap=el('div',''); tlWrap.style.opacity='0.40';
-          tlWrap.appendChild(buildProjTimeline(slotProj,['design'],false,false,null,-8,null,[],DES_MS_HIDDEN.has(person.id)));
+          tlWrap.appendChild(buildProjTimeline(slotProj,['design'],false,false,null,-8,null,[],DES_MS_HIDDEN.has(person.id),person.id));
           grp.appendChild(tlWrap);
         });
         const botTlSpD=el('div',''); botTlSpD.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;`; grp.appendChild(botTlSpD);
@@ -7808,7 +7815,7 @@ function buildProdSection(){
         const _twx=todayDisplayWeek();
         const topTlSp=el('div',''); topTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;`;
         grp.appendChild(topTlSp);
-        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,-9,['DA'],[])));
+        projs.forEach(proj=>grp.appendChild(buildProjTimeline(proj,['production'],false,true,undefined,-9,['DA'],[],null,pmId)));
         const botTlSp=el('div',''); botTlSp.style.cssText=`height:4px;width:${w2px(C.numWeeks)}px;position:relative;overflow:hidden;`;
         grp.appendChild(botTlSp);
         const ov=el('div','timeoff-overlay-cap'); ov.dataset.personId=pmId; ov.dataset.section='production';

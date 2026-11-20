@@ -11,7 +11,7 @@ Last updated: 2026-11-20
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1185 |
+| Project Pipeline | `project-pipeline.html` | v1186 |
 | Projects Manager | `core-projects-manager.html` | v66 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v68 |
 | Scout Board | `scout-board.html` | v13 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-20** — Project Pipeline v1185 → v1186: the real fix for the unlabeled time-off-like patches — v1185 wasn't it. A project with a secondary designer renders a collapsed row in BOTH designers' groups (same shared project, per v1174), but `populateCollapsedRow`'s OFF-tint always read `proj.designer` — which only ever names the PRIMARY designer — regardless of which designer's group the row was actually sitting in. So a project shared onto a secondary designer's row tinted in the PRIMARY's time off instead of the row's own designer, with no label (that tint has never carried one) and no visible connection to the person whose row it was on. `buildProjTimeline`/`populateCollapsedRow` now take the group's own person id (threaded through at build time, or read off the attached `.person-group-tl` ancestor for surgical re-renders) and use that instead of trusting `proj.designer`/`proj.productionPM` alone.
 - **2026-11-20** — Project Pipeline v1184 → v1185: per Byron — collapsed project rows on the Design screen were tinting pale "light patches" with no label and no tooltip, unrelated to the designer's own time off. `populateCollapsedRow`'s v966 scoping comment says the Production screen shows only the PM's days off and the Design screen only the designer's, but the code only gated the designer's half of that — the PM's time-off collection ran unconditionally on every screen, so a collapsed row on the Design screen also picked up the production PM's days off (filtered to production-lane weeks) and tinted them in on top of the designer's row, with nothing to identify what they were. Now gated to the same screen-type check as the designer's half.
 - **2026-11-20** — Project Pipeline v1183 → v1184: fixed a blank bubble/tab appearing when hovering the "Permit & Zoning" button on a project hover card. The feature is disabled (`PZ_ENABLED=false`, not reliable enough yet), but the hover bubble element was still being created and CSS still revealed it on `:hover` — empty, since nothing ever filled it. Now the bubble element itself isn't created at all while the feature is disabled.
 - **2026-11-20** — Projects Manager v65 → v66: the Trello Import panel's background is now darker (`--linen` instead of `--cotton`, which matched the page exactly) with an inset top shadow and a darker border, so the open import window reads as a clearly distinct panel instead of blending into the page.
