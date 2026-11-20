@@ -1045,7 +1045,7 @@ const SP_CONFIG = {
 // v59 — single version constant stamps both badges (header + splash overlay)
 // so they can never drift apart. The splash badge matters: the overlay blocks
 // the header when testing locally before sign-in.
-const MGR_VERSION='v62';
+const MGR_VERSION='v63';
 (()=>{ const h=document.getElementById('mgrVerBadge'); if(h) h.textContent=MGR_VERSION;
        const p=document.getElementById('mgrVerSplash'); if(p) p.textContent=MGR_VERSION; })();
 const CORE_COLUMNS = [
@@ -1254,6 +1254,7 @@ async function fetchProjects(){
     buildFilterPills(); applyFilters();
     setConnected(true);
     checkNewProjects(allProjects);
+    applyDeepLinkFocus();
   }catch(e){
     document.getElementById('projects-loading').style.display='none';
     document.getElementById('projects-empty').style.display='block';
@@ -1293,6 +1294,48 @@ function applyFilters(){
     return sortAsc?(av>bv?1:av<bv?-1:0):(av<bv?1:av>bv?-1:0);
   });
   renderTable();
+}
+// Deep link from Pipeline's "MGR" hover button: ?focus=<spItemId> (confirmed projects,
+// matched by id) or ?q=<name> (planning-stage leads not yet promoted, matched by name).
+// Opens straight to the project, no manual search/navigation once signed in.
+let _deepLinkHandled=false;
+function applyDeepLinkFocus(){
+  if(_deepLinkHandled) return; // only on first load — don't fight later manual clicks
+  const params=new URLSearchParams(location.search);
+  const focusId=params.get('focus');
+  const q=params.get('q');
+  if(!focusId&&!q) return;
+  _deepLinkHandled=true;
+  activeFilters=new Set(['All']); // the project's own stage might not be in the default filter
+  if(focusId){
+    const match=allProjects.find(p=>String(p._id)===String(focusId));
+    if(match){
+      document.getElementById('search-input').value='';
+      buildFilterPills(); applyFilters();
+      expandedId=match._id;
+      renderTable();
+      scrollToExpandedRow();
+      return;
+    }
+    // Fall through to a name search if the id doesn't match anything (e.g. stale link)
+  }
+  if(q){
+    const name=decodeURIComponent(q);
+    document.getElementById('search-input').value=name;
+    buildFilterPills(); applyFilters();
+    if(filteredProjects.length===1){
+      expandedId=filteredProjects[0]._id;
+      renderTable();
+      scrollToExpandedRow();
+    }
+    // More than one match (or none) — left filtered to the candidates, not auto-opened
+  }
+}
+function scrollToExpandedRow(){
+  setTimeout(()=>{
+    const row=document.querySelector('.expanded-row');
+    if(row) row.scrollIntoView({behavior:'smooth',block:'center'});
+  },0);
 }
 function sortBy(col){
   if(sortCol===col)sortAsc=!sortAsc;else{sortCol=col;sortAsc=true;}

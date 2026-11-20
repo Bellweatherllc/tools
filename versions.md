@@ -12,7 +12,7 @@ Last updated: 2026-11-20
 |---|---|---|
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1183 |
-| Projects Manager | `core-projects-manager.html` | v61 (`MGR_VERSION`) |
+| Projects Manager | `core-projects-manager.html` | v63 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v68 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
@@ -40,7 +40,7 @@ Last updated: 2026-11-20
 | Selections · Field | `selections/field-view.html` | v4 |
 | Selections · Warehouse | `selections/warehouse.html` | v4 |
 | Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v38 |
+| Team Members | `team-members.html` | v39 |
 | Core Roadmap | `core_roadmap.html` | v57 |
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v15 |
@@ -77,6 +77,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-20** — Team Members v38 → v39: the widened page (v38, 800px → 1300px, for the Access matrix) was dragging the Roster tab's layout wide with it — the name column is `1fr` in that tab's grid, so it stretched into a big empty gap before the department/role/active columns. Roster tab capped back to its own 780px, centered independently of the Access tab's width.
+- **2026-11-20** — Projects Manager v61 → v63: the Pipeline's "MGR" hover button (`?focus=<id>` for a confirmed project, `?q=<name>` for a planning-stage lead) landed on these query params doing nothing — the page never read them at all, so opening it meant signing in (if needed) and then manually finding the project by hand every time. It now reads `?focus`/`?q` once the project list loads, switches the stage filter to "All" (the project's own stage may not be in the default "Lead" filter), expands that project inline, and scrolls to it — a name search that matches exactly one project auto-expands the same way; more than one match just leaves the list filtered to the candidates.
 - **2026-11-20** — Team Members v37 → v38: per Byron — the Access tab's Member name column is now sticky left (stays put while scrolling the role columns horizontally, a subtle shadow marks the edge), and the page's own width grew from 800px to 1300px so the matrix only needs to scroll when the actual browser window is narrower than that — plenty of room on a normal desktop window, scrollable on a smaller one.
 - **2026-11-20** — Team Members v36 → v37: per Byron — the Access tab's matrix now scrolls (both directions, inside a 65vh box) instead of squeezing every `*Role` column into the page's 800px width, and its header row is sticky so column names stay visible while scrolling down a long roster. The Trello Always-Add column's label shortened to "Always add to new Trello Project Boards" and wraps onto 2–3 lines in a much narrower column, instead of forcing the table wider with one long unbroken line.
 - **2026-11-20** — Team Members v35 → v36: per Byron — the Access tab's **Trello Always-Add** column now sits right after Pipeline (was tacked onto the far end) and its header/legend read "Trello Always-Add — New Trello Project Boards", spelling out what it's for instead of the bare column name.
