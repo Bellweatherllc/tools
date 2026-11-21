@@ -21,6 +21,8 @@
 html,body{margin:0;background:var(--cotton);color:var(--ink);font:400 16px/1.4 var(--sans)}
 button{font:inherit;color:inherit}
 .hidden{display:none!important}
+.practice{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 16px 0;padding:7px 10px;background:#f2c14e;color:#282828;border-radius:8px;font:600 13px/1.3 var(--sans)}
+.practice a{color:#282828;text-decoration:underline;white-space:nowrap;padding:6px 2px}
 /* header */
 .top{position:sticky;top:0;z-index:20;background:var(--navy);color:#fff;padding:env(safe-area-inset-top,0px) 0 10px;transition:top .2s}
 /* scrolling down slides the brand/job bar away; search + tabs stay. Scrolling up brings it back. */
@@ -172,6 +174,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 <body>
 <div id="gate" class="hidden"><div>
   <p>Sign in with your Bellweather Microsoft account to see selections.</p>
+  <p class="note hidden" id="gatePractice"><b>Practice mode.</b> You will see real data, but nothing you do is saved.</p>
   <button class="btn" id="signInBtn">Sign in</button>
   <p class="note" id="gateMsg"></p>
 </div></div>
@@ -189,6 +192,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
       <button role="tab" data-tab="check" aria-selected="false">Ready to install?</button>
       <button role="tab" data-tab="where" aria-selected="false">Where it is</button>
     </nav>
+    <div class="practice hidden" id="practiceBar" role="status"><span>Practice mode: you see real data, but nothing is saved. Reload to start over.</span><a href="#" id="practiceExit">Exit</a></div>
   </header>
   <main id="main"><div class="empty">Loading…</div></main>
   <div class="bar hidden" id="bar"><div class="bl"><button class="link" id="barClear" aria-label="Clear selection">Clear</button><span id="barTxt"></span></div><button class="btn" id="barBtn" data-tip="Marks the selected items On site.">Brought to site</button></div>
@@ -205,8 +209,24 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v13';
+const CORE_VERSION = 'v14';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
+
+/* ── Practice mode ── Open the page with ?practice and it reads the real data but never writes anything.
+   Every write goes through SherpaAuth.graph, so that one function refuses anything that is not a read and pretends it worked: the screen behaves as usual,
+   and a reload starts over. Remembered preferences (last job, last tab, stars cache) are not written either.
+   Microsoft sign-in sends the browser back to this address WITHOUT the ?practice part, so the choice is also kept for the tab (sessionStorage);
+   the Exit link, or a new tab, clears it. If in doubt it stays in practice mode, which is the safe side. */
+const PRACTICE=(()=>{ let on=false; try{ on=new URLSearchParams(location.search).has('practice'); if(on) sessionStorage.setItem('sf-practice','1'); else on=sessionStorage.getItem('sf-practice')==='1'; }catch(e){} return on; })();
+if(PRACTICE){
+  const realGraph=SherpaAuth.graph.bind(SherpaAuth); let fakeId=0;
+  SherpaAuth.graph=(url,opts)=>{ const m=String((opts&&opts.method)||'GET').toUpperCase();
+    if(m==='GET'||m==='HEAD') return realGraph(url,opts);
+    return Promise.resolve(m==='POST'?{id:'practice-'+(++fakeId)}:{}); };   // looks like success; nothing is sent
+  document.title='Practice · '+document.title;
+  document.getElementById('practiceBar').classList.remove('hidden'); document.getElementById('gatePractice').classList.remove('hidden');
+  document.getElementById('practiceExit').addEventListener('click',e=>{ e.preventDefault(); try{ sessionStorage.removeItem('sf-practice'); }catch(_){} location.href=location.pathname; });
+}
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
 (()=>{const TT=document.getElementById('tt'); if(!TT||!matchMedia('(hover: hover)').matches) return;   // touch screens: no hover tooltips
@@ -394,7 +414,7 @@ function haystack(i){ return [i.title,i.room,i.category,i.onHand,i.ordered,i.not
 /* ── UI state ───────────────────────────────────────────────────────────── */
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem('sf-'+k); localStorage.setItem('sf-'+k,v); }catch(e){ return null; } };
+const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem('sf-'+k); if(PRACTICE) return null; localStorage.setItem('sf-'+k,v); }catch(e){ return null; } };
 let JOBS=[], job=null, items=[], tab=pref('tab')||'rooms', q='', trade='All', roomF='All', whereF='All', whereS='All', hereOpen=false, picked=new Set();
 const terms=()=>q.toLowerCase().split(/\s+/).filter(t=>t&&t!==String(job).toLowerCase());
 function hl(text){ const ts=terms(); let h=esc(text); if(!ts.length) return h;
