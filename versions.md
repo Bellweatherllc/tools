@@ -11,9 +11,9 @@ Last updated: 2026-11-21
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1187 |
+| Project Pipeline | `project-pipeline.html` | v1188 |
 | Projects Manager | `core-projects-manager.html` | v66 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v73 |
+| Levels of Development | `levels-of-development.html` | v74 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -77,6 +77,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-21** — Project Pipeline v1187 → v1188: per Byron — the Create Trello Board dialog (prompted after Confirm) now groups people into colored department cards — **OPS** (gold), **SALES** (orange), **DESIGN** (blue), **PRODUCTION** (green, covering both the PM and LC roles, tagged separately) — instead of one flat grey list, with each card's checkboxes tinted to match. Anyone added by hand via the "Add someone" field lands in an untinted **ADDED** card. Dialog widened (340px → 480px) to fit the two-column card grid.
+- **2026-11-21** — Levels of Development v73 → v74: Requested Assessors' Sales/Design/Production group headers and checkboxes now use the same colors as Pipeline's Create Trello Board dialog (orange/blue/green — see Pipeline v1188 below), so a department reads as the same color in both tools.
 - **2026-11-21** — Levels of Development v72 → v73: per Byron, after confirming Create Request Card works end to end — (1) the message (with its `@mentions`) now posts as the new card's first **comment** via the `createLodRequestCard` Azure Function, instead of sitting in the card description; Trello only fires "you were mentioned" notifications for a comment mention, never a description one, so the description-only version wasn't actually alerting anyone. (2) The Message box, Copy Request, and Create Request Card are now Admin-only — previously visible/usable to everyone once assessors were checked off. (3) Dropped the explanatory paragraph under the Requested Assessors header entirely; it's just the name list (or checkboxes, in Admin) now, no surrounding verbiage. Manual updated.
 - **2026-11-21** — Levels of Development v71 → v72: fixed Create Request Card failing with "No board named ... found" — the board name wired into the code (`PRE-CON | Byron Wolfe`, assumed from how Byron described it) didn't match the board's real Trello name, `[Pre-Con] Byron Wolfe` (square brackets, no pipe); confirmed via a direct Trello API boards listing, not guesswork. `LOD_TRELLO_BOARD_NAME` corrected to the real name. Also noted the real Sales board's exact name while we had the list: `[SALES] BIG BOARD`, not `Sales Big Board` — the comment flagging the eventual flip now points at the correct string.
 - **2026-11-21** — Levels of Development v70 → v71: per Byron — the Trello request text now shows in an editable **Message** box (pre-filled from checked assessors, auto-updates until you hand-edit it, then stops overwriting your wording until you switch projects), moved **Create Request Card**/**Copy Request** to sit below the name-selection area instead of up by the section header. Also fixed Scope of Work's text visibly reflowing (different paragraph/list spacing) when toggling Admin mode — the normalizing CSS for paragraph and list margins only targeted the read-only view container, never the editable one, so it fell back to browser defaults; both containers share the same rules now.
