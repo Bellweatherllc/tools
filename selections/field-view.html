@@ -53,7 +53,7 @@ button{font:inherit;color:inherit}
 main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
 .note{color:var(--muted);font-size:13.5px}
 .empty{padding:28px 8px;text-align:center;color:var(--muted)}
-.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none;position:relative}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;border:1px solid var(--line);background:#fff;border-radius:999px;font:500 14px/1 var(--sans);padding:11px 14px;white-space:nowrap}
 .chips .sep{flex:none;width:1px;background:var(--line);margin:4px 2px}
@@ -77,6 +77,10 @@ main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
 .imgs{display:flex;gap:8px;margin-top:8px;overflow-x:auto}
 .imgs a{flex:none;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--cotton);display:block}
 .imgs img{width:100%;height:100%;object-fit:cover;display:block}
+.sgh{display:flex;justify-content:space-between;align-items:baseline;font:600 12px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:14px 4px 8px}
+.chip .n{opacity:.6;font-weight:500;margin-left:4px}
+.acts.lead{margin:10px 0 0}
+.acts.lead .btn{flex:1 1 0;white-space:nowrap}
 .fl{display:block;padding:11px 0;color:var(--navy);font-weight:600;overflow-wrap:anywhere}
 .card .main{flex:1;min-width:0}
 .card .t{font-weight:600;font-size:15.5px}
@@ -180,7 +184,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v7';
+const CORE_VERSION = 'v10';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -337,7 +341,7 @@ function haystack(i){ return [i.title,i.room,i.category,i.onHand,i.ordered,i.not
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem('sf-'+k); localStorage.setItem('sf-'+k,v); }catch(e){ return null; } };
-let JOBS=[], job=null, items=[], tab=pref('tab')||'rooms', q='', trade='All', roomF='All', onlyMissing=false, picked=new Set();
+let JOBS=[], job=null, items=[], tab=pref('tab')||'rooms', q='', trade='All', roomF='All', whereF='All', whereS='All', onlyMissing=false, picked=new Set();
 const terms=()=>q.toLowerCase().split(/\s+/).filter(t=>t&&t!==String(job).toLowerCase());
 function hl(text){ const ts=terms(); let h=esc(text); if(!ts.length) return h;
   for(const t of ts){ const re=new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'); h=h.replace(/(<[^>]*>)|([^<]+)/g,(m,tag,txt)=>tag?tag:txt.replace(re,'<mark>$1</mark>')); }
@@ -365,6 +369,21 @@ function grouped(list,keyFn,order){
 }
 
 /* ── Views ──────────────────────────────────────────────────────────────── */
+/* Where it is: group chips (with counts) and, inside a chosen group, a sub row: bays for Stokley, rooms for a big group. */
+const W_ORDER=['On site','Stokley','Received','Ordered','Not ordered','Not selected','Owner supplied'];
+const wBucket=i=>i.state.k==='store'&&/^stokley/i.test(i.state.label)?'Stokley':i.state.label;
+const wRank=k=>{ const n=W_ORDER.indexOf(k); return n<0?W_ORDER.indexOf('Stokley')+.5:n; };
+const wName=b=>b==='Stokley'?'At Stokley':b;
+const wSubKey=(b,i)=>b==='Stokley'?i.state.label:i.room;
+const bayName=l=>String(l).replace(/^stokley\s*/i,'')||'No bay';
+function whereVisible(list){   // -> {all:[[bucket,items]], groups:[[bucket,items shown,whole group]]} after the chips are applied
+  const all=grouped(list,wBucket,(a,b)=>wRank(a)-wRank(b)||a.localeCompare(b));
+  const sel=all.find(x=>x[0]===whereF);
+  if(whereF!=='All'&&!sel){ whereF='All'; whereS='All'; }     // the chosen group emptied (e.g. everything moved on site)
+  else if(sel&&whereS!=='All'&&!sel[1].some(i=>wSubKey(whereF,i)===whereS)) whereS='All';
+  const groups=(whereF==='All'?all:all.filter(x=>x[0]===whereF)).map(([b,its])=>[b,(whereF!=='All'&&whereS!=='All')?its.filter(i=>wSubKey(b,i)===whereS):its,its]);
+  return {all,groups};
+}
 function render(){
   document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===tab)));
   $('qClear').classList.toggle('hidden',!q);
@@ -390,40 +409,65 @@ function render(){
     if(!L.length) h+='<div class="empty">Everything here is on site.</div>';
   }
   else if(tab==='where'){
-    const ORDER=['On site','Stokley','Received','Ordered','Not ordered','Not selected','Owner supplied'];
-    const bucket=i=>i.state.k==='store'&&/^stokley/i.test(i.state.label)?'Stokley':i.state.label;
-    const rank=k=>{ const n=ORDER.indexOf(k); return n<0?ORDER.indexOf('Stokley')+.5:n; };
-    for(const [b,its] of grouped(list,bucket,(a,b)=>rank(a)-rank(b)||a.localeCompare(b))){
+    const {all,groups}=whereVisible(list);
+    h+=`<div class="chips" role="group" aria-label="Where">${[['All',list.length],...all.map(([k,its])=>[k,its.length])].map(([k,n])=>`<button class="chip" data-wf="${esc(k)}" aria-pressed="${k===whereF}">${esc(k==='All'?'All':wName(k))}<span class="n">${n}</span></button>`).join('')}</div>`;
+    const sel=all.find(x=>x[0]===whereF);
+    if(sel&&(whereF==='Stokley'||sel[1].length>6)){
+      const keys=grouped(sel[1],i=>wSubKey(whereF,i),whereF==='Stokley'?(x,y)=>x.localeCompare(y,undefined,{numeric:true}):undefined);
+      h+=`<div class="chips" role="group" aria-label="Within ${esc(wName(whereF))}">${keys.map(([k,its])=>`<button class="chip" data-ws="${esc(k)}" aria-pressed="${k===whereS}">${esc(whereF==='Stokley'?bayName(k):k)}<span class="n">${its.length}</span></button>`).join('')}</div>`;
+    }
+    for(const [b,its,full] of groups){
       const sorted=b==='Stokley'?its.slice().sort((x,y)=>x.state.label.localeCompare(y.state.label,undefined,{numeric:true})):its;
       const selAll=its.some(i=>i.state.k==='store')?(its.filter(i=>i.state.k==='store').every(i=>picked.has(i.id))?'Clear':'Select all'):'';
-      h+=`<section class="group"><div class="gh"><h2>${esc(b==='Stokley'?'At Stokley':b)}</h2><span class="gh-r">${selAll?`<button class="link" data-selall>${selAll}</button>`:''}<span class="note">${its.length}</span></span></div>${sorted.map(i=>card(i,{select:i.state.k==='store',full:true})).join('')}</section>`;
+      // Stokley is sorted by bay (that is how you fetch it). Any other group over 6 items is split by room, so the room is the heading and the card drops its "Room:" prefix.
+      // A big group is split under room headings only when rooms hold several items each (On site). With mostly one item per room (Owner supplied) headings would double the list, so it is a flat list in room order with full titles.
+      const split=b!=='Stokley'&&full.length>6&&grouped(full,i=>i.room).length*2<=full.length;
+      const body=split
+        ?grouped(its,i=>i.room).map(([room,r])=>`<div class="sgh"><span>${hl(room)}</span><span>${r.length}</span></div>${r.map(i=>card(i,{select:i.state.k==='store'})).join('')}`).join('')
+        :(b==='Stokley'?sorted:its.slice().sort((x,y)=>(x.room==='Unassigned')-(y.room==='Unassigned')||x.room.localeCompare(y.room))).map(i=>card(i,{select:i.state.k==='store',full:true})).join('');
+      const head=whereF==='All'||selAll;   // when a chip already names the group, its heading only stays if it carries Select all
+      h+=`<section class="group" id="wg-${esc(b)}">${head?`<div class="gh"><h2>${esc(wName(b))}</h2><span class="gh-r">${selAll?`<button class="link" data-selall="${esc(b)}">${selAll}</button>`:''}<span class="note">${its.length}</span></span></div>`:''}${body}</section>`;
     }
   }
+  const keepX={}; document.querySelectorAll('#main .chips').forEach(r=>{ keepX[r.getAttribute('aria-label')]=r.scrollLeft; });
   $('main').innerHTML=h;
+  document.querySelectorAll('#main .chips').forEach(r=>{   // rows are rebuilt on every tap: keep where you had swiped to, and keep the chosen chip in view
+    const k=r.getAttribute('aria-label'); if(keepX[k]) r.scrollLeft=keepX[k];
+    const on=r.querySelector('[aria-pressed="true"]'); if(!on) return;
+    const rr=r.getBoundingClientRect(), cr=on.getBoundingClientRect();
+    if(cr.right>rr.right-8||cr.left<rr.left+8) r.scrollLeft=Math.max(0,r.scrollLeft+cr.left-rr.left-16);
+  });
   const bar=$('bar'); bar.classList.toggle('hidden',!(tab==='where'&&picked.size));
   $('barTxt').textContent=`${picked.size} selected`; $('barBtn').textContent=picked.size>1?`Brought to site (${picked.size})`:'Brought to site'; lazyThumbs();
 }
-function openSheet(id){
+// BT keeps "Order Date" and "Ordered?" (free text like "Yes, Build") apart. One line reads better: "Sep 29, Bedrosians", "Yes, Build", "No".
+function orderedText(i){ const o=i.ordered.trim(), d=i.orderDate?fmtDate(i.orderDate):''; const m=o.match(/^(yes|no)\b[\s,:-]*(.*)$/i);
+  if(m){ const rest=m[2].trim(); return d?[d,rest].filter(Boolean).join(', '):[m[1][0].toUpperCase()+m[1].slice(1).toLowerCase(),rest].filter(Boolean).join(', '); }
+  return [d,o].filter(Boolean).join(', '); }
+function openSheet(id,keepTop){
   const i=items.find(x=>x.id===id); if(!i) return;
-  const where=[['Status',i.state.label],['Room',i.room],i.onHand?['Stored',i.onHand]:null,i.received?['Received',fmtDate(i.received)]:null,i.orderDate?['Ordered',fmtDate(i.orderDate)]:null,i.ordered?['Ordered?',i.ordered]:null,i.leadTime?['Lead time',i.leadTime]:null].filter(Boolean);
+  const here=['site','store','own'].includes(i.state.k), ck=i.ops.checkin||{}, isoDay=ms=>ms?new Date(ms).toISOString().slice(0,10):'';
+  // the status tag above already says where it is, so this block only holds the dates
+  const where=[orderedText(i)?['Ordered',orderedText(i)]:null,(!here&&i.leadTime)?['Lead time',i.leadTime]:null,i.received?['Received',fmtDate(i.received)]:null,
+    (i.state.k==='site'&&ck.pulledAt)?['Brought to site',fmtDate(isoDay(ck.pulledAt))]:null,i.installed?['Installed',fmtDate(i.installed)]:null].filter(Boolean);
+  const acts=[
+    i.state.k!=='site'?`<button class="btn" data-act="site" data-id="${i.id}">Brought to site</button>`:'',
+    i.state.label==='On site'?`<button class="btn" data-act="installed" data-id="${i.id}">Mark installed</button>`:'',
+    i.state.label==='Installed'?`<button class="btn ghost" data-act="uninstall" data-id="${i.id}">Undo installed</button>`:'',
+    i.state.k==='site'&&i.state.label!=='Installed'?`<button class="btn ghost" data-act="back" data-id="${i.id}">Back to Stokley…</button>`:''].join('');
   const specs=i.specs.filter((s,n,a)=>a.findIndex(x=>x.k.toLowerCase()===s.k.toLowerCase()&&x.v===s.v)===n);
   $('sheet').innerHTML=`<div class="grab"></div><button class="x" data-close aria-label="Close">×</button>
     <div class="note">${esc(i.job)} · ${esc(i.room)} · ${esc(tradeOf(i))}</div>
-    <h3 id="sTitle">${esc(i.short)}</h3><div style="margin:4px 0 10px">${tag(i)}</div>
+    <h3 id="sTitle">${esc(i.short)}</h3><div style="margin:4px 0 0">${tag(i)}</div>
+    ${acts?`<div class="acts lead">${acts}</div>`:''}
     <div class="hero" id="sHero" data-id="${i.id}">${PH(40)}<div class="note"></div></div>
-    <div class="sec"><h4>Where it is</h4><dl class="kv">${where.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>
+    ${where.length?`<div class="sec"><h4>Order &amp; delivery</h4><dl class="kv">${where.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`:''}
     ${i.choices.map(c=>`<div class="sec"><h4>What it is</h4><div style="font-weight:600;margin-bottom:6px">${esc(c.Title)}</div>`+
       (specs.length?`<dl class="kv">${specs.slice(0,14).map(s=>`<dt>${esc(s.k)}</dt><dd>${esc(s.v)}</dd>`).join('')}</dl>`:'')+
       (c.Description?`<details style="margin-top:8px"><summary>Full description</summary><div class="desc">${esc(c.Description)}</div></details>`:'')+`</div>`).join('')}
-    <div class="sec"><h4>Update</h4><div class="acts">
-      ${i.state.k!=='site'?`<button class="btn" data-act="site" data-id="${i.id}">Brought to site</button>`:''}
-      ${i.state.label==='On site'?`<button class="btn" data-act="installed" data-id="${i.id}">Installed</button>`:''}
-      ${i.state.label==='Installed'?`<button class="btn ghost" data-act="uninstall" data-id="${i.id}">Not installed yet</button>`:''}
-      ${i.state.k==='site'&&i.state.label!=='Installed'?`<button class="btn ghost" data-act="back" data-id="${i.id}">Back to Stokley…</button>`:''}
-    </div></div>
     <div class="sec"><h4>Notes</h4><textarea id="nNotes" rows="3" placeholder="e.g. 2 of 3 boxes on site, one cracked">${esc(i.notes)}</textarea><div class="acts"><button class="btn ghost" data-act="notes" data-id="${i.id}">Save notes</button></div></div>
     <div class="sec hidden" id="sFiles" data-id="${i.id}"></div>`;
-  $('sheet').dataset.kind='item'; $('scrim').classList.add('open'); $('sheet').classList.add('open'); $('sheet').scrollTop=0;
+  $('sheet').dataset.kind='item'; $('scrim').classList.add('open'); $('sheet').classList.add('open'); $('sheet').scrollTop=typeof keepTop==='number'?keepTop:0;   // after an update the sheet stays where it was
   jobFiles(i.job).then(async rows=>{
     const hero=$('sHero'); if(!hero||hero.dataset.id!==i.id) return;
     const mine=(rows||[]).filter(x=>String(x.fields.SelectionLookupId)===i.id);
@@ -443,7 +487,7 @@ function openSheet(id){
 function closeSheet(){ $('scrim').classList.remove('open'); $('sheet').classList.remove('open'); }
 
 async function pickJob(name){
-  job=name; pref('job',name); bwSub('BWCore › '+name); picked.clear(); q=''; roomF='All'; $('q').value=''; $('q').placeholder='Search '+name+'…'; jobBtnLabel();
+  job=name; pref('job',name); bwSub('BWCore › '+name); picked.clear(); q=''; roomF='All'; whereF='All'; whereS='All'; $('q').value=''; $('q').placeholder='Search '+name+'…'; jobBtnLabel();
   $('main').innerHTML='<div class="empty">Loading…</div>';
   try{ items=await loadJob(name); }catch(e){ $('main').innerHTML=`<div class="empty">Couldn’t load ${esc(name)}: ${esc(e.message||e)}</div>`; return; }
   if(job===name) render();
@@ -458,7 +502,9 @@ document.addEventListener('click',e=>{
   const t=e.target;
   const ac=t.closest('[data-act]'); if(ac){ act(ac.dataset.act,ac.dataset.id); return; }
   if(t.closest('.selbox')){ if(t.tagName==='INPUT'){ const id=t.dataset.pick; t.checked?picked.add(id):picked.delete(id); render(); } return; }   // label tap re-fires on the input
-  if(t.closest('[data-selall]')){ const L=items.filter(matches).filter(i=>i.state.k==='store'); const all=L.every(i=>picked.has(i.id)); L.forEach(i=>all?picked.delete(i.id):picked.add(i.id)); render(); return; }
+  const sa=t.closest('[data-selall]'); if(sa){ const g=whereVisible(items.filter(matches)).groups.find(x=>x[0]===sa.dataset.selall); const L=(g?g[1]:[]).filter(i=>i.state.k==='store'); const all=L.every(i=>picked.has(i.id)); L.forEach(i=>all?picked.delete(i.id):picked.add(i.id)); render(); return; }   // only this group's items, as filtered
+  const wf=t.closest('[data-wf]'); if(wf){ whereF=wf.dataset.wf===whereF?'All':wf.dataset.wf; whereS='All'; render(); return; }
+  const ws=t.closest('[data-ws]'); if(ws){ whereS=ws.dataset.ws===whereS?'All':ws.dataset.ws; render(); return; }
   const tb=t.closest('[data-tab]'); if(tb){ tab=tb.dataset.tab; pref('tab',tab); render(); window.scrollTo(0,0); setAway(false); return; }
   const tr=t.closest('[data-trade]'); if(tr){ trade=tr.dataset.trade; render(); return; }
   const rm=t.closest('[data-room]'); if(rm){ roomF=rm.dataset.room===roomF?'All':rm.dataset.room; render(); return; }
@@ -489,7 +535,7 @@ async function act(kind,id){
     else if(kind==='back'){ const bay=prompt('Which bay at Stokley? (e.g. F4)'); if(bay===null) return; const v=bay.trim()?('Stokley, '+bay.trim().replace(/^stokley,?\s*/i,'').toUpperCase()):'Stokley';
       await save(i,{onHand:v},{pulledAt:null,pulledFrom:null,pulledBy:null}); toast('Back at '+v+'.'); }
     else if(kind==='notes'){ await save(i,{notes:$('nNotes').value.trim()}); toast('Notes saved.'); }
-    render(); openSheet(id);
+    const top=$('sheet').scrollTop; render(); openSheet(id,top);
   }catch(e){ render(); toast(e&&e.status===403?'You don’t have permission to change this.':'Didn’t save. Check your connection and try again.'); }
 }
 $('signInBtn').onclick=()=>{ $('signInBtn').disabled=true; $('gateMsg').textContent='Signing in…'; SherpaAuth.signIn().catch(err=>{ $('signInBtn').disabled=false; $('gateMsg').textContent='Sign-in failed: '+err.message; }); };
