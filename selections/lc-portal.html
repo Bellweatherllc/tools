@@ -25,6 +25,18 @@
 .spcom li{padding:8px 0;border-bottom:1px solid var(--line)}
 .spcom li:last-child{border-bottom:0}
 .spbody{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}
+.spdrop{display:grid;place-items:center;border:1.5px dashed var(--line-2);border-radius:10px;min-height:72px;color:var(--muted);font-size:14px;cursor:pointer;margin:6px 0 8px;text-align:center;padding:10px}
+.spdrop u{color:var(--ink)}
+.spdrop:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.spdrop.over{border-color:var(--ink);background:var(--wash)}
+.spqrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.spqn{flex:1 1 170px;min-width:0;overflow-wrap:anywhere}
+.spqk{font:inherit;padding:6px 8px;border:1px solid var(--line-2);border-radius:6px;background:var(--paper);color:var(--ink)}
+.spqx{border:0;background:none;font-size:22px;line-height:1;color:var(--muted);padding:2px 8px;cursor:pointer}
+.spqs{font-size:13px;color:var(--muted)}
+.spqs.ok{color:var(--go)}
+.spqe{flex-basis:100%;color:#b3261e;font-size:13px}
+.spqa{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 2px}
 .spfiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:8px}
 .spfile{display:flex;flex-direction:column;gap:4px;text-decoration:none;color:inherit;font-size:12.5px}
 .spthumb{display:block;aspect-ratio:1;background:var(--wash);border:1px solid var(--line);border-radius:6px;overflow:hidden}
@@ -594,7 +606,7 @@ dd .ph{color:var(--muted);font-weight:400;font-style:italic}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v5';
+const CORE_VERSION = 'v6';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -881,6 +893,108 @@ const CORE_VERSION = 'v5';
     }
     return filesByJob.get(job);
   }
+  /* ── Files library: upload and tag ─────────────────────────────────────────────
+     CORE_SelectionFiles is a DOCUMENT LIBRARY. A file is stored in a folder named for the job, then tagged Job + Selection (+ Choice) + Kind
+     so every screen finds it. Small files go up in one call, big ones in chunks. A name clash renames the new file; nothing is overwritten or deleted.
+     Kind decides who sees it: the Field screen never shows Quote files (they carry prices). */
+  const FILE_KINDS=['Image','Manual','Cut sheet','Quote','Other'];
+  const FILE_MAX=250*1024*1024, FILE_SIMPLE=4*1024*1024, FILE_CHUNK=320*1024*10;   // chunks must be a multiple of 320 KiB
+  let _filesDrive=null;
+  const filesDrive=async()=>_filesDrive||(_filesDrive=(await SherpaAuth.graph(`${LISTS}/CORE_SelectionFiles/drive?$select=id`)).id);
+  function guessKind(f){ const n=f.name||'', t=f.type||'';
+    if(/^image\//.test(t)||/\.(jpe?g|png|gif|webp|heic|svg)$/i.test(n)) return 'Image';
+    if(/quote|estimate|proposal|invoice|pricing/i.test(n)) return 'Quote';     // when in doubt, treat a price document as a quote
+    if(/cut ?sheet|spec/i.test(n)) return 'Cut sheet';
+    return /manual|install|instruction|guide|\.pdf$/i.test(n)?'Manual':'Other'; }
+  const cleanFileName=n=>String(n||'file').replace(/[\\/:*?"<>|#%]+/g,'-').replace(/^[\s.]+|[\s.]+$/g,'').slice(0,150)||'file';
+  async function inJobFolder(job,run){   // if SharePoint says the job folder is missing, make it and try once more
+    try{ return await run(); }
+    catch(e){ if(!(e&&e.status===404)) throw e;
+      await g(`${GRAPH}/drives/${await filesDrive()}/root/children`,{method:'POST',body:JSON.stringify({name:cleanFileName(job),folder:{},'@microsoft.graph.conflictBehavior':'fail'})}).catch(()=>{});   // already there is fine
+      return run(); }
+  }
+  async function putLibraryFile(file,job,onPct){
+    const drive=await filesDrive();
+    const path=[cleanFileName(job),cleanFileName(file.name)].map(encodeURIComponent).join('/');
+    if(file.size<=FILE_SIMPLE){
+      const res=await inJobFolder(job,()=>g(`${GRAPH}/drives/${drive}/root:/${path}:/content?@microsoft.graph.conflictBehavior=rename`,{method:'PUT',body:file,headers:{'Content-Type':file.type||'application/octet-stream'},raw:true}));
+      if(onPct) onPct(1); return res.json();
+    }
+    const s=await inJobFolder(job,()=>g(`${GRAPH}/drives/${drive}/root:/${path}:/createUploadSession`,{method:'POST',body:JSON.stringify({item:{'@microsoft.graph.conflictBehavior':'rename'}})}));
+    let pos=0, done=null;
+    while(pos<file.size){
+      const end=Math.min(pos+FILE_CHUNK,file.size); let res;
+      for(let a=0;;a++){   // the session address is pre-authorised: no Authorization header
+        try{ res=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':`bytes ${pos}-${end-1}/${file.size}`},body:file.slice(pos,end)}); }
+        catch(e){ if(a<3){ await sleep(1500*2**a); continue; } throw e; }
+        if([429,500,502,503,504].includes(res.status)&&a<3){ await sleep(1500*2**a); continue; }
+        break;
+      }
+      if(!res.ok&&res.status!==202) throw Object.assign(new Error('Upload failed (HTTP '+res.status+')'),{status:res.status});
+      pos=end; if(onPct) onPct(pos/file.size);
+      if(res.status===200||res.status===201) done=await res.json();   // the last chunk returns the finished file
+    }
+    return done;
+  }
+  async function tagLibraryFile(itemId,fields){   // the list item can take a moment to appear after an upload
+    for(let a=0;;a++){
+      try{ return await g(`${GRAPH}/drives/${await filesDrive()}/items/${itemId}/listItem/fields`,{method:'PATCH',body:JSON.stringify(fields)}); }
+      catch(e){ if(a<3&&[404,409,423].includes(e.status)){ await sleep(800*(a+1)); continue; } throw e; }
+    }
+  }
+  async function addLibraryFile(file,{job,selId,choiceId,kind,hold},onPct){   // hold: remembers the uploaded file, so a retry after a tagging failure only tags it
+    if(file.size>FILE_MAX) throw Object.assign(new Error('too large'),{code:'too_large'});
+    const it=(hold&&hold.item)||await putLibraryFile(file,job,onPct); if(hold) hold.item=it;
+    const f={Job:job,SelectionLookupId:String(selId),Kind:kind}; if(choiceId) f.ChoiceLookupId=String(choiceId);
+    try{ await tagLibraryFile(it.id,f); }catch(e){ e.untagged=true; throw e; }
+    return it;
+  }
+  const fileErrText=(e,name)=>e&&e.code==='too_large'?`${name} is over 250 MB.`
+    :e&&e.untagged?`${name} is in the library but couldn’t be tagged. Open the library and set Job, Selection and Kind.`
+    :e&&e.status===403?'You don’t have permission to add files to the library.'
+    :e&&e.status===404?'The files library wasn’t found. Run the Selections List Setup page.'
+    :`${name} didn’t upload. Check your connection and try again.`;
+  const fmtSize=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+
+  /* the drop zone on a selection's Files section: drop (or choose) files, confirm each one's Kind, add */
+  const dropQ=new Map();   // selection id -> files waiting or failed; survives the panel redrawing
+  const dropHtml=()=>`<div class="spdrop" tabindex="0" role="button" aria-label="Add files. Drop them here or press Enter to choose.">Drop files here, or <u>choose files</u><input type="file" multiple hidden></div><div class="spq" aria-live="polite"></div>`;
+  function mountDrop(el,r){
+    const zone=el.querySelector('.spdrop'), box=el.querySelector('.spq'), input=zone.querySelector('input'), key=String(r.spId);
+    const q=()=>dropQ.get(key)||[];
+    const paint=()=>{
+      const L=q(), busy=L.some(x=>x.state==='up'), todo=L.filter(x=>x.state==='ready'||x.state==='err');
+      box.innerHTML=L.map((x,i)=>`<div class="spqrow" data-i="${i}"><span class="spqn">${E(x.file.name)} <span class="note">${fmtSize(x.file.size)}</span></span>`
+        +(x.state==='up'?`<span class="spqs">${Math.round(x.pct*100)}%</span>`
+          :`<select class="spqk" aria-label="Kind of ${E(x.file.name)}">${FILE_KINDS.map(k=>`<option${k===x.kind?' selected':''}>${k}</option>`).join('')}</select><button class="spqx" aria-label="Remove ${E(x.file.name)}">×</button>`)
+        +(x.state==='err'?`<div class="spqe">${E(x.msg)}</div>`:'')+'</div>').join('')
+        +(todo.length?`<div class="spqa"><button class="btn small spadd"${busy?' disabled':''}>Add ${todo.length} file${todo.length===1?'':'s'}</button><span class="note">Quote files are never shown on the Field screen.</span></div>`:'');
+    };
+    const take=fl=>{ const L=q().slice(); for(const f of fl) if(f&&(f.size||f.name)) L.push({file:f,kind:guessKind(f),state:'ready',pct:0}); dropQ.set(key,L); paint(); };
+    zone.addEventListener('click',e=>{ if(e.target!==input) input.click(); });
+    zone.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); input.click(); } });
+    input.addEventListener('change',()=>{ take([...input.files]); input.value=''; });
+    zone.addEventListener('dragover',e=>{ e.preventDefault(); zone.classList.add('over'); });
+    zone.addEventListener('dragleave',()=>zone.classList.remove('over'));
+    zone.addEventListener('drop',e=>{ e.preventDefault(); zone.classList.remove('over'); take([...((e.dataTransfer&&e.dataTransfer.files)||[])]); });
+    box.addEventListener('change',e=>{ const row=e.target.closest('.spqrow'); if(row&&e.target.matches('.spqk')) q()[+row.dataset.i].kind=e.target.value; });
+    box.addEventListener('click',async e=>{
+      const rm=e.target.closest('.spqx'); if(rm){ const L=q().slice(); L.splice(+rm.closest('.spqrow').dataset.i,1); dropQ.set(key,L); paint(); return; }
+      if(!e.target.closest('.spadd')) return;
+      let added=0;
+      for(const x of q()){
+        if(x.state!=='ready'&&x.state!=='err') continue;
+        x.state='up'; x.pct=0; paint();
+        try{ await addLibraryFile(x.file,{job:r.Job,selId:r.spId,kind:x.kind,hold:x},p=>{ x.pct=p; paint(); }); x.state='done'; added++; }
+        catch(err){ x.state='err'; x.msg=fileErrText(err,x.file.name); }
+        paint();
+      }
+      filesByJob.delete(r.Job);
+      dropQ.set(key,q().filter(x=>x.state!=='done'));   // added files leave the queue; failed ones stay for a retry
+      if(added) fillFiles(r);                            // redraw the file list with what was just added
+    });
+    paint();
+  }
   async function fillFiles(r){
     const box=()=>{ const el=document.getElementById('spFiles'); return el&&el.dataset.sel===String(r.spId)?el:null; };
     let rows;
@@ -889,10 +1003,10 @@ const CORE_VERSION = 'v5';
     if(rows===null){ el.innerHTML='<h4>Files</h4><div class="note">No files library yet.</div>'; return; }
     if(!libUrl){ try{ libUrl=(await SherpaAuth.graph(`${LISTS}/CORE_SelectionFiles?$select=webUrl`)).webUrl; }catch(e){} }
     const mine=rows.filter(x=>String(x.fields.SelectionLookupId)===String(r.spId));
-    const add=`<div class="note">Add files in SharePoint${libUrl?`: <a href="${E(libUrl)}" target="_blank" rel="noopener">CORE_SelectionFiles</a>`:''}, tagged with Job <b>${E(r.Job)}</b> and this selection.</div>`;
-    if(!mine.length){ el.innerHTML='<h4>Files</h4><div class="note">No files yet.</div>'+add; return; }
+    const add=dropHtml();
+    if(!mine.length){ el.innerHTML='<h4>Files</h4><div class="note">No files yet.</div>'+add; mountDrop(el,r); return; }
     el.innerHTML='<h4>Files</h4><div class="spfiles">'+mine.map(x=>{ const d=x.driveItem||{}; const name=d.name||x.fields.FileLeafRef||'File';
-      return `<a class="spfile" href="${E(d.webUrl||'#')}" target="_blank" rel="noopener" data-tip="${E(name)}"><span class="spthumb" data-item="${E(x.id)}"></span><span class="spname">${E(name)}</span>${x.fields.Kind?`<span class="note">${E(x.fields.Kind)}</span>`:''}</a>`; }).join('')+'</div>'+add;
+      return `<a class="spfile" href="${E(d.webUrl||'#')}" target="_blank" rel="noopener" data-tip="${E(name)}"><span class="spthumb" data-item="${E(x.id)}"></span><span class="spname">${E(name)}</span>${x.fields.Kind?`<span class="note">${E(x.fields.Kind)}</span>`:''}</a>`; }).join('')+'</div>'+add; mountDrop(el,r);
     for(const x of mine){
       SherpaAuth.graph(`${LISTS}/CORE_SelectionFiles/items/${x.id}/driveItem/thumbnails?$select=medium`).then(t=>{
         const u=t&&t.value&&t.value[0]&&t.value[0].medium&&t.value[0].medium.url; const sp=el.querySelector(`.spthumb[data-item="${x.id}"]`);
