@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v69</span>
+      <span class="header-version">v70</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -424,9 +424,12 @@
         <div id="pmeta-scope-edit" contenteditable="true" onpaste="onScopePaste(event)" data-placeholder="Paste directly from the DA, or type scope items — bold, italic, and bullet lists carry over from a paste." style="display:none;width:100%;min-height:100px;font-size:13px;color:var(--navy);line-height:1.6;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 2px">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel)">Requested Assessors</div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="copyAssessorRequest()">📋 Copy Request</button>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyAssessorRequest()">📋 Copy Request</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="createLodRequestCard()">＋ Create Request Card</button>
+          </div>
         </div>
-        <div style="font-size:12px;color:var(--silver);line-height:1.5;margin-bottom:8px;max-width:600px">Who's been asked to weigh in. Check names below (Admin), then Copy Request for text to paste into a Trello card — @mentions for whoever has a Trello username on file, plus the link to this project.</div>
+        <div style="font-size:12px;color:var(--silver);line-height:1.5;margin-bottom:8px;max-width:600px">Who's been asked to weigh in. Check names below (Admin). <b>Create Request Card</b> makes a real Trello card for you (currently testing against the PRE-CON | Byron Wolfe board); <b>Copy Request</b> instead copies paste-ready text — @mentions for whoever has a Trello username on file, plus the link to this project.</div>
         <div id="pmeta-assessors-view" style="font-size:13px;color:var(--navy)"></div>
         <div id="pmeta-assessors-edit" style="display:none;flex-direction:column;gap:10px"></div>
       </div>
@@ -665,7 +668,8 @@ const SP_CONFIG = {
   assessmentsColumnsUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Assessments/columns',
   configUrl:      'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Config/items',
   assessmentsUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/PB_Assessments/items',
-  teamMembersUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_TeamMembers/items'
+  teamMembersUrl: 'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_TeamMembers/items',
+  coreConfigUrl:  'https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWCore:/lists/CORE_Config/items'
 };
 
 // ══════════════════════════════════════════════════ SAMPLE PROJECT ══
@@ -1686,6 +1690,71 @@ async function copyAssessorRequest(){
     showToast('Request copied — paste it into your Trello card.');
   } catch(e) {
     showToast('Could not copy to clipboard — ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════ TRELLO REQUEST CARD ═══
+// Creates a real Trello card via the createLodRequestCard Azure Function
+// (azure-function-proxy/) — the Trello key/token never reach this tool, same
+// split as project-pipeline.html's own createTrelloBoard feature. This tool
+// only knows that function's URL, read from CORE_Config (LodTrelloCardProxyUrl).
+//
+// TESTING PHASE (per Byron, 2026-11-21): pointed at his personal "PRE-CON |
+// Byron Wolfe" board / "LOD/EST" list, NOT the real Sales Big Board yet.
+// Flip LOD_TRELLO_BOARD_NAME to 'Sales Big Board' once he confirms a real
+// test card works end to end, and update the helper text above the buttons.
+const LOD_TRELLO_BOARD_NAME = 'PRE-CON | Byron Wolfe';
+const LOD_TRELLO_LIST_NAME = 'LOD/EST';
+
+let _lodTrelloCardProxyUrl = null; // cached LodTrelloCardProxyUrl from CORE_Config — false once tried and missing
+async function _loadLodTrelloCardProxyUrl(){
+  if(_lodTrelloCardProxyUrl !== null) return _lodTrelloCardProxyUrl;
+  try {
+    const data = await graphFetch(`${SP_CONFIG.coreConfigUrl}?$expand=fields&$select=id,fields`);
+    const row = (data.value||[]).find(it => (it.fields?.Title || it.fields?.Key) === 'LodTrelloCardProxyUrl');
+    const url = row ? (row.fields?.Value || row.fields?.Value0 || '') : '';
+    _lodTrelloCardProxyUrl = url || false;
+  } catch(e) { _lodTrelloCardProxyUrl = false; }
+  return _lodTrelloCardProxyUrl;
+}
+
+async function createLodRequestCard(){
+  const projectId = document.getElementById('assess-project').value;
+  const proj = spProjects.find(p=>p.id===projectId);
+  if(!proj) return;
+  const requested = proj.requestedAssessors || [];
+  if(!requested.length){ showToast('Check off who you\'re asking before creating a request card.'); return; }
+  const usernames = requested.map(name => {
+    const tm = teamMembersList.find(t=>t.name===name);
+    return tm && tm.trello ? tm.trello : null;
+  }).filter(Boolean);
+  const link = `${location.origin}${location.pathname}?project=${encodeURIComponent(projectId)}`;
+  const mentions = requested.map(name => {
+    const tm = teamMembersList.find(t=>t.name===name);
+    return (tm && tm.trello) ? '@'+tm.trello : name;
+  }).join(' ');
+  const description = `${mentions}\nPlease complete a Levels of Development assessment for ${proj.name}:\n${link}`;
+  const url = await _loadLodTrelloCardProxyUrl();
+  if(!url){ showToast('Trello card creation isn\'t configured yet (LodTrelloCardProxyUrl in CORE_Config).'); return; }
+  showToast('Creating Trello card…');
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        boardName: LOD_TRELLO_BOARD_NAME,
+        listName: LOD_TRELLO_LIST_NAME,
+        cardName: `${proj.name} — LOD Assessment Request`,
+        description,
+        usernames
+      })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || ('Trello proxy error ' + res.status));
+    const failedNote = (data.failed && data.failed.length) ? ` (couldn't add: ${data.failed.join(', ')})` : '';
+    showToast(`Trello card created${failedNote}.`);
+  } catch(e) {
+    showToast('Could not create Trello card — ' + e.message);
   }
 }
 
