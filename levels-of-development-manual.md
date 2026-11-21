@@ -63,13 +63,13 @@ With Admin on, check off names from the team roster — grouped into **Sales**, 
 
 **Message** is a plain text box pre-filled for you — an `@mention` for each checked person who has a Trello username on file (plain name if they don't — see Team Members' Roster tab to add one), followed by a line asking them to assess the project and the link to it. It updates automatically as you check or uncheck names, right up until you type your own edit into it — once you've changed it by hand, your wording sticks (checking another name won't overwrite it), until you switch projects, which starts the box fresh again for the new one.
 
-**Create Request Card** sends whatever's currently in the Message box: it creates a real Trello card (named after the project) with that text, and adds each checked person who has a Trello username on file to it, so they actually get notified. This goes through a server-side proxy — CORE itself never holds a Trello credential — so it needs that proxy deployed and configured before it'll work; if it isn't, you'll get a toast saying so instead of a silent failure. *(Currently pointed at a test board while this feature is being dialed in — ask Byron if you're not sure it's live yet.)*
+**Create Request Card** sends whatever's currently in the Message box: it creates a real Trello card (named after the project), posts that text as the card's first **comment** (not the description — that's the only way Trello actually fires a "you were mentioned" notification for the `@mentions` in it), and adds each checked person who has a Trello username on file to it, so they actually get notified. This goes through a server-side proxy — CORE itself never holds a Trello credential — so it needs that proxy deployed and configured before it'll work; if it isn't, you'll get a toast saying so instead of a silent failure. *(Currently pointed at a test board while this feature is being dialed in — ask Byron if you're not sure it's live yet.)*
 
 **Copy Request** is the manual fallback, and still works even without the proxy configured: it copies the Message box's current text to your clipboard, for pasting into a Trello card yourself.
 
 ### What assessors see instead
 
-With Admin off, Scope of Work and Target Investment both show as plain, read-only text — no edit boxes, no Save buttons — and Requested Assessors shows the list of names without checkboxes. Both Create Request Card and Copy Request still work for everyone; checking people off is Admin-only.
+With Admin off, Scope of Work and Target Investment both show as plain, read-only text — no edit boxes, no Save buttons — and Requested Assessors shows only the list of names, nothing else: no Message box, no Copy Request, no Create Request Card. All three are Admin-only, same as checking off names.
 
 ## Part III — Getting several people to assess the same project
 
