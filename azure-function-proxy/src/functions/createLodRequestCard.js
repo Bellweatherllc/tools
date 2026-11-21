@@ -4,12 +4,13 @@ const { app } = require('@azure/functions');
 // for this feature — they live in Azure Function App Settings (the same
 // TRELLO_API_KEY / TRELLO_TOKEN createTrelloBoard.js already uses), never in
 // the browser tool or in source control. The client sends a board name, a
-// list name, a card name/description, and a list of Trello usernames; this
-// finds that board+list by name, creates the card, and adds each person to
-// the board (so they can actually be added to the card — Trello won't let you
-// add a card member who isn't already a board member) and then to the card
-// itself, server-side. The message (with its @mentions) is posted as a card
-// comment, not the card description — Trello only fires "you were mentioned"
+// list name, a card name/description, a list of Trello usernames, and an
+// optional due date; this finds that board+list by name, creates the card
+// (with the due date, when given), and adds each person to the board (so
+// they can actually be added to the card — Trello won't let you add a card
+// member who isn't already a board member) and then to the card itself,
+// server-side. The message (with its @mentions) is posted as a card comment,
+// not the card description — Trello only fires "you were mentioned"
 // notifications for @mentions inside a comment.
 
 app.http('createLodRequestCard', {
@@ -30,6 +31,8 @@ app.http('createLodRequestCard', {
     const usernames = Array.isArray(body.usernames)
       ? body.usernames.map(u => (u || '').toString().trim().replace(/^@/, '')).filter(Boolean).slice(0, 50)
       : [];
+    const dueRaw = (body.due || '').toString().trim();
+    const due = dueRaw && !isNaN(Date.parse(dueRaw)) ? dueRaw : null;
     if (!boardName) return { status: 400, jsonBody: { error: 'boardName required' } };
     if (!listName) return { status: 400, jsonBody: { error: 'listName required' } };
     if (!cardName) return { status: 400, jsonBody: { error: 'cardName required' } };
@@ -79,6 +82,7 @@ app.http('createLodRequestCard', {
 
       const cardParams = { idList: list.id, name: cardName };
       if (memberIds.length) cardParams.idMembers = memberIds.join(',');
+      if (due) cardParams.due = due;
       const cRes = await fetch(`https://api.trello.com/1/cards?${qs(cardParams)}`, { method: 'POST' });
       if (!cRes.ok) throw new Error('Card create failed: ' + cRes.status + ' ' + await cRes.text());
       const card = await cRes.json();
