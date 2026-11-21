@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v74</span>
+      <span class="header-version">v75</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -429,11 +429,14 @@
         <div id="pmeta-assessors-edit" style="display:none;flex-direction:column;gap:10px"></div>
         <div id="pmeta-request-controls" style="display:none">
           <div style="margin-top:14px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel);margin-bottom:5px">Deadline (optional)</div>
+            <input type="date" id="pmeta-request-due" onchange="onLodRequestDueChange()" style="font-size:12.5px;color:var(--navy);padding:8px 10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit">
+          </div>
+          <div style="margin-top:14px">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel);margin-bottom:5px">Message</div>
             <textarea id="pmeta-request-message" oninput="_requestMessageDirty=true" rows="4" style="width:100%;font-size:12.5px;color:var(--navy);line-height:1.5;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit;resize:vertical"></textarea>
           </div>
           <div style="display:flex;gap:8px;margin-top:10px">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="copyAssessorRequest()">📋 Copy Request</button>
             <button type="button" class="btn btn-primary btn-sm" onclick="createLodRequestCard()">＋ Create Request Card</button>
           </div>
         </div>
@@ -1041,6 +1044,14 @@ async function fetchTeamMembersList(){
 // Excludes Operations entirely, and Logistics Coordinators / Field Mechanics
 // specifically (they're filed under Production by department but aren't who
 // you'd ask for an LOD read), matching Pipeline's own role exclusions.
+// Per Byron: Joey, Byron, and Ryan pinned first (in that order) within
+// whichever group each actually lands in — everyone else stays alphabetical.
+const LOD_ASSESSOR_PRIORITY = ['joey','byron','ryan'];
+function _lodPriorityRank(tm){
+  const first = (tm.name||'').trim().split(/\s+/)[0].toLowerCase();
+  const idx = LOD_ASSESSOR_PRIORITY.indexOf(first);
+  return idx === -1 ? LOD_ASSESSOR_PRIORITY.length : idx;
+}
 function groupedAssessorRoster(){
   const groups = { Sales: [], Design: [], Production: [] };
   teamMembersList.forEach(tm => {
@@ -1050,6 +1061,12 @@ function groupedAssessorRoster(){
     if(dept.startsWith('sale')) groups.Sales.push(tm);
     else if(dept === 'design') groups.Design.push(tm);
     else if(dept === 'production') groups.Production.push(tm);
+  });
+  Object.keys(groups).forEach(k => {
+    groups[k] = groups[k].map((tm,i)=>({tm,i})).sort((a,b) => {
+      const ra = _lodPriorityRank(a.tm), rb = _lodPriorityRank(b.tm);
+      return ra !== rb ? ra - rb : a.i - b.i;
+    }).map(x=>x.tm);
   });
   return groups;
 }
@@ -1634,9 +1651,29 @@ async function saveScopeOfWork(){
   renderScopeOfWork(proj);
 }
 
+// Formats a <input type=date> value ("YYYY-MM-DD") for the message text —
+// e.g. "Mon, Nov 24". Returns '' if dateStr is empty or unparsable.
+function formatLodDueDate(dateStr){
+  if(!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+}
+// Converts the same date value to a full ISO timestamp (5pm local) for Trello's
+// card `due` field, which needs a real date-time, not a bare date.
+function lodDueDateToIso(dateStr){
+  if(!dateStr) return null;
+  const d = new Date(dateStr + 'T17:00:00');
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+function onLodRequestDueChange(){
+  const projectId = document.getElementById('assess-project')?.value;
+  const proj = projectId && spProjects.find(p=>p.id===projectId);
+  if(proj) renderRequestedAssessors(proj);
+}
+
 // The @mention-prefixed boilerplate shown (and editable) in the Message box,
-// and what Copy Request / Create Request Card both actually send — building
-// it in one place keeps all three in sync.
+// and what Create Request Card actually sends — building it in one place
+// keeps both in sync.
 function buildDefaultRequestMessage(proj){
   const requested = proj.requestedAssessors || [];
   const mentions = requested.map(name => {
@@ -1644,7 +1681,9 @@ function buildDefaultRequestMessage(proj){
     return (tm && tm.trello) ? '@'+tm.trello : name;
   }).join(' ');
   const link = `${location.origin}${location.pathname}?project=${encodeURIComponent(proj.id)}`;
-  return `${mentions}\nPlease complete a Levels of Development assessment for ${proj.name}:\n${link}`;
+  const dueVal = document.getElementById('pmeta-request-due')?.value || '';
+  const byClause = dueVal ? ` by ${formatLodDueDate(dueVal)}` : '';
+  return `${mentions}\nPlease complete a Levels of Development assessment for ${proj.name}${byClause}:\n${link}`;
 }
 
 // Requested Assessors: who's been asked to weigh in on this project. Double
@@ -1652,18 +1691,19 @@ function buildDefaultRequestMessage(proj){
 // list for the Message box's @mentions. No Trello API ever reaches this tool
 // directly (deliberately — see Create Request Card below, which goes through
 // a server-side proxy); Admin checks names here, then the message gets sent
-// to Trello (via the proxy) or copied for pasting in by hand.
+// to Trello via the proxy.
 function renderRequestedAssessors(proj){
   const viewEl = document.getElementById('pmeta-assessors-view');
   const editEl = document.getElementById('pmeta-assessors-edit');
   const msgEl = document.getElementById('pmeta-request-message');
+  const dueEl = document.getElementById('pmeta-request-due');
   const controlsEl = document.getElementById('pmeta-request-controls');
   if(!viewEl || !editEl) return;
   if(controlsEl) controlsEl.style.display = adminMode ? 'block' : 'none';
   const requested = proj.requestedAssessors || [];
   viewEl.textContent = requested.length ? requested.join(', ') : 'No one requested yet.';
   if(msgEl){
-    if(_requestMessageProjectId !== proj.id){ _requestMessageProjectId = proj.id; _requestMessageDirty = false; }
+    if(_requestMessageProjectId !== proj.id){ _requestMessageProjectId = proj.id; _requestMessageDirty = false; if(dueEl) dueEl.value = ''; }
     if(!_requestMessageDirty) msgEl.value = buildDefaultRequestMessage(proj);
   }
   if(adminMode){
@@ -1711,21 +1751,6 @@ async function toggleRequestedAssessor(projectId, checkbox){
   }
 }
 
-async function copyAssessorRequest(){
-  const projectId = document.getElementById('assess-project').value;
-  const proj = spProjects.find(p=>p.id===projectId);
-  if(!proj) return;
-  const requested = proj.requestedAssessors || [];
-  if(!requested.length){ showToast('Check off who you\'re asking before copying a request.'); return; }
-  const text = document.getElementById('pmeta-request-message')?.value || buildDefaultRequestMessage(proj);
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast('Request copied — paste it into your Trello card.');
-  } catch(e) {
-    showToast('Could not copy to clipboard — ' + e.message);
-  }
-}
-
 // ═══════════════════════════════════════ TRELLO REQUEST CARD ═══
 // Creates a real Trello card via the createLodRequestCard Azure Function
 // (azure-function-proxy/) — the Trello key/token never reach this tool, same
@@ -1763,6 +1788,7 @@ async function createLodRequestCard(){
     return tm && tm.trello ? tm.trello : null;
   }).filter(Boolean);
   const description = document.getElementById('pmeta-request-message')?.value || buildDefaultRequestMessage(proj);
+  const due = lodDueDateToIso(document.getElementById('pmeta-request-due')?.value || '');
   const url = await _loadLodTrelloCardProxyUrl();
   if(!url){ showToast('Trello card creation isn\'t configured yet (LodTrelloCardProxyUrl in CORE_Config).'); return; }
   showToast('Creating Trello card…');
@@ -1775,7 +1801,8 @@ async function createLodRequestCard(){
         listName: LOD_TRELLO_LIST_NAME,
         cardName: `${proj.name} — LOD Assessment Request`,
         description,
-        usernames
+        usernames,
+        due
       })
     });
     const data = await res.json().catch(()=>({}));

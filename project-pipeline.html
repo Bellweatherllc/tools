@@ -497,19 +497,18 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:7px 9px;margin-bottom:12px;}
 .tb-name-inp:focus{outline:none;border-color:rgba(255,255,255,.4);}
 .tb-ppl-lbl{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-bottom:6px;}
-/* v1188: person list is grouped into department cards (OPS/SALES/DESIGN/PRODUCTION,
-   plus ADDED for anyone typed in by hand) instead of one flat list — each card's
-   header, checkbox fill, and role tag share one accent color so the department a
-   person's being added for is visible at a glance. */
+/* v1188: person list is grouped into department cards (OPS/SALES/DESIGN/PRODUCTION)
+   instead of one flat list — each card's header, checkbox fill, and role tag share
+   one accent color so the department a person's being added for is visible at a
+   glance. Anyone added by hand (not part of a group) renders as a plain, untagged
+   row spanning both columns, below the cards — see .tb-person in _tbRenderList. */
 .tb-ppl-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
 .tb-group{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;}
-.tb-group-other{grid-column:1 / -1;}
 .tb-group-hdr{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;}
 .tb-group-ops .tb-group-hdr{color:var(--gold);}
 .tb-group-sales .tb-group-hdr{color:#e8935c;}
 .tb-group-design .tb-group-hdr{color:#5b8cde;}
 .tb-group-production .tb-group-hdr{color:#4caf6d;}
-.tb-group-other .tb-group-hdr{color:rgba(255,255,255,.4);}
 .tb-group-ops input[type=checkbox]{accent-color:var(--gold);}
 .tb-group-sales input[type=checkbox]{accent-color:#e8935c;}
 .tb-group-design input[type=checkbox]{accent-color:#5b8cde;}
@@ -3752,7 +3751,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1188';
+const CORE_VERSION = 'v1189';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -14450,14 +14449,19 @@ const TB_GROUPS=[
   {key:'production',label:'PRODUCTION',match:s=>s==='Production'||s==='LC'},
 ];
 function _tbSrcTag(source){ return source==='Production'?'PM':String(source||'').toUpperCase(); }
-function _tbBuildPersonRow(p){
+// opts.noTag: skip the role tag — used for manually-added people, who aren't in
+// any department group and so have no group-derived tag to show.
+function _tbBuildPersonRow(p,opts){
+  opts=opts||{};
   const row=el('div','tb-person'+(p.trello?'':' tb-nohandle'));
   const cb=document.createElement('input'); cb.type='checkbox';
   cb.checked=!!p.checked&&!!p.trello; cb.disabled=!p.trello;
   cb.addEventListener('change',()=>{ p.checked=cb.checked; });
   row.appendChild(cb);
   const nm=el('span','tb-person-name'); nm.textContent=p.fullLabel; row.appendChild(nm);
-  const src=el('span','tb-person-src'); src.textContent=_tbSrcTag(p.source); row.appendChild(src);
+  if(!opts.noTag){
+    const src=el('span','tb-person-src'); src.textContent=_tbSrcTag(p.source); row.appendChild(src);
+  }
   return row;
 }
 function _tbRenderList(){
@@ -14471,13 +14475,14 @@ function _tbRenderList(){
     people.forEach(p=>card.appendChild(_tbBuildPersonRow(p)));
     list.appendChild(card);
   });
+  // Anyone added by hand via "Add someone" who doesn't match a department group —
+  // no separate "Added" card/tag per Byron; just plain rows, full width, below the cards.
   const other=_tbState.people.filter(p=>!TB_GROUPS.some(g=>g.match(p.source)));
-  if(other.length){
-    const card=el('div','tb-group tb-group-other');
-    const hdr=el('div','tb-group-hdr'); hdr.textContent='ADDED'; card.appendChild(hdr);
-    other.forEach(p=>card.appendChild(_tbBuildPersonRow(p)));
-    list.appendChild(card);
-  }
+  other.forEach(p=>{
+    const row=_tbBuildPersonRow(p,{noTag:true});
+    row.style.gridColumn='1 / -1';
+    list.appendChild(row);
+  });
 }
 function _tbAddPersonDirect(t){ // add a known ALL_TEAM entry straight through, no name-guessing
   if(!_tbState||!t) return;
