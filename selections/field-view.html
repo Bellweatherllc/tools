@@ -53,7 +53,7 @@ button{font:inherit;color:inherit}
 main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
 .note{color:var(--muted);font-size:13.5px}
 .empty{padding:28px 8px;text-align:center;color:var(--muted)}
-.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;scrollbar-width:none;position:relative}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;border:1px solid var(--line);background:#fff;border-radius:999px;font:500 14px/1 var(--sans);padding:11px 14px;white-space:nowrap}
 .chips .sep{flex:none;width:1px;background:var(--line);margin:4px 2px}
@@ -78,8 +78,6 @@ main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
 .imgs a{flex:none;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--cotton);display:block}
 .imgs img{width:100%;height:100%;object-fit:cover;display:block}
 .sgh{display:flex;justify-content:space-between;align-items:baseline;font:600 12px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:14px 4px 8px}
-.chips.wrap{flex-wrap:wrap;overflow:visible}
-.chips.wrap .chip{padding:9px 12px}
 .chip .n{opacity:.6;font-weight:500;margin-left:4px}
 .acts.lead{margin:10px 0 0}
 .acts.lead .btn{flex:1 1 0;white-space:nowrap}
@@ -186,7 +184,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v9';
+const CORE_VERSION = 'v10';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -412,7 +410,7 @@ function render(){
   }
   else if(tab==='where'){
     const {all,groups}=whereVisible(list);
-    h+=`<div class="chips wrap" role="group" aria-label="Where">${[['All',list.length],...all.map(([k,its])=>[k,its.length])].map(([k,n])=>`<button class="chip" data-wf="${esc(k)}" aria-pressed="${k===whereF}">${esc(k==='All'?'All':wName(k))}<span class="n">${n}</span></button>`).join('')}</div>`;
+    h+=`<div class="chips" role="group" aria-label="Where">${[['All',list.length],...all.map(([k,its])=>[k,its.length])].map(([k,n])=>`<button class="chip" data-wf="${esc(k)}" aria-pressed="${k===whereF}">${esc(k==='All'?'All':wName(k))}<span class="n">${n}</span></button>`).join('')}</div>`;
     const sel=all.find(x=>x[0]===whereF);
     if(sel&&(whereF==='Stokley'||sel[1].length>6)){
       const keys=grouped(sel[1],i=>wSubKey(whereF,i),whereF==='Stokley'?(x,y)=>x.localeCompare(y,undefined,{numeric:true}):undefined);
@@ -431,7 +429,14 @@ function render(){
       h+=`<section class="group" id="wg-${esc(b)}">${head?`<div class="gh"><h2>${esc(wName(b))}</h2><span class="gh-r">${selAll?`<button class="link" data-selall="${esc(b)}">${selAll}</button>`:''}<span class="note">${its.length}</span></span></div>`:''}${body}</section>`;
     }
   }
+  const keepX={}; document.querySelectorAll('#main .chips').forEach(r=>{ keepX[r.getAttribute('aria-label')]=r.scrollLeft; });
   $('main').innerHTML=h;
+  document.querySelectorAll('#main .chips').forEach(r=>{   // rows are rebuilt on every tap: keep where you had swiped to, and keep the chosen chip in view
+    const k=r.getAttribute('aria-label'); if(keepX[k]) r.scrollLeft=keepX[k];
+    const on=r.querySelector('[aria-pressed="true"]'); if(!on) return;
+    const rr=r.getBoundingClientRect(), cr=on.getBoundingClientRect();
+    if(cr.right>rr.right-8||cr.left<rr.left+8) r.scrollLeft=Math.max(0,r.scrollLeft+cr.left-rr.left-16);
+  });
   const bar=$('bar'); bar.classList.toggle('hidden',!(tab==='where'&&picked.size));
   $('barTxt').textContent=`${picked.size} selected`; $('barBtn').textContent=picked.size>1?`Brought to site (${picked.size})`:'Brought to site'; lazyThumbs();
 }
