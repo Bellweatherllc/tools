@@ -85,9 +85,9 @@
   .guide-text strong{color:var(--navy);}
   .guide-edit{width:100%;border:1.5px solid var(--pink-admin-border);border-radius:6px;padding:10px 12px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--navy);background:white;resize:vertical;min-height:80px;margin-bottom:18px;line-height:1.7;}
   [contenteditable]:empty:before{content:attr(data-placeholder);color:var(--silver);}
-  #pmeta-scope-view p{margin:0 0 10px;}
-  #pmeta-scope-view p:last-child{margin-bottom:0;}
-  #pmeta-scope-view ul,#pmeta-scope-view ol{margin:0 0 10px;padding-left:20px;}
+  #pmeta-scope-view p,#pmeta-scope-edit p{margin:0 0 10px;}
+  #pmeta-scope-view p:last-child,#pmeta-scope-edit p:last-child{margin-bottom:0;}
+  #pmeta-scope-view ul,#pmeta-scope-view ol,#pmeta-scope-edit ul,#pmeta-scope-edit ol{margin:0 0 10px;padding-left:20px;}
   .rt-btn{min-width:30px;height:28px;padding:0 8px;border:1.5px solid var(--cloud);background:var(--white);border-radius:5px;font-size:12px;color:var(--navy);cursor:pointer;}
   .rt-btn:hover{background:var(--snow);}
   .guide-edit:focus{outline:none;border-color:var(--red);}
@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v70</span>
+      <span class="header-version">v71</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -421,17 +421,21 @@
           <button type="button" class="rt-btn" onmousedown="event.preventDefault()" onclick="document.execCommand('underline')" title="Underline"><u>U</u></button>
           <button type="button" class="rt-btn" onmousedown="event.preventDefault()" onclick="document.execCommand('insertUnorderedList')" title="Bullet list">&bull; List</button>
         </div>
-        <div id="pmeta-scope-edit" contenteditable="true" onpaste="onScopePaste(event)" data-placeholder="Paste directly from the DA, or type scope items — bold, italic, and bullet lists carry over from a paste." style="display:none;width:100%;min-height:100px;font-size:13px;color:var(--navy);line-height:1.6;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit"></div>
+        <div id="pmeta-scope-edit" contenteditable="true" onpaste="onScopePaste(event)" data-placeholder="Paste directly from the DA, or type scope items — bold, italic, and bullet lists carry over from a paste." style="display:none;width:100%;min-height:100px;font-size:13px;color:var(--navy);line-height:1.7;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 2px">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel)">Requested Assessors</div>
-          <div style="display:flex;gap:8px">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="copyAssessorRequest()">📋 Copy Request</button>
-            <button type="button" class="btn btn-primary btn-sm" onclick="createLodRequestCard()">＋ Create Request Card</button>
-          </div>
         </div>
-        <div style="font-size:12px;color:var(--silver);line-height:1.5;margin-bottom:8px;max-width:600px">Who's been asked to weigh in. Check names below (Admin). <b>Create Request Card</b> makes a real Trello card for you (currently testing against the PRE-CON | Byron Wolfe board); <b>Copy Request</b> instead copies paste-ready text — @mentions for whoever has a Trello username on file, plus the link to this project.</div>
+        <div style="font-size:12px;color:var(--silver);line-height:1.5;margin-bottom:8px;max-width:600px">Who's been asked to weigh in. Check names below (Admin), edit the message if you want, then send it. <b>Create Request Card</b> makes a real Trello card (currently testing against the PRE-CON | Byron Wolfe board); <b>Copy Request</b> copies the message text instead, to paste in yourself.</div>
         <div id="pmeta-assessors-view" style="font-size:13px;color:var(--navy)"></div>
         <div id="pmeta-assessors-edit" style="display:none;flex-direction:column;gap:10px"></div>
+        <div style="margin-top:14px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel);margin-bottom:5px">Message</div>
+          <textarea id="pmeta-request-message" oninput="_requestMessageDirty=true" rows="4" style="width:100%;font-size:12.5px;color:var(--navy);line-height:1.5;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit;resize:vertical"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="copyAssessorRequest()">📋 Copy Request</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="createLodRequestCard()">＋ Create Request Card</button>
+        </div>
       </div>
     </div>
     <div id="assess-blocks"></div>
@@ -843,6 +847,13 @@ let graphToken   = null;
 let spProjects   = [MOCK_PROJECT];   // live list from SharePoint — sample project until a real fetch replaces it
 let spLoaded     = false;
 let teamMembersList = []; // [{name, trello}] — active CORE_TeamMembers, for the Requested Assessors picker
+// The request-message textarea auto-fills from the checked assessors, but never
+// clobbers a hand-edit — _requestMessageDirty tracks whether the box holds
+// Byron's own wording rather than the auto-generated default, and resets
+// whenever the project changes (a different project's default shouldn't
+// inherit edits meant for the last one).
+let _requestMessageDirty = false;
+let _requestMessageProjectId = null;
 let currentUser  = {name:'', dept:'', email:''};
 let currentProjectId = ''; // shared across Assess/Raw Results/Analysis so switching tabs keeps the project selected
 
@@ -1622,17 +1633,36 @@ async function saveScopeOfWork(){
   renderScopeOfWork(proj);
 }
 
+// The @mention-prefixed boilerplate shown (and editable) in the Message box,
+// and what Copy Request / Create Request Card both actually send — building
+// it in one place keeps all three in sync.
+function buildDefaultRequestMessage(proj){
+  const requested = proj.requestedAssessors || [];
+  const mentions = requested.map(name => {
+    const tm = teamMembersList.find(t=>t.name===name);
+    return (tm && tm.trello) ? '@'+tm.trello : name;
+  }).join(' ');
+  const link = `${location.origin}${location.pathname}?project=${encodeURIComponent(proj.id)}`;
+  return `${mentions}\nPlease complete a Levels of Development assessment for ${proj.name}:\n${link}`;
+}
+
 // Requested Assessors: who's been asked to weigh in on this project. Double
 // duty, per Byron — it's both the record of who was asked, and the source
-// list for the Copy Request button's @mentions. No Trello API is wired up
-// (deliberately — see Copy Request below); Admin checks names here, then
-// pastes the copied text into a Trello card by hand.
+// list for the Message box's @mentions. No Trello API ever reaches this tool
+// directly (deliberately — see Create Request Card below, which goes through
+// a server-side proxy); Admin checks names here, then the message gets sent
+// to Trello (via the proxy) or copied for pasting in by hand.
 function renderRequestedAssessors(proj){
   const viewEl = document.getElementById('pmeta-assessors-view');
   const editEl = document.getElementById('pmeta-assessors-edit');
+  const msgEl = document.getElementById('pmeta-request-message');
   if(!viewEl || !editEl) return;
   const requested = proj.requestedAssessors || [];
   viewEl.textContent = requested.length ? requested.join(', ') : 'No one requested yet.';
+  if(msgEl){
+    if(_requestMessageProjectId !== proj.id){ _requestMessageProjectId = proj.id; _requestMessageDirty = false; }
+    if(!_requestMessageDirty) msgEl.value = buildDefaultRequestMessage(proj);
+  }
   if(adminMode){
     editEl.style.display = 'flex';
     viewEl.style.display = 'none';
@@ -1679,12 +1709,7 @@ async function copyAssessorRequest(){
   if(!proj) return;
   const requested = proj.requestedAssessors || [];
   if(!requested.length){ showToast('Check off who you\'re asking before copying a request.'); return; }
-  const mentions = requested.map(name => {
-    const tm = teamMembersList.find(t=>t.name===name);
-    return (tm && tm.trello) ? '@'+tm.trello : name;
-  }).join(' ');
-  const link = `${location.origin}${location.pathname}?project=${encodeURIComponent(projectId)}`;
-  const text = `${mentions}\nPlease complete a Levels of Development assessment for ${proj.name}:\n${link}`;
+  const text = document.getElementById('pmeta-request-message')?.value || buildDefaultRequestMessage(proj);
   try {
     await navigator.clipboard.writeText(text);
     showToast('Request copied — paste it into your Trello card.');
@@ -1728,12 +1753,7 @@ async function createLodRequestCard(){
     const tm = teamMembersList.find(t=>t.name===name);
     return tm && tm.trello ? tm.trello : null;
   }).filter(Boolean);
-  const link = `${location.origin}${location.pathname}?project=${encodeURIComponent(projectId)}`;
-  const mentions = requested.map(name => {
-    const tm = teamMembersList.find(t=>t.name===name);
-    return (tm && tm.trello) ? '@'+tm.trello : name;
-  }).join(' ');
-  const description = `${mentions}\nPlease complete a Levels of Development assessment for ${proj.name}:\n${link}`;
+  const description = document.getElementById('pmeta-request-message')?.value || buildDefaultRequestMessage(proj);
   const url = await _loadLodTrelloCardProxyUrl();
   if(!url){ showToast('Trello card creation isn\'t configured yet (LodTrelloCardProxyUrl in CORE_Config).'); return; }
   showToast('Creating Trello card…');
