@@ -47,7 +47,7 @@ button{font:inherit;color:inherit}
 .search input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
 .search .clr{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:22px;line-height:1;padding:6px 8px;color:var(--muted)}
 .tabs{display:flex;gap:4px;margin-top:10px}
-.tabs button{flex:1;border:0;background:transparent;color:rgba(255,255,255,.75);font:600 14px/1 var(--sans);padding:9px 4px;border-bottom:2px solid transparent}
+.tabs button{flex:1;border:0;background:transparent;color:rgba(255,255,255,.75);font:600 13.5px/1 var(--sans);padding:9px 2px;border-bottom:2px solid transparent;white-space:nowrap}
 .tabs button[aria-selected="true"]{color:#fff;border-bottom-color:#fff}
 /* body */
 main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
@@ -79,6 +79,19 @@ main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
 .imgs img{width:100%;height:100%;object-fit:cover;display:block}
 .sgh{display:flex;justify-content:space-between;align-items:baseline;font:600 12px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:14px 4px 8px}
 .chip .n{opacity:.6;font-weight:500;margin-left:4px}
+.lrow{display:flex;align-items:center;gap:10px;width:100%;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-height:56px;margin-bottom:6px}
+.lrow:active{background:#faf8f4}
+.lrow .main{flex:1;min-width:0}
+.lrow .t{font-weight:600;font-size:15.5px;overflow-wrap:anywhere}
+.lrow .c{color:var(--muted);font-size:13.5px;margin-top:1px}
+.prog{margin:2px 0 14px;font-size:15px}
+.prog .bar2{height:6px;border-radius:3px;background:var(--line);margin-top:8px;overflow:hidden}
+.prog .bar2 i{display:block;height:100%;background:var(--site)}
+.grp>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font:400 19px/1.2 var(--serif);padding:14px 4px 10px;min-height:48px}
+.grp>summary::-webkit-details-marker{display:none}
+.grp>summary::after{content:"Show";font:600 14px/1 var(--sans);color:var(--navy);margin-left:auto;padding-left:12px}
+.grp[open]>summary::after{content:"Hide"}
+.grp>summary .note{margin-left:10px}
 .acts.lead{margin:10px 0 0}
 .acts.lead .btn{flex:1 1 0;white-space:nowrap}
 .fl{display:block;padding:11px 0;color:var(--navy);font-weight:600;overflow-wrap:anywhere}
@@ -165,7 +178,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
     </div>
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="rooms" aria-selected="true">By room</button>
-      <button role="tab" data-tab="check" aria-selected="false">Install checklist</button>
+      <button role="tab" data-tab="check" aria-selected="false">Ready to install?</button>
       <button role="tab" data-tab="where" aria-selected="false">Where it is</button>
     </nav>
   </header>
@@ -184,7 +197,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v10';
+const CORE_VERSION = 'v11';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -341,7 +354,7 @@ function haystack(i){ return [i.title,i.room,i.category,i.onHand,i.ordered,i.not
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem('sf-'+k); localStorage.setItem('sf-'+k,v); }catch(e){ return null; } };
-let JOBS=[], job=null, items=[], tab=pref('tab')||'rooms', q='', trade='All', roomF='All', whereF='All', whereS='All', onlyMissing=false, picked=new Set();
+let JOBS=[], job=null, items=[], tab=pref('tab')||'rooms', q='', trade='All', roomF='All', whereF='All', whereS='All', hereOpen=false, picked=new Set();
 const terms=()=>q.toLowerCase().split(/\s+/).filter(t=>t&&t!==String(job).toLowerCase());
 function hl(text){ const ts=terms(); let h=esc(text); if(!ts.length) return h;
   for(const t of ts){ const re=new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'); h=h.replace(/(<[^>]*>)|([^<]+)/g,(m,tag,txt)=>tag?tag:txt.replace(re,'<mark>$1</mark>')); }
@@ -369,6 +382,13 @@ function grouped(list,keyFn,order){
 }
 
 /* ── Views ──────────────────────────────────────────────────────────────── */
+/* Ready to install?: for the chosen trade, what is not on site yet, what is owner supplied (arrival not tracked, so never assumed here), and what is on site. */
+function checkSets(list){
+  const L=list.filter(i=>trade==='All'||tradeOf(i)===trade);
+  const byRoom=a=>a.slice().sort((x,y)=>(x.room==='Unassigned')-(y.room==='Unassigned')||x.room.localeCompare(y.room)||x.short.localeCompare(y.short));
+  return {L,todo:byRoom(L.filter(i=>!['site','own'].includes(i.state.k))),own:byRoom(L.filter(i=>i.state.k==='own')),here:byRoom(L.filter(i=>i.state.k==='site'))};
+}
+const lrow=(i,box)=>`<div class="lrow" role="button" tabindex="0" data-open="${i.id}">${box?`<label class="selbox"><input type="checkbox" class="sel" data-pick="${i.id}" ${picked.has(i.id)?'checked':''} aria-label="Select ${esc(i.short)}"></label>`:''}<div class="main"><div class="t">${hl(i.short)}</div><div class="c">${hl(i.room)}</div></div>${tag(i)}</div>`;
 /* Where it is: group chips (with counts) and, inside a chosen group, a sub row: bays for Stokley, rooms for a big group. */
 const W_ORDER=['On site','Stokley','Received','Ordered','Not ordered','Not selected','Owner supplied'];
 const wBucket=i=>i.state.k==='store'&&/^stokley/i.test(i.state.label)?'Stokley':i.state.label;
@@ -401,12 +421,17 @@ function render(){
   }
   else if(tab==='check'){
     const trades=['All',...[...new Set(items.map(tradeOf))].sort()];
-    h+=`<div class="chips" role="group" aria-label="Filter"><button class="chip" data-missing aria-pressed="${onlyMissing}">Not on site</button><span class="sep"></span>${trades.map(t=>`<button class="chip" data-trade="${esc(t)}" aria-pressed="${t===trade}">${esc(t)}</button>`).join('')}</div>`;
-    const L=list.filter(i=>(trade==='All'||tradeOf(i)===trade)&&(!onlyMissing||!['site','own'].includes(i.state.k)));
-    const onSite=L.filter(i=>i.state.k==='site').length;
-    h+=`<p class="note">${onSite} of ${L.length} on site${trade==='All'?'':' for '+esc(trade)}.</p>`;
-    for(const [room,its] of grouped(L,i=>i.room)) h+=`<section class="group"><div class="gh"><h2>${hl(room)}</h2><span class="note">${its.filter(i=>i.state.k==='site').length}/${its.length} on site</span></div>${its.map(i=>card(i)).join('')}</section>`;
-    if(!L.length) h+='<div class="empty">Everything here is on site.</div>';
+    if(!trades.includes(trade)) trade='All';
+    h+=`<div class="chips" role="group" aria-label="Trade">${trades.map(t=>`<button class="chip" data-trade="${esc(t)}" aria-pressed="${t===trade}">${esc(t==='All'?'All trades':t)}</button>`).join('')}</div>`;
+    const {L,todo,own,here}=checkSets(list);
+    const pct=L.length?Math.round(here.length/L.length*100):0;
+    h+=`<div class="prog"><b>${here.length} of ${L.length}</b> on site${trade==='All'?'':' for '+esc(trade)}${own.length?` · ${own.length} owner supplied`:''}<div class="bar2" aria-hidden="true"><i style="width:${pct}%"></i></div></div>`;
+    if(L.length&&!todo.length&&!own.length) h+='<p class="note" style="margin:0 4px 8px">Everything here is on site.</p>';
+    const selHead=(key,arr)=>{ const all=arr.length&&arr.every(i=>picked.has(i.id)); return arr.length?`<button class="link" data-selall="${key}">${all?'Clear':'Select all'}</button>`:''; };
+    if(todo.length) h+=`<section class="group"><div class="gh"><h2>Not on site yet</h2><span class="gh-r">${selHead('check-todo',todo)}<span class="note">${todo.length}</span></span></div>${todo.map(i=>lrow(i,true)).join('')}</section>`;
+    if(own.length) h+=`<section class="group"><div class="gh"><h2>Owner supplied</h2><span class="gh-r">${selHead('check-own',own)}<span class="note">${own.length}</span></span></div><p class="note" style="margin:0 4px 8px">Arrival isn't tracked. Tick the ones you can see on site.</p>${own.map(i=>lrow(i,true)).join('')}</section>`;
+    if(here.length) h+=`<details class="grp" id="hereBox"${hereOpen||(!todo.length&&!own.length)?' open':''}><summary><span>On site</span><span class="note">${here.length}</span></summary>${here.map(i=>lrow(i,false)).join('')}</details>`;
+    if(!L.length) h+='<div class="empty">Nothing here matches.</div>';
   }
   else if(tab==='where'){
     const {all,groups}=whereVisible(list);
@@ -437,7 +462,7 @@ function render(){
     const rr=r.getBoundingClientRect(), cr=on.getBoundingClientRect();
     if(cr.right>rr.right-8||cr.left<rr.left+8) r.scrollLeft=Math.max(0,r.scrollLeft+cr.left-rr.left-16);
   });
-  const bar=$('bar'); bar.classList.toggle('hidden',!(tab==='where'&&picked.size));
+  const bar=$('bar'); bar.classList.toggle('hidden',!((tab==='where'||tab==='check')&&picked.size));
   $('barTxt').textContent=`${picked.size} selected`; $('barBtn').textContent=picked.size>1?`Brought to site (${picked.size})`:'Brought to site'; lazyThumbs();
 }
 // BT keeps "Order Date" and "Ordered?" (free text like "Yes, Build") apart. One line reads better: "Sep 29, Bedrosians", "Yes, Build", "No".
@@ -502,13 +527,14 @@ document.addEventListener('click',e=>{
   const t=e.target;
   const ac=t.closest('[data-act]'); if(ac){ act(ac.dataset.act,ac.dataset.id); return; }
   if(t.closest('.selbox')){ if(t.tagName==='INPUT'){ const id=t.dataset.pick; t.checked?picked.add(id):picked.delete(id); render(); } return; }   // label tap re-fires on the input
-  const sa=t.closest('[data-selall]'); if(sa){ const g=whereVisible(items.filter(matches)).groups.find(x=>x[0]===sa.dataset.selall); const L=(g?g[1]:[]).filter(i=>i.state.k==='store'); const all=L.every(i=>picked.has(i.id)); L.forEach(i=>all?picked.delete(i.id):picked.add(i.id)); render(); return; }   // only this group's items, as filtered
+  const sa=t.closest('[data-selall]');
+  if(sa&&String(sa.dataset.selall).startsWith('check-')){ const S=checkSets(items.filter(matches)); const L=sa.dataset.selall==='check-todo'?S.todo:S.own; const all=L.every(i=>picked.has(i.id)); L.forEach(i=>all?picked.delete(i.id):picked.add(i.id)); render(); return; }
+  if(sa){ const g=whereVisible(items.filter(matches)).groups.find(x=>x[0]===sa.dataset.selall); const L=(g?g[1]:[]).filter(i=>i.state.k==='store'); const all=L.every(i=>picked.has(i.id)); L.forEach(i=>all?picked.delete(i.id):picked.add(i.id)); render(); return; }   // only this group's items, as filtered
   const wf=t.closest('[data-wf]'); if(wf){ whereF=wf.dataset.wf===whereF?'All':wf.dataset.wf; whereS='All'; render(); return; }
   const ws=t.closest('[data-ws]'); if(ws){ whereS=ws.dataset.ws===whereS?'All':ws.dataset.ws; render(); return; }
   const tb=t.closest('[data-tab]'); if(tb){ tab=tb.dataset.tab; pref('tab',tab); render(); window.scrollTo(0,0); setAway(false); return; }
   const tr=t.closest('[data-trade]'); if(tr){ trade=tr.dataset.trade; render(); return; }
   const rm=t.closest('[data-room]'); if(rm){ roomF=rm.dataset.room===roomF?'All':rm.dataset.room; render(); return; }
-  if(t.closest('[data-missing]')){ onlyMissing=!onlyMissing; render(); return; }
   const jb=t.closest('[data-job]'); if(jb){ closeSheet(); if(jb.dataset.job!==job) pickJob(jb.dataset.job); return; }
   const js=t.closest('[data-star]'); if(js){ toggleStar(js.dataset.star); return; }
   const op=t.closest('[data-open]'); if(op){ openSheet(op.dataset.open); return; }
@@ -518,6 +544,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); if((
 $('q').addEventListener('input',e=>{ q=e.target.value.trim(); render(); });
 $('qClear').onclick=()=>{ q=''; $('q').value=''; render(); $('q').focus(); };
 $('jobBtn').onclick=()=>openJobs();
+document.addEventListener('toggle',e=>{ if(e.target&&e.target.id==='hereBox') hereOpen=e.target.open; },true);   // keep the On site list open or shut across re-renders
 const onSitePatch=i=>({checkin:{pulledAt:Date.now(),pulledFrom:i.onHand||null,pulledBy:ME},changes:{onHand:'Onsite',...(i.received?{}:{received:new Date().toISOString().slice(0,10)})}});
 $('barClear').onclick=()=>{ picked.clear(); render(); };
 $('barBtn').onclick=async()=>{
