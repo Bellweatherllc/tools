@@ -66,6 +66,18 @@ main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
 .link{border:0;background:none;color:var(--navy);font:600 14px/1 var(--sans);padding:10px 4px;margin:-10px -4px}
 .card{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px}
 .card:active{background:#faf8f4}
+.card{flex-wrap:wrap}
+.card .specs{flex:1 0 100%;min-width:0;max-width:100%;margin-top:0}   /* chips run the full card width, under the thumbnail row */
+.thumb{flex:none;width:52px;height:52px;border-radius:8px;background:var(--cotton);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:#b3ad9f;overflow:hidden}
+.thumb.has{background:#fff}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.hero{margin:10px 0 2px;width:100%;aspect-ratio:4/3;max-height:260px;border-radius:10px;background:var(--cotton);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#a39d90;overflow:hidden}
+.hero a{display:block;width:100%;height:100%}
+.hero img{width:100%;height:100%;object-fit:contain;background:#fff;display:block}
+.imgs{display:flex;gap:8px;margin-top:8px;overflow-x:auto}
+.imgs a{flex:none;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--cotton);display:block}
+.imgs img{width:100%;height:100%;object-fit:cover;display:block}
+.fl{display:block;padding:11px 0;color:var(--navy);font-weight:600;overflow-wrap:anywhere}
 .card .main{flex:1;min-width:0}
 .card .t{font-weight:600;font-size:15.5px}
 .card .c{color:var(--muted);font-size:13.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -168,7 +180,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v6';
+const CORE_VERSION = 'v7';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -274,6 +286,25 @@ function openJobs(keepScroll){
   $('scrim').classList.add('open'); sh.classList.add('open'); sh.scrollTop=keepScroll===true?top:0;
 }
 
+/* ── Pictures ── Designers add images to the CORE_SelectionFiles library (Kind = Image, tagged Job + Selection).
+   Cards show a small thumbnail, the item sheet a large one; an item with no picture shows a placeholder icon.
+   Thumbnail links come from Graph each time and live in memory only (links expire; never stored). Viewing only, no upload. */
+const PH=sz=>`<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5.2-5.2a1.5 1.5 0 0 1 2.1 0L16 17.5M14 15.5l1.8-1.8a1.5 1.5 0 0 1 2.1 0L21 16.8"/></svg>`;
+const isImg=x=>x.fields.Kind==='Image'||(!x.fields.Kind&&/\.(jpe?g|png|gif|webp|heic)$/i.test((x.driveItem&&x.driveItem.name)||x.fields.FileLeafRef||''));
+const imgIdx=new Map(), thumbP=new Map(), thumbUrl=new Map();   // job -> Map(selection id -> image rows); file id -> promise / medium URL
+function imagesFor(j,rows){ if(!imgIdx.has(j)){ const m=new Map(); for(const x of rows||[]){ if(!isImg(x)) continue; const k=String(x.fields.SelectionLookupId); if(!m.has(k)) m.set(k,[]); m.get(k).push(x); } imgIdx.set(j,m); } return imgIdx.get(j); }
+function thumbOf(fid){ if(!thumbP.has(fid)) thumbP.set(fid,SherpaAuth.graph(`${LISTS}/CORE_SelectionFiles/items/${fid}/driveItem/thumbnails?$select=medium,large`).then(t=>{ const o=(t&&t.value&&t.value[0])||{}; const r={medium:(o.medium&&o.medium.url)||null,large:(o.large&&o.large.url)||null}; if(r.medium) thumbUrl.set(fid,r.medium); return r; }).catch(()=>({medium:null,large:null}))); return thumbP.get(fid); }
+function thumbHtml(i){ const f=(imgIdx.get(i.job)||new Map()).get(i.id), u=f&&thumbUrl.get(f[0].id); return `<div class="thumb${u?' has':''}" data-sel="${i.id}">${u?`<img src="${esc(u)}" alt="">`:PH(22)}</div>`; }
+let thumbIO=null;
+async function lazyThumbs(){   // only cards scrolled near the screen ask Graph for their picture
+  const j=job; let rows; try{ rows=await jobFiles(j); }catch(e){ return; }
+  if(job!==j) return;
+  const idx=imagesFor(j,rows); if(!idx.size||!('IntersectionObserver' in window)) return;
+  if(thumbIO) thumbIO.disconnect();
+  thumbIO=new IntersectionObserver(es=>{ for(const en of es){ if(!en.isIntersecting) continue; thumbIO.unobserve(en.target); const el=en.target; thumbOf(idx.get(el.dataset.sel)[0].id).then(t=>{ if(t.medium&&el.isConnected){ el.innerHTML=`<img src="${esc(t.medium)}" alt="">`; el.classList.add('has'); } }); } },{rootMargin:'300px'});
+  document.querySelectorAll('.thumb[data-sel]').forEach(el=>{ if(idx.has(el.dataset.sel)&&!el.classList.contains('has')) thumbIO.observe(el); });
+}
+
 /* ── Interpreting the BT fields ─────────────────────────────────────────── */
 function shortTitle(t,room){ const m=t.match(/^([^:]+):\s*(.+)$/); if(m&&m[1].trim().toLowerCase()===String(room).toLowerCase()) return m[2]; return t; }
 // where the thing physically is, from BT's free-text fields
@@ -324,7 +355,8 @@ function card(i,opts={}){
   const choice=i.choices.map(c=>c.Title).join(' + ');
   return `<div class="card" role="button" tabindex="0" data-open="${i.id}">
     ${opts.select?`<label class="selbox"><input type="checkbox" class="sel" data-pick="${i.id}" ${picked.has(i.id)?'checked':''} aria-label="Select ${esc(i.short)}"></label>`:''}
-    <div class="main"><div class="t">${hl(opts.full?i.title:i.short)}</div>${choice?`<div class="c">${hl(choice)}</div>`:''}${specChips(i)}</div>${tag(i)}</div>`;
+    ${thumbHtml(i)}
+    <div class="main"><div class="t">${hl(opts.full?i.title:i.short)}</div>${choice?`<div class="c">${hl(choice)}</div>`:''}</div>${tag(i)}${specChips(i)}</div>`;
 }
 function grouped(list,keyFn,order){
   const g=new Map(); for(const i of list){ const k=keyFn(i); if(!g.has(k)) g.set(k,[]); g.get(k).push(i); }
@@ -369,7 +401,7 @@ function render(){
   }
   $('main').innerHTML=h;
   const bar=$('bar'); bar.classList.toggle('hidden',!(tab==='where'&&picked.size));
-  $('barTxt').textContent=`${picked.size} selected`; $('barBtn').textContent=picked.size>1?`Brought to site (${picked.size})`:'Brought to site';
+  $('barTxt').textContent=`${picked.size} selected`; $('barBtn').textContent=picked.size>1?`Brought to site (${picked.size})`:'Brought to site'; lazyThumbs();
 }
 function openSheet(id){
   const i=items.find(x=>x.id===id); if(!i) return;
@@ -378,6 +410,7 @@ function openSheet(id){
   $('sheet').innerHTML=`<div class="grab"></div><button class="x" data-close aria-label="Close">×</button>
     <div class="note">${esc(i.job)} · ${esc(i.room)} · ${esc(tradeOf(i))}</div>
     <h3 id="sTitle">${esc(i.short)}</h3><div style="margin:4px 0 10px">${tag(i)}</div>
+    <div class="hero" id="sHero" data-id="${i.id}">${PH(40)}<div class="note"></div></div>
     <div class="sec"><h4>Where it is</h4><dl class="kv">${where.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>
     ${i.choices.map(c=>`<div class="sec"><h4>What it is</h4><div style="font-weight:600;margin-bottom:6px">${esc(c.Title)}</div>`+
       (specs.length?`<dl class="kv">${specs.slice(0,14).map(s=>`<dt>${esc(s.k)}</dt><dd>${esc(s.v)}</dd>`).join('')}</dl>`:'')+
@@ -389,15 +422,23 @@ function openSheet(id){
       ${i.state.k==='site'&&i.state.label!=='Installed'?`<button class="btn ghost" data-act="back" data-id="${i.id}">Back to Stokley…</button>`:''}
     </div></div>
     <div class="sec"><h4>Notes</h4><textarea id="nNotes" rows="3" placeholder="e.g. 2 of 3 boxes on site, one cracked">${esc(i.notes)}</textarea><div class="acts"><button class="btn ghost" data-act="notes" data-id="${i.id}">Save notes</button></div></div>
-    <div class="sec" id="sFiles" data-id="${i.id}"><h4>Photos &amp; cut sheets</h4><div class="note">Loading…</div></div>`;
+    <div class="sec hidden" id="sFiles" data-id="${i.id}"></div>`;
   $('sheet').dataset.kind='item'; $('scrim').classList.add('open'); $('sheet').classList.add('open'); $('sheet').scrollTop=0;
-  jobFiles(i.job).then(rows=>{
-    const el=$('sFiles'); if(!el||el.dataset.id!==i.id) return;
+  jobFiles(i.job).then(async rows=>{
+    const hero=$('sHero'); if(!hero||hero.dataset.id!==i.id) return;
     const mine=(rows||[]).filter(x=>String(x.fields.SelectionLookupId)===i.id);
-    if(!mine.length){ el.innerHTML='<h4>Photos &amp; cut sheets</h4><div class="note">None yet.</div>'; return; }
-    el.innerHTML='<h4>Photos &amp; cut sheets</h4><div class="thumbs">'+mine.map(x=>{const d=x.driveItem||{}; return `<a href="${esc(d.webUrl||'#')}" target="_blank" rel="noopener" data-thumb="${esc(x.id)}" aria-label="${esc(d.name||x.fields.FileLeafRef||'File')}"></a>`;}).join('')+'</div>';
-    for(const x of mine) SherpaAuth.graph(`${LISTS}/CORE_SelectionFiles/items/${x.id}/driveItem/thumbnails?$select=medium`).then(t=>{const u=t&&t.value&&t.value[0]&&t.value[0].medium&&t.value[0].medium.url; const a=el.querySelector(`[data-thumb="${x.id}"]`); if(u&&a) a.innerHTML=`<img src="${esc(u)}" alt="">`;}).catch(()=>{});
-  }).catch(()=>{ const el=$('sFiles'); if(el) el.innerHTML='<h4>Photos &amp; cut sheets</h4><div class="note">Couldn’t load files.</div>'; });
+    const imgs=mine.filter(isImg), other=mine.filter(x=>!isImg(x));
+    if(other.length){ const el=$('sFiles'); el.classList.remove('hidden'); el.innerHTML='<h4>Cut sheets &amp; files</h4>'+other.map(x=>{ const d=x.driveItem||{}; return `<a class="fl" href="${esc(d.webUrl||'#')}" target="_blank" rel="noopener">${esc(d.name||x.fields.FileLeafRef||'File')}</a>`; }).join(''); }
+    if(!imgs.length){ hero.querySelector('.note').textContent='No picture yet'; return; }
+    const [first,...more]=await Promise.all([thumbOf(imgs[0].id),...imgs.slice(1).map(x=>thumbOf(x.id))]);
+    if($('sHero')!==hero||!hero.isConnected) return;
+    const u=first.large||first.medium;
+    if(!u){ hero.querySelector('.note').textContent='Picture couldn’t load'; return; }
+    const link=x=>esc((x.driveItem&&x.driveItem.webUrl)||'#');
+    hero.innerHTML=`<a href="${link(imgs[0])}" target="_blank" rel="noopener" aria-label="Open picture"><img src="${esc(u)}" alt="${esc(i.short)}"></a>`;
+    const extra=more.map((t,n)=>t.medium?`<a href="${link(imgs[n+1])}" target="_blank" rel="noopener" aria-label="Open picture ${n+2}"><img src="${esc(t.medium)}" alt=""></a>`:'').join('');
+    if(extra) hero.insertAdjacentHTML('afterend',`<div class="imgs">${extra}</div>`);
+  }).catch(()=>{});
 }
 function closeSheet(){ $('scrim').classList.remove('open'); $('sheet').classList.remove('open'); }
 
