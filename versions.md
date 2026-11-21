@@ -37,7 +37,7 @@ Last updated: 2026-11-21
 | Selections List Setup | `selections/selections-setup.html` | v9 |
 | Selections · Design | `selections/design.html` | v3 |
 | Selections · LC | `selections/lc-portal.html` | v5 |
-| Selections · Field | `selections/field-view.html` | v11 |
+| Selections · Field | `selections/field-view.html` | v12 |
 | Selections · Warehouse | `selections/warehouse.html` | v4 |
 | Core Admin | `core-admin.html` | v6 |
 | Team Members | `team-members.html` | v39 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-21** — Selections · Field v11 → v12: from Byron's testing. **Item sheet:** the status pill under the title is gone (it repeated *Ordered* in Order & delivery); where the item physically is now shows as a **Where** row there, only when it is somewhere (*Stokley F4*, *On site*, *Installed*, *Owner supplied*). **Full description** moved below Notes. **An item that was never ordered or selected no longer offers *Brought to site*** (it showed Not ordered and a Brought to site button together), and has no checkbox in *Ready to install?*; an ordered item still can be brought to site, since it may be delivered straight there. **At Stokley:** no per-bay chips (one rack serves a project); the sub row is *No bay* (items whose location is just `Stokley`) then rooms, and the group follows the same room-heading rule as On site. The bay still shows on each card's tag.
 - **2026-11-21** — Selections · Field v10 → v11: the **Install checklist tab becomes *Ready to install?***. Pick a trade (BT category) and get a plain list, no thumbnails or spec chips: a *N of M on site* headline with a progress bar, then **Not on site yet** (room order, each row with its status or bay), **Owner supplied** (shown separately with the note that arrival isn't tracked, instead of being counted as handled), and a collapsed **On site** list. Every row not on site has a checkbox, and the *Brought to site* bar works here as on *Where it is*, so ticking what you see on site is now the checklist. The *Not on site* toggle is gone (the sections do that job). Tab labels no longer wrap to two lines.
 - **2026-11-21** — Project Pipeline v1187 → v1188: per Byron — the Create Trello Board dialog (prompted after Confirm) now groups people into colored department cards — **OPS** (gold), **SALES** (orange), **DESIGN** (blue), **PRODUCTION** (green, covering both the PM and LC roles, tagged separately) — instead of one flat grey list, with each card's checkboxes tinted to match. Anyone added by hand via the "Add someone" field lands in an untinted **ADDED** card. Dialog widened (340px → 480px) to fit the two-column card grid.
 - **2026-11-21** — Levels of Development v73 → v74: Requested Assessors' Sales/Design/Production group headers and checkboxes now use the same colors as Pipeline's Create Trello Board dialog (orange/blue/green — see Pipeline v1188 below), so a department reads as the same color in both tools.

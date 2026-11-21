@@ -197,7 +197,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v11';
+const CORE_VERSION = 'v12';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -386,7 +386,8 @@ function grouped(list,keyFn,order){
 function checkSets(list){
   const L=list.filter(i=>trade==='All'||tradeOf(i)===trade);
   const byRoom=a=>a.slice().sort((x,y)=>(x.room==='Unassigned')-(y.room==='Unassigned')||x.room.localeCompare(y.room)||x.short.localeCompare(y.short));
-  return {L,todo:byRoom(L.filter(i=>!['site','own'].includes(i.state.k))),own:byRoom(L.filter(i=>i.state.k==='own')),here:byRoom(L.filter(i=>i.state.k==='site'))};
+  const todo=byRoom(L.filter(i=>!['site','own'].includes(i.state.k)));
+  return {L,todo,pick:todo.filter(i=>i.state.k!=='need'),own:byRoom(L.filter(i=>i.state.k==='own')),here:byRoom(L.filter(i=>i.state.k==='site'))};
 }
 const lrow=(i,box)=>`<div class="lrow" role="button" tabindex="0" data-open="${i.id}">${box?`<label class="selbox"><input type="checkbox" class="sel" data-pick="${i.id}" ${picked.has(i.id)?'checked':''} aria-label="Select ${esc(i.short)}"></label>`:''}<div class="main"><div class="t">${hl(i.short)}</div><div class="c">${hl(i.room)}</div></div>${tag(i)}</div>`;
 /* Where it is: group chips (with counts) and, inside a chosen group, a sub row: bays for Stokley, rooms for a big group. */
@@ -394,8 +395,11 @@ const W_ORDER=['On site','Stokley','Received','Ordered','Not ordered','Not selec
 const wBucket=i=>i.state.k==='store'&&/^stokley/i.test(i.state.label)?'Stokley':i.state.label;
 const wRank=k=>{ const n=W_ORDER.indexOf(k); return n<0?W_ORDER.indexOf('Stokley')+.5:n; };
 const wName=b=>b==='Stokley'?'At Stokley':b;
-const wSubKey=(b,i)=>b==='Stokley'?i.state.label:i.room;
-const bayName=l=>String(l).replace(/^stokley\s*/i,'')||'No bay';
+const noBay=i=>!String(i.state.label).replace(/^stokley\s*/i,'').trim();   // location just says "Stokley"
+const NOBAY='\u2205 no bay';
+// One rack serves one project, so the bay letters don't help you find anything. At Stokley splits into "No bay" (the ones to sort out) and rooms. The bay still shows on each card's tag.
+const wSubKey=(b,i)=>(b==='Stokley'&&noBay(i))?NOBAY:i.room;
+const subOrder=(x,y)=>(y===NOBAY)-(x===NOBAY)||(x==='Unassigned')-(y==='Unassigned')||x.localeCompare(y);
 function whereVisible(list){   // -> {all:[[bucket,items]], groups:[[bucket,items shown,whole group]]} after the chips are applied
   const all=grouped(list,wBucket,(a,b)=>wRank(a)-wRank(b)||a.localeCompare(b));
   const sel=all.find(x=>x[0]===whereF);
@@ -423,12 +427,12 @@ function render(){
     const trades=['All',...[...new Set(items.map(tradeOf))].sort()];
     if(!trades.includes(trade)) trade='All';
     h+=`<div class="chips" role="group" aria-label="Trade">${trades.map(t=>`<button class="chip" data-trade="${esc(t)}" aria-pressed="${t===trade}">${esc(t==='All'?'All trades':t)}</button>`).join('')}</div>`;
-    const {L,todo,own,here}=checkSets(list);
+    const {L,todo,pick,own,here}=checkSets(list);
     const pct=L.length?Math.round(here.length/L.length*100):0;
     h+=`<div class="prog"><b>${here.length} of ${L.length}</b> on site${trade==='All'?'':' for '+esc(trade)}${own.length?` · ${own.length} owner supplied`:''}<div class="bar2" aria-hidden="true"><i style="width:${pct}%"></i></div></div>`;
     if(L.length&&!todo.length&&!own.length) h+='<p class="note" style="margin:0 4px 8px">Everything here is on site.</p>';
     const selHead=(key,arr)=>{ const all=arr.length&&arr.every(i=>picked.has(i.id)); return arr.length?`<button class="link" data-selall="${key}">${all?'Clear':'Select all'}</button>`:''; };
-    if(todo.length) h+=`<section class="group"><div class="gh"><h2>Not on site yet</h2><span class="gh-r">${selHead('check-todo',todo)}<span class="note">${todo.length}</span></span></div>${todo.map(i=>lrow(i,true)).join('')}</section>`;
+    if(todo.length) h+=`<section class="group"><div class="gh"><h2>Not on site yet</h2><span class="gh-r">${selHead('check-todo',pick)}<span class="note">${todo.length}</span></span></div>${todo.map(i=>lrow(i,i.state.k!=='need')).join('')}</section>`;
     if(own.length) h+=`<section class="group"><div class="gh"><h2>Owner supplied</h2><span class="gh-r">${selHead('check-own',own)}<span class="note">${own.length}</span></span></div><p class="note" style="margin:0 4px 8px">Arrival isn't tracked. Tick the ones you can see on site.</p>${own.map(i=>lrow(i,true)).join('')}</section>`;
     if(here.length) h+=`<details class="grp" id="hereBox"${hereOpen||(!todo.length&&!own.length)?' open':''}><summary><span>On site</span><span class="note">${here.length}</span></summary>${here.map(i=>lrow(i,false)).join('')}</details>`;
     if(!L.length) h+='<div class="empty">Nothing here matches.</div>';
@@ -437,18 +441,18 @@ function render(){
     const {all,groups}=whereVisible(list);
     h+=`<div class="chips" role="group" aria-label="Where">${[['All',list.length],...all.map(([k,its])=>[k,its.length])].map(([k,n])=>`<button class="chip" data-wf="${esc(k)}" aria-pressed="${k===whereF}">${esc(k==='All'?'All':wName(k))}<span class="n">${n}</span></button>`).join('')}</div>`;
     const sel=all.find(x=>x[0]===whereF);
-    if(sel&&(whereF==='Stokley'||sel[1].length>6)){
-      const keys=grouped(sel[1],i=>wSubKey(whereF,i),whereF==='Stokley'?(x,y)=>x.localeCompare(y,undefined,{numeric:true}):undefined);
-      h+=`<div class="chips" role="group" aria-label="Within ${esc(wName(whereF))}">${keys.map(([k,its])=>`<button class="chip" data-ws="${esc(k)}" aria-pressed="${k===whereS}">${esc(whereF==='Stokley'?bayName(k):k)}<span class="n">${its.length}</span></button>`).join('')}</div>`;
+    if(sel&&(sel[1].length>6||(whereF==='Stokley'&&sel[1].some(noBay)))){
+      const keys=grouped(sel[1],i=>wSubKey(whereF,i),subOrder);
+      h+=`<div class="chips" role="group" aria-label="Within ${esc(wName(whereF))}">${keys.map(([k,its])=>`<button class="chip" data-ws="${esc(k)}" aria-pressed="${k===whereS}">${esc(k===NOBAY?'No bay':k)}<span class="n">${its.length}</span></button>`).join('')}</div>`;
     }
     for(const [b,its,full] of groups){
-      const sorted=b==='Stokley'?its.slice().sort((x,y)=>x.state.label.localeCompare(y.state.label,undefined,{numeric:true})):its;
+      const sorted=b==='Stokley'?its.slice().sort((x,y)=>(x.room==='Unassigned')-(y.room==='Unassigned')||x.room.localeCompare(y.room)||x.state.label.localeCompare(y.state.label,undefined,{numeric:true})):its;
       const selAll=its.some(i=>i.state.k==='store')?(its.filter(i=>i.state.k==='store').every(i=>picked.has(i.id))?'Clear':'Select all'):'';
-      // Stokley is sorted by bay (that is how you fetch it). Any other group over 6 items is split by room, so the room is the heading and the card drops its "Room:" prefix.
+      // Stokley is in room order, then bay.
       // A big group is split under room headings only when rooms hold several items each (On site). With mostly one item per room (Owner supplied) headings would double the list, so it is a flat list in room order with full titles.
-      const split=b!=='Stokley'&&full.length>6&&grouped(full,i=>i.room).length*2<=full.length;
+      const split=full.length>6&&grouped(full,i=>i.room).length*2<=full.length;
       const body=split
-        ?grouped(its,i=>i.room).map(([room,r])=>`<div class="sgh"><span>${hl(room)}</span><span>${r.length}</span></div>${r.map(i=>card(i,{select:i.state.k==='store'})).join('')}`).join('')
+        ?grouped(sorted,i=>i.room).map(([room,r])=>`<div class="sgh"><span>${hl(room)}</span><span>${r.length}</span></div>${r.map(i=>card(i,{select:i.state.k==='store'})).join('')}`).join('')
         :(b==='Stokley'?sorted:its.slice().sort((x,y)=>(x.room==='Unassigned')-(y.room==='Unassigned')||x.room.localeCompare(y.room))).map(i=>card(i,{select:i.state.k==='store',full:true})).join('');
       const head=whereF==='All'||selAll;   // when a chip already names the group, its heading only stays if it carries Select all
       h+=`<section class="group" id="wg-${esc(b)}">${head?`<div class="gh"><h2>${esc(wName(b))}</h2><span class="gh-r">${selAll?`<button class="link" data-selall="${esc(b)}">${selAll}</button>`:''}<span class="note">${its.length}</span></span></div>`:''}${body}</section>`;
@@ -473,24 +477,26 @@ function openSheet(id,keepTop){
   const i=items.find(x=>x.id===id); if(!i) return;
   const here=['site','store','own'].includes(i.state.k), ck=i.ops.checkin||{}, isoDay=ms=>ms?new Date(ms).toISOString().slice(0,10):'';
   // the status tag above already says where it is, so this block only holds the dates
-  const where=[orderedText(i)?['Ordered',orderedText(i)]:null,(!here&&i.leadTime)?['Lead time',i.leadTime]:null,i.received?['Received',fmtDate(i.received)]:null,
+  const sl=String(i.state.label).trim(), whereTxt=i.state.k==='store'?(sl==='Received'?'Received, no location noted':sl==='Stokley'?'Stokley, no bay noted':sl):(['site','own'].includes(i.state.k)?sl:'');
+  const where=[whereTxt?['Where',whereTxt]:null,orderedText(i)?['Ordered',orderedText(i)]:null,(!here&&i.leadTime)?['Lead time',i.leadTime]:null,i.received?['Received',fmtDate(i.received)]:null,
     (i.state.k==='site'&&ck.pulledAt)?['Brought to site',fmtDate(isoDay(ck.pulledAt))]:null,i.installed?['Installed',fmtDate(i.installed)]:null].filter(Boolean);
   const acts=[
-    i.state.k!=='site'?`<button class="btn" data-act="site" data-id="${i.id}">Brought to site</button>`:'',
+    !['site','need'].includes(i.state.k)?`<button class="btn" data-act="site" data-id="${i.id}">Brought to site</button>`:'',
     i.state.label==='On site'?`<button class="btn" data-act="installed" data-id="${i.id}">Mark installed</button>`:'',
     i.state.label==='Installed'?`<button class="btn ghost" data-act="uninstall" data-id="${i.id}">Undo installed</button>`:'',
     i.state.k==='site'&&i.state.label!=='Installed'?`<button class="btn ghost" data-act="back" data-id="${i.id}">Back to Stokley…</button>`:''].join('');
   const specs=i.specs.filter((s,n,a)=>a.findIndex(x=>x.k.toLowerCase()===s.k.toLowerCase()&&x.v===s.v)===n);
   $('sheet').innerHTML=`<div class="grab"></div><button class="x" data-close aria-label="Close">×</button>
     <div class="note">${esc(i.job)} · ${esc(i.room)} · ${esc(tradeOf(i))}</div>
-    <h3 id="sTitle">${esc(i.short)}</h3><div style="margin:4px 0 0">${tag(i)}</div>
+    <h3 id="sTitle">${esc(i.short)}</h3>
     ${acts?`<div class="acts lead">${acts}</div>`:''}
     <div class="hero" id="sHero" data-id="${i.id}">${PH(40)}<div class="note"></div></div>
     ${where.length?`<div class="sec"><h4>Order &amp; delivery</h4><dl class="kv">${where.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`:''}
     ${i.choices.map(c=>`<div class="sec"><h4>What it is</h4><div style="font-weight:600;margin-bottom:6px">${esc(c.Title)}</div>`+
       (specs.length?`<dl class="kv">${specs.slice(0,14).map(s=>`<dt>${esc(s.k)}</dt><dd>${esc(s.v)}</dd>`).join('')}</dl>`:'')+
-      (c.Description?`<details style="margin-top:8px"><summary>Full description</summary><div class="desc">${esc(c.Description)}</div></details>`:'')+`</div>`).join('')}
+      `</div>`).join('')}
     <div class="sec"><h4>Notes</h4><textarea id="nNotes" rows="3" placeholder="e.g. 2 of 3 boxes on site, one cracked">${esc(i.notes)}</textarea><div class="acts"><button class="btn ghost" data-act="notes" data-id="${i.id}">Save notes</button></div></div>
+    ${i.choices.some(c=>c.Description)?`<div class="sec"><h4>Full description</h4>${i.choices.map(c=>c.Description?`<details style="margin-top:4px"><summary>${i.choices.length>1?esc(c.Title):'Show'}</summary><div class="desc">${esc(c.Description)}</div></details>`:'').join('')}</div>`:''}
     <div class="sec hidden" id="sFiles" data-id="${i.id}"></div>`;
   $('sheet').dataset.kind='item'; $('scrim').classList.add('open'); $('sheet').classList.add('open'); $('sheet').scrollTop=typeof keepTop==='number'?keepTop:0;   // after an update the sheet stays where it was
   jobFiles(i.job).then(async rows=>{
@@ -528,7 +534,7 @@ document.addEventListener('click',e=>{
   const ac=t.closest('[data-act]'); if(ac){ act(ac.dataset.act,ac.dataset.id); return; }
   if(t.closest('.selbox')){ if(t.tagName==='INPUT'){ const id=t.dataset.pick; t.checked?picked.add(id):picked.delete(id); render(); } return; }   // label tap re-fires on the input
   const sa=t.closest('[data-selall]');
-  if(sa&&String(sa.dataset.selall).startsWith('check-')){ const S=checkSets(items.filter(matches)); const L=sa.dataset.selall==='check-todo'?S.todo:S.own; const all=L.every(i=>picked.has(i.id)); L.forEach(i=>all?picked.delete(i.id):picked.add(i.id)); render(); return; }
+  if(sa&&String(sa.dataset.selall).startsWith('check-')){ const S=checkSets(items.filter(matches)); const L=sa.dataset.selall==='check-todo'?S.pick:S.own; const all=L.every(i=>picked.has(i.id)); L.forEach(i=>all?picked.delete(i.id):picked.add(i.id)); render(); return; }
   if(sa){ const g=whereVisible(items.filter(matches)).groups.find(x=>x[0]===sa.dataset.selall); const L=(g?g[1]:[]).filter(i=>i.state.k==='store'); const all=L.every(i=>picked.has(i.id)); L.forEach(i=>all?picked.delete(i.id):picked.add(i.id)); render(); return; }   // only this group's items, as filtered
   const wf=t.closest('[data-wf]'); if(wf){ whereF=wf.dataset.wf===whereF?'All':wf.dataset.wf; whereS='All'; render(); return; }
   const ws=t.closest('[data-ws]'); if(ws){ whereS=ws.dataset.ws===whereS?'All':ws.dataset.ws; render(); return; }
