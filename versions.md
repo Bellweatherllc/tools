@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-20
+Last updated: 2026-11-21
 
 ## Live tools
 
@@ -13,7 +13,7 @@ Last updated: 2026-11-20
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1187 |
 | Projects Manager | `core-projects-manager.html` | v66 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v71 |
+| Levels of Development | `levels-of-development.html` | v72 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-21** — Levels of Development v71 → v72: fixed Create Request Card failing with "No board named ... found" — the board name wired into the code (`PRE-CON | Byron Wolfe`, assumed from how Byron described it) didn't match the board's real Trello name, `[Pre-Con] Byron Wolfe` (square brackets, no pipe); confirmed via a direct Trello API boards listing, not guesswork. `LOD_TRELLO_BOARD_NAME` corrected to the real name. Also noted the real Sales board's exact name while we had the list: `[SALES] BIG BOARD`, not `Sales Big Board` — the comment flagging the eventual flip now points at the correct string.
 - **2026-11-21** — Levels of Development v70 → v71: per Byron — the Trello request text now shows in an editable **Message** box (pre-filled from checked assessors, auto-updates until you hand-edit it, then stops overwriting your wording until you switch projects), moved **Create Request Card**/**Copy Request** to sit below the name-selection area instead of up by the section header. Also fixed Scope of Work's text visibly reflowing (different paragraph/list spacing) when toggling Admin mode — the normalizing CSS for paragraph and list margins only targeted the read-only view container, never the editable one, so it fell back to browser defaults; both containers share the same rules now.
 - **2026-11-21** — Selections · Field v4 → v5: portrait-phone pass. The brand/job bar now slides away on scroll down and returns on scroll up, so the sticky header drops from 164px to 108px of a 664px screen. **By room** gets a horizontal room-chip row (tap a room to show only it, tap again for all). Spec chips cap at 3, ordered Model, Color, Finish, Size, and stay on one line each with an ellipsis. **Install checklist**: the trade chips and the *Not on site* toggle share one row. **Where it is**: *Select all* / *Clear* on the shelf group (acts only on what the current search shows), *Clear* and a count (*Brought to site (n)*) in the bottom bar, and a confirm before marking more than 10 at once. Checkbox tap target 26px → 48px. Notes box and job picker 16px so iOS no longer zooms the page on focus. Buttons 48px minimum, bottom sheet uses `dvh` and stops scroll chaining, search placeholder shows the job name. No data or save-logic changes.
 - **2026-11-21** — Levels of Development v69 → v70: added **Create Request Card** next to Copy Request — makes a real Trello card (not just copyable text) via a new `createLodRequestCard` Azure Function in `azure-function-proxy/`, reusing the `TRELLO_API_KEY`/`TRELLO_TOKEN` already live there from Pipeline's v1183 work (no new credentials needed). The function looks up a board and list by exact name, creates the card, and adds each checked assessor with a Trello username to the board (required before Trello will let you add them to the card) and then to the card itself — the reliable way to actually trigger a notification, not just text-based @mentions. New `CORE_Config` row needed once the function's deployed: `LodTrelloCardProxyUrl` = its URL, same pattern as Pipeline's `TrelloProxyUrl`. **Currently in testing** — `LOD_TRELLO_BOARD_NAME`/`LOD_TRELLO_LIST_NAME` point at Byron's personal "PRE-CON | Byron Wolfe" / "LOD/EST" test board, not the real Sales Big Board yet; flip those two constants once he confirms a real test card works end to end. Copy Request is unchanged and still works without the proxy configured. Manual updated.
