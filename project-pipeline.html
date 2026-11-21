@@ -487,7 +487,7 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
   position:fixed;z-index:600;display:none;
   background:var(--navy);border:1px solid rgba(255,255,255,.15);border-radius:10px;
   padding:16px 20px;box-shadow:0 12px 36px rgba(0,0,0,.5);
-  width:340px;max-width:92vw;max-height:80vh;overflow:auto;
+  width:480px;max-width:92vw;max-height:84vh;overflow:auto;
   top:50%;left:50%;transform:translate(-50%,-50%);
 }
 .tb-dialog.open{display:block;}
@@ -497,7 +497,27 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:7px 9px;margin-bottom:12px;}
 .tb-name-inp:focus{outline:none;border-color:rgba(255,255,255,.4);}
 .tb-ppl-lbl{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-bottom:6px;}
-.tb-ppl-list{display:flex;flex-direction:column;gap:2px;margin-bottom:10px;}
+/* v1188: person list is grouped into department cards (OPS/SALES/DESIGN/PRODUCTION,
+   plus ADDED for anyone typed in by hand) instead of one flat list — each card's
+   header, checkbox fill, and role tag share one accent color so the department a
+   person's being added for is visible at a glance. */
+.tb-ppl-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.tb-group{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;}
+.tb-group-other{grid-column:1 / -1;}
+.tb-group-hdr{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;}
+.tb-group-ops .tb-group-hdr{color:var(--gold);}
+.tb-group-sales .tb-group-hdr{color:#e8935c;}
+.tb-group-design .tb-group-hdr{color:#5b8cde;}
+.tb-group-production .tb-group-hdr{color:#4caf6d;}
+.tb-group-other .tb-group-hdr{color:rgba(255,255,255,.4);}
+.tb-group-ops input[type=checkbox]{accent-color:var(--gold);}
+.tb-group-sales input[type=checkbox]{accent-color:#e8935c;}
+.tb-group-design input[type=checkbox]{accent-color:#5b8cde;}
+.tb-group-production input[type=checkbox]{accent-color:#4caf6d;}
+.tb-group-ops .tb-person-src{color:var(--gold);}
+.tb-group-sales .tb-person-src{color:#e8935c;}
+.tb-group-design .tb-person-src{color:#5b8cde;}
+.tb-group-production .tb-person-src{color:#4caf6d;}
 .tb-person{display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(255,255,255,.85);padding:3px 2px;border-radius:4px;}
 .tb-person:hover{background:rgba(255,255,255,.05);}
 .tb-person input[type=checkbox]{flex-shrink:0;}
@@ -3732,7 +3752,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1187';
+const CORE_VERSION = 'v1188';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -14420,19 +14440,44 @@ function _trelloDefaultRoster(proj){
   return out;
 }
 let _tbState=null; // {proj,people:[{label,fullLabel,trello,source,checked}]} for the open Trello-board dialog
+// v1188: department groupings for the person list — a person's `source` (set in
+// _trelloDefaultRoster/_tbAddPerson) decides which card they land in and what
+// color that card (header, checkbox, role tag) gets.
+const TB_GROUPS=[
+  {key:'ops',label:'OPS',match:s=>s==='Always'},
+  {key:'sales',label:'SALES',match:s=>s==='Sales'},
+  {key:'design',label:'DESIGN',match:s=>s==='Design'},
+  {key:'production',label:'PRODUCTION',match:s=>s==='Production'||s==='LC'},
+];
+function _tbSrcTag(source){ return source==='Production'?'PM':String(source||'').toUpperCase(); }
+function _tbBuildPersonRow(p){
+  const row=el('div','tb-person'+(p.trello?'':' tb-nohandle'));
+  const cb=document.createElement('input'); cb.type='checkbox';
+  cb.checked=!!p.checked&&!!p.trello; cb.disabled=!p.trello;
+  cb.addEventListener('change',()=>{ p.checked=cb.checked; });
+  row.appendChild(cb);
+  const nm=el('span','tb-person-name'); nm.textContent=p.fullLabel; row.appendChild(nm);
+  const src=el('span','tb-person-src'); src.textContent=_tbSrcTag(p.source); row.appendChild(src);
+  return row;
+}
 function _tbRenderList(){
   const list=document.getElementById('tbPplList'); if(!list||!_tbState) return;
   list.innerHTML='';
-  _tbState.people.forEach(p=>{
-    const row=el('div','tb-person'+(p.trello?'':' tb-nohandle'));
-    const cb=document.createElement('input'); cb.type='checkbox';
-    cb.checked=!!p.checked&&!!p.trello; cb.disabled=!p.trello;
-    cb.addEventListener('change',()=>{ p.checked=cb.checked; });
-    row.appendChild(cb);
-    const nm=el('span','tb-person-name'); nm.textContent=p.fullLabel; row.appendChild(nm);
-    const src=el('span','tb-person-src'); src.textContent=p.source; row.appendChild(src);
-    list.appendChild(row);
+  TB_GROUPS.forEach(g=>{
+    const people=_tbState.people.filter(p=>g.match(p.source));
+    if(!people.length) return;
+    const card=el('div','tb-group tb-group-'+g.key);
+    const hdr=el('div','tb-group-hdr'); hdr.textContent=g.label; card.appendChild(hdr);
+    people.forEach(p=>card.appendChild(_tbBuildPersonRow(p)));
+    list.appendChild(card);
   });
+  const other=_tbState.people.filter(p=>!TB_GROUPS.some(g=>g.match(p.source)));
+  if(other.length){
+    const card=el('div','tb-group tb-group-other');
+    const hdr=el('div','tb-group-hdr'); hdr.textContent='ADDED'; card.appendChild(hdr);
+    other.forEach(p=>card.appendChild(_tbBuildPersonRow(p)));
+    list.appendChild(card);
+  }
 }
 function _tbAddPersonDirect(t){ // add a known ALL_TEAM entry straight through, no name-guessing
   if(!_tbState||!t) return;

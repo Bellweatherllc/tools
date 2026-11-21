@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v71</span>
+      <span class="header-version">v74</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -425,16 +425,17 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 2px">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel)">Requested Assessors</div>
         </div>
-        <div style="font-size:12px;color:var(--silver);line-height:1.5;margin-bottom:8px;max-width:600px">Who's been asked to weigh in. Check names below (Admin), edit the message if you want, then send it. <b>Create Request Card</b> makes a real Trello card (currently testing against the PRE-CON | Byron Wolfe board); <b>Copy Request</b> copies the message text instead, to paste in yourself.</div>
         <div id="pmeta-assessors-view" style="font-size:13px;color:var(--navy)"></div>
         <div id="pmeta-assessors-edit" style="display:none;flex-direction:column;gap:10px"></div>
-        <div style="margin-top:14px">
-          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel);margin-bottom:5px">Message</div>
-          <textarea id="pmeta-request-message" oninput="_requestMessageDirty=true" rows="4" style="width:100%;font-size:12.5px;color:var(--navy);line-height:1.5;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit;resize:vertical"></textarea>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="copyAssessorRequest()">📋 Copy Request</button>
-          <button type="button" class="btn btn-primary btn-sm" onclick="createLodRequestCard()">＋ Create Request Card</button>
+        <div id="pmeta-request-controls" style="display:none">
+          <div style="margin-top:14px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--steel);margin-bottom:5px">Message</div>
+            <textarea id="pmeta-request-message" oninput="_requestMessageDirty=true" rows="4" style="width:100%;font-size:12.5px;color:var(--navy);line-height:1.5;padding:10px;border:1.5px solid var(--cloud);border-radius:6px;font-family:inherit;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyAssessorRequest()">📋 Copy Request</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="createLodRequestCard()">＋ Create Request Card</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1656,7 +1657,9 @@ function renderRequestedAssessors(proj){
   const viewEl = document.getElementById('pmeta-assessors-view');
   const editEl = document.getElementById('pmeta-assessors-edit');
   const msgEl = document.getElementById('pmeta-request-message');
+  const controlsEl = document.getElementById('pmeta-request-controls');
   if(!viewEl || !editEl) return;
+  if(controlsEl) controlsEl.style.display = adminMode ? 'block' : 'none';
   const requested = proj.requestedAssessors || [];
   viewEl.textContent = requested.length ? requested.join(', ') : 'No one requested yet.';
   if(msgEl){
@@ -1670,14 +1673,19 @@ function renderRequestedAssessors(proj){
       editEl.innerHTML = '<span style="font-size:12px;color:var(--silver)">Loading team members…</span>';
     } else {
       const groups = groupedAssessorRoster();
+      // Colors match Pipeline's Create Trello Board dialog department groups
+      // (project-pipeline.html's TB_GROUPS/.tb-group-* — v1188) so the same
+      // department reads as the same color in both tools.
+      const groupColors = { Sales:'#e8935c', Design:'#5b8cde', Production:'#4caf6d' };
       editEl.innerHTML = ['Sales','Design','Production'].map(groupName => {
         const members = groups[groupName];
         if(!members.length) return '';
+        const gc = groupColors[groupName];
         const checkboxes = members.map(tm => {
           const checked = requested.includes(tm.name) ? 'checked' : '';
-          return `<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--navy);cursor:pointer"><input type="checkbox" value="${esc(tm.name)}" ${checked} onchange="toggleRequestedAssessor('${proj.id}',this)"> ${esc(tm.name)}</label>`;
+          return `<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--navy);cursor:pointer"><input type="checkbox" value="${esc(tm.name)}" ${checked} onchange="toggleRequestedAssessor('${proj.id}',this)" style="accent-color:${gc}"> ${esc(tm.name)}</label>`;
         }).join('');
-        return `<div><div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--silver);margin-bottom:5px">${groupName}</div><div style="display:flex;flex-wrap:wrap;gap:6px 16px">${checkboxes}</div></div>`;
+        return `<div><div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:${gc};margin-bottom:5px">${groupName}</div><div style="display:flex;flex-wrap:wrap;gap:6px 16px">${checkboxes}</div></div>`;
       }).join('');
     }
   } else {
@@ -1724,11 +1732,12 @@ async function copyAssessorRequest(){
 // split as project-pipeline.html's own createTrelloBoard feature. This tool
 // only knows that function's URL, read from CORE_Config (LodTrelloCardProxyUrl).
 //
-// TESTING PHASE (per Byron, 2026-11-21): pointed at his personal "PRE-CON |
-// Byron Wolfe" board / "LOD/EST" list, NOT the real Sales Big Board yet.
-// Flip LOD_TRELLO_BOARD_NAME to 'Sales Big Board' once he confirms a real
-// test card works end to end, and update the helper text above the buttons.
-const LOD_TRELLO_BOARD_NAME = 'PRE-CON | Byron Wolfe';
+// TESTING PHASE (per Byron, 2026-11-21): pointed at his personal "[Pre-Con]
+// Byron Wolfe" board / "LOD/EST" list, NOT the real Sales board yet. Flip
+// LOD_TRELLO_BOARD_NAME to '[SALES] BIG BOARD' (confirmed exact Trello name,
+// 2026-11-21) once he confirms a real test card works end to end, and update
+// the helper text above the buttons.
+const LOD_TRELLO_BOARD_NAME = '[Pre-Con] Byron Wolfe';
 const LOD_TRELLO_LIST_NAME = 'LOD/EST';
 
 let _lodTrelloCardProxyUrl = null; // cached LodTrelloCardProxyUrl from CORE_Config — false once tried and missing
@@ -1772,7 +1781,8 @@ async function createLodRequestCard(){
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error || ('Trello proxy error ' + res.status));
     const failedNote = (data.failed && data.failed.length) ? ` (couldn't add: ${data.failed.join(', ')})` : '';
-    showToast(`Trello card created${failedNote}.`);
+    const commentNote = (data.commentPosted === false) ? ' (card created, but the message comment failed to post — add it manually)' : '';
+    showToast(`Trello card created${failedNote}${commentNote}.`);
   } catch(e) {
     showToast('Could not create Trello card — ' + e.message);
   }

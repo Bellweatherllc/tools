@@ -8,7 +8,9 @@ const { app } = require('@azure/functions');
 // finds that board+list by name, creates the card, and adds each person to
 // the board (so they can actually be added to the card — Trello won't let you
 // add a card member who isn't already a board member) and then to the card
-// itself, server-side.
+// itself, server-side. The message (with its @mentions) is posted as a card
+// comment, not the card description — Trello only fires "you were mentioned"
+// notifications for @mentions inside a comment.
 
 app.http('createLodRequestCard', {
   methods: ['POST'],
@@ -75,13 +77,22 @@ app.http('createLodRequestCard', {
         }
       }
 
-      const cardParams = { idList: list.id, name: cardName, desc: description };
+      const cardParams = { idList: list.id, name: cardName };
       if (memberIds.length) cardParams.idMembers = memberIds.join(',');
       const cRes = await fetch(`https://api.trello.com/1/cards?${qs(cardParams)}`, { method: 'POST' });
       if (!cRes.ok) throw new Error('Card create failed: ' + cRes.status + ' ' + await cRes.text());
       const card = await cRes.json();
 
-      return { status: 200, jsonBody: { card: { id: card.id, url: card.url, name: card.name }, failed } };
+      // The @mentions live in the message, so the message has to be a comment, not
+      // the card description — Trello only sends "you were mentioned" notifications
+      // for @mentions inside a comment, never for text sitting in the description.
+      let commentPosted = true;
+      if (description) {
+        const cmRes = await fetch(`https://api.trello.com/1/cards/${card.id}/actions/comments?${qs({ text: description })}`, { method: 'POST' });
+        if (!cmRes.ok) { commentPosted = false; context.error('Comment post failed: ' + cmRes.status + ' ' + await cmRes.text()); }
+      }
+
+      return { status: 200, jsonBody: { card: { id: card.id, url: card.url, name: card.name }, failed, commentPosted } };
     } catch (e) {
       context.error('Trello proxy failure:', e);
       return { status: 502, jsonBody: { error: e.message || 'Trello proxy failure' } };

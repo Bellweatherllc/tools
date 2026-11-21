@@ -4,16 +4,16 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-20
+Last updated: 2026-11-21
 
 ## Live tools
 
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1187 |
+| Project Pipeline | `project-pipeline.html` | v1188 |
 | Projects Manager | `core-projects-manager.html` | v66 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v71 |
+| Levels of Development | `levels-of-development.html` | v74 |
 | Scout Board | `scout-board.html` | v13 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v82 |
@@ -77,6 +77,10 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-21** — Project Pipeline v1187 → v1188: per Byron — the Create Trello Board dialog (prompted after Confirm) now groups people into colored department cards — **OPS** (gold), **SALES** (orange), **DESIGN** (blue), **PRODUCTION** (green, covering both the PM and LC roles, tagged separately) — instead of one flat grey list, with each card's checkboxes tinted to match. Anyone added by hand via the "Add someone" field lands in an untinted **ADDED** card. Dialog widened (340px → 480px) to fit the two-column card grid.
+- **2026-11-21** — Levels of Development v73 → v74: Requested Assessors' Sales/Design/Production group headers and checkboxes now use the same colors as Pipeline's Create Trello Board dialog (orange/blue/green — see Pipeline v1188 below), so a department reads as the same color in both tools.
+- **2026-11-21** — Levels of Development v72 → v73: per Byron, after confirming Create Request Card works end to end — (1) the message (with its `@mentions`) now posts as the new card's first **comment** via the `createLodRequestCard` Azure Function, instead of sitting in the card description; Trello only fires "you were mentioned" notifications for a comment mention, never a description one, so the description-only version wasn't actually alerting anyone. (2) The Message box, Copy Request, and Create Request Card are now Admin-only — previously visible/usable to everyone once assessors were checked off. (3) Dropped the explanatory paragraph under the Requested Assessors header entirely; it's just the name list (or checkboxes, in Admin) now, no surrounding verbiage. Manual updated.
+- **2026-11-21** — Levels of Development v71 → v72: fixed Create Request Card failing with "No board named ... found" — the board name wired into the code (`PRE-CON | Byron Wolfe`, assumed from how Byron described it) didn't match the board's real Trello name, `[Pre-Con] Byron Wolfe` (square brackets, no pipe); confirmed via a direct Trello API boards listing, not guesswork. `LOD_TRELLO_BOARD_NAME` corrected to the real name. Also noted the real Sales board's exact name while we had the list: `[SALES] BIG BOARD`, not `Sales Big Board` — the comment flagging the eventual flip now points at the correct string.
 - **2026-11-21** — Selections · Field v9 → v10: the *Where it is* chips are now **one row you swipe sideways**, like *By room* and *Install checklist* (v9 wrapped them onto three rows). Because every tap rebuilds a chip row, rows now **keep their sideways position** and **scroll the chosen chip into view** (before, picking a chip far to the right snapped the row back to the left and hid it). This applies to all three tabs. The list now starts about 160px higher on *Where it is*.
 - **2026-11-21** — Selections · Field v8 → v9: **jump chips on *Where it is***, because getting to Owner supplied meant scrolling past every other group. A wrapped chip row at the top has one chip per group with its count (*All*, *On site*, *At Stokley*, *Ordered*, *Not ordered*, *Owner supplied*…); tap one to see only that group, tap it again for all. Inside a chosen group a second row appears: **bays** for At Stokley (*No bay* first, then B4, F2…), **rooms** for a group of more than 6 items. Counts follow the search. If the chosen group empties (say everything is marked on site) the view falls back to *All* instead of showing nothing. *Select all* now acts only on its own group and on what the bay or room chip shows (it used to take every Stokley-type item matching the search). A big group gets room headings only when rooms hold several items each (On site); a group that is mostly one item per room (Owner supplied) is a flat list in room order with full `Room: Item` titles. The group heading is hidden when its chip already names the group, unless it carries *Select all*.
 - **2026-11-21** — Selections · Field v7 → v8: item sheet and *Where it is* cleanup, from Byron's testing. **Updating an item no longer jumps the sheet back to the top** (it re-opened scrolled to 0 after every button). The update buttons now sit directly under the status tag, above the picture, so the tag and the buttons change together; labels are *Brought to site*, *Mark installed*, *Undo installed*, *Back to Stokley…*, and the separate *Update* section is gone. The sheet's *Where it is* block (which repeated the tag as Status and Stored, and the breadcrumb as Room) is now **Order & delivery**: one *Ordered* line combining BT's Order Date and *Ordered?* text (`Sep 29, Bedrosians`, `Yes, Build`, `No`), *Lead time* only while the item isn't here yet, then *Received*, *Brought to site*, *Installed* dates. On the *Where it is* tab, any group over 6 items other than Stokley (in practice On site) is split under room headings, and its cards drop the repeated `Room:` prefix; *At Stokley* stays in bay order. Fixed in testing: the new button row first inherited the page header's `.top` style (navy block); renamed.
