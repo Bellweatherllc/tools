@@ -59,7 +59,7 @@ There's no required format — write it the way you'd say it out loud. Click **S
 
 Below Scope of Work, **Requested Assessors** tracks who's been asked to weigh in on a project and gives you a one-click way to actually ask them.
 
-With Admin on, check off names from the team roster — each one saves immediately, no separate Save button. That checked list does double duty: it's the record of who was asked (visible to everyone, Admin or not, right below the checkboxes), and it's what **Copy Request** uses.
+With Admin on, check off names from the team roster — grouped into **Sales**, **Design**, and **Production**, read live from Team Members' Department and Role fields (Operations, Logistics Coordinators, and Field Mechanics don't show here — they're not who you'd ask for an LOD read). Each checkbox saves immediately, no separate Save button. That checked list does double duty: it's the record of who was asked (visible to everyone, Admin or not, right below the checkboxes), and it's what **Copy Request** uses.
 
 Click **Copy Request** to copy a ready-to-paste block of text: an `@mention` for each checked person who has a Trello username on file (plain name if they don't — see Team Members' Roster tab to add one), followed by a line asking them to assess the project and the link to it. Paste that straight into a Trello card — CORE doesn't talk to Trello's API directly, so this is a copy-paste handoff, not an automatic send. A natural workflow: keep a template card in Trello for "LOD assessment requests," duplicate it, paste the copied text into the description, and assign it to whoever you just @mentioned.
 

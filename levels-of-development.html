@@ -354,7 +354,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v68</span>
+      <span class="header-version">v69</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -428,7 +428,7 @@
         </div>
         <div style="font-size:12px;color:var(--silver);line-height:1.5;margin-bottom:8px;max-width:600px">Who's been asked to weigh in. Check names below (Admin), then Copy Request for text to paste into a Trello card — @mentions for whoever has a Trello username on file, plus the link to this project.</div>
         <div id="pmeta-assessors-view" style="font-size:13px;color:var(--navy)"></div>
-        <div id="pmeta-assessors-edit" style="display:none;flex-wrap:wrap;gap:6px 16px"></div>
+        <div id="pmeta-assessors-edit" style="display:none;flex-direction:column;gap:10px"></div>
       </div>
     </div>
     <div id="assess-blocks"></div>
@@ -996,19 +996,46 @@ async function fetchCurrentUser() {
 // the field Team Members (team-members.html) actually writes the person's
 // name to; Title is SharePoint's built-in field and is left blank by that
 // tool, unlike fetchCurrentUser() above which checks it as a fallback only.
+// Department/Role matching mirrors project-pipeline.html's own established
+// taxonomy exactly (loadTeamMembers()/ALL_TEAM) rather than inventing a new
+// one: Department starting with "sale" is Sales; Role "Logistics Coordinator"
+// or anything matching /mechanic/i is excluded regardless of department, same
+// as Pipeline's LC_COORDS/FIELD_MECHANICS split.
 async function fetchTeamMembersList(){
   try {
     const url = `${SP_CONFIG.teamMembersUrl}?$expand=fields&$select=id,fields&$top=500`;
     const data = await graphFetch(url);
     teamMembersList = (data.value||[])
       .filter(item => item.fields.Active !== false)
-      .map(item => ({ name: item.fields.EmployeeName || item.fields.Title || '', trello: item.fields.Trello || '' }))
+      .map(item => ({
+        name: item.fields.EmployeeName || item.fields.Title || '',
+        trello: item.fields.Trello || '',
+        department: (item.fields.Department || '').trim(),
+        role: (item.fields.Role || '').trim()
+      }))
       .filter(tm => tm.name)
       .sort((a,b) => a.name.localeCompare(b.name));
   } catch(e) { /* informational only — the picker just stays empty until reload */ }
   const selectedId = document.getElementById('assess-project')?.value;
   const proj = selectedId && spProjects.find(p=>p.id===selectedId);
   if(proj) renderRequestedAssessors(proj);
+}
+
+// Sales / Design / Production, live from Team Members — no hardcoded roster.
+// Excludes Operations entirely, and Logistics Coordinators / Field Mechanics
+// specifically (they're filed under Production by department but aren't who
+// you'd ask for an LOD read), matching Pipeline's own role exclusions.
+function groupedAssessorRoster(){
+  const groups = { Sales: [], Design: [], Production: [] };
+  teamMembersList.forEach(tm => {
+    const dept = tm.department.toLowerCase();
+    const role = tm.role.toLowerCase();
+    if(role === 'logistics coordinator' || /mechanic/.test(role)) return;
+    if(dept.startsWith('sale')) groups.Sales.push(tm);
+    else if(dept === 'design') groups.Design.push(tm);
+    else if(dept === 'production') groups.Production.push(tm);
+  });
+  return groups;
 }
 
 function showAuthBanner() {
@@ -1605,12 +1632,20 @@ function renderRequestedAssessors(proj){
   if(adminMode){
     editEl.style.display = 'flex';
     viewEl.style.display = 'none';
-    editEl.innerHTML = teamMembersList.length
-      ? teamMembersList.map(tm => {
+    if(!teamMembersList.length){
+      editEl.innerHTML = '<span style="font-size:12px;color:var(--silver)">Loading team members…</span>';
+    } else {
+      const groups = groupedAssessorRoster();
+      editEl.innerHTML = ['Sales','Design','Production'].map(groupName => {
+        const members = groups[groupName];
+        if(!members.length) return '';
+        const checkboxes = members.map(tm => {
           const checked = requested.includes(tm.name) ? 'checked' : '';
           return `<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--navy);cursor:pointer"><input type="checkbox" value="${esc(tm.name)}" ${checked} onchange="toggleRequestedAssessor('${proj.id}',this)"> ${esc(tm.name)}</label>`;
-        }).join('')
-      : '<span style="font-size:12px;color:var(--silver)">Loading team members…</span>';
+        }).join('');
+        return `<div><div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--silver);margin-bottom:5px">${groupName}</div><div style="display:flex;flex-wrap:wrap;gap:6px 16px">${checkboxes}</div></div>`;
+      }).join('');
+    }
   } else {
     editEl.style.display = 'none';
     viewEl.style.display = '';
