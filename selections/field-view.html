@@ -74,6 +74,8 @@ main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
 .hero{margin:10px 0 2px;width:100%;aspect-ratio:4/3;max-height:260px;border-radius:10px;background:var(--cotton);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#a39d90;overflow:hidden}
 .hero a{display:block;width:100%;height:100%}
 .hero img{width:100%;height:100%;object-fit:contain;background:#fff;display:block}
+.hero.none{aspect-ratio:auto;max-height:none;height:64px;flex-direction:row;gap:10px}   /* no picture: a slim strip, not a big empty box */
+.hero.none .note{font-size:14px}
 .imgs{display:flex;gap:8px;margin-top:8px;overflow-x:auto}
 .imgs a{flex:none;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--cotton);display:block}
 .imgs img{width:100%;height:100%;object-fit:cover;display:block}
@@ -94,6 +96,12 @@ main{padding:10px 12px 110px;max-width:720px;margin:0 auto}
 .grp>summary .note{margin-left:10px}
 .acts.lead{margin:10px 0 0}
 .acts.lead .btn{flex:1 1 0;white-space:nowrap}
+.frow{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+.frow:last-child{border-bottom:0}
+.frow a{flex:1;min-width:0;display:block;padding:10px 0;color:var(--navy);font-weight:600;overflow-wrap:anywhere}
+.frow .fk{display:block;font:600 11px/1.2 var(--sans);letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.shbtn{flex:none;width:44px;height:44px;border:1px solid var(--line);background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--navy)}
+.shbtn:active{background:var(--cotton)}
 .fl{display:block;padding:11px 0;color:var(--navy);font-weight:600;overflow-wrap:anywhere}
 .card .main{flex:1;min-width:0}
 .card .t{font-weight:600;font-size:15.5px}
@@ -197,7 +205,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v12';
+const CORE_VERSION = 'v13';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -258,11 +266,11 @@ async function save(i,changes,checkin){
   try{ await gPatch(i.id,f); }catch(e){ Object.assign(i,prev); i.state=stateOf(i); throw e; }
 }
 // files library is optional; thumbnails come from Graph each time (never stored)
-const filesCache=new Map();
+const filesCache=new Map(), filesDone=new Map();   // filesDone: rows once the library has answered, so a sheet can draw them at once
 function jobFiles(job){
   if(!filesCache.has(job)){
     const p=gAll(`${LISTS}/CORE_SelectionFiles/items?${jobFilter(job)}&$expand=fields($select=Job,SelectionLookupId,Kind,FileLeafRef),driveItem($select=id,name,webUrl)&$top=999`).catch(e=>{ if(e&&e.status===404) return []; throw e; });
-    filesCache.set(job,p); p.catch(()=>filesCache.delete(job));
+    filesCache.set(job,p); p.then(r=>filesDone.set(job,r),()=>filesCache.delete(job));
   }
   return filesCache.get(job);
 }
@@ -320,6 +328,39 @@ async function lazyThumbs(){   // only cards scrolled near the screen ask Graph 
   if(thumbIO) thumbIO.disconnect();
   thumbIO=new IntersectionObserver(es=>{ for(const en of es){ if(!en.isIntersecting) continue; thumbIO.unobserve(en.target); const el=en.target; thumbOf(idx.get(el.dataset.sel)[0].id).then(t=>{ if(t.medium&&el.isConnected){ el.innerHTML=`<img src="${esc(t.medium)}" alt="">`; el.classList.add('has'); } }); } },{rootMargin:'300px'});
   document.querySelectorAll('.thumb[data-sel]').forEach(el=>{ if(idx.has(el.dataset.sel)&&!el.classList.contains('has')) thumbIO.observe(el); });
+}
+
+/* ── Manuals & files ── Files come from CORE_SelectionFiles (Kind: Manual, Cut sheet, Other; Quote is never shown here, it carries prices).
+   Product and spec-sheet links are the public URLs already written in a choice's description. The Share button opens the phone's own share sheet;
+   a SharePoint file link only opens for people with access, so each row says who it opens for. */
+const SHARE_SVG='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+const PRIVATE_HOST=/(^|\.)(sharepoint\.com|buildertrend\.(net|com)|onedrive\.live\.com|1drv\.ms)$/i;
+function productLinks(choices){
+  const out=[], seen=new Set();
+  for(const c of choices||[]) for(const m of String(c.Description||'').matchAll(/https?:\/\/[^\s<>"')\]]+/g)){
+    try{ const u=new URL(m[0].replace(/[.,;:!?]+$/,'')); if(PRIVATE_HOST.test(u.hostname)||seen.has(u.href)) continue; seen.add(u.href);
+      out.push({url:u.href,host:u.hostname.replace(/^www\./,''),kind:(/\.pdf(\?|$)/i.test(u.pathname)||/specification/i.test(u.pathname))?'Spec sheet':'Product page'}); }catch(e){}
+  }
+  return out.slice(0,5);
+}
+const fileKind=x=>{ const k=String(x.fields.Kind||'').trim().toLowerCase(); if(k) return k;   // no Kind set: guess from the file name
+  const n=(x.driveItem&&x.driveItem.name)||x.fields.FileLeafRef||''; return /manual|install|instruction|owner.?s guide/i.test(n)?'manual':/cut ?sheet|spec/i.test(n)?'cut sheet':'other'; };
+const KIND_LABEL={manual:'Manual','cut sheet':'Cut sheet'};
+function renderFiles(i,files){
+  const el=$('sFiles'); if(!el||el.dataset.id!==i.id) return;
+  const rank=k=>({manual:0,'cut sheet':1}[k]??2);
+  const fl=(files||[]).slice().sort((a,b)=>rank(fileKind(a))-rank(fileKind(b)));
+  const links=productLinks(i.choices);
+  const row=(kind,who,name,url)=>`<div class="frow"><a href="${esc(url)}" target="_blank" rel="noopener"><span class="fk">${esc(kind)} · ${who}</span>${esc(name)}</a><button class="shbtn" data-su="${esc(url)}" data-st="${esc(name)}" aria-label="Share ${esc(name)}">${SHARE_SVG}</button></div>`;
+  const rows=fl.map(x=>{ const d=x.driveItem||{}, k=fileKind(x); return row(KIND_LABEL[k]||'File','staff only',d.name||x.fields.FileLeafRef||'File',d.webUrl||'#'); })
+    .concat(links.map(l=>row(l.kind,'opens for anyone',l.host,l.url)));
+  el.classList.toggle('hidden',!rows.length);
+  el.innerHTML=rows.length?'<h4>Manuals &amp; files</h4>'+rows.join(''):'';
+}
+async function shareLink(url,title){
+  if(navigator.share){ try{ await navigator.share({title,text:title,url}); return; }catch(e){ if(e&&e.name==='AbortError') return; } }   // cancelled = do nothing
+  try{ await navigator.clipboard.writeText(url); toast('Link copied. Paste it into a text or email.'); }
+  catch(e){ toast('Couldn’t open sharing here. Press and hold the link to copy it.'); }
 }
 
 /* ── Interpreting the BT fields ─────────────────────────────────────────── */
@@ -486,25 +527,29 @@ function openSheet(id,keepTop){
     i.state.label==='Installed'?`<button class="btn ghost" data-act="uninstall" data-id="${i.id}">Undo installed</button>`:'',
     i.state.k==='site'&&i.state.label!=='Installed'?`<button class="btn ghost" data-act="back" data-id="${i.id}">Back to Stokley…</button>`:''].join('');
   const specs=i.specs.filter((s,n,a)=>a.findIndex(x=>x.k.toLowerCase()===s.k.toLowerCase()&&x.v===s.v)===n);
+  const known=filesDone.has(i.job), hasImg=known&&(filesDone.get(i.job)||[]).some(x=>String(x.fields.SelectionLookupId)===i.id&&isImg(x));   // until the library answers, start slim
   $('sheet').innerHTML=`<div class="grab"></div><button class="x" data-close aria-label="Close">×</button>
     <div class="note">${esc(i.job)} · ${esc(i.room)} · ${esc(tradeOf(i))}</div>
     <h3 id="sTitle">${esc(i.short)}</h3>
     ${acts?`<div class="acts lead">${acts}</div>`:''}
-    <div class="hero" id="sHero" data-id="${i.id}">${PH(40)}<div class="note"></div></div>
+    <div class="hero${hasImg?'':' none'}" id="sHero" data-id="${i.id}">${PH(hasImg?40:24)}<div class="note">${known&&!hasImg?'No picture yet':''}</div></div>
     ${where.length?`<div class="sec"><h4>Order &amp; delivery</h4><dl class="kv">${where.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`:''}
     ${i.choices.map(c=>`<div class="sec"><h4>What it is</h4><div style="font-weight:600;margin-bottom:6px">${esc(c.Title)}</div>`+
       (specs.length?`<dl class="kv">${specs.slice(0,14).map(s=>`<dt>${esc(s.k)}</dt><dd>${esc(s.v)}</dd>`).join('')}</dl>`:'')+
       `</div>`).join('')}
+    <div class="sec hidden" id="sFiles" data-id="${i.id}"></div>
     <div class="sec"><h4>Notes</h4><textarea id="nNotes" rows="3" placeholder="e.g. 2 of 3 boxes on site, one cracked">${esc(i.notes)}</textarea><div class="acts"><button class="btn ghost" data-act="notes" data-id="${i.id}">Save notes</button></div></div>
-    ${i.choices.some(c=>c.Description)?`<div class="sec"><h4>Full description</h4>${i.choices.map(c=>c.Description?`<details style="margin-top:4px"><summary>${i.choices.length>1?esc(c.Title):'Show'}</summary><div class="desc">${esc(c.Description)}</div></details>`:'').join('')}</div>`:''}
-    <div class="sec hidden" id="sFiles" data-id="${i.id}"></div>`;
+    ${i.choices.some(c=>c.Description)?`<div class="sec"><h4>Full description</h4>${i.choices.map(c=>c.Description?`<details style="margin-top:4px"><summary>${i.choices.length>1?esc(c.Title):'Show'}</summary><div class="desc">${esc(c.Description)}</div></details>`:'').join('')}</div>`:''}`;
+  // Manuals & files are drawn before the scroll position is restored (product links at once, files too if the library already answered); otherwise the sheet is too short and the position is clamped.
+  renderFiles(i,(filesDone.get(i.job)||[]).filter(x=>String(x.fields.SelectionLookupId)===i.id&&!isImg(x)&&fileKind(x)!=='quote'));
   $('sheet').dataset.kind='item'; $('scrim').classList.add('open'); $('sheet').classList.add('open'); $('sheet').scrollTop=typeof keepTop==='number'?keepTop:0;   // after an update the sheet stays where it was
   jobFiles(i.job).then(async rows=>{
     const hero=$('sHero'); if(!hero||hero.dataset.id!==i.id) return;
     const mine=(rows||[]).filter(x=>String(x.fields.SelectionLookupId)===i.id);
-    const imgs=mine.filter(isImg), other=mine.filter(x=>!isImg(x));
-    if(other.length){ const el=$('sFiles'); el.classList.remove('hidden'); el.innerHTML='<h4>Cut sheets &amp; files</h4>'+other.map(x=>{ const d=x.driveItem||{}; return `<a class="fl" href="${esc(d.webUrl||'#')}" target="_blank" rel="noopener">${esc(d.name||x.fields.FileLeafRef||'File')}</a>`; }).join(''); }
-    if(!imgs.length){ hero.querySelector('.note').textContent='No picture yet'; return; }
+    const imgs=mine.filter(isImg), other=mine.filter(x=>!isImg(x)&&fileKind(x)!=='quote');
+    renderFiles(i,other);
+    if(!imgs.length){ hero.classList.add('none'); hero.querySelector('.note').textContent='No picture yet'; return; }
+    hero.classList.remove('none');
     const [first,...more]=await Promise.all([thumbOf(imgs[0].id),...imgs.slice(1).map(x=>thumbOf(x.id))]);
     if($('sHero')!==hero||!hero.isConnected) return;
     const u=first.large||first.medium;
@@ -543,6 +588,7 @@ document.addEventListener('click',e=>{
   const rm=t.closest('[data-room]'); if(rm){ roomF=rm.dataset.room===roomF?'All':rm.dataset.room; render(); return; }
   const jb=t.closest('[data-job]'); if(jb){ closeSheet(); if(jb.dataset.job!==job) pickJob(jb.dataset.job); return; }
   const js=t.closest('[data-star]'); if(js){ toggleStar(js.dataset.star); return; }
+  const su=t.closest('[data-su]'); if(su){ shareLink(su.dataset.su,su.dataset.st); return; }
   const op=t.closest('[data-open]'); if(op){ openSheet(op.dataset.open); return; }
   if(t.closest('[data-close]')||t===$('scrim')){ closeSheet(); return; }
 });
