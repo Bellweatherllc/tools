@@ -11,7 +11,7 @@ Last updated: 2026-11-21
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1190 |
+| Project Pipeline | `project-pipeline.html` | v1191 |
 | Projects Manager | `core-projects-manager.html` | v67 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v75 |
 | Scout Board | `scout-board.html` | v13 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-22** — Project Pipeline v1190 → v1191: per Byron — Weekly Brief **Pipeline Housekeeping** now lists projects whose map pin can’t light up: *Map location not found for "…"* (any active project whose address the Nominatim lookup couldn’t match — fix the address in Project Manager or paste a Google Maps link on the pin) and *No address* (DA/CA-signed only). A lookup still pending isn’t flagged. Rows are dismissible like the others and clear on their own once the pin has a location.
 - **2026-11-22** — Projects Manager v66 → v67: per Byron — a **Map** field beside Address in Client & Location shows the project’s Google Maps URL as text (not a link), built from `Latitude`/`Longitude`, with where it came from (looked up from the address, set by hand, address changed and waiting for the Pipeline, not found). Admin mode: paste a Google Maps link or `lat, lng` to set the location by hand (written in the Pipeline’s `DocLinkMeta` form, so its lookup never replaces it), or clear it so the Pipeline looks it up again. Same columns as Pipeline v1190.
 - **2026-11-22** — Project Pipeline v1189 → v1190: per Byron — **map pin** on the project hover card, beside the Permit & Zoning button. Lit when the project has coordinates: opens the location in Google Maps (Street View is one click from there). Dim when it has none: hover/click to paste a Google Maps link or `lat, lng` (saved as set by hand). No address shows "add it in Projects Manager". The Doc Linker’s quiet pass (4 s after load) now also **looks up coordinates** from `Address` with OpenStreetMap Nominatim (no API key; one request per 1.1 s; at most 25 per load) — only for projects whose address changed since the last lookup (`GeocodedAddress` ≠ `Address`); a location set by hand is never replaced; a miss is remembered per address for 7 days (`DocLinkMeta.geoMiss`). **Needs three columns on `CORE_Projects`:** `Latitude` (Number, 6 decimals), `Longitude` (Number, 6 decimals), `GeocodedAddress` (Single line of text). Until they exist the lookup stops at its first save and logs why; nothing else changes.
 - **2026-11-22** — Selections · LC v8 → v9: per Byron — the topbar line under *Selections LC* shows the signed-in LC's name instead of `BWCore › JOB` (no site name, no project name). Groundwork for per-LC settings.
