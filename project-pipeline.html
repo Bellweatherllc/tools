@@ -366,6 +366,10 @@ body.is-reordering .fc-proj-tooltip{display:none!important;}
 .tt-pz-bubble::before{content:'';position:absolute;left:-6px;top:calc(50% + var(--pz-arr-dy,0px));margin-top:-5px;width:10px;height:10px;background:var(--navy);border-left:1px solid rgba(255,255,255,.14);border-bottom:1px solid rgba(255,255,255,.14);transform:rotate(45deg);}
 .tt-pz-b-title{font-size:10px;font-weight:700;color:#fff;letter-spacing:.04em;margin-bottom:4px;}
 .tt-pz-b-empty{font-size:9px;color:rgba(255,255,255,.5);line-height:1.5;}
+/* v1190: map pin beside the Permit & Zoning zone */
+.tt-map-pin{align-self:center;width:24px;height:24px;border-radius:50%;flex-shrink:0;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(220,80,70,.24);border:none;color:rgba(255,175,165,.95);transition:background .12s;}
+.tt-map-pin:hover{background:rgba(220,80,70,.44);}
+.tt-map-pin svg{width:13px;height:13px;}
 .tt-pz-b-open{font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(150,225,180,.85);margin-top:6px;}
 /* v888: gantt date bubble — dates surface on click, same speech-bubble language as the cascade */
 #ganttDateBubble{display:none;position:fixed;z-index:12500;background:var(--navy);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:8px 12px;box-shadow:0 6px 20px rgba(0,0,0,.45);min-width:130px;max-width:270px;font-family:'TT Norms Pro',sans-serif;}
@@ -3751,7 +3755,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1189';
+const CORE_VERSION = 'v1190';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -5820,6 +5824,7 @@ function buildFcMsRow(proj, capacitySection, opts){
       const pz=el('div','tt-pz-zone'); pz.dataset.pzProject=proj.name||'';
       pz.innerHTML='<span class="tt-pz-lbl">Permit &amp; Zoning</span><span class="tt-pz-dots"></span>'+(PZ_ENABLED?'<div class="tt-pz-bubble"></div>':'');
       pplWrap.appendChild(pz);
+      pplWrap.appendChild(_mkMapPin(proj)); // v1190
       tip.appendChild(pplWrap); }
     if(proj._spItemId||true){
       const footer=el('div','tt-footer'); footer.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);';
@@ -6298,6 +6303,7 @@ function buildFcLcProjectRow(proj,lcId){
     const pz=el('div','tt-pz-zone'); pz.dataset.pzProject=proj.name||'';
     pz.innerHTML='<span class="tt-pz-lbl">Permit &amp; Zoning</span><span class="tt-pz-dots"></span>'+(PZ_ENABLED?'<div class="tt-pz-bubble"></div>':'');
     pplWrap.appendChild(pz);
+    pplWrap.appendChild(_mkMapPin(proj)); // v1190
     tip.appendChild(pplWrap); } // v882
   { const footer=el('div','tt-footer'); footer.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.10);';
     if(proj._spItemId){
@@ -10508,7 +10514,7 @@ function _prefsKey(){
 }
 function projectGanttPayload(proj){
   // Everything except SP-owned fields (name, address, status, estimatedValue) and diagnostics
-  const {name,address,status,estimatedValue,clientName,projectName,_rawStage,docUrls,_gdCorrupt,...rest}=proj;
+  const {name,address,status,estimatedValue,clientName,projectName,_rawStage,docUrls,_gdCorrupt,lat,lng,geoFor,...rest}=proj;
   return rest;
 }
 // Write person display name to SP column when a project is assigned/unassigned
@@ -12921,6 +12927,7 @@ function _projectFromItem(item){
     proj.trelloPreviousList=f.TrelloPreviousList||''; // list name before most recent change
     // v895 — Doc Linker stage 1: stable folder anchor + provenance blob.
     proj.spFolderItemId=f.SPFolderItemId||'';
+    proj.lat=typeof f.Latitude==='number'?f.Latitude:null; proj.lng=typeof f.Longitude==='number'?f.Longitude:null; proj.geoFor=f.GeocodedAddress||''; // v1190
     try{ proj.docLinkMeta=f.DocLinkMeta?JSON.parse(f.DocLinkMeta):{}; }
     catch(e){ console.warn(APP_VER+' DocLinkMeta parse failed for item '+item.id+' — treating as empty.'); proj.docLinkMeta={}; }
     // v981 — Design invoices seeded from the DA: seed (drift baseline) + editable working copy.
@@ -14284,6 +14291,7 @@ const UPCOMING_INFO={
   da: {label:'Design Agreement',       desc:'Link to the signed Design Agreement document.'},
   mp: {label:'Matterport',             desc:'3D scan of the existing conditions for this project.'},
   plans:{label:'Plans',                desc:'Current plan set for this project \u2014 pick from the folder.'},
+  map:{label:'Map',                    desc:'Project location in Google Maps \u2014 Street View is one click from there.'},
   ca: {label:'Construction Agreement', desc:'Link to the signed Construction Agreement document.'},
 };
 // ══ v879: Permit & Zoning mirror (CORE_Permits) — read-only. The tracker owns this
@@ -14923,6 +14931,12 @@ function _showUpcomingPop(btn){
     soon.textContent=(_pp&&_pp.spFolderItemId)?'Click to open Plans folder':'No project folder linked yet';
     soon.style.color=(_pp&&_pp.spFolderItemId)?'rgba(150,225,180,.85)':'rgba(255,150,140,.80)';
   }
+  else if(type==='map'){
+    const _mp=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
+    const _byHand=!!(_mp&&_mp.docLinkMeta&&_mp.docLinkMeta.links&&_mp.docLinkMeta.links.geo&&_mp.docLinkMeta.links.geo.src==='manual');
+    if(hasUrl){ soon.textContent='Click to open in Google Maps'+(_byHand?' \u00b7 location set by hand':''); soon.style.color='rgba(150,225,180,.85)'; }
+    else { soon.textContent=(_mp&&_mp.address)?'Location not found yet \u2014 click to set it':'No address \u2014 add it in Projects Manager'; soon.style.color='rgba(255,150,140,.80)'; }
+  }
   else if(hasUrl){ soon.textContent='Click to open'; soon.style.color='rgba(150,225,180,.85)'; }
   else {
     const _hp=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
@@ -14935,7 +14949,8 @@ function _showUpcomingPop(btn){
   if(act){
     act.innerHTML='';
     const dlProj=btn.dataset.dlProj?PROJECTS.find(p=>p._spItemId===btn.dataset.dlProj):null;
-    if(!hasUrl&&type!=='plans'&&dlProj&&dlProj.spFolderItemId){
+    if(!hasUrl&&type==='map'){ if(dlProj&&dlProj.address) _geoRecoveryUI(act,dlProj,pop); else act.style.cssText='display:none;'; }
+    else if(!hasUrl&&type!=='plans'&&dlProj&&dlProj.spFolderItemId){
       _dlRecoveryUI(act,dlProj,type,pop);
     } else { act.style.cssText='display:none;'; }
   }
@@ -15038,6 +15053,7 @@ document.addEventListener('pointerdown',e=>{
     // v916 — Trello is permanently manual with no SharePoint home: a dim TRL
     // pill opens a paste-only popover (no folder browse, no anchor needed).
     if(t==='trl'&&_rp){ _dlPickerOpen=true; _showUpcomingPop(upBtn); _dlOverlayOnPill(upBtn,pop); return; }
+    if(t==='map'&&_rp&&_rp.address){ _dlPickerOpen=true; _showUpcomingPop(upBtn); _dlOverlayOnPill(upBtn,pop); return; } // v1190: dim pin pins its paste-a-location popover
     // v908/v914 — a dim pill with recovery options pins on click and opens the
     // recovery popover below it (with hover bridge), so Browse-folder and
     // Paste-link are reachable without a hover journey.
@@ -16652,6 +16668,94 @@ document.addEventListener('click',e=>{
 const _MAP_MSG='Map view is coming soon \u2014 project, permit, and zoning locations on one map.';
 const _MAP_ARROW_SVG='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="transform:rotate(25deg)"><path d="M12 2.5L18.5 20 12 15.2 5.5 20 12 2.5z" fill="#fff"/></svg>';
 const _MAP_BTN_HTML=''; // v952: map button hidden until the feature is ready (was a tt-map button)
+// ════════════════  v1190: MAP PIN + GEOCODE (Doc Linker)
+// The map pin beside Permit & Zoning opens the project location in Google Maps (Street View is one click
+// from there). Coordinates live on CORE_Projects (Latitude, Longitude, GeocodedAddress) and are looked up
+// from Address by the Doc Linker pass with OpenStreetMap Nominatim (no API key, max 1 request per 1.1 s).
+// Only projects whose Address changed since the last lookup are looked up again. A location set by hand
+// (DocLinkMeta.links.geo.src='manual') is never replaced; a miss is remembered per address for 7 days.
+const MAP_PIN_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+function projMapUrl(p){ return (p&&typeof p.lat==='number'&&typeof p.lng==='number')?'https://www.google.com/maps/search/?api=1&query='+p.lat+','+p.lng:''; }
+function _mkMapPin(proj){
+  const b=document.createElement('button'); b.className='tt-map-pin'; b.innerHTML=MAP_PIN_SVG;
+  b.dataset.upcomingPill='map'; b.setAttribute('aria-label','Map');
+  const u=projMapUrl(proj); if(u) b.dataset.upcomingUrl=u; else b.style.opacity='0.45';
+  if(proj&&proj._spItemId) b.dataset.dlProj=proj._spItemId;
+  return b;
+}
+function parseGeoText(s){
+  s=String(s||'').trim();
+  const m=s.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/)||s.match(/[?&](?:q|query|ll|viewpoint|center)=(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/)||s.match(/^(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
+  if(!m) return null; const lat=+m[1], lng=+m[2];
+  return (Math.abs(lat)<=90&&Math.abs(lng)<=180)?{lat:+lat.toFixed(6),lng:+lng.toFixed(6)}:null;
+}
+async function dlManualGeo(proj,text){
+  const g=parseGeoText(text); if(!g) throw new Error('Paste a Google Maps link or "lat, lng".');
+  const meta=proj.docLinkMeta=proj.docLinkMeta||{}; meta.links=meta.links||{};
+  meta.links.geo={lat:g.lat,lng:g.lng,at:new Date().toISOString(),src:'manual'}; delete meta.geoMiss;
+  await graphPatch(BWC_SITE+'/CORE_Projects/items/'+proj._spItemId+'/fields',{Latitude:g.lat,Longitude:g.lng,GeocodedAddress:proj.address||null,DocLinkMeta:JSON.stringify(meta)});
+  proj.lat=g.lat; proj.lng=g.lng; proj.geoFor=proj.address||'';
+  try{ buildAll(); }catch(e){}
+}
+// Dim map pin: paste a Google Maps link (or lat, lng) to set the location by hand.
+function _geoRecoveryUI(act,proj,pop){
+  act.style.cssText='margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;gap:5px;';
+  act.innerHTML='';
+  const inp=document.createElement('input');
+  inp.type='text'; inp.placeholder='Paste a Google Maps link, or lat, lng';
+  inp.style.cssText='width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid rgba(255,255,255,.30);border-radius:4px;background:rgba(255,255,255,.08);color:#fff;font-size:10px;font-family:inherit;';
+  inp.addEventListener('pointerdown',x=>x.stopPropagation());
+  const msg=document.createElement('div'); msg.style.cssText='font-size:9.5px;color:rgba(255,150,140,.85);min-height:0;';
+  const saveB=document.createElement('button');
+  saveB.style.cssText='padding:4px 8px;border:none;background:#019425;border-radius:5px;font-size:10px;color:#fff;cursor:pointer;font-family:inherit;font-weight:700;';
+  saveB.textContent='Save location';
+  saveB.addEventListener('pointerdown',x=>{
+    x.stopPropagation();
+    if(!parseGeoText(inp.value)){ inp.style.borderColor='#ff6b5e'; msg.textContent='That isn’t a Google Maps link or a lat, lng pair.'; return; }
+    saveB.disabled=true; saveB.textContent='Saving…';
+    dlManualGeo(proj,inp.value)
+      .then(()=>{ pop.style.display='none'; _dlPickerOpen=false; _dlPickerBtn=null; _dlClearBridge(); })
+      .catch(err=>{ saveB.disabled=false; saveB.textContent='Save location'; msg.textContent=/Latitude|Longitude|GeocodedAddress/.test(err.message)?'CORE_Projects needs Latitude, Longitude and GeocodedAddress columns.':'Save failed — '+err.message; });
+  });
+  act.appendChild(inp); act.appendChild(saveB); act.appendChild(msg);
+}
+let _geoRunning=false, _geoNoColumns=false;
+async function dlGeocodePass(){
+  if(_geoRunning||_geoNoColumns) return {updated:0,tried:0};
+  _geoRunning=true; let updated=0, tried=0;
+  try{
+    const todo=PROJECTS.filter(p=>{
+      if(!p._spItemId||!p.address||/^Slot\b/i.test(p.name||'')) return false;
+      const m=p.docLinkMeta||{}, g=(m.links||{}).geo;
+      if(g&&g.src==='manual') return false;
+      if(typeof p.lat==='number'&&typeof p.lng==='number'&&p.geoFor===p.address) return false;
+      const miss=m.geoMiss; if(miss&&miss.address===p.address&&Date.now()-Date.parse(miss.at||0)<7*864e5) return false;
+      return true;
+    });
+    for(const p of todo.slice(0,25)){   // a quiet pass: at most 25 lookups per Pipeline load
+      if(tried++) await new Promise(r=>setTimeout(r,1100));
+      let hit=null;
+      try{
+        const res=await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&viewbox=-75.65,40.35,-74.75,39.75&q='+encodeURIComponent(p.address));
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const arr=await res.json();
+        if(arr&&arr[0]&&isFinite(+arr[0].lat)&&isFinite(+arr[0].lon)) hit={lat:+(+arr[0].lat).toFixed(6),lng:+(+arr[0].lon).toFixed(6)};
+      }catch(e){ console.warn(APP_VER+' Geocode: lookup failed for '+p.name,e); continue; }
+      const meta=p.docLinkMeta=p.docLinkMeta||{}, patch={};
+      if(hit){ patch.Latitude=hit.lat; patch.Longitude=hit.lng; patch.GeocodedAddress=p.address; meta.links=meta.links||{}; meta.links.geo={lat:hit.lat,lng:hit.lng,at:new Date().toISOString(),src:'auto'}; delete meta.geoMiss; }
+      else meta.geoMiss={address:p.address,at:new Date().toISOString()};
+      patch.DocLinkMeta=JSON.stringify(meta);
+      try{ await graphPatch(BWC_SITE+'/CORE_Projects/items/'+p._spItemId+'/fields',patch); }
+      catch(e){
+        if(/Latitude|Longitude|GeocodedAddress/.test(String(e&&e.message))){ _geoNoColumns=true; console.warn(APP_VER+' Geocode: CORE_Projects needs Latitude and Longitude (Number) and GeocodedAddress (Single line of text) columns — skipping until they exist.'); break; }
+        console.warn(APP_VER+' Geocode: save failed for '+p.name,e); continue;
+      }
+      if(hit){ p.lat=hit.lat; p.lng=hit.lng; p.geoFor=p.address; updated++; }
+    }
+  } finally { _geoRunning=false; }
+  if(tried) console.log(APP_VER+' Geocode: '+updated+' located, '+tried+' looked up.');
+  return {updated,tried};
+}
 function _mkTtMapBtn(){ return null; } // v952: hidden — restore _MAP_BTN_HTML above to bring it back
 
 // ════════════════════════════════════════════════  KEY DATES PANEL
@@ -20936,6 +21040,7 @@ async function dlResolveLinkNames(){
 async function runDocLinks(quiet,includeFlagged){
   if(!quiet) dlOpenLoading();
   const a=await runFolderAnchorBackfill(quiet,includeFlagged);
+  dlGeocodePass().then(r=>{ if(r&&r.updated){ try{ buildAll(); }catch(e){} } }).catch(e=>console.warn(APP_VER+' Geocode pass failed:',e)); // v1190: runs alongside, never blocks the link pass
   if(!a){ if(!quiet) dlClosePanel(); return; }
   let fill={filled:[],missing:[],errors:0};
   if(!quiet) dlLoadMsg('Matching documents to projects\u2026');
