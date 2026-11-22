@@ -309,6 +309,9 @@ body.homeview .hsec{color:#101820}
 .hsec{font-family:var(--serif);font-weight:500;font-size:22px;margin:28px 0 12px}
 .hsec-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .bubbles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.plist.vrows{margin-top:28px}
+.pnext.soon{color:var(--warn)}
+.bubbles.vcards{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));margin-top:28px}
 .bubble{position:relative;display:flex;flex-direction:column;align-items:stretch;border:1px solid var(--line-2);border-radius:28px;background:var(--wash);transition:transform .12s,border-color .12s}
 .bopen{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:24px 16px 16px;border:0;background:none;cursor:pointer;font:inherit;color:inherit;border-radius:28px;flex:1}
 .bnext{font-size:13px;color:var(--ink);font-weight:500;margin-top:2px}
@@ -690,7 +693,7 @@ nav.views .homebtn{margin-right:10px}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'P5';
+const CORE_VERSION = 'P6';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -1298,9 +1301,6 @@ function weekStrip(){
 }
 function home(){
   const act=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&inView(n))), arc=cur().kind==="all"?Object.keys(JOBS).filter(isArch):[];
-  let rec=getRecent().filter(n=>JOBS[n]&&!isArch(n)&&inView(n));
-  for(const n of act){if(rec.length>=5)break;if(!rec.includes(n))rec.push(n)}
-  rec=rec.slice(0,5);
   const sub=n=>esc([JOBS[n].address,JOBS[n].neighborhood,JOBS[n].lc?"LC: "+JOBS[n].lc:""].filter(Boolean).join(" · "));
   window.mapLink=mapLink;
   const bubble=n=>{const s=jobStats(n),nx=nextMs(n),d=JOBS[n]||{};
@@ -1309,15 +1309,15 @@ function home(){
       <span class="bnext ${nx&&nx.soon?"soon":""}">${nx?`Next: ${esc(nx.label)} · ${fmtDate(nx.date)}`:"No timeline dates yet"}</span>
       <span class="bmeta">${s.ord} on order · ${s.need} to order</span></button>
       ${mq||d.scan||d.plans?`<span class="blinks">${d.plans?`<a href="${esc(encodeURI(decodeURI(d.plans)))}" target="_blank" rel="noopener" data-tip="Current plans" aria-label="Plans for ${esc(n)}">${ICON_DOC}</a>`:""}${mq?`<a href="${mq}" target="_blank" rel="noopener" data-tip="Map" aria-label="Map for ${esc(n)}">${ICON_PIN}</a>`:""}${d.scan?`<a href="${esc(d.scan)}" target="_blank" rel="noopener" data-tip="${/matterport/i.test(d.scan)?"Matterport":"3D scan"}" aria-label="3D scan for ${esc(n)}">${ICON_3D}</a>`:""}</span>`:""}</div>`};
-  const row=n=>{const s=jobStats(n),d=JOBS[n];return `<button class="prow ${isArch(n)?"arch":""}" data-job="${esc(n)}" data-open="1"><span class="pname">${esc(n)}</span><span class="pinfo">${sub(n)}${d.client?" · "+esc(d.client):""}</span>
-    <span class="pbar" aria-label="${s.pct}% in"><span style="width:${s.pct}%"></span></span><span class="pnum">${s.inn} of ${s.n} in</span></button>`};
+  const row=n=>{const s=jobStats(n),d=JOBS[n];return `<button class="prow ${isArch(n)?"arch":""}" data-job="${esc(n)}" data-open="1"><span class="pname">${esc(n)}</span><span class="pinfo">${sub(n)}${d.client?" · "+esc(d.client):""}${(()=>{const nx=nextMs(n);return nx?` · <span class="${nx.soon?"pnext soon":"pnext"}">Next: ${esc(nx.label)} · ${fmtDate(nx.date)}</span>`:""})()}</span>
+    <span class="pbar" aria-label="${s.pct}% in"><span style="width:${s.pct}%"></span></span><span class="pnum">${s.n?s.inn+" of "+s.n+" in":"No selections yet"}</span></button>`};
   return `<section class="home">
   ${viewHead()}
   ${weekStrip()}
   ${attentionHtml()}
-  ${rec.length?`<h2 class="hsec">Recent</h2><div class="bubbles">${rec.map(bubble).join("")}</div>`:""}
-  <div class="hsec-row"><h2 class="hsec">${cur().kind==="all"?"All Projects":"Projects in this view"}</h2></div>
-  <div class="plist">${act.map(row).join("")||`<div class="empty"><b>${cur().kind==="all"?"No active projects on the Pipeline.":"No projects in this view yet."}</b>${cur().kind!=="all"&&mine(cur())?"Use Edit to star the projects you want here.":""}</div>`}</div>
+  ${(()=>{ const byNext=[...act].sort((a,b)=>{ const x=nextMs(a),y=nextMs(b); return (x?x.date:"9999").localeCompare(y?y.date:"9999")||a.localeCompare(b); });
+    if(!byNext.length) return `<div class="empty"><b>${cur().kind==="all"?"No active projects on the Pipeline.":"No projects in this view yet."}</b>${cur().kind!=="all"&&mine(cur())?"Use Edit to star the projects you want here.":""}</div>`;
+    return cur().kind==="all"?`<div class="plist vrows">${byNext.map(row).join("")}</div>`:`<div class="bubbles vcards">${byNext.map(bubble).join("")}</div>`; })()}
   ${arc.length?`<button class="link" data-toggle-arch style="margin-top:16px">${showArchived?"Hide archived":"Show archived ("+arc.length+")"}</button>${showArchived?`<div class="plist" style="margin-top:8px">${arc.map(row).join("")}</div>`:""}`:""}
   </section>`;
 }
