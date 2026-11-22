@@ -602,6 +602,7 @@ dd .ph{color:var(--muted);font-weight:400;font-style:italic}
 .vmeta{color:var(--muted);font-size:14px;margin-top:4px}
 .jm-sep{border-top:1px solid var(--line);margin:8px 0 4px}
 .jm-foot[hidden]{display:none}
+.pvopen{margin:4px 0 12px}
 h2.ph{display:flex;flex-wrap:wrap;align-items:center;gap:0 .3em}
 .ptitle{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;letter-spacing:inherit;cursor:pointer}
 .ptitle svg{width:.62em;height:.62em;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.8;margin-top:.12em;transition:transform .15s}
@@ -705,7 +706,7 @@ nav.views>button:first-child{margin-left:0}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'P9';
+const CORE_VERSION = 'P10';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -1520,6 +1521,7 @@ function setWarn(r){
   return msg.length?`<div class="setwarn ${bad?"bad":""}">${bad?ICON_WARN:""}<span>Goes with: ${msg.join(" · ")}</span></div>`:"";
 }
 function pull(){
+  if(pScope==="view") return pullView();
   const today=new Date().toISOString().slice(0,10);
   const m=(JOBS[job]&&JOBS[job].milestones)||{};
   if(pStage===null||(pStage!=="all"&&msOff(job).has(pStage))){const nx=activeMs(job).find(([k])=>m[k]&&m[k]>=today);pStage=nx?nx[0]:"all"}
@@ -1541,7 +1543,7 @@ function pull(){
     <span><span class="title">${esc(r.Title)}</span><div class="note">${esc([r.Location,r.color,r.qty&&("Qty "+r.qty),r.sku].filter(Boolean).join(" \u00b7 "))}</div>
     ${r.condition&&r.condition!=="OK"?`<div class="note swap">${esc(r.condition)}${r.damageNote?": "+esc(r.damageNote):""} \u2013 check with your LC before taking it</div>`:""}${setWarn(r)}</span></label>
     ${trip&&canWrite?`<button class="tripbtn ${inTrip.has(r.id)?"on":""}" data-tripadd="${r.id}">${inTrip.has(r.id)?"\u2713 Added":"+ Add"}</button>`:""}</div>`;
-  return `<div class="pullview"><h2 class="ph">Pull for ${ptitle()}</h2><p class="lede">${left} item${left===1?"":"s"} waiting at Stokley${pStage!=="all"?" for "+esc(MSL[pStage]):""}, grouped by bay. Check each one off as it goes on the truck.</p>
+  return `<div class="pullview">${pScopeSel()}<h2 class="ph">Pull for ${ptitle()}</h2><p class="lede">${left} item${left===1?"":"s"} waiting at Stokley${pStage!=="all"?" for "+esc(MSL[pStage]):""}, grouped by bay. Check each one off as it goes on the truck.</p>
   <div class="toolbar"><input id="q" class="search" type="search" placeholder="Search item or room" aria-label="Search">${stageSel}${trip?"":tripBox}</div>
   ${trip?tripBox:""}
   ${shelves.map(s=>{const rows=L.filter(i=>(i.OnHandLocation||"No location noted")===s);return `<div class="shelf"><h4>${esc(s)}</h4><p>${rows.length} item${rows.length===1?"":"s"}</p>${rows.map(row).join("")}</div>`}).join("")
@@ -2752,6 +2754,51 @@ document.addEventListener("keydown",e=>{
   const k=e.key.toLowerCase();
   if(k==="m"){ e.preventDefault(); keyTo("lc:"+MEF()); }
   else if(k==="a"){ e.preventDefault(); keyTo("all"); }
+});
+
+/* ── Pull for site follows the view (prototype P10) ──
+   Default: every project in the current view, one box each, items grouped by bay (Everything; "next stage" is an option).
+   Picking one project gives the full single-project screen (stage menu, pull lists, history). */
+let pScope="view", pvStage="all";
+function pScopeSel(){
+  const v=cur(), opts=Object.keys(JOBS).filter(n=>!isArch(n)&&(inView(n)||n===job)).sort((a,b)=>a.localeCompare(b));
+  return `<div class="rscope"><label class="pick-sel"><span>Showing</span><select data-pscope aria-label="Which projects"><option value="view" ${pScope==="view"?"selected":""}>${v.kind==="all"?"All Projects":"All in "+esc(v.name)}</option>${opts.map(n=>`<option value="job:${esc(n)}" ${pScope==="job"&&job===n?"selected":""}>${esc(n)} only</option>`).join("")}</select></label></div>`;
+}
+function pullView(){
+  const today=new Date().toISOString().slice(0,10), v=cur();
+  const waiting=i=>(state(i)==="recv"&&!/^owner/i.test(i.OnHandLocation||"")&&!/onsite/i.test(i.OnHandLocation||""))||(i.pulledAt&&Date.now()-i.pulledAt<12*3600e3);
+  const nextStage=n=>{ const m=(JOBS[n]&&JOBS[n].milestones)||{}; const nx=activeMs(n).find(([k])=>m[k]&&m[k]>=today); return nx?nx[0]:null; };
+  const projs=Object.keys(JOBS).filter(n=>!isArch(n)&&inView(n)).sort((a,b)=>{ const x=nextMs(a),y=nextMs(b); return (x?x.date:"9999").localeCompare(y?y.date:"9999")||a.localeCompare(b); });
+  let total=0;
+  let boxes=projs.map(n=>{
+    const st=pvStage==="next"?nextStage(n):null;
+    const L=items.filter(i=>i.Job===n&&waiting(i)&&(!st||phaseOf(i)===st)).filter(match);
+    if(!L.length) return "";
+    const left=L.filter(i=>!i.pulledAt).length; total+=left;
+    const shelves=[...new Set(L.map(i=>i.OnHandLocation||"No location noted"))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+    const row=r=>`<div class="prow2 ${r.pulledAt?"done":""}"><label class="check" style="border:0;padding:0;flex:1"><input type="checkbox" data-pull="${r.id}" ${r.pulledAt?"checked":""} ${canWrite?"":"disabled"}>
+      <span><span class="title">${esc(r.Title)}</span><div class="note">${esc([r.Location,r.color,r.qty&&("Qty "+r.qty),r.sku].filter(Boolean).join(" · "))}</div>
+      ${r.condition&&r.condition!=="OK"?`<div class="note swap">${esc(r.condition)}${r.damageNote?": "+esc(r.damageNote):""} – check with your LC before taking it</div>`:""}</span></label></div>`;
+    const inner=shelves.map(s=>{ const rows=L.filter(i=>(i.OnHandLocation||"No location noted")===s); return `<div class="shelf"><h4>${esc(s)}</h4><p>${rows.length} item${rows.length===1?"":"s"}</p>${rows.map(row).join("")}</div>`; }).join("")
+      +`<div class="pvopen"><button class="btn ghost small" data-pjob="${esc(n)}">Open pull for ${esc(n)} →</button></div>`;
+    const closed=rClosed.has("pull:"+n);
+    return `<section class="rbox ${closed?"closed":""}" style="--jc:${jobColor(n)}"><button class="rboxhead" data-rbox="pull:${esc(n)}" aria-expanded="${!closed}"><span class="jdot"></span><span class="rbname">${esc(n)}</span><span class="rbsum">${left} waiting${st?" · for "+esc(MSL[st]):""}</span><span class="chev" aria-hidden="true"></span></button>${closed?"":`<div class="rboxbody">${inner}</div>`}</section>`;
+  }).filter(Boolean);
+  const n=boxes.length; boxes=boxes.join("");
+  const stageSel=`<label class="pick-sel"><span>For</span><select data-pvstage aria-label="Stage"><option value="all" ${pvStage==="all"?"selected":""}>Everything</option><option value="next" ${pvStage==="next"?"selected":""}>Each project's next stage</option></select></label>`;
+  return `<div class="pullview">${pScopeSel()}<h2>Pull for site</h2><p class="lede">${total} item${total===1?"":"s"} waiting at Stokley across ${n} project${n===1?"":"s"}${pvStage==="next"?", for each project's next stage":""}, grouped by bay. Check each one off as it goes on the truck, or open a project to build a pull list.</p>
+  <div class="toolbar"><input id="q" class="search" type="search" placeholder="Search item or room" aria-label="Search">${stageSel}</div>
+  ${boxes||`<div class="empty"><b>Nothing to pull${pvStage==="next"?" for the next stages":""}.</b>${pvStage==="next"?"Try <b>Everything</b> in the For menu.":"No received items for "+(v.kind==="all"?"any project":"the projects in "+esc(v.name))+" are waiting at the warehouse."}</div>`}</div>`;
+}
+document.addEventListener("change",e=>{
+  const t=e.target; if(!t.matches) return;
+  if(t.matches("[data-pscope]")){ if(t.value==="view") pScope="view"; else{ pScope="job"; job=t.value.slice(4); pStage=null; try{(window.spEnsureJob&&spEnsureJob(job),localStorage.setItem("bw-job",job))}catch(err){} } render(); }
+  else if(t.matches("[data-pvstage]")){ pvStage=t.value; render(); }
+});
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-pjob]"); if(!b) return;
+  pScope="job"; job=b.dataset.pjob; pStage=null; try{(window.spEnsureJob&&spEnsureJob(job),localStorage.setItem("bw-job",job))}catch(err){}
+  render(); window.scrollTo(0,0);
 });
 
 render();
