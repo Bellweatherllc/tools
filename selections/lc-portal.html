@@ -604,6 +604,21 @@ dd .ph{color:var(--muted);font-weight:400;font-style:italic}
 .jm-foot[hidden]{display:none}
 .pvopen{margin:4px 0 12px}
 .rbox.pvbox{border-left:1px solid var(--line-2)}
+.blinks .bl-off,.blinks .bl-fix{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-2)}
+.blinks .bl-off{opacity:.35}
+.blinks .bl-fix{cursor:pointer;border-style:dashed;padding:0}
+.blinks .bl-fix:hover{border-style:solid;border-color:var(--ink);color:var(--ink)}
+.blinks .bl-fix:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.fl-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.fl-body{padding:4px 14px 12px}
+.fl-row{padding:10px 0;border-bottom:1px solid var(--line)}
+.fl-top{display:flex;justify-content:space-between;align-items:baseline;font-size:14px}
+.fl-top a{font-size:13px;color:var(--ink-2)}
+.fl-st{font-size:12px;color:var(--muted);margin:3px 0 7px}
+.fl-in{display:flex;gap:6px}
+.fl-in input{flex:1;min-width:0;font:400 14px/1.3 var(--sans);padding:6px 8px;border:1px solid var(--line-2);border-radius:6px;background:var(--paper);color:var(--ink)}
+.fl-note{font-size:12px;color:var(--muted);margin:10px 0 0}
+.fl-msg{color:var(--warn);font-size:13px;min-height:1em;margin-top:6px}
 h2.ph{display:flex;flex-wrap:wrap;align-items:center;gap:0 .3em}
 .ptitle{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;letter-spacing:inherit;cursor:pointer}
 .ptitle svg{width:.62em;height:.62em;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.8;margin-top:.12em;transition:transform .15s}
@@ -673,6 +688,7 @@ nav.views>button:first-child{margin-left:0}
 <div class="ve-foot"><span class="sp"></span><button class="vbtn" id="veCancel">Cancel</button><button class="btn" id="veSave">Create view</button></div></div></div>
 <div class="jm" id="jm" hidden role="dialog" aria-label="Views"><div class="jm-search"><input id="jmQ" type="search" placeholder="Find a view" autocomplete="off" aria-label="Find a view"></div><div class="jm-list" id="jmList"></div><div class="jm-foot" id="jmFoot" hidden></div></div>
 <div class="jm" id="ps" hidden role="dialog" aria-label="Switch project"><div class="jm-search"><input id="psQ" type="search" placeholder="Find a project" autocomplete="off" aria-label="Find a project"></div><div class="jm-list" id="psList"></div></div>
+<div class="jm fl" id="fl" hidden role="dialog" aria-label="Fix links"><div class="pm-head fl-head"><span id="flHead"></span><button class="jm-link" data-flclose>Done</button></div><div class="jm-list fl-body" id="flBody"></div></div>
 <div class="jm" id="pm" hidden role="dialog" aria-label="Projects in this view"><div class="pm-head" id="pmHead"></div><div class="jm-search"><input id="pmQ" type="search" placeholder="Find a project" autocomplete="off" aria-label="Find a project"></div><div class="jm-list" id="pmList"></div><div class="jm-foot pm-foot" id="pmFoot"></div></div>
 <header class="top">
   <div class="wrap">
@@ -707,7 +723,7 @@ nav.views>button:first-child{margin-left:0}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'P11';
+const CORE_VERSION = 'P12';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -821,7 +837,60 @@ const CORE_VERSION = 'P11';
     receipts:()=>[...(docs.get('receipts')||new Map()).entries()],
     views:()=>[...(docs.get('views')||new Map()).entries()],
     jobs:()=>[]};
-  async function jobsView(){ const js=await loadJobs(); return js.map(j=>[String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),{...(jobExtra.get(j.name)||{}),name:j.name,archived:j.archived,createdAt:j.createdAt}]); }
+  /* ── CORE_Projects (prototype P12): the Pipeline's project record, matched by JobCode = Job.
+     Read: LC1/LC2 (for "My projects"), Address + coordinates (map, Street View), MatterportUrl, the folder anchor (Plans folder).
+     Write: link fixes from any screen, in the Pipeline's own DocLinkMeta form ({href,at,src:'manual'}) so its automatic pass leaves them alone. */
+  let projP=null; const PROJ=new Map(), PLANS=new Map(); let _custDrive=null;
+  function loadProjects(){
+    if(projP) return projP;
+    projP=gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=Title,JobCode,Address,Latitude,Longitude,GeocodedAddress,MatterportUrl,SPFolderItemId,LogisticsCoordinator1,LogisticsCoordinator2,DocLinkMeta)&$top=999`)
+      .then(rows=>{ for(const r of rows){ const c=String(r.fields.JobCode||'').trim().toUpperCase(); if(c) PROJ.set(c,{spId:String(r.id),f:r.fields}); } })
+      .catch(e=>{ console.warn('Selections: could not read CORE_Projects',e); });
+    return projP;
+  }
+  const cpFor=name=>PROJ.get(String(name||'').trim().toUpperCase());
+  const firstName=s=>String(s||'').trim().split(/\s+/)[0]||null;
+  function cpView(name){
+    const p=cpFor(name); if(!p) return {cp:false};
+    const f=p.f; const meta=parseJ(f.DocLinkMeta);
+    return {cp:true,lc:firstName(f.LogisticsCoordinator1),lc2:firstName(f.LogisticsCoordinator2),address:f.Address||null,
+      lat:num(f.Latitude),lng:num(f.Longitude),geoFor:f.GeocodedAddress||null,mp:f.MatterportUrl||null,folderId:f.SPFolderItemId||null,links:meta.links||{}};
+  }
+  async function custDrive(){
+    if(_custDrive) return _custDrive;
+    const d=await g('https://graph.microsoft.com/v1.0/sites/bellweather.sharepoint.com:/sites/BWC:/drives?$select=id,name');
+    const x=(d.value||[]).find(v=>/^customers$/i.test(String(v.name||'').trim()));
+    if(!x) throw new Error('Customers drive not found on the BWC site');
+    return _custDrive=x.id;
+  }
+  async function resolvePlans(name){
+    const v=cpView(name);
+    if(v.links&&v.links.plans&&v.links.plans.src==='manual'&&v.links.plans.href) return v.links.plans.href;
+    if(!v.folderId) return '';
+    const d=await custDrive();
+    for(const path of ['3. Plans, Engineering/3. Plans']){   // same path as the Pipeline's Doc Linker rule
+      try{ const it=await g(`https://graph.microsoft.com/v1.0/drives/${d}/items/${v.folderId}:/${path.split('/').map(encodeURIComponent).join('/')}?$select=webUrl`); if(it&&it.webUrl) return it.webUrl; }catch(e){}
+    }
+    try{ const r=await g(`https://graph.microsoft.com/v1.0/drives/${d}/items/${v.folderId}?$select=webUrl`); return (r&&r.webUrl)||''; }catch(e){ return ''; }
+  }
+  window.spLinks={
+    plans(name){   // cached Plans folder address; '' while looking it up (a redraw follows)
+      const k=String(name).toUpperCase(); if(PLANS.has(k)) return PLANS.get(k)||'';
+      PLANS.set(k,''); resolvePlans(name).then(u=>{ PLANS.set(k,u||''); if(u) emit(['jobs']); }).catch(()=>{}); return '';
+    },
+    async fix(name,kind,val){
+      const p=cpFor(name); if(!p) throw Object.assign(new Error('No Pipeline project has Job Code '+name),{code:'not_found'});
+      const meta=parseJ(p.f.DocLinkMeta); meta.links=meta.links||{}; const at=new Date().toISOString(), fields={};
+      if(kind==='mp'){ meta.links.mp={href:val,at,src:'manual',by:ME}; fields.MatterportUrl=val; }
+      else if(kind==='plans'){ meta.links.plans={href:val,at,src:'manual',by:ME}; PLANS.set(String(name).toUpperCase(),val); }
+      else if(kind==='geo'){ meta.links.geo={lat:val.lat,lng:val.lng,at,src:'manual',by:ME}; fields.Latitude=val.lat; fields.Longitude=val.lng; fields.GeocodedAddress=p.f.Address||null; }
+      else throw new Error('Unknown link '+kind);
+      fields.DocLinkMeta=JSON.stringify(meta);
+      const before={...p.f}; Object.assign(p.f,fields); emit(['jobs']);
+      try{ await patch('CORE_Projects',p.spId,fields); }catch(e){ p.f=before; emit(['jobs']); throw e; }
+    }
+  };
+  async function jobsView(){ const js=await loadJobs(); await loadProjects(); return js.map(j=>[String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),{...(jobExtra.get(j.name)||{}),...cpView(j.name),name:j.name,archived:j.archived,createdAt:j.createdAt}]); }
   function emit(which){ for(const c of which||['items','checkins','trips','receipts']){ if(c==='jobs'){ jobsView().then(r=>subs.jobs.forEach(f=>f(snap(r)))); continue; } const r=views[c](); subs[c].forEach(f=>f(snap(r))); } }
   function loadJob(job){
     if(!job||job==='All'||cache.has(job)) return Promise.resolve();
@@ -941,7 +1010,7 @@ const CORE_VERSION = 'P11';
   async function saveJob(slug,op,data){
     const js=await loadJobs(); let j=js.find(x=>String(x.name).toLowerCase().replace(/[^a-z0-9]+/g,'-')===slug)||(data&&js.find(x=>x.name===data.name));
     const name=(data&&data.name)||(j&&j.name); if(!name) throw Object.assign(new Error('Job needs a name'),{code:'invalid'});
-    const extra={...(jobExtra.get(name)||{}),...(op==='update'?data:clone(data)||{})}; const archived=!!extra.archived; delete extra.archived; delete extra.name; delete extra.createdAt;
+    const extra={...(jobExtra.get(name)||{}),...(op==='update'?data:clone(data)||{})}; const archived=!!extra.archived; delete extra.archived; delete extra.name; delete extra.createdAt; for(const k of ['cp','lc','lc2','lat','lng','geoFor','mp','folderId','links']) delete extra[k];
     if(j){ if(j.archived!==archived){ await patch('CORE_SelectionJobs',j.spId,{Archived:archived}); j.archived=archived; } }
     else{ const r=await post('CORE_SelectionJobs',{Title:name,Job:name,Archived:archived}); j={spId:String(r.id),name,archived,createdAt:Date.now()}; js.push(j); }
     jobExtra.set(name,extra);
@@ -1318,11 +1387,10 @@ function home(){
   const sub=n=>esc([JOBS[n].address,JOBS[n].neighborhood,JOBS[n].lc?"LC: "+JOBS[n].lc:""].filter(Boolean).join(" · "));
   window.mapLink=mapLink;
   const bubble=n=>{const s=jobStats(n),nx=nextMs(n),d=JOBS[n]||{};
-    const mq=d.address&&!/sample|whole home/i.test(d.address)?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.address+", "+(d.neighborhood||"Philadelphia")+", PA")}`:"";
     return `<div class="bubble"><button class="bopen" data-job="${esc(n)}" data-open="1">${ring(s.pct)}<span class="bname">${esc(n)}</span><span class="bsub">${sub(n)}</span>
       <span class="bnext ${nx&&nx.soon?"soon":""}">${nx?`Next: ${esc(nx.label)} · ${fmtDate(nx.date)}`:"No timeline dates yet"}</span>
       <span class="bmeta">${s.ord} on order · ${s.need} to order</span></button>
-      ${mq||d.scan||d.plans?`<span class="blinks">${d.plans?`<a href="${esc(encodeURI(decodeURI(d.plans)))}" target="_blank" rel="noopener" data-tip="Current plans" aria-label="Plans for ${esc(n)}">${ICON_DOC}</a>`:""}${mq?`<a href="${mq}" target="_blank" rel="noopener" data-tip="Map" aria-label="Map for ${esc(n)}">${ICON_PIN}</a>`:""}${d.scan?`<a href="${esc(d.scan)}" target="_blank" rel="noopener" data-tip="${/matterport/i.test(d.scan)?"Matterport":"3D scan"}" aria-label="3D scan for ${esc(n)}">${ICON_3D}</a>`:""}</span>`:""}</div>`};
+      ${cardLinks(n)}</div>`};
   const row=n=>{const s=jobStats(n),d=JOBS[n];return `<button class="prow ${isArch(n)?"arch":""}" data-job="${esc(n)}" data-open="1"><span class="pname">${esc(n)}</span><span class="pinfo">${sub(n)}${d.client?" · "+esc(d.client):""}${(()=>{const nx=nextMs(n);return nx?` · <span class="${nx.soon?"pnext soon":"pnext"}">Next: ${esc(nx.label)} · ${fmtDate(nx.date)}</span>`:""})()}</span>
     <span class="pbar" aria-label="${s.pct}% in"><span style="width:${s.pct}%"></span></span><span class="pnum">${s.n?s.inn+" of "+s.n+" in":"No selections yet"}</span></button>`};
   return `<section class="home">
@@ -1378,7 +1446,7 @@ function overview(){
     const rets=items.filter(i=>i.Job===j&&state(i)==="ret").length;
     const done=(c.recv||0)+(c.site||0)+(c.owner||0)+(c.elec||0)+(c.done||0), n=L.length||1;
     const roughOut=L.filter(i=>i.Category===ROUGH&&["ord","need","tbd"].includes(state(i))).length;
-    return `<div class="job"><h3>${canEditSel?`<button class="jobname" data-editjob="${esc(j)}" data-tip="Edit project details">${esc(j)}</button>`:esc(j)}</h3><div class="addr">${JOBS[j]&&JOBS[j].client?`<div class="jclient">${esc(JOBS[j].client)}</div>`:""}${JOBS[j]&&JOBS[j].address?`<div>${mapUrl(j)?`<a class="addrlink" href="${mapUrl(j)}" target="_blank" rel="noopener" data-tip="Open in Maps">${esc(JOBS[j].address)}</a>`:esc(JOBS[j].address)}</div>`:""}${JOBS[j]&&JOBS[j].neighborhood?`<div>${esc(JOBS[j].neighborhood)}</div>`:""}${scanLink(j)||plansLink(j)?`<div class="jlinks">${plansLink(j)}${scanLink(j)}</div>`:""}</div>
+    return `<div class="job"><h3>${canEditSel?`<button class="jobname" data-editjob="${esc(j)}" data-tip="Edit project details">${esc(j)}</button>`:esc(j)}</h3><div class="addr">${JOBS[j]&&JOBS[j].client?`<div class="jclient">${esc(JOBS[j].client)}</div>`:""}${JOBS[j]&&JOBS[j].address?`<div>${mapUrl(j)?`<a class="addrlink" href="${mapUrl(j)}" target="_blank" rel="noopener" data-tip="Open in Maps">${esc(JOBS[j].address)}</a>`:esc(JOBS[j].address)}</div>`:""}${JOBS[j]&&JOBS[j].neighborhood?`<div>${esc(JOBS[j].neighborhood)}</div>`:""}${scanLink(j)||plansLink(j)||svUrl(j)?`<div class="jlinks">${plansLink(j)}${svLink(j)}${scanLink(j)}</div>`:""}</div>
       ${teamBlock(j)}
       ${timelineBlock(j)}
       <div class="bar" aria-hidden="true"><span class="r" style="width:${done/n*100}%"></span><span class="o" style="width:${(c.ord||0)/n*100}%"></span><span class="n" style="width:${((c.need||0)+(c.tbd||0))/n*100}%"></span></div>
@@ -2589,11 +2657,11 @@ let VIEWS={}, curView=(()=>{try{return localStorage.getItem("bw-view")||""}catch
 const first=s=>String(s||"").trim().split(/\s+/)[0]||"";
 const meN=()=>(window.spMe||{}).name||"", meI=()=>(window.spMe||{}).id||"";
 const MEF=()=>first(meN());
-const lcs=()=>[...new Set(Object.keys(JOBS).map(n=>JOBS[n].lc).filter(Boolean))];
+const lcs=()=>[...new Set(Object.keys(JOBS).flatMap(n=>[JOBS[n].lc,JOBS[n].lc2]).filter(Boolean))];
 function people(){ const me=MEF(); return [...new Set([me,...lcs().sort(),...Object.values(VIEWS).map(v=>first(v.owner)).sort()])].filter(Boolean); }
 function myViewFor(p){
-  const d=Object.entries(VIEWS).find(([,v])=>v.kind==="my"&&first(v.owner)===p), name=p===MEF()?"My projects":p+"'s projects";
-  return d?{id:"lc:"+p,docId:d[0],name,owner:p,kind:"my",rule:d[1].rule}:{id:"lc:"+p,name,owner:p,kind:"my",rule:{type:"lc",lc:p}};
+  const name=p===MEF()?"My projects":p+"'s projects";   // always the Pipeline's LC fields
+  return {id:"lc:"+p,name,owner:p,kind:"my",rule:{type:"lc",lc:p}};
 }
 function viewList(){
   const out=[];
@@ -2603,17 +2671,17 @@ function viewList(){
 }
 function viewById(id){ return viewList().find(v=>v.id===id)||null; }
 function cur(){ return viewById(curView)||viewById("lc:"+MEF())||viewById("all"); }
-function viewJobs(v){ const r=(v&&v.rule)||{type:"all"}; return Object.keys(JOBS).filter(n=>r.type==="all"||(r.type==="lc"&&JOBS[n].lc===r.lc)||(r.type==="pick"&&(r.jobs||[]).includes(n))); }
+function viewJobs(v){ const r=(v&&v.rule)||{type:"all"}; return Object.keys(JOBS).filter(n=>r.type==="all"||(r.type==="lc"&&(JOBS[n].lc===r.lc||JOBS[n].lc2===r.lc))||(r.type==="pick"&&(r.jobs||[]).includes(n))); }
 function inView(n){ const v=cur(); return !v||v.rule.type==="all"||viewJobs(v).includes(n); }
 const mine=v=>!!v&&(v.kind==="my"?v.owner===MEF():v.kind==="view"&&v.ownerId===meI());
 function setView(id){ curView=id; try{localStorage.setItem("bw-view",id)}catch(e){} view="home"; history.replaceState(null,"","#home"); render(); window.scrollTo(0,0); }
 const CHEV=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
 function viewHead(){
   const v=cur(), n=viewJobs(v).filter(x=>!isArch(x)).length, all=Object.keys(JOBS).filter(x=>!isArch(x)).length;
-  const who=v.kind==="all"?"":mine(v)?(v.kind==="my"&&v.rule.type==="lc"?"Projects where you are the LC":"Your view"):esc(v.owner)+"'s view";
+  const who=v.kind==="all"?"":v.kind==="my"?(v.owner===MEF()?"Projects where you're an LC on the Pipeline":"Where "+esc(v.owner)+" is an LC on the Pipeline"):mine(v)?"Your view":esc(v.owner)+"'s view";
   const empty=mine(v)&&!n;
   return `<div class="vhead"><div class="vrow"><button class="vtitle" id="vTitle" aria-haspopup="true" aria-expanded="${!$("#jm").hidden}">${esc(v.name)}${CHEV}</button>
-    ${mine(v)?`<button class="vbtn" id="vEdit" aria-haspopup="true" aria-expanded="${!$("#pm").hidden}">Edit</button>`:""}
+    ${mine(v)&&v.kind!=="my"?`<button class="vbtn" id="vEdit" aria-haspopup="true" aria-expanded="${!$("#pm").hidden}">Edit</button>`:""}
     ${v.kind==="view"&&!mine(v)?`<button class="vbtn" data-ve-copy="${esc(v.id)}">Copy to my views</button>`:""}</div>
     <div class="vmeta">${who?who+" · ":""}${v.kind==="all"?n+" projects":n+" of "+all+" projects"}${empty?" · Use Edit to star the projects you want here":""}</div></div>`;
 }
@@ -2640,7 +2708,7 @@ function jmRender(){
 }
 /* Edit: star the projects in this view */
 function pmRender(){
-  const v=cur(); if(!mine(v)){ pmClose(); return; }
+  const v=cur(); if(!mine(v)||v.kind==="my"){ pmClose(); return; }
   const q=($("#pmQ").value||"").trim().toLowerCase(), inV=new Set(viewJobs(v));
   const L=Object.keys(JOBS).filter(n=>!isArch(n)).sort((a,b)=>a.localeCompare(b)).filter(n=>{ const d=JOBS[n]||{}; return !q||[n,d.address,d.client,d.lc].filter(Boolean).join(" ").toLowerCase().includes(q); });
   $("#pmHead").innerHTML=`Star the projects that belong in <span class="pm-vname">${esc(v.name)}</span>. The list is every active project on the Pipeline.`;
@@ -2658,7 +2726,8 @@ async function toggleStar(n){
   try{ await db.collection("views").doc(id).set(doc); }catch(e){ toast("Didn't save – try again"); }
 }
 /* popups */
-function place(el,anchor,w){ const b=anchor.getBoundingClientRect(); w=Math.min(w,innerWidth-32); el.style.top=(b.bottom+8)+"px"; el.style.left=Math.max(16,Math.min(b.left,innerWidth-16-w))+"px"; }
+function place(el,anchor,w){ const b=anchor.getBoundingClientRect(); w=Math.min(w,innerWidth-32); el.style.left=Math.max(16,Math.min(b.left,innerWidth-16-w))+"px"; el.style.top=(b.bottom+8)+"px";
+  const hgt=el.offsetHeight; if(b.bottom+8+hgt>innerHeight-16) el.style.top=Math.max(16,Math.min(b.top-8-hgt,innerHeight-16-hgt))+"px"; }   // open upward when there is no room below
 function jmOpen(){ pmClose(); $("#jmQ").value=""; jmRender(); $("#jm").hidden=false; place($("#jm"),$("#vTitle"),380); syncAria(); setTimeout(()=>$("#jmQ").focus(),0); }
 function jmClose(){ if($("#jm").hidden) return; $("#jm").hidden=true; syncAria(); }
 function pmOpen(){ jmClose(); $("#pmQ").value=""; $("#pm").hidden=false; pmRender(); place($("#pm"),$("#vEdit")||$("#vTitle"),380); syncAria(); setTimeout(()=>$("#pmQ").focus(),0); }
@@ -2801,6 +2870,60 @@ document.addEventListener("click",e=>{
   pScope="job"; job=b.dataset.pjob; pStage=null; try{(window.spEnsureJob&&spEnsureJob(job),localStorage.setItem("bw-job",job))}catch(err){}
   render(); window.scrollTo(0,0);
 });
+
+/* ── project links on the cards (prototype P12) ──
+   Plans folder, Map, Street View, Matterport — all from the Pipeline's project record. "Fix links" corrects any of them from here. */
+const ICON_EYE=`<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const ICON_DOTS=`<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/></svg>`;
+const ICON_FOLDER=`<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5h6l2 2h9v10h-17z"/></svg>`;
+const hasGeo=d=>d&&d.lat!=null&&d.lng!=null;
+function mapUrl(n){ const d=JOBS[n]||{}; if(hasGeo(d)) return `https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}`; return d.address?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.address)}`:""; }
+function svUrl(n){ const d=JOBS[n]||{}; return hasGeo(d)?`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${d.lat},${d.lng}`:""; }
+function plansUrl(n){ return window.spLinks?spLinks.plans(n):""; }
+const linkA=(href,icon,label,tip,cls)=>href?`<a class="${cls||""}" href="${esc(href)}" target="_blank" rel="noopener" data-tip="${esc(tip)}" aria-label="${esc(label)}">${icon}</a>`:`<span class="bl-off ${cls||""}" data-tip="${esc(tip)}" aria-label="${esc(label)}" role="img">${icon}</span>`;
+function cardLinks(n){
+  const d=JOBS[n]||{}, geo=hasGeo(d), pl=plansUrl(n);
+  return `<span class="blinks">${linkA(pl,ICON_FOLDER,"Plans folder for "+n,pl?"Plans folder":(d.folderId?"Finding the Plans folder…":"No project folder linked yet"))}${linkA(mapUrl(n),ICON_PIN,"Map of "+n,geo?"Map":(d.address?"Map – location not confirmed":"No address on the Pipeline"))}${linkA(svUrl(n),ICON_EYE,"Street View of "+n,geo?"Street View":"Street View needs the location")}${linkA(d.mp,ICON_3D,"Matterport for "+n,d.mp?"Matterport":"No Matterport yet")}<button class="bl-fix" data-fixlinks="${esc(n)}" data-tip="Fix links" aria-label="Fix links for ${esc(n)}">${ICON_DOTS}</button></span>`;
+}
+/* the project page header uses these too */
+function plansLink(n){ const u=plansUrl(n); return u?` <a class="maplink" href="${esc(u)}" target="_blank" rel="noopener" data-tip="Plans folder">${ICON_FOLDER}Plans</a>`:""; }
+function mapLink(n){ const u=mapUrl(n); return u?` <a class="maplink" href="${esc(u)}" target="_blank" rel="noopener" data-tip="Map">${ICON_PIN}Map</a>`+(svUrl(n)?` <a class="maplink" href="${esc(svUrl(n))}" target="_blank" rel="noopener" data-tip="Street View">${ICON_EYE}Street View</a>`:""):""; }
+function svLink(n){ const u=svUrl(n); return u?` <a class="maplink" href="${esc(u)}" target="_blank" rel="noopener" data-tip="Street View">${ICON_EYE}Street View</a>`:""; }
+function scanLink(n){ const d=JOBS[n]||{}; return d.mp?` <a class="maplink" href="${esc(d.mp)}" target="_blank" rel="noopener" data-tip="Matterport">${ICON_3D}Matterport</a>`:""; }
+
+/* Fix links */
+let flJob=null;
+function srcText(l,auto){ if(l&&l.src==="manual") return "Fixed by hand"+(l.by?" by "+esc(first(l.by)):"")+(l.at?" · "+fmtDate(String(l.at).slice(0,10)):""); if(l&&l.src==="pinned") return "Pinned on the Pipeline"; return auto; }
+function parseGeo(s){ s=String(s||"").trim(); let m=s.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/)||s.match(/[?&](?:q|query|ll|viewpoint|center)=(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/)||s.match(/^(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
+  if(!m) return null; const lat=+m[1], lng=+m[2]; return Math.abs(lat)<=90&&Math.abs(lng)<=180?{lat,lng}:null; }
+function flRender(){
+  const n=flJob, d=JOBS[n]||{}, L=d.links||{};
+  if(!d.cp){ $("#flBody").innerHTML=`<p class="fl-note">${esc(n)} isn't matched to a project on the Pipeline. Its Job Code there must be <b>${esc(n)}</b>.</p>`; return; }
+  const pl=plansUrl(n);
+  const row=(k,label,status,value,ph,open)=>`<div class="fl-row"><div class="fl-top"><b>${label}</b>${open?`<a href="${esc(open)}" target="_blank" rel="noopener">Open</a>`:""}</div><div class="fl-st">${status}</div>
+    <div class="fl-in"><input type="text" id="fl-${k}" placeholder="${esc(ph)}" value="${esc(value||"")}" autocomplete="off"><button class="vbtn" data-flsave="${k}">Save</button></div></div>`;
+  $("#flHead").innerHTML=`Links for <span class="pm-vname">${esc(n)}</span>`;
+  $("#flBody").innerHTML=
+    row("plans","Plans folder",srcText(L.plans,d.folderId?"From the project folder on the Pipeline":"No project folder linked yet – paste the folder's link"),"","Paste a SharePoint folder link",pl)+
+    row("geo","Location",hasGeo(d)?srcText(L.geo,"Looked up from "+esc(d.geoFor||d.address||"the address"))+` · ${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}`:(d.address?"Not looked up yet – "+esc(d.address):"No address on the Pipeline"),"","Paste a Google Maps link, or lat, lng",svUrl(n)||mapUrl(n))+
+    row("mp","Matterport",d.mp?srcText(L.mp,"Found in the Matterport Files folder"):"None yet","","Paste the Matterport link",d.mp)+
+    `<p class="fl-note">Fixes save to the project on the Pipeline, so every screen uses them. The Pipeline's automatic check never replaces a link fixed by hand.</p><div class="fl-msg" id="flMsg"></div>`;
+}
+function flOpen(n,anchor){ jmClose(); pmClose(); psClose(); flJob=n; flRender(); const el=$("#fl"); el.hidden=false; place(el,anchor,400); }
+function flClose(){ $("#fl").hidden=true; flJob=null; }
+document.addEventListener("click",async e=>{
+  const fx=e.target.closest("[data-fixlinks]"); if(fx){ e.preventDefault(); e.stopPropagation(); $("#fl").hidden||flJob!==fx.dataset.fixlinks?flOpen(fx.dataset.fixlinks,fx):flClose(); return; }
+  const sv=e.target.closest("[data-flsave]");
+  if(sv){ const k=sv.dataset.flsave, v=($("#fl-"+k).value||"").trim(), msg=$("#flMsg"); let val=v;
+    if(k==="geo"){ val=parseGeo(v); if(!val){ msg.textContent="That isn't a Google Maps link or a lat, lng pair."; return; } }
+    else if(!/^https?:\/\//i.test(v)){ msg.textContent="Paste a full link starting with https://"; return; }
+    sv.disabled=true; msg.textContent="";
+    try{ await spLinks.fix(flJob,k,val); toast("Saved to the Pipeline"); flRender(); }catch(err){ msg.textContent=err&&err.code==="not_found"?err.message:"Didn't save – try again."; sv.disabled=false; }
+    return; }
+  if(e.target.closest("[data-flclose]")){ flClose(); return; }
+  if(!$("#fl").hidden&&!$("#fl").contains(e.target)) flClose();
+},true);
+$("#fl").addEventListener("keydown",e=>{ if(e.key==="Escape"){ e.stopPropagation(); flClose(); } if(e.key==="Enter"&&e.target.matches("input")){ e.preventDefault(); const b=e.target.parentElement.querySelector("[data-flsave]"); if(b) b.click(); } });
 
 render();
 (async()=>{
