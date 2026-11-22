@@ -176,6 +176,9 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
 .pm-sec-rel{--pm-accent:#9091A0;}
 /* Document abbreviation chips — same palette as the pipeline hover-card pills */
 .pm-doc-lbl{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
+/* v67: Map field — the URL as text (not a link), with where it came from */
+.pm-map-url{font-size:12px;word-break:break-all;user-select:all;}
+.pm-map-note{font-size:11px;color:rgba(40,40,40,.45);margin-top:3px;line-height:1.35;}
 .pm-doc-chip{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:16px;padding:0 5px;
   border-radius:8px;font-size:8px;font-weight:800;letter-spacing:.04em;flex-shrink:0;}
 .pm-doc-chip.est{background:rgba(210,160,50,.20);color:#8a6410;}
@@ -1014,7 +1017,7 @@ const SP_CONFIG = {
 // v59 — single version constant stamps both badges (header + splash overlay)
 // so they can never drift apart. The splash badge matters: the overlay blocks
 // the header when testing locally before sign-in.
-const MGR_VERSION='v66';
+const MGR_VERSION='v67';
 (()=>{ const h=document.getElementById('mgrVerBadge'); if(h) h.textContent=MGR_VERSION;
        const p=document.getElementById('mgrVerSplash'); if(p) p.textContent=MGR_VERSION; })();
 const CORE_COLUMNS = [
@@ -1029,6 +1032,9 @@ const CORE_COLUMNS = [
   {key:'SalesPerson',           label:'Sales Person',              type:'text'},
   {key:'ProjectDescription',    label:'Project Description',       type:'text'},
   {key:'Address',               label:'Address',                   type:'text'},
+  {key:'Latitude',              label:'Latitude',                  type:'number'},   // v67: looked up from Address by the Pipeline, or set by hand (Map)
+  {key:'Longitude',             label:'Longitude',                 type:'number'},
+  {key:'GeocodedAddress',       label:'Geocoded Address',          type:'text'},     // the Address the coordinates came from
   {key:'Neighborhood',          label:'Neighborhood',              type:'text'},
   {key:'ScopeType',             label:'Scope Type',                type:'choice'},
   {key:'FinishLevel',           label:'Finish Level',              type:'choice'},
@@ -1424,6 +1430,23 @@ function buildDetailPanel(p){
     </div>`;
   }
 
+  // v67 — Map: the Google Maps URL for the project's location (Latitude/Longitude, looked up from Address by the
+  // Pipeline's Doc Linker, or set by hand here). Shown as the URL, not a link. Admin: paste a Google Maps link or
+  // "lat, lng" to set it by hand; clear it to let the Pipeline look it up again.
+  function mapField(){
+    const lat=typeof p.Latitude==='number'?p.Latitude:null, lng=typeof p.Longitude==='number'?p.Longitude:null;
+    const url=(lat!=null&&lng!=null)?mapUrlFor(lat,lng):'';
+    let meta={}; try{ meta=JSON.parse(p.DocLinkMeta||'{}')||{}; }catch(e){}
+    const geo=(meta.links||{}).geo, byHand=!!(geo&&geo.src==='manual');
+    const stale=!!(url&&!byHand&&p.GeocodedAddress&&p.Address&&p.GeocodedAddress!==p.Address);
+    const note=!url?(!p.Address?'Add an address and the Pipeline looks up the location.':(meta.geoMiss&&meta.geoMiss.address===p.Address)?'Location not found for this address \u2014 paste a Google Maps link.':'Not looked up yet \u2014 the Pipeline does this on its next load.')
+      :byHand?'Set by hand':stale?'Address changed \u2014 the Pipeline updates this on its next load.':'Looked up from the address';
+    if(adminMode) return `<div class="df"><label>Map</label>
+        <input class="edit-input" id="ef-Map-${id}" type="text" value="${esc(url)}" placeholder="Paste a Google Maps link, or lat, lng" onchange="saveMapLocation('${id}',this.value)">
+        <div class="pm-map-note" id="ef-msg-Map-${id}">${esc(note)}</div></div>`;
+    return `<div class="df"><label>Map</label><div class="v${url?' pm-map-url':' empty'}">${url?esc(url):'\u2014'}</div><div class="pm-map-note">${esc(note)}</div></div>`;
+  }
+
   function boolField(fieldKey, label, val) {
     const checked = val===true||val==='Yes'||val==='1'||val==='true';
     if (adminMode) {
@@ -1481,6 +1504,7 @@ function buildDetailPanel(p){
   // ── Location & Value section — Address, Est. Project Value, Home Value ──
   const locationGrid=
     textField('Address','Address',p.Address||'')
+    +mapField()
     +textField('EstimatedProjectValue','Est. Project Value',p.EstimatedProjectValue!=null?String(p.EstimatedProjectValue):'')
     +textField('HomeValue','Home Value',p.HomeValue!=null?String(p.HomeValue):'')
     +`<div class="df"><label>Date Added</label><div class="v">${fmtDate(p.Created,true)}</div></div>`;
@@ -1669,6 +1693,37 @@ async function fixUrlColumns(){
 
 // ══════════════════════════════════ AUTO-SAVE
 const _autoTimers={};
+// v67 — Map field helpers (same rules as the Pipeline: a location set by hand is never replaced by its lookup)
+function mapUrlFor(lat,lng){ return 'https://www.google.com/maps/search/?api=1&query='+lat+','+lng; }
+function parseGeoText(s){
+  s=String(s||'').trim();
+  const m=s.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/)||s.match(/[?&](?:q|query|ll|viewpoint|center)=(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/)||s.match(/^(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
+  if(!m) return null; const lat=+m[1], lng=+m[2];
+  return (Math.abs(lat)<=90&&Math.abs(lng)<=180)?{lat:+lat.toFixed(6),lng:+lng.toFixed(6)}:null;
+}
+async function saveMapLocation(itemId,text){
+  const proj=allProjects.find(p=>p._id===itemId); if(!proj) return;
+  const note=document.getElementById('ef-msg-Map-'+itemId), inp=document.getElementById('ef-Map-'+itemId), v=String(text||'').trim();
+  let meta={}; try{ meta=JSON.parse(proj.DocLinkMeta||'{}')||{}; }catch(e){}
+  meta.links=meta.links||{};
+  let fields;
+  if(!v){ delete meta.links.geo; delete meta.geoMiss; fields={Latitude:null,Longitude:null,GeocodedAddress:null,DocLinkMeta:JSON.stringify(meta)}; }
+  else{
+    const g=parseGeoText(v);
+    if(!g){ if(note){ note.textContent='That isn\u2019t a Google Maps link or a lat, lng pair.'; note.style.color='#b94444'; } return; }
+    meta.links.geo={lat:g.lat,lng:g.lng,at:new Date().toISOString(),src:'manual'}; delete meta.geoMiss;
+    fields={Latitude:g.lat,Longitude:g.lng,GeocodedAddress:proj.Address||null,DocLinkMeta:JSON.stringify(meta)};
+  }
+  if(note){ note.textContent='Saving\u2026'; note.style.color=''; }
+  try{
+    await graphFetch(`${SP_CONFIG.itemBaseUrl}/${itemId}`,{method:'PATCH',body:JSON.stringify({fields})});
+    Object.assign(proj,fields);
+    if(inp) inp.value=fields.Latitude!=null?mapUrlFor(fields.Latitude,fields.Longitude):'';
+    if(note){ note.textContent=v?'Set by hand':'Cleared \u2014 the Pipeline looks it up again on its next load.'; note.style.color=''; }
+  }catch(e){
+    if(note){ note.textContent='\u26a0 '+(/Latitude|Longitude|GeocodedAddress/.test(e.message)?'CORE_Projects needs Latitude, Longitude and GeocodedAddress columns.':e.message); note.style.color='#b94444'; }
+  }
+}
 async function autoSaveField(itemId,fieldKey,value){
   const proj=allProjects.find(p=>p._id===itemId);
   if(!proj)return;
