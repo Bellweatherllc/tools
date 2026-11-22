@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-21
+Last updated: 2026-11-22
 
 ## Live tools
 
@@ -12,40 +12,40 @@ Last updated: 2026-11-21
 |---|---|---|
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1191 |
-| Projects Manager | `core-projects-manager.html` | v67 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v75 |
-| Scout Board | `scout-board.html` | v13 |
+| Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
+| Levels of Development | `levels-of-development.html` | v76 |
+| Scout Board | `scout-board.html` | v14 |
 | **PM Workbook & Budget** | | |
-| PM Workbook | `pm-workbook.html` | v82 |
-| PM Budget Planner | `pm-budget-planner.html` | v66 |
+| PM Workbook | `pm-workbook.html` | v85 |
+| PM Budget Planner | `pm-budget-planner.html` | v70 |
 | **Finance** | | |
-| Revenue Tracker | `revenue-tracker.html` | v11 |
-| WIP Tracker | `wip-tracker.html` | v30 |
+| Revenue Tracker | `revenue-tracker.html` | v12 |
+| WIP Tracker | `wip-tracker.html` | v32 |
 | **Permits** | | |
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v184 |
 | **Operations** | | |
-| Fleet Tracker | `fleet-tracker.html` | v3 |
+| Fleet Tracker | `fleet-tracker.html` | v4 |
 | **Analyzers** | | |
-| Project Hours Analyzer | `project-hours-analyzer.html` | v57 |
-| People Analyzer | `people-analyzer.html` | v26 |
+| Project Hours Analyzer | `project-hours-analyzer.html` | v58 |
+| People Analyzer | `people-analyzer.html` | v27 |
 | **Process** | | |
-| CP Process Scoring | `cp-process-scoring.html` | v6 |
+| CP Process Scoring | `cp-process-scoring.html` | v7 |
 | FBA Matrix | `fba-matrix.html` | v4 |
 | **SharePoint & Admin** | | |
-| SharePoint Sherpa | `sharepoint-sherpa.html` | v13 |
-| Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v1 |
-| Selections List Setup | `selections/selections-setup.html` | v10 |
-| Selections · Design | `selections/design.html` | v4 |
-| Selections · LC | `selections/lc-portal.html` | v9 |
-| Selections · Field | `selections/field-view.html` | v14 |
-| Selections · Warehouse | `selections/warehouse.html` | v4 |
-| Core Admin | `core-admin.html` | v6 |
-| Team Members | `team-members.html` | v39 |
-| Core Roadmap | `core_roadmap.html` | v57 |
+| SharePoint Sherpa | `sharepoint-sherpa.html` | v14 |
+| Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v2 |
+| Selections List Setup | `selections/selections-setup.html` | v11 |
+| Selections · Design | `selections/design.html` | v5 |
+| Selections · LC | `selections/lc-portal.html` | v10 |
+| Selections · Field | `selections/field-view.html` | v15 |
+| Selections · Warehouse | `selections/warehouse.html` | v5 |
+| Core Admin | `core-admin.html` | v7 |
+| Team Members | `team-members.html` | v40 |
+| Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v15 |
-| CORE System Map | `core-system-map.html` | v18 |
-| Brand Style Guide | `bellweather-style-guide.html` | v15 |
+| BW Tool Index | `bw-tool-index.html` | v16 |
+| CORE System Map | `core-system-map.html` | v19 |
+| Brand Style Guide | `bellweather-style-guide.html` | v16 |
 
 ## Manuals
 
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-22** — Favicon sweep, all pages: the four-link favicon block from the Style Guide is now in every page that lacked it (30 pages, including the manuals and `planning-guide/index.html`; `project-basis.html` is a redirect stub and is skipped), and replaces the partial or relative icon links in `core-system-map.html`, `pm-budget-planner.html` and the planning guide. Every versioned tool changed here goes up one version; nothing else in them changed. Style Guide v15 → v16: new **Favicon — Every Tool** section with an example, the snippet, and instructions for Claude; the same rule added to `CLAUDE.md`. The manuals are generated from their `.md` files, so the block also needs to go into whatever template builds them.
 - **2026-11-22** — Project Pipeline v1190 → v1191: per Byron — Weekly Brief **Pipeline Housekeeping** now lists projects whose map pin can’t light up: *Map location not found for "…"* (any active project whose address the Nominatim lookup couldn’t match — fix the address in Project Manager or paste a Google Maps link on the pin) and *No address* (DA/CA-signed only). A lookup still pending isn’t flagged. Rows are dismissible like the others and clear on their own once the pin has a location.
 - **2026-11-22** — Projects Manager v66 → v67: per Byron — a **Map** field beside Address in Client & Location shows the project’s Google Maps URL as text (not a link), built from `Latitude`/`Longitude`, with where it came from (looked up from the address, set by hand, address changed and waiting for the Pipeline, not found). Admin mode: paste a Google Maps link or `lat, lng` to set the location by hand (written in the Pipeline’s `DocLinkMeta` form, so its lookup never replaces it), or clear it so the Pipeline looks it up again. Same columns as Pipeline v1190.
 - **2026-11-22** — Project Pipeline v1189 → v1190: per Byron — **map pin** on the project hover card, beside the Permit & Zoning button. Lit when the project has coordinates: opens the location in Google Maps (Street View is one click from there). Dim when it has none: hover/click to paste a Google Maps link or `lat, lng` (saved as set by hand). No address shows "add it in Projects Manager". The Doc Linker’s quiet pass (4 s after load) now also **looks up coordinates** from `Address` with OpenStreetMap Nominatim (no API key; one request per 1.1 s; at most 25 per load) — only for projects whose address changed since the last lookup (`GeocodedAddress` ≠ `Address`); a location set by hand is never replaced; a miss is remembered per address for 7 days (`DocLinkMeta.geoMiss`). **Needs three columns on `CORE_Projects`:** `Latitude` (Number, 6 decimals), `Longitude` (Number, 6 decimals), `GeocodedAddress` (Single line of text). Until they exist the lookup stops at its first save and logs why; nothing else changes.
