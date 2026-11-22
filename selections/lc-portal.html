@@ -604,11 +604,11 @@ dd .ph{color:var(--muted);font-weight:400;font-style:italic}
 .jm-foot[hidden]{display:none}
 .pvopen{margin:4px 0 12px}
 .rbox.pvbox{border-left:1px solid var(--line-2)}
-.blinks .bl-off,.blinks .bl-fix{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-2)}
-.blinks .bl-off{opacity:.35}
-.blinks .bl-fix{cursor:pointer;border-style:dashed;padding:0}
-.blinks .bl-fix:hover{border-style:solid;border-color:var(--ink);color:var(--ink)}
-.blinks .bl-fix:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.blinks .bl-off{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid var(--line-2);background:var(--paper);color:var(--ink-2);opacity:.4;padding:0;cursor:pointer}
+.blinks .bl-off:hover{opacity:.75;border-color:var(--ink)}
+.blinks .bl-off:focus-visible{outline:2px solid var(--focus);outline-offset:2px;opacity:.75}
+.lp-acts{margin:0 0 8px}
+.lp-acts a.vbtn{display:inline-block;text-decoration:none}
 .fl-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .fl-body{padding:4px 14px 12px}
 .fl-row{padding:10px 0;border-bottom:1px solid var(--line)}
@@ -688,7 +688,7 @@ nav.views>button:first-child{margin-left:0}
 <div class="ve-foot"><span class="sp"></span><button class="vbtn" id="veCancel">Cancel</button><button class="btn" id="veSave">Create view</button></div></div></div>
 <div class="jm" id="jm" hidden role="dialog" aria-label="Views"><div class="jm-search"><input id="jmQ" type="search" placeholder="Find a view" autocomplete="off" aria-label="Find a view"></div><div class="jm-list" id="jmList"></div><div class="jm-foot" id="jmFoot" hidden></div></div>
 <div class="jm" id="ps" hidden role="dialog" aria-label="Switch project"><div class="jm-search"><input id="psQ" type="search" placeholder="Find a project" autocomplete="off" aria-label="Find a project"></div><div class="jm-list" id="psList"></div></div>
-<div class="jm fl" id="fl" hidden role="dialog" aria-label="Fix links"><div class="pm-head fl-head"><span id="flHead"></span><button class="jm-link" data-flclose>Done</button></div><div class="jm-list fl-body" id="flBody"></div></div>
+<div class="jm fl" id="fl" hidden role="dialog" aria-label="Project link"><div class="pm-head fl-head"><span id="flHead"></span><button class="jm-link" data-flclose>Done</button></div><div class="jm-list fl-body" id="flBody"></div></div>
 <div class="jm" id="pm" hidden role="dialog" aria-label="Projects in this view"><div class="pm-head" id="pmHead"></div><div class="jm-search"><input id="pmQ" type="search" placeholder="Find a project" autocomplete="off" aria-label="Find a project"></div><div class="jm-list" id="pmList"></div><div class="jm-foot pm-foot" id="pmFoot"></div></div>
 <header class="top">
   <div class="wrap">
@@ -723,7 +723,7 @@ nav.views>button:first-child{margin-left:0}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'P12';
+const CORE_VERSION = 'P13';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -863,9 +863,14 @@ const CORE_VERSION = 'P12';
     if(!x) throw new Error('Customers drive not found on the BWC site');
     return _custDrive=x.id;
   }
+  const FOLDERS=new Map();
+  async function resolveFolder(name,path){
+    const v=cpView(name); if(!v.folderId) return '';
+    const d=await custDrive();
+    try{ const it=await g(`https://graph.microsoft.com/v1.0/drives/${d}/items/${v.folderId}:/${path.split('/').map(encodeURIComponent).join('/')}?$select=webUrl`); return (it&&it.webUrl)||''; }catch(e){ return ''; }
+  }
   async function resolvePlans(name){
     const v=cpView(name);
-    if(v.links&&v.links.plans&&v.links.plans.src==='manual'&&v.links.plans.href) return v.links.plans.href;
     if(!v.folderId) return '';
     const d=await custDrive();
     for(const path of ['3. Plans, Engineering/3. Plans']){   // same path as the Pipeline's Doc Linker rule
@@ -878,11 +883,14 @@ const CORE_VERSION = 'P12';
       const k=String(name).toUpperCase(); if(PLANS.has(k)) return PLANS.get(k)||'';
       PLANS.set(k,''); resolvePlans(name).then(u=>{ PLANS.set(k,u||''); if(u) emit(['jobs']); }).catch(()=>{}); return '';
     },
+    folder(name,path){   // cached web address of a sub-folder of the project folder; '' while looking it up
+      const k=String(name).toUpperCase()+'|'+path; if(FOLDERS.has(k)) return FOLDERS.get(k)||'';
+      FOLDERS.set(k,''); resolveFolder(name,path).then(u=>{ FOLDERS.set(k,u||''); if(u) emit(['jobs']); }).catch(()=>{}); return '';
+    },
     async fix(name,kind,val){
       const p=cpFor(name); if(!p) throw Object.assign(new Error('No Pipeline project has Job Code '+name),{code:'not_found'});
       const meta=parseJ(p.f.DocLinkMeta); meta.links=meta.links||{}; const at=new Date().toISOString(), fields={};
       if(kind==='mp'){ meta.links.mp={href:val,at,src:'manual',by:ME}; fields.MatterportUrl=val; }
-      else if(kind==='plans'){ meta.links.plans={href:val,at,src:'manual',by:ME}; PLANS.set(String(name).toUpperCase(),val); }
       else if(kind==='geo'){ meta.links.geo={lat:val.lat,lng:val.lng,at,src:'manual',by:ME}; fields.Latitude=val.lat; fields.Longitude=val.lng; fields.GeocodedAddress=p.f.Address||null; }
       else throw new Error('Unknown link '+kind);
       fields.DocLinkMeta=JSON.stringify(meta);
@@ -1446,7 +1454,7 @@ function overview(){
     const rets=items.filter(i=>i.Job===j&&state(i)==="ret").length;
     const done=(c.recv||0)+(c.site||0)+(c.owner||0)+(c.elec||0)+(c.done||0), n=L.length||1;
     const roughOut=L.filter(i=>i.Category===ROUGH&&["ord","need","tbd"].includes(state(i))).length;
-    return `<div class="job"><h3>${canEditSel?`<button class="jobname" data-editjob="${esc(j)}" data-tip="Edit project details">${esc(j)}</button>`:esc(j)}</h3><div class="addr">${JOBS[j]&&JOBS[j].client?`<div class="jclient">${esc(JOBS[j].client)}</div>`:""}${JOBS[j]&&JOBS[j].address?`<div>${mapUrl(j)?`<a class="addrlink" href="${mapUrl(j)}" target="_blank" rel="noopener" data-tip="Open in Maps">${esc(JOBS[j].address)}</a>`:esc(JOBS[j].address)}</div>`:""}${JOBS[j]&&JOBS[j].neighborhood?`<div>${esc(JOBS[j].neighborhood)}</div>`:""}${scanLink(j)||plansLink(j)||svUrl(j)?`<div class="jlinks">${plansLink(j)}${svLink(j)}${scanLink(j)}</div>`:""}</div>
+    return `<div class="job"><h3>${canEditSel?`<button class="jobname" data-editjob="${esc(j)}" data-tip="Edit project details">${esc(j)}</button>`:esc(j)}</h3><div class="addr">${JOBS[j]&&JOBS[j].client?`<div class="jclient">${esc(JOBS[j].client)}</div>`:""}${JOBS[j]&&JOBS[j].address?`<div>${mapUrl(j)?`<a class="addrlink" href="${mapUrl(j)}" target="_blank" rel="noopener" data-tip="Open in Maps">${esc(JOBS[j].address)}</a>`:esc(JOBS[j].address)}</div>`:""}${JOBS[j]&&JOBS[j].neighborhood?`<div>${esc(JOBS[j].neighborhood)}</div>`:""}${scanLink(j)||plansLink(j)?`<div class="jlinks">${plansLink(j)}${scanLink(j)}</div>`:""}</div>
       ${teamBlock(j)}
       ${timelineBlock(j)}
       <div class="bar" aria-hidden="true"><span class="r" style="width:${done/n*100}%"></span><span class="o" style="width:${(c.ord||0)/n*100}%"></span><span class="n" style="width:${((c.need||0)+(c.tbd||0))/n*100}%"></span></div>
@@ -2690,6 +2698,7 @@ function jmSync(){
   if($("#ps")&&!$("#ps").hidden) psRender();
   if(!$("#jm").hidden) jmRender();
   if(!$("#pm").hidden) pmRender();
+  if($("#fl")&&!$("#fl").hidden) flRender();
 }
 /* views menu */
 function jmRender(){
@@ -2871,59 +2880,62 @@ document.addEventListener("click",e=>{
   render(); window.scrollTo(0,0);
 });
 
-/* ── project links on the cards (prototype P12) ──
-   Plans folder, Map, Street View, Matterport — all from the Pipeline's project record. "Fix links" corrects any of them from here. */
-const ICON_EYE=`<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
-const ICON_DOTS=`<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/></svg>`;
+/* ── project links on the cards (prototype P13) ──
+   Plans folder, Map, Matterport — from the Pipeline's project record, with the Pipeline's editing rules:
+   a link that is there just opens; a missing one offers only what the Pipeline's dim pill offers.
+     Plans folder  — information only (the folder anchor is set by the Pipeline's Doc Linker).
+     Map           — paste a Google Maps link or "lat, lng" (needs an address; else "add it in Projects Manager").
+     Matterport    — browse the Matterport Files folder or paste a link (needs the project folder). */
 const ICON_FOLDER=`<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5h6l2 2h9v10h-17z"/></svg>`;
-const hasGeo=d=>d&&d.lat!=null&&d.lng!=null;
-function mapUrl(n){ const d=JOBS[n]||{}; if(hasGeo(d)) return `https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}`; return d.address?`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.address)}`:""; }
-function svUrl(n){ const d=JOBS[n]||{}; return hasGeo(d)?`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${d.lat},${d.lng}`:""; }
+const hasGeo=d=>d&&typeof d.lat==="number"&&typeof d.lng==="number";
+function mapUrl(n){ const d=JOBS[n]||{}; return hasGeo(d)?`https://www.google.com/maps/search/?api=1&query=${d.lat},${d.lng}`:""; }
 function plansUrl(n){ return window.spLinks?spLinks.plans(n):""; }
-const linkA=(href,icon,label,tip,cls)=>href?`<a class="${cls||""}" href="${esc(href)}" target="_blank" rel="noopener" data-tip="${esc(tip)}" aria-label="${esc(label)}">${icon}</a>`:`<span class="bl-off ${cls||""}" data-tip="${esc(tip)}" aria-label="${esc(label)}" role="img">${icon}</span>`;
 function cardLinks(n){
-  const d=JOBS[n]||{}, geo=hasGeo(d), pl=plansUrl(n);
-  return `<span class="blinks">${linkA(pl,ICON_FOLDER,"Plans folder for "+n,pl?"Plans folder":(d.folderId?"Finding the Plans folder…":"No project folder linked yet"))}${linkA(mapUrl(n),ICON_PIN,"Map of "+n,geo?"Map":(d.address?"Map – location not confirmed":"No address on the Pipeline"))}${linkA(svUrl(n),ICON_EYE,"Street View of "+n,geo?"Street View":"Street View needs the location")}${linkA(d.mp,ICON_3D,"Matterport for "+n,d.mp?"Matterport":"No Matterport yet")}<button class="bl-fix" data-fixlinks="${esc(n)}" data-tip="Fix links" aria-label="Fix links for ${esc(n)}">${ICON_DOTS}</button></span>`;
+  const d=JOBS[n]||{}, pl=plansUrl(n), mu=mapUrl(n);
+  const lit=(href,icon,label,tip)=>`<a href="${esc(href)}" target="_blank" rel="noopener" data-tip="${esc(tip)}" aria-label="${esc(label)}">${icon}</a>`;
+  const dim=(kind,icon,label,tip)=>`<button class="bl-off" data-linkpop="${kind}" data-lpjob="${esc(n)}" data-tip="${esc(tip)}" aria-label="${esc(label)}">${icon}</button>`;
+  return `<span class="blinks">${pl?lit(pl,ICON_FOLDER,"Plans folder for "+n,"Plans folder"):dim("plans",ICON_FOLDER,"Plans folder for "+n,d.folderId?"Finding the Plans folder…":"No project folder linked yet")}${mu?lit(mu,ICON_PIN,"Map of "+n,"Map"+(d.links&&d.links.geo&&d.links.geo.src==="manual"?" · location set by hand":"")):dim("map",ICON_PIN,"Map of "+n,d.address?"Location not found yet – click to set it":"No address on the Pipeline")}${d.mp?lit(d.mp,ICON_3D,"Matterport for "+n,"Matterport"):dim("mp",ICON_3D,"Matterport for "+n,d.folderId?"No Matterport yet – click for options":"No Matterport yet")}</span>`;
 }
 /* the project page header uses these too */
 function plansLink(n){ const u=plansUrl(n); return u?` <a class="maplink" href="${esc(u)}" target="_blank" rel="noopener" data-tip="Plans folder">${ICON_FOLDER}Plans</a>`:""; }
-function mapLink(n){ const u=mapUrl(n); return u?` <a class="maplink" href="${esc(u)}" target="_blank" rel="noopener" data-tip="Map">${ICON_PIN}Map</a>`+(svUrl(n)?` <a class="maplink" href="${esc(svUrl(n))}" target="_blank" rel="noopener" data-tip="Street View">${ICON_EYE}Street View</a>`:""):""; }
-function svLink(n){ const u=svUrl(n); return u?` <a class="maplink" href="${esc(u)}" target="_blank" rel="noopener" data-tip="Street View">${ICON_EYE}Street View</a>`:""; }
+function mapLink(n){ const u=mapUrl(n); return u?` <a class="maplink" href="${esc(u)}" target="_blank" rel="noopener" data-tip="Map">${ICON_PIN}Map</a>`:""; }
 function scanLink(n){ const d=JOBS[n]||{}; return d.mp?` <a class="maplink" href="${esc(d.mp)}" target="_blank" rel="noopener" data-tip="Matterport">${ICON_3D}Matterport</a>`:""; }
 
-/* Fix links */
-let flJob=null;
-function srcText(l,auto){ if(l&&l.src==="manual") return "Fixed by hand"+(l.by?" by "+esc(first(l.by)):"")+(l.at?" · "+fmtDate(String(l.at).slice(0,10)):""); if(l&&l.src==="pinned") return "Pinned on the Pipeline"; return auto; }
-function parseGeo(s){ s=String(s||"").trim(); let m=s.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/)||s.match(/[?&](?:q|query|ll|viewpoint|center)=(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/)||s.match(/^(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
-  if(!m) return null; const lat=+m[1], lng=+m[2]; return Math.abs(lat)<=90&&Math.abs(lng)<=180?{lat,lng}:null; }
-function flRender(){
-  const n=flJob, d=JOBS[n]||{}, L=d.links||{};
-  if(!d.cp){ $("#flBody").innerHTML=`<p class="fl-note">${esc(n)} isn't matched to a project on the Pipeline. Its Job Code there must be <b>${esc(n)}</b>.</p>`; return; }
-  const pl=plansUrl(n);
-  const row=(k,label,status,value,ph,open)=>`<div class="fl-row"><div class="fl-top"><b>${label}</b>${open?`<a href="${esc(open)}" target="_blank" rel="noopener">Open</a>`:""}</div><div class="fl-st">${status}</div>
-    <div class="fl-in"><input type="text" id="fl-${k}" placeholder="${esc(ph)}" value="${esc(value||"")}" autocomplete="off"><button class="vbtn" data-flsave="${k}">Save</button></div></div>`;
-  $("#flHead").innerHTML=`Links for <span class="pm-vname">${esc(n)}</span>`;
-  $("#flBody").innerHTML=
-    row("plans","Plans folder",srcText(L.plans,d.folderId?"From the project folder on the Pipeline":"No project folder linked yet – paste the folder's link"),"","Paste a SharePoint folder link",pl)+
-    row("geo","Location",hasGeo(d)?srcText(L.geo,"Looked up from "+esc(d.geoFor||d.address||"the address"))+` · ${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}`:(d.address?"Not looked up yet – "+esc(d.address):"No address on the Pipeline"),"","Paste a Google Maps link, or lat, lng",svUrl(n)||mapUrl(n))+
-    row("mp","Matterport",d.mp?srcText(L.mp,"Found in the Matterport Files folder"):"None yet","","Paste the Matterport link",d.mp)+
-    `<p class="fl-note">Fixes save to the project on the Pipeline, so every screen uses them. The Pipeline's automatic check never replaces a link fixed by hand.</p><div class="fl-msg" id="flMsg"></div>`;
+/* popover for a missing link */
+let lpJob=null, lpKind=null;
+function parseGeo(s){ s=String(s||"").trim(); const m=s.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/)||s.match(/[?&](?:q|query|ll|viewpoint|center)=(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/)||s.match(/^(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
+  if(!m) return null; const lat=+m[1], lng=+m[2]; return Math.abs(lat)<=90&&Math.abs(lng)<=180?{lat:+lat.toFixed(6),lng:+lng.toFixed(6)}:null; }
+function lpRender(){
+  const n=lpJob, d=JOBS[n]||{}, k=lpKind;
+  const head={plans:"Plans folder",map:"Map",mp:"Matterport"}[k];
+  let body="";
+  if(!d.cp) body=`<p class="fl-note">${esc(n)} isn't matched to a project on the Pipeline. Its Job Code there must be <b>${esc(n)}</b>.</p>`;
+  else if(k==="plans") body=`<p class="fl-st">${d.folderId?"Finding the Plans folder…":"This project has no SharePoint folder linked yet. Link it with the Doc Linker on the Pipeline."}</p>`;
+  else if(k==="map") body=d.address
+    ?`<p class="fl-st">Location not found for ${esc(d.address)}. Paste it from Google Maps.</p><div class="fl-in"><input type="text" id="lpIn" placeholder="Paste a Google Maps link, or lat, lng" autocomplete="off"><button class="vbtn" data-lpsave>Save location</button></div>`
+    :`<p class="fl-st">No address on the Pipeline. Add it in Projects Manager and the location is looked up on the next Pipeline load.</p>`;
+  else if(k==="mp") body=d.folderId
+    ?`<p class="fl-st">No Matterport found in the project's Matterport Files folder.</p><div class="lp-acts">${window.spLinks&&spLinks.folder(n,"0. Matterport Files")?`<a class="vbtn" href="${esc(spLinks.folder(n,"0. Matterport Files"))}" target="_blank" rel="noopener">Browse Matterport folder ↗</a>`:`<span class="fl-st">Finding the folder…</span>`}</div><div class="fl-in"><input type="text" id="lpIn" placeholder="Paste the Matterport link" autocomplete="off"><button class="vbtn" data-lpsave>Save link</button></div>`
+    :`<p class="fl-st">No Matterport yet.</p>`;
+  $("#flHead").innerHTML=`${head} · <span class="pm-vname">${esc(n)}</span>`;
+  $("#flBody").innerHTML=body+(k!=="plans"&&d.cp&&(k==="map"?d.address:d.folderId)?`<p class="fl-note">Saved to the project on the Pipeline as set by hand, so every screen uses it and the automatic check won't replace it.</p>`:"")+`<div class="fl-msg" id="flMsg"></div>`;
 }
-function flOpen(n,anchor){ jmClose(); pmClose(); psClose(); flJob=n; flRender(); const el=$("#fl"); el.hidden=false; place(el,anchor,400); }
-function flClose(){ $("#fl").hidden=true; flJob=null; }
+function lpOpen(n,k,anchor){ jmClose(); pmClose(); psClose(); lpJob=n; lpKind=k; lpRender(); const el=$("#fl"); el.hidden=false; place(el,anchor,360); const i=$("#lpIn"); if(i) setTimeout(()=>i.focus(),0); }
+function lpClose(){ $("#fl").hidden=true; lpJob=null; lpKind=null; }
+function flRender(){ if(lpJob) lpRender(); }   // redraw when the Pipeline data or a folder lookup arrives
 document.addEventListener("click",async e=>{
-  const fx=e.target.closest("[data-fixlinks]"); if(fx){ e.preventDefault(); e.stopPropagation(); $("#fl").hidden||flJob!==fx.dataset.fixlinks?flOpen(fx.dataset.fixlinks,fx):flClose(); return; }
-  const sv=e.target.closest("[data-flsave]");
-  if(sv){ const k=sv.dataset.flsave, v=($("#fl-"+k).value||"").trim(), msg=$("#flMsg"); let val=v;
-    if(k==="geo"){ val=parseGeo(v); if(!val){ msg.textContent="That isn't a Google Maps link or a lat, lng pair."; return; } }
+  const b=e.target.closest("[data-linkpop]"); if(b){ e.preventDefault(); e.stopPropagation(); (!$("#fl").hidden&&lpJob===b.dataset.lpjob&&lpKind===b.dataset.linkpop)?lpClose():lpOpen(b.dataset.lpjob,b.dataset.linkpop,b); return; }
+  const sv=e.target.closest("[data-lpsave]");
+  if(sv){ const v=($("#lpIn").value||"").trim(), msg=$("#flMsg"); let val=v;
+    if(lpKind==="map"){ val=parseGeo(v); if(!val){ msg.textContent="That isn't a Google Maps link or a lat, lng pair."; return; } }
     else if(!/^https?:\/\//i.test(v)){ msg.textContent="Paste a full link starting with https://"; return; }
     sv.disabled=true; msg.textContent="";
-    try{ await spLinks.fix(flJob,k,val); toast("Saved to the Pipeline"); flRender(); }catch(err){ msg.textContent=err&&err.code==="not_found"?err.message:"Didn't save – try again."; sv.disabled=false; }
+    try{ await spLinks.fix(lpJob,lpKind==="map"?"geo":"mp",val); toast("Saved to the Pipeline"); lpClose(); }catch(err){ msg.textContent=err&&err.code==="not_found"?err.message:"Didn't save – try again."; sv.disabled=false; }
     return; }
-  if(e.target.closest("[data-flclose]")){ flClose(); return; }
-  if(!$("#fl").hidden&&!$("#fl").contains(e.target)) flClose();
+  if(e.target.closest("[data-flclose]")){ lpClose(); return; }
+  if(!$("#fl").hidden&&!$("#fl").contains(e.target)) lpClose();
 },true);
-$("#fl").addEventListener("keydown",e=>{ if(e.key==="Escape"){ e.stopPropagation(); flClose(); } if(e.key==="Enter"&&e.target.matches("input")){ e.preventDefault(); const b=e.target.parentElement.querySelector("[data-flsave]"); if(b) b.click(); } });
+$("#fl").addEventListener("keydown",e=>{ if(e.key==="Escape"){ e.stopPropagation(); lpClose(); } if(e.key==="Enter"&&e.target.id==="lpIn"){ e.preventDefault(); const s=$("#fl [data-lpsave]"); if(s) s.click(); } });
 
 render();
 (async()=>{
