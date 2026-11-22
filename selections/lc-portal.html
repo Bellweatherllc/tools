@@ -705,7 +705,7 @@ nav.views>button:first-child{margin-left:0}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'P8';
+const CORE_VERSION = 'P9';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -1442,7 +1442,7 @@ function match(i){if(!query)return true;const q=query.toLowerCase();const on=(re
 
 function expectedDate(i){if(!i.OrderDate)return null;const ld=leadDays(i.LeadTime);const d=new Date(i.OrderDate+"T12:00:00");d.setDate(d.getDate()+(ld==null?14:ld));return {d:d.toISOString().slice(0,10),assumed:ld==null}}
 function receive(){
-  const inScope=i=>rScope==="all"?(JOBS[i.Job]&&!isArch(i.Job)):i.Job===job;
+  const inScope=i=>rScope==="all"?(JOBS[i.Job]&&!isArch(i.Job)&&inView(i.Job)):i.Job===job;   // "all" = every project in the current view
   const W=items.filter(inScope).filter(i=>state(i)==="ord").filter(match);
   // group by receipt (order) when an item is on one, else by vendor + order date
   const rcOf={}; for(const x of receipts){for(const id of (x.itemIds||[]))rcOf[id]=x}
@@ -1469,10 +1469,10 @@ function receive(){
   const dmgCard=r=>`<div class="card"><div><div class="meta">${esc(r.Location||"")} · ${esc(r.OnHandLocation||"")}</div><div class="title">${esc(r.Title)}</div>
     <div class="note swap">${esc(r.condition)}${r.damageNote?": "+esc(r.damageNote):""}</div></div>
     <div class="stack" style="align-items:flex-end"><button class="btn ghost" data-resolve="${r.id}" ${canWrite?"":"disabled"}>Mark resolved</button><button class="link" data-sendback="${r.id}">Send it back</button></div></div>`;
-  const jobsList=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)));
+  const jobsList=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&inView(n)));
   const jobBox=(n,inner,sum)=>{const c=jobColor(n),closed=rClosed.has(n);return `<section class="rbox ${closed?"closed":""}" style="--jc:${c}"><button class="rboxhead" data-rbox="${esc(n)}" aria-expanded="${!closed}"><span class="jdot"></span><span class="rbname">${esc(n)}</span><span class="rbsum">${sum}</span><span class="chev" aria-hidden="true"></span></button>${closed?"":`<div class="rboxbody">${inner}</div>`}</section>`};
   const late=groups.filter(g=>g.exp&&dayDiff(g.exp.d)<0).length;
-  const jobOrder=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)));
+  const jobOrder=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&inView(n)));
   const byJob=rScope==="all"?jobOrder.filter(n=>groups.some(g=>g.Job===n)).map(n=>({n,gs:groups.filter(g=>g.Job===n)})):[{n:job,gs:groups}];
   const ordHtml=g=>`<div class="ogrp">
     <div class="ohead"><div><div class="otitle">${esc(g.vendor||"Vendor not listed")}${g.orderNo?` <span class="muted">#${esc(g.orderNo)}</span>`:""}</div>
@@ -1491,9 +1491,9 @@ function receive(){
   const rvJobs=(rScope==="all"?jobsList:[job]).filter(n=>D.some(i=>i.Job===n)||R.some(i=>i.Job===n));
   const retView=rvJobs.length?`<p class="lede">Damaged, wrong or short deliveries for your LC to follow up, and items going back to the vendor. Mark each one once it's sorted.</p>`+(rScope==="all"?rvJobs.map(n=>{const d=D.filter(i=>i.Job===n).length,r=R.filter(i=>i.Job===n).length;return jobBox(n,rvInner(n),[d?d+" flagged":"",r?r+" to return":""].filter(Boolean).join(" · "))}).join(""):rvInner(job)):`<div class="empty"><b>Nothing flagged or waiting to go back.</b>Damaged, wrong or short deliveries and items to return or cancel will show up here.</div>`;
   const doneHtml=G2.length?`<div class="shelf"><h4>Recently returned or cancelled</h4>${G2.map(r=>`<div class="card"><div><div class="meta">${esc(r.Job)} · ${esc(r.Location||"")}</div><div class="title">${esc(r.Title)}</div><div class="note">${r.returnNeeded==="cancel"?"Cancelled":"Returned"} ${fmtDate(r.returnedAt)}${r.returnNote?" · "+esc(r.returnNote):""}</div></div></div>`).join("")}</div>`:"";
-  return `<div class="recvview"><div class="rscope"><label class="pick-sel"><span>Showing</span><select data-rscope aria-label="Which jobs"><option value="all" ${rScope==="all"?"selected":""}>All active projects</option>${byRecent(Object.keys(JOBS).filter(n=>!isArch(n))).map(n=>`<option value="job:${esc(n)}" ${rScope==="job"&&job===n?"selected":""}>${esc(n)} only</option>`).join("")}</select></label></div>`+subTabs+(rSub==="ret"?retView+doneHtml:`<h2>Check in a delivery</h2><p class="lede">Everything ordered that hasn't arrived${rScope==="all"?", by project,":""} grouped by order with the soonest expected first${late?` \u2013 <span class="late">${late} order${late>1?"s":""} overdue</span>`:""}.</p>
+  return `<div class="recvview"><div class="rscope"><label class="pick-sel"><span>Showing</span><select data-rscope aria-label="Which projects"><option value="all" ${rScope==="all"?"selected":""}>${cur().kind==="all"?"All Projects":"All in "+esc(cur().name)}</option>${byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&(inView(n)||n===job))).map(n=>`<option value="job:${esc(n)}" ${rScope==="job"&&job===n?"selected":""}>${esc(n)} only</option>`).join("")}</select></label></div>`+subTabs+(rSub==="ret"?retView+doneHtml:`<h2>Check in a delivery</h2><p class="lede">Everything ordered that hasn't arrived${rScope==="all"?", by project,":""} grouped by order with the soonest expected first${late?` \u2013 <span class="late">${late} order${late>1?"s":""} overdue</span>`:""}.</p>
   <div class="toolbar"><input id="q" class="search" type="search" placeholder="Search by item, SKU, vendor or order # on the box" aria-label="Search"></div>
-  <div class="list">${body||`<div class="empty"><b>Nothing waiting.</b>Every ordered item${rScope==="all"?"":" on "+esc(job)} has been checked in.</div>`}</div>
+  <div class="list">${body||`<div class="empty"><b>Nothing waiting.</b>Every ordered item${rScope==="all"?(cur().kind==="all"?"":" in "+esc(cur().name)):" on "+esc(job)} has been checked in.</div>`}</div>
   ${recent.length?`<div class="shelf"><h4>Recently checked in</h4>${recent.map(r=>`<div class="card"><div><div class="meta">${rScope==="all"?esc(r.Job)+" · ":""}${esc(r.OnHandLocation||"")}${r.Location?" · "+esc(r.Location):""}</div><div class="title">${esc(r.Title)}</div><div class="note">Checked in ${fmtTs(r.receivedAt)}${r.ReceivedBy?" by "+who(r.ReceivedBy):""}${r.condition&&r.condition!=="OK"?` · <span class="swap">${esc(r.condition)}</span>`:""}</div></div><button class="btn ghost" data-undo-recv="${r.id}">Undo</button></div>`).join("")}</div>`:""}`)+`</div>`;
 }
 function openGroupCheckin(key){
