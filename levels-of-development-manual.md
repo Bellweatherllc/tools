@@ -59,13 +59,17 @@ There's no required format — write it the way you'd say it out loud. Click **S
 
 Below Scope of Work, **Requested Assessors** tracks who's been asked to weigh in on a project and gives you a one-click way to actually ask them.
 
-With Admin on, check off names from the team roster — each one saves immediately, no separate Save button. That checked list does double duty: it's the record of who was asked (visible to everyone, Admin or not, right below the checkboxes), and it's what **Copy Request** uses.
+With Admin on, check off names from the team roster — grouped into **Sales**, **Design**, and **Production**, read live from Team Members' Department and Role fields (Operations, Logistics Coordinators, and Field Mechanics don't show here — they're not who you'd ask for an LOD read). Joey, Byron, and Ryan are pinned to the top of whichever group they're each in; everyone else is alphabetical. Each checkbox saves immediately, no separate Save button. That checked list does double duty: it's the record of who was asked (visible to everyone, Admin or not, right below the checkboxes), and it feeds the **Message** box below it.
 
-Click **Copy Request** to copy a ready-to-paste block of text: an `@mention` for each checked person who has a Trello username on file (plain name if they don't — see Team Members' Roster tab to add one), followed by a line asking them to assess the project and the link to it. Paste that straight into a Trello card — CORE doesn't talk to Trello's API directly, so this is a copy-paste handoff, not an automatic send. A natural workflow: keep a template card in Trello for "LOD assessment requests," duplicate it, paste the copied text into the description, and assign it to whoever you just @mentioned.
+**Deadline** is an optional date field. Leave it blank for no deadline. Set it and two things happen: the Message box's text gains a "by \<date\>" clause, and the Trello card (if you create one) gets that date as its actual due date — so it shows up in Trello's own due-date UI, not just as text in the message.
+
+**Message** is a plain text box pre-filled for you — an `@mention` for each checked person who has a Trello username on file (plain name if they don't — see Team Members' Roster tab to add one), followed by a line asking them to assess the project (naming the deadline, if one's set) and the link to it. It updates automatically as you check or uncheck names or change the deadline, right up until you type your own edit into it — once you've changed it by hand, your wording sticks (checking another name won't overwrite it), until you switch projects, which starts the box (and the deadline field) fresh again for the new one.
+
+**Create Request Card** sends whatever's currently in the Message box: it creates a real Trello card (named after the project, with the deadline as its due date if one's set), posts that text as the card's first **comment** (not the description — that's the only way Trello actually fires a "you were mentioned" notification for the `@mentions` in it), and adds each checked person who has a Trello username on file to it, so they actually get notified. This goes through a server-side proxy — CORE itself never holds a Trello credential — so it needs that proxy deployed and configured before it'll work; if it isn't, you'll get a toast saying so instead of a silent failure. *(Currently pointed at a test board while this feature is being dialed in — ask Byron if you're not sure it's live yet.)*
 
 ### What assessors see instead
 
-With Admin off, Scope of Work and Target Investment both show as plain, read-only text — no edit boxes, no Save buttons — and Requested Assessors shows the list of names without checkboxes. Copy Request still works for everyone; checking people off is Admin-only.
+With Admin off, Scope of Work and Target Investment both show as plain, read-only text — no edit boxes, no Save buttons — and Requested Assessors shows only the list of names, nothing else: no Deadline field, no Message box, no Create Request Card. All of that is Admin-only, same as checking off names.
 
 ## Part III — Getting several people to assess the same project
 
