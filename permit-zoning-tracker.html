@@ -546,7 +546,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v184';
+const CORE_VERSION = 'v185';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -710,7 +710,13 @@ function barRow(stages, y, barH, groupColor, insetFirst){
     const check=done?`<tspan fill="var(--grad-green)" stroke="#fff" stroke-width="1" paint-order="stroke" font-size="${fontSize*1.5}">✓ </tspan>`:'';
     const label = `<text x="${x+w/2}" y="${y+barH/2+3.5}" text-anchor="middle" font-size="${fontSize}" font-weight="700" letter-spacing=".02em" fill="var(--ink)" font-family="${FONT}">${check}${esc(s.name.toUpperCase())}</text>`;
     const star=early?`<text x="${x+w/2}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="${fontSize*1.5}" fill="#f5c518" stroke="#fff" stroke-width="1" paint-order="stroke" font-family="${FONT}" style="filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45));">★</text>`:'';
-    return `<rect x="${x}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${groupColor}" stroke="#fff" stroke-width="1"/>`+label+star;
+    // Per Byron: "we'll have to figure out some way to fit the label on
+    // the stage. Maybe abbreviate + hover?" — every bar now carries its
+    // real fullName as a data-tip (the shared floating-tooltip engine,
+    // never title=), not just the new abbreviated REV/RESUB stages, so an
+    // abbreviation is never left to stand alone.
+    const tip=s.fullName?` data-tip="${esc(s.fullName)}"`:'';
+    return `<rect x="${x}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${groupColor}" stroke="#fff" stroke-width="1"${tip}/>`+label+star;
   }).join('');
 }
 
@@ -1405,11 +1411,21 @@ function renderApprovedSummary(zoningStages, permitStages){
 
 /* ═══════════════════ stage catalog, settings, comments — ported
    unchanged from the prototype ═══════════════════ */
+// Revisions/Resubmit (per Byron, added to the Trello lists "Zoning
+// Revisions"/"Zoning Resubmit" and "Permit Revisions"/"Permit Resubmit"):
+// the round-trip after the city comes back with comments on a submission —
+// 2 weeks default each, same as every other new-stage default in this
+// catalog. renderName is deliberately abbreviated ("REV"/"RESUB") since
+// five stages now have to share the same bar row's width; barRow's new
+// data-tip on every bar (not just these two) carries the real fullName on
+// hover, so the abbreviation never has to stand alone.
 const STAGE_CATALOG={
   zoning:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
     {key:'survey', fullName:'Survey', renderName:'Survey', estWeeks:4},
     {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
+    {key:'revisions', fullName:'Revisions', renderName:'REV', estWeeks:2},
+    {key:'resubmit', fullName:'Resubmit', renderName:'RESUB', estWeeks:2},
   ],
   // A second zoning card, off by default — same relationship to zoning
   // that permitting2 has to permitting (see below): own column, own
@@ -1420,11 +1436,15 @@ const STAGE_CATALOG={
     {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
     {key:'survey', fullName:'Survey', renderName:'Survey', estWeeks:4},
     {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
+    {key:'revisions', fullName:'Revisions', renderName:'REV', estWeeks:2},
+    {key:'resubmit', fullName:'Resubmit', renderName:'RESUB', estWeeks:2},
   ],
   permitting:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
     {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
+    {key:'revisions', fullName:'Revisions', renderName:'REV', estWeeks:2},
+    {key:'resubmit', fullName:'Resubmit', renderName:'RESUB', estWeeks:2},
   ],
   // A second permitting card, off by default — only present at all once a
   // project actually has a PERMIT2 card synced from Trello (see
@@ -1438,6 +1458,8 @@ const STAGE_CATALOG={
     {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
     {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
+    {key:'revisions', fullName:'Revisions', renderName:'REV', estWeeks:2},
+    {key:'resubmit', fullName:'Resubmit', renderName:'RESUB', estWeeks:2},
   ],
 };
 function pidOf(name){ return name.replace(/[^a-z0-9]+/gi,'-').toLowerCase(); }
@@ -1474,7 +1496,7 @@ function deriveStages(p, category){
   return STAGE_CATALOG[category].map(c=>{
     const st=p.stageState[category][c.key];
     if(!st||!st.enabled) return null;
-    return {name:c.renderName, estWeeks:st.estWeeks, status:st.status||'future', actualWeeks:st.actualWeeks, ageWeeks:st.ageWeeks, startDate:st.startDate, endDate:st.endDate};
+    return {name:c.renderName, fullName:c.fullName, estWeeks:st.estWeeks, status:st.status||'future', actualWeeks:st.actualWeeks, ageWeeks:st.ageWeeks, startDate:st.startDate, endDate:st.endDate};
   }).filter(Boolean);
 }
 // Every track that actually EXISTS for this project (has at least one
@@ -2821,10 +2843,10 @@ function parseTrelloListName(name){
 // suffix (post-prefix, normalized) -> STAGE_CATALOG key. 'approved' has no
 // entry — it's resolved as "one past the last real stage" in trelloStageRank.
 const TRELLO_SUFFIX_KEY = {
-  zoning: {prep:'prep', survey:'survey', submit:'submitted-review'},
-  zoning2: {prep:'prep', survey:'survey', submit:'submitted-review'},
-  permitting: {prep:'prep', archeng:'archeng', submitted:'submitted-review'},
-  permitting2: {prep:'prep', archeng:'archeng', submitted:'submitted-review'},
+  zoning: {prep:'prep', survey:'survey', submit:'submitted-review', revisions:'revisions', resubmit:'resubmit'},
+  zoning2: {prep:'prep', survey:'survey', submit:'submitted-review', revisions:'revisions', resubmit:'resubmit'},
+  permitting: {prep:'prep', archeng:'archeng', submitted:'submitted-review', revisions:'revisions', resubmit:'resubmit'},
+  permitting2: {prep:'prep', archeng:'archeng', submitted:'submitted-review', revisions:'revisions', resubmit:'resubmit'},
 };
 function trelloStageRank(category, suffix){
   if(suffix==='approved') return STAGE_CATALOG[category].length;
