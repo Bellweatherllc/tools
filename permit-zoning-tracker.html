@@ -546,7 +546,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v185';
+const CORE_VERSION = 'v186';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -1415,16 +1415,21 @@ function renderApprovedSummary(zoningStages, permitStages){
 // Revisions"/"Zoning Resubmit" and "Permit Revisions"/"Permit Resubmit"):
 // the round-trip after the city comes back with comments on a submission —
 // 2 weeks default each, same as every other new-stage default in this
-// catalog. renderName is deliberately abbreviated ("REV"/"RESUB") since
+// catalog. renderName is deliberately abbreviated ("REVS"/"RESUB") since
 // five stages now have to share the same bar row's width; barRow's new
 // data-tip on every bar (not just these two) carries the real fullName on
-// hover, so the abbreviation never has to stand alone.
+// hover, so the abbreviation never has to stand alone. Per Byron's
+// follow-up: "Rev" alone (his first instinct for Revisions) read as
+// "Review" once Submitted/In Review's own fullName got shortened to
+// "Submit/Rev" — so Revisions' short form is "REVS" (plural, distinct from
+// the "Rev" in Submit/Rev), and the renderName "Submit" for the submit
+// stage itself is unchanged.
 const STAGE_CATALOG={
   zoning:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
     {key:'survey', fullName:'Survey', renderName:'Survey', estWeeks:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
-    {key:'revisions', fullName:'Revisions', renderName:'REV', estWeeks:2},
+    {key:'submitted-review', fullName:'Submit/Rev', renderName:'Submit', estWeeks:4},
+    {key:'revisions', fullName:'Revisions', renderName:'REVS', estWeeks:2},
     {key:'resubmit', fullName:'Resubmit', renderName:'RESUB', estWeeks:2},
   ],
   // A second zoning card, off by default — same relationship to zoning
@@ -1435,15 +1440,15 @@ const STAGE_CATALOG={
   zoning2:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
     {key:'survey', fullName:'Survey', renderName:'Survey', estWeeks:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
-    {key:'revisions', fullName:'Revisions', renderName:'REV', estWeeks:2},
+    {key:'submitted-review', fullName:'Submit/Rev', renderName:'Submit', estWeeks:4},
+    {key:'revisions', fullName:'Revisions', renderName:'REVS', estWeeks:2},
     {key:'resubmit', fullName:'Resubmit', renderName:'RESUB', estWeeks:2},
   ],
   permitting:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
-    {key:'revisions', fullName:'Revisions', renderName:'REV', estWeeks:2},
+    {key:'submitted-review', fullName:'Submit/Rev', renderName:'Submit', estWeeks:4},
+    {key:'revisions', fullName:'Revisions', renderName:'REVS', estWeeks:2},
     {key:'resubmit', fullName:'Resubmit', renderName:'RESUB', estWeeks:2},
   ],
   // A second permitting card, off by default — only present at all once a
@@ -1457,8 +1462,8 @@ const STAGE_CATALOG={
   permitting2:[
     {key:'prep', fullName:'Prep', renderName:'Prep', estWeeks:2},
     {key:'archeng', fullName:'With Arch/Eng', renderName:'Arch/Eng', estWeeks:4},
-    {key:'submitted-review', fullName:'Submitted / In Review', renderName:'Submit', estWeeks:4},
-    {key:'revisions', fullName:'Revisions', renderName:'REV', estWeeks:2},
+    {key:'submitted-review', fullName:'Submit/Rev', renderName:'Submit', estWeeks:4},
+    {key:'revisions', fullName:'Revisions', renderName:'REVS', estWeeks:2},
     {key:'resubmit', fullName:'Resubmit', renderName:'RESUB', estWeeks:2},
   ],
 };
@@ -2072,11 +2077,20 @@ function notePencilHtml(p){
 
 // Sits in the same cell as the Stages gear button, and calls the EXACT
 // same function (toggleGear) — per Byron, these two controls are not
-// independent, they're the same action shown two ways.
+// independent, they're the same action shown two ways. Reads OPEN_PANELS
+// (whether the panel is actually visible right now), not the persisted
+// p.stageState.locked — per Byron: "often when I open the page, one of
+// the stage toggles is red, but the stages aren't open." OPEN_PANELS is
+// in-memory only and starts empty on every fresh load, while `locked` is
+// the persisted field toggleGear last wrote — if a project was left open
+// (unlocked) at the end of a prior session, `locked` stays false on reload
+// even though OPEN_PANELS is empty again, so the toggle showed "unlocked"
+// for a panel that was actually closed. OPEN_PANELS is the one that always
+// matches reality the moment the page renders.
 function lockToggleHtml(p){
-  const pid=pidOf(p.proj), locked=p.stageState.locked;
-  return `<label class="admin-switch" data-tip="${locked?'Locked — click to unlock and edit':'Unlocked'}">
-    <input type="checkbox" ${locked?'':'checked'} onchange="event.stopPropagation();toggleGear('${pid}')">
+  const pid=pidOf(p.proj), open=OPEN_PANELS.has(pid);
+  return `<label class="admin-switch" data-tip="${open?'Unlocked':'Locked — click to unlock and edit'}">
+    <input type="checkbox" ${open?'checked':''} onchange="event.stopPropagation();toggleGear('${pid}')">
     <span class="admin-track"><span class="admin-thumb"></span></span>
   </label>`;
 }
