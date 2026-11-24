@@ -26,9 +26,10 @@ Last updated: 2026-11-24
 | **Selections** | | |
 | Selections List Setup | `selections/selections-setup.html` | v13 |
 | Selections · Design | `selections/design.html` | v6 |
-| Selections · LC | `selections/lc-portal.html` | v12 |
+| Selections · LC | `selections/lc-portal.html` | v13 |
 | Selections · Field Mechanic | `selections/field-view.html` | v17 |
 | Selections · Warehouse | `selections/warehouse.html` | v7 |
+| Selections · Device Viewer | `selections/device-viewer.html` | v1 |
 | **Operations** | | |
 | Fleet Tracker | `fleet-tracker.html` | v4 |
 | **Analyzers** | | |
@@ -44,7 +45,7 @@ Last updated: 2026-11-24
 | Team Members | `team-members.html` | v40 |
 | Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v20 |
+| BW Tool Index | `bw-tool-index.html` | v21 |
 | CORE System Map | `core-system-map.html` | v20 |
 | Brand Style Guide | `bellweather-style-guide.html` | v17 |
 
@@ -78,6 +79,9 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — Selections · Device Viewer v1 (new, `selections/device-viewer.html`): the live LC, Warehouse and Field Mechanic screens, with live data, inside true-size device frames (Surface and iPad tablets, Windows laptops, iPhones). Rotate keeps the screen's state. Opened in: Edge or Full screen on tablets and laptops; Edge, Safari or Home Screen on iPhones, with each device's safe-area insets written into the framed page. FM opens in practice mode (nothing saves) unless Practice is unticked; LC and Warehouse save for real. Frames the pages from the same site, so they share the viewer's sign-in. Needs its address added as a redirect URI on the Azure app registration to sign in from this page.
+- **2026-11-24** — Selections · LC v12 → v13: an empty **My projects** says no projects list you as LC on the Pipeline and points to All Projects, instead of "Use Edit to star" (My projects has no Edit).
+- **2026-11-24** — BW Tool Index v20 → v21: Selections section adds **Device Viewer**; Warehouse, Field Mechanic and LC tiles describe the current screens.
 - **2026-11-24** — Selections pages: version number is plain red text, no box (CLAUDE.md rule). Warehouse v6 → v7, Field Mechanic v16 → v17, LC v11 → v12, List Setup v12 → v13, Design v5 → v6.
 - **2026-11-24** — Selections · Warehouse v5 → v6: tablet redesign, in the LC screen's look (navy topbar "Selections *Warehouse*" with the signed-in name, LC fonts, light gray page `#f2f3f4`). Side tabs: **Check in** (deliveries grouped by vendor, soonest due first; one panel checks in a whole delivery with a condition per line; bay grid that shows where the job already is; model numbers from the choice descriptions are searchable), **Bays** (Stokley bay tiles with counts and jobs; tap for contents, move, audit), **Pull for site** (in bay order, category filter, mark all loaded, copy list), **Returns & flags** (damaged/wrong/short, send back, missing in audit, unlisted deliveries to match), **Tools & supplies** (shop stock; new, empty list). Turned upright, tabs move to the bottom and the panel becomes a sheet. Saves: `OnHandLocation`, `DateReceived`, `ReceivedBy` (in `CoreEditedFields`) and `OpsData.checkin` with the LC/Field names (`condition`, `damageNote`, `receivedAt`, `pulledAt/By/From`, `returnNeeded`, `returnReason`, `returnedAt`, `auditedAt`, `auditMissing`, `moves`); unlisted deliveries and shop stock in `CORE_SelectionDesignDocs` (`_shared`, `unknownItems` / `shopStock`). Replaces v5's Match / Expecting / Shelves tabs and label printing. Bump `?v=6`.
 - **2026-11-24** — Version numbers are plain red text, no pill (per the Style Guide v17 note): Scout Board v14 → v15, CP Process Scoring v7 → v8, FBA Matrix v11 → v12 (also red now, was grey), BW Tool Index v19 → v20, CORE System Map v19 → v20. CSS only; nothing else changed. `CLAUDE.md` states the rule.
