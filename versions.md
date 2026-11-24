@@ -26,7 +26,7 @@ Last updated: 2026-11-24
 | **Selections** | | |
 | Selections List Setup | `selections/selections-setup.html` | v13 |
 | Selections · Design | `selections/design.html` | v6 |
-| Selections · LC | `selections/lc-portal.html` | v14 |
+| Selections · LC | `selections/lc-portal.html` | v15 |
 | Selections · Field Mechanic | `selections/field-view.html` | v17 |
 | Selections · Warehouse | `selections/warehouse.html` | v7 |
 | Selections · Device Viewer | `selections/device-viewer.html` | v1 |
@@ -79,6 +79,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — Selections · LC v14 → v15: projects show their **Project Name** from the Projects Manager (`CORE_Projects.ProjectName`) on cards, Coming up, Needs attention, the views and Edit menus, the project switcher and heading, Receive and Pull; the Job Code stays the key and shows under the name on cards (and in place of a missing name). Search and the Edit list also go by Project Name. Bump `?v=15`.
 - **2026-11-24** — Selections · LC v13 → v14: **active Pipeline projects appear even before any selections are imported** (`CORE_Projects.PipelineStage` DA Signed, CA Signed or Paused, the Pipeline's own active rule; shown as "No selections yet", nothing extra loaded for them), and **every active Logistics Coordinator in `CORE_TeamMembers`** (Role "Logistics Coordinator") gets an "X's projects" view, even with no projects. Before, the views menu only knew LCs named on projects that already had selections, so an LC whose projects weren't imported was missing. Bump `?v=14`.
 - **2026-11-24** — Selections · Device Viewer v1 (new, `selections/device-viewer.html`): the live LC, Warehouse and Field Mechanic screens, with live data, inside true-size device frames (Surface and iPad tablets, Windows laptops, iPhones). Rotate keeps the screen's state. Opened in: Edge or Full screen on tablets and laptops; Edge, Safari or Home Screen on iPhones, with each device's safe-area insets written into the framed page. FM opens in practice mode (nothing saves) unless Practice is unticked; LC and Warehouse save for real. Frames the pages from the same site, so they share the viewer's sign-in. Needs its address added as a redirect URI on the Azure app registration to sign in from this page.
 - **2026-11-24** — Selections · LC v12 → v13: an empty **My projects** says no projects list you as LC on the Pipeline and points to All Projects, instead of "Use Edit to star" (My projects has no Edit).
