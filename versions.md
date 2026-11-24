@@ -23,6 +23,12 @@ Last updated: 2026-11-24
 | WIP Tracker | `wip-tracker.html` | v32 |
 | **Permits** | | |
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v186 |
+| **Selections** | | |
+| Selections List Setup | `selections/selections-setup.html` | v11 |
+| Selections · Design | `selections/design.html` | v5 |
+| Selections · LC | `selections/lc-portal.html` | v10 |
+| Selections · Field | `selections/field-view.html` | v15 |
+| Selections · Warehouse | `selections/warehouse.html` | v5 |
 | **Operations** | | |
 | Fleet Tracker | `fleet-tracker.html` | v4 |
 | **Analyzers** | | |
@@ -34,16 +40,11 @@ Last updated: 2026-11-24
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v14 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v2 |
-| Selections List Setup | `selections/selections-setup.html` | v11 |
-| Selections · Design | `selections/design.html` | v5 |
-| Selections · LC | `selections/lc-portal.html` | v10 |
-| Selections · Field | `selections/field-view.html` | v15 |
-| Selections · Warehouse | `selections/warehouse.html` | v5 |
 | Core Admin | `core-admin.html` | v7 |
 | Team Members | `team-members.html` | v40 |
 | Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v16 |
+| BW Tool Index | `bw-tool-index.html` | v17 |
 | CORE System Map | `core-system-map.html` | v19 |
 | Brand Style Guide | `bellweather-style-guide.html` | v16 |
 
@@ -77,6 +78,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — BW Tool Index v17: new **Selections** section (after Permits) holding Design, Warehouse, Field, LC and List Setup, moved out of SharePoint & Admin. Saved-layout key bumped to `bw-tool-index-v3` so browsers pick up the new section.
 - **2026-11-24** — Levels of Development v79 → v80: per Byron, "in Pipeline" → "in the Pipeline" in the request message's closing note.
 - **2026-11-24** — Levels of Development v78 → v79: per Byron, added a closing note to the default request message (`buildDefaultRequestMessage`) — "As assessments are completed, you can access the compiled, analyzed results in the Analysis tab. That same Analysis is one click away from the LOD pill on the project's hover card in Pipeline." (rephrased per his request — the sentence he drafted read awkwardly). Manual updated.
 - **2026-11-24** — Levels of Development v77 → v78: per Byron — Assess now splits into two independently-scrolling columns once a project is selected: **Scope of Work** on the left, the dimension-rating blocks/Open Notes/Submit on the right, with a draggable divider (`#assess-divider`) between them (position remembered via `localStorage`, a pure per-browser UI preference, not project data). Below 900px width they stack into one column like before. Address, CA Value, and Target Investment are now grouped together in the Assessment Setup card (previously Address/CA Value sat there while Target Investment's edit row did too, but Scope of Work used to follow directly below all three); Scope of Work moved out to its own card in the new left column. Requested Assessors stays in the setup card, right below the Address/CA Value/Target Investment row. Also added a map-pin link beside Address — same `MAP_PIN_SVG` glyph and Google-Maps-by-coordinates pattern as Project Pipeline's v1190 map pin — reading the already-shipped `Latitude`/`Longitude` columns on `CORE_Projects` (LOD only reads them; geocoding stays Project Pipeline's Doc Linker's job). Hidden when a project has no coordinates yet. Manual updated with a new "The split layout" section under Part I.
