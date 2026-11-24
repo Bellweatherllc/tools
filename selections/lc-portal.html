@@ -727,7 +727,7 @@ nav.views>button:first-child{margin-left:0}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v13';
+const CORE_VERSION = 'v14';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -847,7 +847,7 @@ const CORE_VERSION = 'v13';
   let projP=null; const PROJ=new Map(), PLANS=new Map(); let _custDrive=null;
   function loadProjects(){
     if(projP) return projP;
-    projP=gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=Title,JobCode,Address,Latitude,Longitude,GeocodedAddress,MatterportUrl,SPFolderItemId,LogisticsCoordinator1,LogisticsCoordinator2,DocLinkMeta)&$top=999`)
+    projP=gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=Title,JobCode,PipelineStage,Address,Latitude,Longitude,GeocodedAddress,MatterportUrl,SPFolderItemId,LogisticsCoordinator1,LogisticsCoordinator2,DocLinkMeta)&$top=999`)
       .then(rows=>{ for(const r of rows){ const c=String(r.fields.JobCode||'').trim().toUpperCase(); if(c) PROJ.set(c,{spId:String(r.id),f:r.fields}); } })
       .catch(e=>{ console.warn('Selections: could not read CORE_Projects',e); });
     return projP;
@@ -902,10 +902,23 @@ const CORE_VERSION = 'v13';
       try{ await patch('CORE_Projects',p.spId,fields); }catch(e){ p.f=before; emit(['jobs']); throw e; }
     }
   };
-  async function jobsView(){ const js=await loadJobs(); await loadProjects(); return js.map(j=>[String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),{...(jobExtra.get(j.name)||{}),...cpView(j.name),name:j.name,archived:j.archived,createdAt:j.createdAt}]); }
+  /* Active on the Pipeline = DA Signed, CA Signed or Paused (the Pipeline's own rule: not a lead, archived, cancelled or lost).
+     Active projects with no selections imported yet still appear ("No selections yet"), so every LC's projects show. */
+  const ACTIVE_STAGES=new Set(['DA Signed','CA Signed','Paused']);
+  const pipeOnly=new Set();   // job codes listed only because they're active on the Pipeline
+  async function allJobs(){
+    const js=await loadJobs(); await loadProjects();
+    const have=new Set(js.map(j=>String(j.name).trim().toUpperCase()));
+    const extra=[]; pipeOnly.clear();
+    for(const [code,p] of PROJ){ if(have.has(code)||!ACTIVE_STAGES.has(String(p.f.PipelineStage||'').trim())) continue;
+      const name=String(p.f.JobCode).trim(); pipeOnly.add(name); extra.push({name,archived:false,createdAt:0}); }
+    return js.concat(extra.sort((a,b)=>a.name.localeCompare(b.name)));
+  }
+  async function jobsView(){ const js=await allJobs(); return js.map(j=>[String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),{...(jobExtra.get(j.name)||{}),...cpView(j.name),name:j.name,archived:j.archived,createdAt:j.createdAt}]); }
   function emit(which){ for(const c of which||['items','checkins','trips','receipts']){ if(c==='jobs'){ jobsView().then(r=>subs.jobs.forEach(f=>f(snap(r)))); continue; } const r=views[c](); subs[c].forEach(f=>f(snap(r))); } }
   function loadJob(job){
     if(!job||job==='All'||cache.has(job)) return Promise.resolve();
+    if(pipeOnly.has(job)){ cache.set(job,build(job,[],[],[],[],[])); emit(); return Promise.resolve(); }
     if(inflight.has(job)) return inflight.get(job);
     const p=(async()=>{
       const lists=['CORE_Selections','CORE_SelectionAllowances','CORE_SelectionChoices','CORE_SelectionLineItems','CORE_SelectionComments','CORE_SelectionDesignDocs'];
@@ -1239,7 +1252,8 @@ const CORE_VERSION = 'v13';
   async function teamName(email){
     const em=String(email||'').trim().toLowerCase(); if(!em) return;
     try{
-      const rows=await gAll(`${LISTS}/CORE_TeamMembers/items?$expand=fields($select=Title,EmployeeName,email,Active)&$top=999`);
+      const rows=await gAll(`${LISTS}/CORE_TeamMembers/items?$expand=fields($select=Title,EmployeeName,email,Role,Active)&$top=999`);
+      window.spLCs=rows.map(r=>r.fields||{}).filter(f=>String(f.Role||'').trim().toLowerCase()==='logistics coordinator'&&f.Active!==false).map(f=>String(f.EmployeeName||f.Title||'').trim().replace(/\s+/g,' ')).filter(Boolean);
       const hit=rows.map(r=>r.fields||{}).find(f=>String(f.email||'').split(/[;,]/).map(x=>x.trim().toLowerCase()).includes(em));
       const nm=hit&&String(hit.EmployeeName||hit.Title||'').trim().replace(/\s+/g,' ');
       if(nm){ ME=nm; window.spMe={name:nm,id:MEID}; bwSub(nm); emit(['views']); }
@@ -2705,7 +2719,7 @@ const first=s=>String(s||"").trim().split(/\s+/)[0]||"";
 const meN=()=>(window.spMe||{}).name||"", meI=()=>(window.spMe||{}).id||"";
 const nm=s=>String(s||"").trim().replace(/\s+/g," ").toLowerCase();
 const MEF=()=>String(meN()||"").trim().replace(/\s+/g," ");
-const lcs=()=>[...new Set(Object.keys(JOBS).flatMap(n=>[JOBS[n].lc,JOBS[n].lc2]).filter(Boolean))];
+const lcs=()=>[...new Set([...Object.keys(JOBS).flatMap(n=>[JOBS[n].lc,JOBS[n].lc2]),...(window.spLCs||[])].filter(Boolean))];
 function people(){ const me=MEF(), seen=new Set(), out=[]; for(const p of [me,...Object.values(VIEWS).map(v=>v.owner).sort(),...lcs().sort()]){ if(p&&!seen.has(nm(p))){ seen.add(nm(p)); out.push(p); } } return out; }
 function myViewFor(p){
   const name=nm(p)===nm(MEF())?"My projects":first(p)+"'s projects";   // always the Pipeline's LC fields
