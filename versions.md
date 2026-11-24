@@ -27,8 +27,8 @@ Last updated: 2026-11-24
 | Selections List Setup | `selections/selections-setup.html` | v13 |
 | Selections · Design | `selections/design.html` | v6 |
 | Selections · LC | `selections/lc-portal.html` | v15 |
-| Selections · Field Mechanic | `selections/field-view.html` | v17 |
-| Selections · Warehouse | `selections/warehouse.html` | v7 |
+| Selections · Field Mechanic | `selections/field-view.html` | v18 |
+| Selections · Warehouse | `selections/warehouse.html` | v8 |
 | Selections · Device Viewer | `selections/device-viewer.html` | v1 |
 | **Operations** | | |
 | Fleet Tracker | `fleet-tracker.html` | v4 |
@@ -79,6 +79,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — Selections · Warehouse v7 → v8 and Field Mechanic v17 → v18: jobs show their **Project Name** from the Projects Manager (`CORE_Projects.ProjectName`, matched by Job Code), as LC v15 does: Warehouse job chips, delivery groups, bays, pull, returns and panels; Field's project list and search box. Lists sort by Project Name; a project with no name shows its Job Code. Bump `?v=8` / `?v=18`.
 - **2026-11-24** — Selections · LC v14 → v15: projects show their **Project Name** from the Projects Manager (`CORE_Projects.ProjectName`) on cards, Coming up, Needs attention, the views and Edit menus, the project switcher and heading, Receive and Pull; the Job Code stays the key and shows under the name on cards (and in place of a missing name). Search and the Edit list also go by Project Name. Bump `?v=15`.
 - **2026-11-24** — Selections · LC v13 → v14: **active Pipeline projects appear even before any selections are imported** (`CORE_Projects.PipelineStage` DA Signed, CA Signed or Paused, the Pipeline's own active rule; shown as "No selections yet", nothing extra loaded for them), and **every active Logistics Coordinator in `CORE_TeamMembers`** (Role "Logistics Coordinator") gets an "X's projects" view, even with no projects. Before, the views menu only knew LCs named on projects that already had selections, so an LC whose projects weren't imported was missing. Bump `?v=14`.
 - **2026-11-24** — Selections · Device Viewer v1 (new, `selections/device-viewer.html`): the live LC, Warehouse and Field Mechanic screens, with live data, inside true-size device frames (Surface and iPad tablets, Windows laptops, iPhones). Rotate keeps the screen's state. Opened in: Edge or Full screen on tablets and laptops; Edge, Safari or Home Screen on iPhones, with each device's safe-area insets written into the framed page. FM opens in practice mode (nothing saves) unless Practice is unticked; LC and Warehouse save for real. Frames the pages from the same site, so they share the viewer's sign-in. Needs its address added as a redirect URI on the Azure app registration to sign in from this page.

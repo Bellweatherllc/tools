@@ -267,7 +267,7 @@ input[type=checkbox]{width:28px;height:28px;accent-color:var(--ink);flex:none;ma
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v7';
+const CORE_VERSION = 'v8';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
 (()=>{const TT=document.getElementById('tt'); if(!TT||!matchMedia('(hover: hover)').matches) return;
@@ -296,6 +296,12 @@ const parseJ=v=>{ try{ const o=JSON.parse(v||'{}'); return o&&typeof o==='object
 const day=v=>v?String(v).slice(0,10):null;
 const TODAY=(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')})();
 let ME='', JOBS=[], items=[], unknown=[], stock=[], loaded=false, loadErr=null;
+/* Jobs show the Projects Manager's Project Name (CORE_Projects.ProjectName); the Job Code stays the key and shows where a name is missing. */
+const PNAME=new Map();
+const PN=j=>PNAME.get(String(j||'').trim().toUpperCase())||j;
+async function loadNames(){ try{ const rows=await gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=JobCode,ProjectName)&$top=999`);
+  for(const r of rows){ const c=String(r.fields.JobCode||'').trim().toUpperCase(), n=String(r.fields.ProjectName||'').trim(); if(c&&n) PNAME.set(c,n); } }
+  catch(e){ console.warn('Warehouse: could not read Project Names from CORE_Projects; showing Job Codes',e); } }
 const JCOL=["#4a6b52","#9a4a33","#4d6478","#86662a","#7a5a78","#5f6b3a"];
 const jobColor=j=>JCOL[Math.max(0,JOBS.indexOf(j))%JCOL.length];
 // model numbers written in the choice description ("Model: K-2209-0", "SKU: …"), so the number on the box finds the item
@@ -441,7 +447,7 @@ function render(){
 function renderJobs(){
   const showAll=view!=="pull"&&view!=="stock";
   if(view==="pull"&&job==="all")job=JOBS[0]||"all";
-  $("#jobs").innerHTML=(view==="stock"?"":(showAll?`<button class="chip" data-job="all" aria-pressed="${job==="all"}">All jobs</button>`:"")+JOBS.map(j=>`<button class="chip" data-job="${esc(j)}" aria-pressed="${job===j}"><span class="dot" style="background:${jobColor(j)}"></span>${esc(j)}</button>`).join(""));
+  $("#jobs").innerHTML=(view==="stock"?"":(showAll?`<button class="chip" data-job="all" aria-pressed="${job==="all"}">All jobs</button>`:"")+JOBS.map(j=>`<button class="chip" data-job="${esc(j)}" aria-pressed="${job===j}"><span class="dot" style="background:${jobColor(j)}"></span>${esc(PN(j))}</button>`).join(""));
   $("#q").style.visibility=view==="bays"?"hidden":"";
 }
 function renderRail(){
@@ -467,24 +473,24 @@ function checkinView(){
   const nItems=G.reduce((a,g)=>a+g.rows.length,0), late=G.filter(g=>g.exp&&dayDiff(g.exp.d)<0).length;
   const card=g=>`<button class="card" data-order="${esc(g.key)}" aria-current="${sel&&sel.kind==="order"&&sel.key===g.key}">
       <span class="dot" style="background:${jobColor(g.job)}"></span>
-      <span class="main"><span class="t">${esc(g.vendor||"Vendor not listed")}</span><div class="s">${esc(g.job)} · ${plural(g.rows.length,"item")}${g.date?" · ordered "+fmtDate(g.date):""}</div><div class="s">${esc(g.rows.slice(0,3).map(roomItem).join(", "))}${g.rows.length>3?"…":""}</div></span>
+      <span class="main"><span class="t">${esc(g.vendor||"Vendor not listed")}</span><div class="s">${esc(PN(g.job))} · ${plural(g.rows.length,"item")}${g.date?" · ordered "+fmtDate(g.date):""}</div><div class="s">${esc(g.rows.slice(0,3).map(roomItem).join(", "))}${g.rows.length>3?"…":""}</div></span>
       <span class="side">${expTxt(g.exp)}</span><span class="chev"></span></button>`;
   const recent=items.filter(r=>inJob(r)&&ck(r).checkedInAt).sort((a,b)=>ck(b).checkedInAt-ck(a).checkedInAt).slice(0,8);
   let body;
-  if(!G.length)body=`<div class="empty"><b>${q?"Nothing matches.":"Nothing waiting."}</b>${q?"Try the vendor or the room.":"Every ordered item"+(job==="all"?"":" on "+esc(job))+" has been checked in."}</div>`;
-  else if(job==="all")body=JOBS.filter(j=>G.some(g=>g.job===j)).map(j=>`<div class="jobhead"><span class="dot" style="background:${jobColor(j)}"></span>${esc(j)} <span class="cnt">${G.filter(g=>g.job===j).reduce((a,g)=>a+g.rows.length,0)}</span></div>${G.filter(g=>g.job===j).map(card).join("")}`).join("");
+  if(!G.length)body=`<div class="empty"><b>${q?"Nothing matches.":"Nothing waiting."}</b>${q?"Try the vendor or the room.":"Every ordered item"+(job==="all"?"":" on "+esc(PN(job)))+" has been checked in."}</div>`;
+  else if(job==="all")body=JOBS.filter(j=>G.some(g=>g.job===j)).map(j=>`<div class="jobhead"><span class="dot" style="background:${jobColor(j)}"></span>${esc(PN(j))} <span class="cnt">${G.filter(g=>g.job===j).reduce((a,g)=>a+g.rows.length,0)}</span></div>${G.filter(g=>g.job===j).map(card).join("")}`).join("");
   else body=G.map(card).join("");
   return `<h1>Check in a delivery</h1><p class="lede">${plural(nItems,"item")} on order, grouped by vendor, soonest due first${late?` · <span class="late">${plural(late,"order")} overdue</span>`:""}. Tap the delivery that just arrived.</p>
   ${body}
   <button class="card" data-act="newunknown" style="border-style:dashed"><span class="main"><span class="t">Something arrived that isn't on the list</span><div class="s">Set it aside with a note and a bay. Your LC matches it up.</div></span><span class="chev"></span></button>
-  ${recent.length?`<div class="sec">Checked in this session</div>${recent.map(r=>`<div class="card"><span class="dot" style="background:${jobColor(r.Job)}"></span><span class="main"><span class="t">${esc(r.Title)}</span><div class="s">${esc(r.Job)} · ${esc(r.OnHandLocation||"")}${ck(r).condition&&ck(r).condition!=="OK"?` · <span class="late">${esc(ck(r).condition)}</span>`:""}</div></div><button class="btn ghost small" data-act="uncheck" data-id="${r.id}">Undo</button></div>`).join("")}`:""}`;
+  ${recent.length?`<div class="sec">Checked in this session</div>${recent.map(r=>`<div class="card"><span class="dot" style="background:${jobColor(r.Job)}"></span><span class="main"><span class="t">${esc(r.Title)}</span><div class="s">${esc(PN(r.Job))} · ${esc(r.OnHandLocation||"")}${ck(r).condition&&ck(r).condition!=="OK"?` · <span class="late">${esc(ck(r).condition)}</span>`:""}</div></div><button class="btn ghost small" data-act="uncheck" data-id="${r.id}">Undo</button></div>`).join("")}`:""}`;
 }
 function orderPanel(){
   const g=orders().find(x=>x.key===sel.key)||(draft&&draft.g); if(!g){sel=null;draft=null;$("#bodyEl").classList.add("nopanel");return ""}
   if(!draft||draft.key!==sel.key)draft={key:sel.key,g,on:Object.fromEntries(g.rows.map(r=>[r.id,true])),cond:{},cnote:{},date:TODAY,bay:null,by:ME};
   const d=draft, n=g.rows.filter(r=>d.on[r.id]).length;
   return `<div class="phead"><h2>${esc(g.vendor||"Vendor not listed")}</h2><button class="x" data-act="close" aria-label="Close">×</button></div>
-  <div class="pmeta"><span class="dot" style="background:${jobColor(g.job)}"></span> ${esc(g.job)}${g.date?" · ordered "+fmtDate(g.date):""} · ${expTxt(g.exp)}</div>
+  <div class="pmeta"><span class="dot" style="background:${jobColor(g.job)}"></span> ${esc(PN(g.job))}${g.date?" · ordered "+fmtDate(g.date):""} · ${expTxt(g.exp)}</div>
   <div class="field"><span>What came in? Untick anything missing.</span>
   ${g.rows.map(r=>{const c=d.cond[r.id]||"OK";return `<div class="line ${d.on[r.id]?"":"off"}"><div class="row"><label><input type="checkbox" data-on="${r.id}" ${d.on[r.id]?"checked":""}><span><b>${esc(roomItem(r))}</b><div class="note">${esc([r.Location,product(r)].filter(Boolean).join(" · "))}</div></span></label></div>
     ${d.on[r.id]?`<div class="seg" role="group" aria-label="Condition">${["OK","Damaged","Wrong item","Short"].map(x=>`<button type="button" data-cond="${r.id}|${x}" aria-pressed="${c===x}" class="${x==="OK"?"":"bad"}">${x}</button>`).join("")}</div>
@@ -501,7 +507,7 @@ function bayPicker(cur,forJob){
   const mineL=Object.keys(mine);
   return `<div class="baypick" style="--cols:${MAXCOL};--jc:${forJob?jobColor(forJob):"var(--ink)"}" role="group" aria-label="Bay">${ROWS.map(rw=>`<span class="rl">${rw}</span>`+rowBays(rw).map(b=>`<button type="button" data-bay="${b}" class="${occ[b]?"has":""} ${mine[b]?"mine":""}" aria-pressed="${cur==="Stokley, "+b}">${b}</button>`).join("")+`<span style="grid-column:span ${MAXCOL-rowBays(rw).length}"></span>`.repeat(rowBays(rw).length<MAXCOL?1:0)).join("")}</div>
   <div class="bayextra"><button type="button" data-bay="Onsite" aria-pressed="${cur==="Onsite"}">Straight to site</button><button type="button" data-bay="Stokley" aria-pressed="${cur==="Stokley"}">Stokley, bay later</button></div>
-  ${forJob&&mineL.length?`<div class="hint"><span class="dot" style="background:${jobColor(forJob)}"></span> ${esc(forJob)} already has things in ${mineL.sort().join(", ")}.</div>`:""}`;
+  ${forJob&&mineL.length?`<div class="hint"><span class="dot" style="background:${jobColor(forJob)}"></span> ${esc(PN(forJob))} already has things in ${mineL.sort().join(", ")}.</div>`:""}`;
 }
 
 /* ---- Bays ---- */
@@ -517,16 +523,16 @@ function baysView(){
   const jobsIn=JOBS.filter(j=>L.some(r=>r.Job===j));
   const missing=L.filter(r=>ck(r).auditMissing);
   const tile=b=>{const its=by[b]||[];const real=its.filter(r=>r.OpsData);const js=[...new Set(real.map(r=>r.Job))];const miss=real.some(r=>ck(r).auditMissing||(ck(r).condition&&ck(r).condition!=="OK"&&!ck(r).resolvedAt));const unk=its.length-real.length;
-    return `<button class="bay ${its.length?"":"empty"} ${miss?"miss":""}" data-baysel="${b}" aria-current="${sel&&sel.kind==="bay"&&sel.key===b}"><span class="baytop"><span class="bayid">${b}</span><span class="baycnt">${its.length||""}</span></span><span class="baynames">${js.slice(0,3).map(j=>`<span><i style="background:${jobColor(j)}"></i>${esc(j)}${js.length>1||unk?` <em>${real.filter(r=>r.Job===j).length}</em>`:""}</span>`).join("")}${js.length>3?`<span class="more">+${js.length-3} more</span>`:""}${unk?`<span><i style="background:var(--muted)"></i>Not on the list <em>${unk}</em></span>`:""}</span></button>`};
-  return `<h1>Stokley</h1><p class="lede">${plural(L.length,"item")} in the warehouse${job==="all"?" across "+plural(jobsIn.length,"job"):" for "+esc(job)}. Tap a bay to see what's in it, move things or audit it.</p>
+    return `<button class="bay ${its.length?"":"empty"} ${miss?"miss":""}" data-baysel="${b}" aria-current="${sel&&sel.kind==="bay"&&sel.key===b}"><span class="baytop"><span class="bayid">${b}</span><span class="baycnt">${its.length||""}</span></span><span class="baynames">${js.slice(0,3).map(j=>`<span><i style="background:${jobColor(j)}"></i>${esc(PN(j))}${js.length>1||unk?` <em>${real.filter(r=>r.Job===j).length}</em>`:""}</span>`).join("")}${js.length>3?`<span class="more">+${js.length-3} more</span>`:""}${unk?`<span><i style="background:var(--muted)"></i>Not on the list <em>${unk}</em></span>`:""}</span></button>`};
+  return `<h1>Stokley</h1><p class="lede">${plural(L.length,"item")} in the warehouse${job==="all"?" across "+plural(jobsIn.length,"job"):" for "+esc(PN(job))}. Tap a bay to see what's in it, move things or audit it.</p>
   <div class="bays" style="--cols:${MAXCOL}">${ROWS.map(rw=>`<div class="bayrow"><span class="bayrl">${rw}</span>${rowBays(rw).map(tile).join("")}</div>`).join("")}</div>
-  <div class="baylegend">${jobsIn.map(j=>`<span><i style="background:${jobColor(j)}"></i>${esc(j)} <em>${L.filter(r=>r.Job===j).length}</em></span>`).join("")}</div>
+  <div class="baylegend">${jobsIn.map(j=>`<span><i style="background:${jobColor(j)}"></i>${esc(PN(j))} <em>${L.filter(r=>r.Job===j).length}</em></span>`).join("")}</div>
   ${vague.length?`<div class="stoksec warn"><h4>No bay noted (${vague.length})</h4><p>These say "Stokley" but not which bay. Tap Set bay to give each one a bay.</p>${vague.map(r=>itemRow(r,"Set bay")).join("")}</div>`:""}
   ${missing.length?`<div class="stoksec warn"><h4>Not found in a bay audit (${missing.length})</h4>${missing.map(r=>itemRow(r)).join("")}</div>`:""}`;
 }
 function itemRow(r,btn){
   const c=ck(r);
-  return `<div class="item"><span class="dot" style="background:${jobColor(r.Job)}"></span><div class="main"><div class="t">${esc(r.Title)}</div><div class="s">${esc(r.Job)} · ${esc(r.OnHandLocation||"")}${product(r)?" · "+esc(product(r)):""}${c.auditMissing?` · <span class="late">not found in audit</span>`:""}${c.condition&&c.condition!=="OK"&&!c.resolvedAt?` · <span class="late">${esc(c.condition)}</span>`:""}</div></div>
+  return `<div class="item"><span class="dot" style="background:${jobColor(r.Job)}"></span><div class="main"><div class="t">${esc(r.Title)}</div><div class="s">${esc(PN(r.Job))} · ${esc(r.OnHandLocation||"")}${product(r)?" · "+esc(product(r)):""}${c.auditMissing?` · <span class="late">not found in audit</span>`:""}${c.condition&&c.condition!=="OK"&&!c.resolvedAt?` · <span class="late">${esc(c.condition)}</span>`:""}</div></div>
     <button class="btn ghost small" data-move="${r.id}">${btn||"Move"}</button></div>`;
 }
 function bayPanel(){
@@ -535,20 +541,20 @@ function bayPanel(){
   if(auditing===b){
     return `<div class="phead"><h2>Auditing ${b}</h2><button class="x" data-act="close" aria-label="Close">×</button></div>
     <p class="pmeta">Tick everything you can see on the shelf. Anything left unticked is flagged as missing.</p>
-    ${real.map(r=>`<label class="line" style="display:flex;gap:12px;align-items:center"><input type="checkbox" data-seen="${r.id}" ${draft.seen[r.id]?"checked":""}><span><b>${esc(r.Title)}</b><div class="note">${esc(r.Job)}${product(r)?" · "+esc(product(r)):""}</div></span></label>`).join("")||`<div class="empty"><b>Empty.</b>Nothing listed in ${b}.</div>`}
+    ${real.map(r=>`<label class="line" style="display:flex;gap:12px;align-items:center"><input type="checkbox" data-seen="${r.id}" ${draft.seen[r.id]?"checked":""}><span><b>${esc(r.Title)}</b><div class="note">${esc(PN(r.Job))}${product(r)?" · "+esc(product(r)):""}</div></span></label>`).join("")||`<div class="empty"><b>Empty.</b>Nothing listed in ${b}.</div>`}
     <button class="link" data-act="newunknown" data-bayhint="${b}">+ Something here that isn't listed</button>
     <div class="pfoot"><button class="btn ghost" data-act="auditcancel">Cancel</button><button class="btn" data-act="auditdone">Finish audit (${Object.values(draft.seen).filter(Boolean).length}/${real.length})</button></div>`;
   }
   if(draft&&draft.moving){
     const r=byId(draft.moving);
     return `<div class="phead"><h2>Move ${esc(roomItem(r))}</h2><button class="x" data-act="close" aria-label="Close">×</button></div>
-    <div class="pmeta">${esc(r.Job)} · now at ${esc(r.OnHandLocation||"no location")}</div>
+    <div class="pmeta">${esc(PN(r.Job))} · now at ${esc(r.OnHandLocation||"no location")}</div>
     <div class="field"><span>Move it to</span>${bayPicker(null,r.Job)}</div>
     <div class="pfoot"><button class="btn ghost" data-act="movecancel">Cancel</button></div>`;
   }
   const last=real.map(r=>ck(r).auditedAt).filter(Boolean);
   return `<div class="phead"><h2>Bay ${b}</h2><button class="x" data-act="close" aria-label="Close">×</button></div>
-  <div class="pmeta">${its.length?plural(its.length,"item")+" · "+[...new Set(real.map(r=>r.Job))].join(", "):"Empty"}${last.length===real.length&&last.length?" · audited "+new Date(Math.min(...last)).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}):""}</div>
+  <div class="pmeta">${its.length?plural(its.length,"item")+" · "+[...new Set(real.map(r=>PN(r.Job)))].join(", "):"Empty"}${last.length===real.length&&last.length?" · audited "+new Date(Math.min(...last)).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}):""}</div>
   ${real.map(r=>itemRow(r)).join("")}
   ${unk.map(u=>`<div class="item"><span class="dot" style="background:var(--muted)"></span><div class="main"><div class="t">${esc(u.desc)}</div><div class="s">Not on the list · set aside ${fmtDate(u.date)}</div></div></div>`).join("")}
   ${!its.length?`<div class="empty"><b>Empty.</b>Nothing is checked in to ${b}.</div>`:""}
@@ -566,9 +572,9 @@ function pullView(){
   const row=r=>`<div class="pullrow ${ck(r).pulledAt?"done":""}"><label><input type="checkbox" data-pull="${r.id}" ${ck(r).pulledAt?"checked":""}><span class="main"><span class="t" style="font-weight:600;font-size:18px">${esc(roomItem(r))}</span><div class="note">${esc([r.Location,product(r)].filter(Boolean).join(" · "))}</div>
     ${ck(r).condition&&ck(r).condition!=="OK"&&!ck(r).resolvedAt?`<div class="late" style="font-size:14px">${esc(ck(r).condition)}${ck(r).conditionNote?": "+esc(ck(r).conditionNote):""} – check with your LC first</div>`:""}</span></label>
     <span class="tag ${ck(r).pulledAt?"go":""}">${ck(r).pulledAt?"On the truck":esc(r.Location||"")}</span></div>`;
-  return `<h1>Pull for ${esc(job)}</h1><p class="lede">${plural(left,"item")} waiting at Stokley, in bay order so you can walk the aisles. Tick each one as it goes on the truck.</p>
+  return `<h1>Pull for ${esc(PN(job))}</h1><p class="lede">${plural(left,"item")} waiting at Stokley, in bay order so you can walk the aisles. Tick each one as it goes on the truck.</p>
   ${cats.length>1?`<div class="filters"><button class="chip" data-pcat="all" aria-pressed="${pullCat==="all"}">Everything</button>${cats.map(c=>`<button class="chip" data-pcat="${esc(c)}" aria-pressed="${pullCat===c}">${esc(c.replace(/^\d+\s*-\s*/,""))}</button>`).join("")}</div>`:""}
-  ${keys.map(k=>`<div class="bayhead"><b>${esc(k)}</b><span class="note">${plural(shelves[k].length,"item")}</span></div>${shelves[k].map(row).join("")}`).join("")||`<div class="empty"><b>Nothing to pull.</b>No received items for ${esc(job)} are waiting at Stokley${pullCat!=="all"?" in this category":""}.</div>`}
+  ${keys.map(k=>`<div class="bayhead"><b>${esc(k)}</b><span class="note">${plural(shelves[k].length,"item")}</span></div>${shelves[k].map(row).join("")}`).join("")||`<div class="empty"><b>Nothing to pull.</b>No received items for ${esc(PN(job))} are waiting at Stokley${pullCat!=="all"?" in this category":""}.</div>`}
   ${F.length?`<div class="stickybar"><div class="grow"><b>${done} of ${F.length}</b> on the truck</div><button class="btn ghost small" data-act="copypull">Copy list</button><button class="btn small" data-act="pullall" ${left?"":"disabled"}>Mark all loaded</button></div>`:""}`;
 }
 
@@ -578,7 +584,7 @@ function flagsView(){
   const M=items.filter(r=>inJob(r)&&ck(r).auditMissing&&atStokley(r));
   const R=items.filter(r=>inJob(r)&&state(r)==="ret");
   const U=job==="all"?unknown.filter(u=>!u.resolvedAt):[];
-  const card=(r,sub,btns)=>`<div class="card"><span class="dot" style="background:${jobColor(r.Job)}"></span><span class="main"><span class="t">${esc(r.Title)}</span><div class="s">${esc(r.Job)} · ${esc(r.OnHandLocation||"")}</div><div class="s">${sub}</div></span><span style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${btns}</span></div>`;
+  const card=(r,sub,btns)=>`<div class="card"><span class="dot" style="background:${jobColor(r.Job)}"></span><span class="main"><span class="t">${esc(r.Title)}</span><div class="s">${esc(PN(r.Job))} · ${esc(r.OnHandLocation||"")}</div><div class="s">${sub}</div></span><span style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">${btns}</span></div>`;
   const sec=(t,L)=>L.length?`<div class="sec">${t} (${L.length})</div>${L.join("")}`:"";
   const all=D.length+M.length+R.length+U.length;
   return `<h1>Returns &amp; flags</h1><p class="lede">Damaged, wrong or short deliveries, things missing from a bay, things going back, and deliveries nobody matched yet.</p>
@@ -617,7 +623,7 @@ function stockPanel(){
   const x=stock.find(s=>s.id===sel.key);
   return `<div class="phead"><h2>Taking ${esc(x.name)}</h2><button class="x" data-act="close" aria-label="Close">×</button></div>
   <div class="pmeta">Who's taking it, or which job is it going to?</div>
-  <div class="filters">${JOBS.map(j=>`<button class="chip" data-stto="${esc(j)}"><span class="dot" style="background:${jobColor(j)}"></span>${esc(j)}</button>`).join("")}</div>
+  <div class="filters">${JOBS.map(j=>`<button class="chip" data-stto="${esc(PN(j))}"><span class="dot" style="background:${jobColor(j)}"></span>${esc(PN(j))}</button>`).join("")}</div>
   <label class="field"><span>Or a person</span><input id="stTo" placeholder="Name"></label>
   <div class="pfoot"><button class="btn" data-act="sttake">Take it</button></div>`;
 }
@@ -639,8 +645,8 @@ function matchPanel(){
   const cands=draft.job?items.filter(r=>r.Job===draft.job&&["ord","need"].includes(state(r))):[];
   return `<div class="phead"><h2>Match: ${esc(u.desc)}</h2><button class="x" data-act="close" aria-label="Close">×</button></div>
   <div class="pmeta">${esc(u.OnHandLocation||"")}${u.label?" · label: "+esc(u.label):""}</div>
-  <div class="filters">${JOBS.map(j=>`<button class="chip" data-mjob="${esc(j)}" aria-pressed="${draft.job===j}"><span class="dot" style="background:${jobColor(j)}"></span>${esc(j)}</button>`).join("")}</div>
-  ${draft.job?(cands.length?cands.map(r=>`<button class="card" data-mitem="${r.id}"><span class="main"><span class="t">${esc(r.Title)}</span><div class="s">${esc(vendorOf(r)||"")} ${r.OrderDate?"· ordered "+fmtDate(r.OrderDate):"· not marked ordered"}</div></span><span class="chev"></span></button>`).join(""):`<div class="empty"><b>Nothing open on ${esc(draft.job)}.</b></div>`):`<p class="note">Pick the job first.</p>`}
+  <div class="filters">${JOBS.map(j=>`<button class="chip" data-mjob="${esc(j)}" aria-pressed="${draft.job===j}"><span class="dot" style="background:${jobColor(j)}"></span>${esc(PN(j))}</button>`).join("")}</div>
+  ${draft.job?(cands.length?cands.map(r=>`<button class="card" data-mitem="${r.id}"><span class="main"><span class="t">${esc(r.Title)}</span><div class="s">${esc(vendorOf(r)||"")} ${r.OrderDate?"· ordered "+fmtDate(r.OrderDate):"· not marked ordered"}</div></span><span class="chev"></span></button>`).join(""):`<div class="empty"><b>Nothing open on ${esc(PN(draft.job))}.</b></div>`):`<p class="note">Pick the job first.</p>`}
   <div class="pfoot"><button class="btn ghost" data-act="udismiss">Not ours / dealt with</button></div>`;
 }
 
@@ -664,7 +670,7 @@ function renderPanel(){
 function movePanel(){
   const r=byId(sel.key);
   return `<div class="phead"><h2>Move ${esc(roomItem(r))}</h2><button class="x" data-act="close" aria-label="Close">×</button></div>
-  <div class="pmeta">${esc(r.Job)} · now at ${esc(r.OnHandLocation||"no location")}</div>
+  <div class="pmeta">${esc(PN(r.Job))} · now at ${esc(r.OnHandLocation||"no location")}</div>
   <div class="field"><span>Move it to</span>${bayPicker(null,r.Job)}</div>`;
 }
 function openPanel(s){sel=s;draft=null;auditing=null;render()}
@@ -756,7 +762,7 @@ document.addEventListener("click",e=>{
   if(act==="pullall"){const L=items.filter(r=>r.Job===job&&atStokley(r)&&(pullCat==="all"||r.Category===pullCat));
     batch(L.map(r=>()=>write(r.id,{OnHandLocation:"Onsite",checkin:{OnHandLocation:"Onsite",pulledAt:Date.now(),pulledBy:ME,pulledFrom:r.OnHandLocation}})),`${plural(L.length,"item")} on the truck`);return}
   if(act==="copypull"){const L=items.filter(r=>r.Job===job&&(atStokley(r)||ck(r).pulledAt)).sort((a,b)=>String(a.OnHandLocation).localeCompare(String(b.OnHandLocation),undefined,{numeric:true}));
-    const txt=`Pull list – ${job} – ${fmtDate(TODAY)}\n\n`+L.map(r=>`[${ck(r).pulledAt?"x":" "}] ${r.Title}\n    ${ck(r).pulledFrom||r.OnHandLocation}`).join("\n");
+    const txt=`Pull list – ${PN(job)} – ${fmtDate(TODAY)}\n\n`+L.map(r=>`[${ck(r).pulledAt?"x":" "}] ${r.Title}\n    ${ck(r).pulledFrom||r.OnHandLocation}`).join("\n");
     (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast("Pull list copied"),()=>toast("Couldn't copy on this device"));return}
   if(act==="sttake"){const x=stock.find(s=>s.id===sel.key);const to=$("#stTo").value.trim();if(!to){$("#stTo").focus();return}const before={...x};x.out=to;x.outAt=Date.now();
     x.log=[...(x.log||[]),{at:Date.now(),what:"Taken to "+to,by:ME}].slice(-30);sel=null;render();
@@ -795,7 +801,7 @@ document.getElementById("signInBtn").onclick=()=>{const b=document.getElementByI
   let js;
   try{ js=await loadJobs(); bwConn(true); }catch(e){ bwConn(false); loadErr=e.message||String(e); render(); return; }
   JOBS=js.filter(j=>!j.archived).map(j=>j.name);
-  const shared=loadShared();
+  const shared=loadShared(); await loadNames(); JOBS.sort((a,b)=>String(PN(a)).localeCompare(String(PN(b))));
   for(const j of JOBS){ try{ items=items.concat(await loadJob(j)); }catch(e){ console.warn("Warehouse: could not load",j,e); toast("Couldn't load "+j+". Reload to try again."); } computeBays(); render(); }
   await shared; loaded=true; computeBays(); render();
 })();

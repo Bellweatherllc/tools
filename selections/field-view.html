@@ -214,7 +214,7 @@ textarea{width:100%;font:400 16px/1.4 var(--sans);padding:10px;border:1px solid 
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v17';
+const CORE_VERSION = 'v18';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* ── Practice mode ── Open the page with ?practice and it reads the real data but never writes anything.
@@ -246,6 +246,12 @@ if(PRACTICE){
 const GRAPH='https://graph.microsoft.com/v1.0';
 const LISTS=GRAPH+'/sites/bellweather.sharepoint.com:/sites/BWCore:/lists';
 async function gAll(url){ let out=[], next=url; while(next){ const j=await SherpaAuth.graph(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; } return out; }
+/* Projects show the Projects Manager's Project Name (CORE_Projects.ProjectName); the Job Code stays the key and shows where a name is missing. */
+const PNAME=new Map();
+const PN=j=>PNAME.get(String(j||'').trim().toUpperCase())||j;
+async function loadNames(){ try{ const rows=await gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=JobCode,ProjectName)&$top=999`);
+  for(const r of rows){ const f=r.fields||{}, c=String(f.JobCode||'').trim().toUpperCase(), n=String(f.ProjectName||'').trim(); if(c&&n) PNAME.set(c,n); } }
+  catch(e){ console.warn('Field: could not read Project Names from CORE_Projects; showing Job Codes',e); } }
 const jobFilter=job=>`$filter=fields/Job eq '${encodeURIComponent(String(job).replace(/'/g,"''"))}'`;
 const SEL_FIELDS='Title,Job,Category,Location,DueDate,Ordered,OrderDate,LeadTime,OnHandLocation,DateReceived,Notes,DesignStatus,DesignKey,OpsData,CoreEditedFields';
 const CH_FIELDS='Title,Job,SelectionLookupId,Description,ChoiceStatus';
@@ -327,7 +333,7 @@ function jobBtnLabel(){ $('jobBtn').innerHTML='<span>My<br>projects</span><svg w
 function openJobs(keepScroll){
   const sh=$('sheet'), top=sh.scrollTop;
   const starred=JOBS.filter(j=>STARS.has(j.name)), rest=JOBS.filter(j=>!STARS.has(j.name)&&!j.archived), arch=JOBS.filter(j=>!STARS.has(j.name)&&j.archived);
-  const row=j=>{ const on=STARS.has(j.name); return `<div class="jrow${j.name===job?' cur':''}"><button class="jname" data-job="${esc(j.name)}">${esc(j.name)}</button><button class="jstar" data-star="${esc(j.name)}" aria-pressed="${on}" aria-label="${on?'Unstar':'Star'} ${esc(j.name)}">${STAR_SVG(on,24)}</button></div>`; };
+  const row=j=>{ const on=STARS.has(j.name); return `<div class="jrow${j.name===job?' cur':''}"><button class="jname" data-job="${esc(j.name)}">${esc(PN(j.name))}</button><button class="jstar" data-star="${esc(j.name)}" aria-pressed="${on}" aria-label="${on?'Unstar':'Star'} ${esc(j.name)}">${STAR_SVG(on,24)}</button></div>`; };
   sh.dataset.kind='jobs';
   sh.innerHTML=`<div class="grab"></div><button class="x" data-close aria-label="Close">×</button><h3 id="sTitle">Projects</h3>`+
     (starred.length?`<div class="sec"><h4>My projects</h4>${starred.map(row).join('')}</div>`:`<p class="note" style="margin:6px 0 0">Star a project to add it to My projects.</p>`)+
@@ -480,7 +486,7 @@ function render(){
   const list=items.filter(matches);
   let h='';
   if(!items.length) h='<div class="empty">No selections for this job.</div>';
-  else if(!list.length) h=`<div class="empty">Nothing in ${esc(job)} matches “${esc(q)}”.</div>`;
+  else if(!list.length) h=`<div class="empty">Nothing in ${esc(PN(job))} matches “${esc(q)}”.</div>`;
   else if(tab==='rooms'){
     const rooms=grouped(items,i=>i.room).map(g=>g[0]);
     if(rooms.length>1) h+=`<div class="chips" role="group" aria-label="Room">${['All',...rooms].map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===roomF}">${esc(r)}</button>`).join('')}</div>`;
@@ -588,7 +594,7 @@ function openSheet(id,keepTop){
 function closeSheet(){ $('scrim').classList.remove('open'); $('sheet').classList.remove('open'); }
 
 async function pickJob(name){
-  job=name; pref('job',name); bwSub(ME); picked.clear(); q=''; roomF='All'; whereF='All'; whereS='All'; $('q').value=''; $('q').placeholder='Search '+name+'…'; jobBtnLabel();
+  job=name; pref('job',name); bwSub(ME); picked.clear(); q=''; roomF='All'; whereF='All'; whereS='All'; $('q').value=''; $('q').placeholder='Search '+PN(name)+'…'; jobBtnLabel();
   $('main').innerHTML='<div class="empty">Loading…</div>';
   try{ items=await loadJob(name); }catch(e){ $('main').innerHTML=`<div class="empty">Couldn’t load ${esc(name)}: ${esc(e.message||e)}</div>`; return; }
   if(job===name) render();
@@ -651,7 +657,7 @@ addEventListener('resize',setHdrVar);
   $('app').classList.remove('hidden'); setHdrVar();
   { const a=SherpaAuth.getAccount(); ME=(a&&(a.name||a.username))||''; UID=(a&&(a.username||a.name))||''; STARS=new Set(cachedStars()); }
   const starsP=loadStars().catch(()=>null);   // a failed stars read never blocks the app
-  try{ JOBS=await loadJobs(); bwConn(true); }catch(e){ bwConn(false); $('main').innerHTML=`<div class="empty">Couldn’t reach SharePoint: ${esc(e.message||e)}</div>`; return; }
+  try{ JOBS=await loadJobs(); bwConn(true); await loadNames(); JOBS.sort((a,b)=>String(PN(a.name)).localeCompare(String(PN(b.name)))); }catch(e){ bwConn(false); $('main').innerHTML=`<div class="empty">Couldn’t reach SharePoint: ${esc(e.message||e)}</div>`; return; }
   const active=JOBS.filter(j=>!j.archived);
   await starsP;
   const last=pref('job'); const firstStar=JOBS.find(j=>STARS.has(j.name)&&!j.archived);
