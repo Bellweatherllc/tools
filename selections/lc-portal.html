@@ -853,11 +853,11 @@ const CORE_VERSION = 'v11';
     return projP;
   }
   const cpFor=name=>PROJ.get(String(name||'').trim().toUpperCase());
-  const firstName=s=>String(s||'').trim().split(/\s+/)[0]||null;
+  const fullName=s=>String(s||'').trim().replace(/\s+/g,' ')||null;
   function cpView(name){
     const p=cpFor(name); if(!p) return {cp:false};
     const f=p.f; const meta=parseJ(f.DocLinkMeta);
-    return {cp:true,lc:firstName(f.LogisticsCoordinator1),lc2:firstName(f.LogisticsCoordinator2),address:f.Address||null,
+    return {cp:true,lc:fullName(f.LogisticsCoordinator1),lc2:fullName(f.LogisticsCoordinator2),address:f.Address||null,
       lat:num(f.Latitude),lng:num(f.Longitude),geoFor:f.GeocodedAddress||null,mp:f.MatterportUrl||null,folderId:f.SPFolderItemId||null,links:meta.links||{}};
   }
   async function custDrive(){
@@ -930,9 +930,7 @@ const CORE_VERSION = 'v11';
     if(started) return started;
     started=(async()=>{
       const js=await loadJobs();
-      forJob('CORE_SelectionDesignDocs','_shared').then(dd=>{ if(!docs.has('views')) docs.set('views',new Map());
-        for(const d of dd){ const f=d.fields; if(f.Collection!=='views') continue; docs.get('views').set(f.DocId,parseJ(f.Data)); docSp.set('views/'+f.DocId,String(d.id)); }
-        emit(['views']); }).catch(e=>console.warn('Selections: could not load views',e));
+      loadViews();
       let cur=null; try{ cur=localStorage.getItem('bw-job'); }catch(e){}
       if(!js.some(j=>j.name===cur)) cur=(js.find(j=>!j.archived)||js[0]||{}).name;
       if(cur){ await loadJob(cur); }
@@ -1006,12 +1004,38 @@ const CORE_VERSION = 'v11';
     try{ await patch('CORE_Selections',m.spId,f); }
     catch(e){ Object.assign(m,before); replaceInCache(m,compose(m)); emit(); throw e; }
   }
+  /* CORE_ProjectViews: Title (view name), ViewKey (id), OwnerEmail, OwnerName, JobCodes (comma list, readable and fixable by hand).
+     "My projects" is never stored: it always comes from the Pipeline's LC fields. A missing list (Setup not run yet) leaves views empty. */
+  let viewsList=null;   // null = unknown, false = list missing, true = ok
+  const VSEL='Title,ViewKey,OwnerEmail,OwnerName,JobCodes';
+  const codes=s=>String(s||'').split(/[,;\n]/).map(x=>x.trim()).filter(Boolean);
+  function loadViews(){
+    if(!docs.has('views')) docs.set('views',new Map());
+    return gAll(`${LISTS}/CORE_ProjectViews/items?$expand=fields($select=${VSEL})&$top=999`).then(rows=>{
+      viewsList=true; const m=docs.get('views'); m.clear();
+      for(const r of rows){ const f=r.fields||{}; const id=f.ViewKey||('sp'+r.id);
+        m.set(id,{kind:'view',name:f.Title||'Untitled view',owner:f.OwnerName||'',ownerId:String(f.OwnerEmail||'').toLowerCase(),rule:{type:'pick',jobs:codes(f.JobCodes)}});
+        docSp.set('views/'+id,String(r.id)); }
+      emit(['views']);
+    }).catch(e=>{ if(e&&e.status===404){ viewsList=false; emit(['views']); return; } console.warn('Selections: could not load views',e); });
+  }
+  window.spViewsMissing=()=>viewsList===false;
+  async function saveView(id,next){
+    if(viewsList===false) throw Object.assign(new Error('The CORE_ProjectViews list does not exist yet. Run Selections Setup to create it.'),{code:'nolist'});
+    const key='views/'+id, sp=docSp.get(key);
+    if(next===undefined){ if(sp){ await g(`${LISTS}/CORE_ProjectViews/items/${sp}`,{method:'DELETE',raw:true}); docSp.delete(key); } return; }
+    if(next.kind==='my') return;
+    const f={Title:String(next.name||'Untitled view').slice(0,255),ViewKey:id,OwnerEmail:String(next.ownerId||'').toLowerCase(),OwnerName:next.owner||'',JobCodes:((next.rule&&next.rule.jobs)||[]).join(', ')};
+    if(sp) await patch('CORE_ProjectViews',sp,f);
+    else{ const r=await post('CORE_ProjectViews',f); docSp.set(key,String(r.id)); }
+  }
   async function saveDoc(c,id,op,data){
     if(!docs.has(c)) docs.set(c,new Map()); const map=docs.get(c), before=clone(map.get(id)), key=c+'/'+id;
     const next=op==='delete'?undefined:(op==='update'?{...(before||{}),...data}:clone(data));
     for(const [k,v] of Object.entries(next||{})) if(v===null) delete next[k];
     next===undefined?map.delete(id):map.set(id,next); emit([c]);
     try{
+      if(c==='views') return await saveView(id,next);
       const sp=docSp.get(key);
       if(next===undefined){ if(sp){ await g(`${LISTS}/CORE_SelectionDesignDocs/items/${sp}`,{method:'DELETE',raw:true}); docSp.delete(key); } return; }
       const json=JSON.stringify(next);
@@ -1206,10 +1230,21 @@ const CORE_VERSION = 'v11';
   document.getElementById('spSignIn').onclick=()=>{ const b=document.getElementById('spSignIn'); b.disabled=true; document.getElementById('spGateMsg').textContent='Signing in…'; SherpaAuth.signIn().catch(e=>{ b.disabled=false; document.getElementById('spGateMsg').textContent='Sign-in failed: '+e.message; }); };
   const authReady=(async()=>{
     await SherpaAuth.init();
-    if(SherpaAuth.isSignedIn()){ const a=SherpaAuth.getAccount(); ME=(a&&(a.name||a.username))||''; MEID=(a&&(a.username||a.homeAccountId))||''; bwSub(ME); window.spMe={name:ME,id:MEID}; return; }
+    if(SherpaAuth.isSignedIn()){ const a=SherpaAuth.getAccount(); ME=(a&&(a.name||a.username))||''; MEID=(a&&(a.username||a.homeAccountId))||''; bwSub(ME); window.spMe={name:ME,id:MEID}; teamName(MEID); return; }
     gate.classList.add('show');
     await new Promise(()=>{});   // wait here; sign-in redirects and reloads the page
   })();
+  /* My projects match by email (decided 2026-11-24): the signed-in email is looked up in CORE_TeamMembers (column `email`),
+     and that person's EmployeeName is what the Pipeline's LogisticsCoordinator1/2 fields hold. Falls back to the Microsoft account name. */
+  async function teamName(email){
+    const em=String(email||'').trim().toLowerCase(); if(!em) return;
+    try{
+      const rows=await gAll(`${LISTS}/CORE_TeamMembers/items?$expand=fields($select=Title,EmployeeName,email,Active)&$top=999`);
+      const hit=rows.map(r=>r.fields||{}).find(f=>String(f.email||'').split(/[;,]/).map(x=>x.trim().toLowerCase()).includes(em));
+      const nm=hit&&String(hit.EmployeeName||hit.Title||'').trim().replace(/\s+/g,' ');
+      if(nm){ ME=nm; window.spMe={name:nm,id:MEID}; bwSub(nm); emit(['views']); }
+    }catch(e){ console.warn('Selections: could not read CORE_TeamMembers; matching LC fields by the Microsoft account name',e); }
+  }
   function saveFile({filename,data}){
     const url=URL.createObjectURL(new Blob([data])); const a=document.createElement('a');
     a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -2668,29 +2703,30 @@ window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(["ho
 let VIEWS={}, curView=(()=>{try{return localStorage.getItem("bw-view")||""}catch(e){return ""}})(), veMode=null, veFor=null;
 const first=s=>String(s||"").trim().split(/\s+/)[0]||"";
 const meN=()=>(window.spMe||{}).name||"", meI=()=>(window.spMe||{}).id||"";
-const MEF=()=>first(meN());
+const nm=s=>String(s||"").trim().replace(/\s+/g," ").toLowerCase();
+const MEF=()=>String(meN()||"").trim().replace(/\s+/g," ");
 const lcs=()=>[...new Set(Object.keys(JOBS).flatMap(n=>[JOBS[n].lc,JOBS[n].lc2]).filter(Boolean))];
-function people(){ const me=MEF(); return [...new Set([me,...lcs().sort(),...Object.values(VIEWS).map(v=>first(v.owner)).sort()])].filter(Boolean); }
+function people(){ const me=MEF(), seen=new Set(), out=[]; for(const p of [me,...Object.values(VIEWS).map(v=>v.owner).sort(),...lcs().sort()]){ if(p&&!seen.has(nm(p))){ seen.add(nm(p)); out.push(p); } } return out; }
 function myViewFor(p){
-  const name=p===MEF()?"My projects":p+"'s projects";   // always the Pipeline's LC fields
+  const name=nm(p)===nm(MEF())?"My projects":first(p)+"'s projects";   // always the Pipeline's LC fields
   return {id:"lc:"+p,name,owner:p,kind:"my",rule:{type:"lc",lc:p}};
 }
 function viewList(){
   const out=[];
-  for(const p of people()){ out.push(myViewFor(p)); for(const [id,v] of Object.entries(VIEWS)) if(v.kind!=="my"&&first(v.owner)===p) out.push({id,...v,kind:"view"}); }
+  for(const p of people()){ out.push(myViewFor(p)); for(const [id,v] of Object.entries(VIEWS)) if(v.kind!=="my"&&nm(v.owner)===nm(p)) out.push({id,...v,kind:"view"}); }
   out.push({id:"all",name:"All Projects",kind:"all",rule:{type:"all"}});
   return out;
 }
 function viewById(id){ return viewList().find(v=>v.id===id)||null; }
 function cur(){ return viewById(curView)||viewById("lc:"+MEF())||viewById("all"); }
-function viewJobs(v){ const r=(v&&v.rule)||{type:"all"}; return Object.keys(JOBS).filter(n=>r.type==="all"||(r.type==="lc"&&(JOBS[n].lc===r.lc||JOBS[n].lc2===r.lc))||(r.type==="pick"&&(r.jobs||[]).includes(n))); }
+function viewJobs(v){ const r=(v&&v.rule)||{type:"all"}; return Object.keys(JOBS).filter(n=>r.type==="all"||(r.type==="lc"&&(nm(JOBS[n].lc)===nm(r.lc)||(JOBS[n].lc2&&nm(JOBS[n].lc2)===nm(r.lc))))||(r.type==="pick"&&(r.jobs||[]).includes(n))); }
 function inView(n){ const v=cur(); return !v||v.rule.type==="all"||viewJobs(v).includes(n); }
-const mine=v=>!!v&&(v.kind==="my"?v.owner===MEF():v.kind==="view"&&v.ownerId===meI());
+const mine=v=>!!v&&(v.kind==="my"?nm(v.owner)===nm(MEF()):v.kind==="view"&&nm(v.ownerId)===nm(meI()));
 function setView(id){ curView=id; try{localStorage.setItem("bw-view",id)}catch(e){} view="home"; history.replaceState(null,"","#home"); render(); window.scrollTo(0,0); }
 const CHEV=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>`;
 function viewHead(){
   const v=cur(), n=viewJobs(v).filter(x=>!isArch(x)).length, all=Object.keys(JOBS).filter(x=>!isArch(x)).length;
-  const who=v.kind==="all"?"":v.kind==="my"?(v.owner===MEF()?"Projects where you're an LC on the Pipeline":"Where "+esc(v.owner)+" is an LC on the Pipeline"):mine(v)?"Your view":esc(v.owner)+"'s view";
+  const who=v.kind==="all"?"":v.kind==="my"?(nm(v.owner)===nm(MEF())?"Projects where you're an LC on the Pipeline":"Where "+esc(v.owner)+" is an LC on the Pipeline"):mine(v)?"Your view":esc(v.owner)+"'s view";
   const empty=mine(v)&&!n;
   return `<div class="vhead"><div class="vrow"><button class="vtitle" id="vTitle" aria-haspopup="true" aria-expanded="${!$("#jm").hidden}">${esc(v.name)}${CHEV}</button>
     ${mine(v)&&v.kind!=="my"?`<button class="vbtn" id="vEdit" aria-haspopup="true" aria-expanded="${!$("#pm").hidden}">Edit</button>`:""}
@@ -2714,7 +2750,7 @@ function jmRender(){
   const all=V.find(x=>x.id==="all"); if(hit(all)) html+=row(all)+`<div class="jm-sep"></div>`;
   const mineV=V.filter(x=>x.kind!=="all"&&(x.kind==="my"?x.owner===me:mine(x))).filter(hit);
   if(mineV.length||!q){ html+=`<div class="jm-h">My views</div>`+mineV.map(row).join(""); if(!q) html+=`<button class="jm-add" data-ve-new>+ New view</button>`; }
-  let ev=""; for(const p of people().filter(p=>p!==me)){ const L=V.filter(x=>x.kind!=="all"&&first(x.owner)===p&&!mine(x)).filter(hit); if(L.length) ev+=`<div class="jm-sub">${esc(p)}</div>`+L.map(row).join(""); }
+  let ev=""; for(const p of people().filter(p=>nm(p)!==nm(me))){ const L=V.filter(x=>x.kind!=="all"&&nm(x.owner)===nm(p)&&!mine(x)).filter(hit); if(L.length) ev+=`<div class="jm-sub">${esc(p)}</div>`+L.map(row).join(""); }
   if(ev) html+=`<div class="jm-h">Everyone's views</div>`+ev;
   $("#jmList").innerHTML=html||`<div class="jm-empty">No view matches “${esc(q)}”.</div>`;
   $("#jmFoot").innerHTML="";
@@ -2736,7 +2772,7 @@ async function toggleStar(n){
   const rule={type:"pick",jobs:[...jobs]};
   const id=v.kind==="my"?(v.docId||"my-"+meI()):v.id;
   const doc=v.kind==="my"?{kind:"my",name:"My projects",owner:meN(),ownerId:meI(),rule,updatedAt:Date.now()}:{...VIEWS[v.id],rule,updatedAt:Date.now()};
-  try{ await db.collection("views").doc(id).set(doc); }catch(e){ toast("Didn't save – try again"); }
+  try{ await db.collection("views").doc(id).set(doc); }catch(e){ toast(e&&e.code==="nolist"?e.message:"Didn't save – try again"); }
 }
 /* popups */
 function place(el,anchor,w){ const b=anchor.getBoundingClientRect(); w=Math.min(w,innerWidth-32); el.style.left=Math.max(16,Math.min(b.left,innerWidth-16-w))+"px"; el.style.top=(b.bottom+8)+"px";
@@ -2774,7 +2810,7 @@ $("#veSave").addEventListener("click",async()=>{
     else{ const id="v"+Date.now().toString(36), rule=veMode==="copy"?{type:"pick",jobs:viewJobs(veFor)}:{type:"pick",jobs:[]};
       await db.collection("views").doc(id).set({kind:"view",name,rule,owner:meN(),ownerId:meI(),createdAt:Date.now()});
       veClose(); setView(id); if(veMode==="new") setTimeout(pmOpen,60); toast(veMode==="copy"?"Copied – it's yours to change":"View created – star its projects"); }
-  }catch(e){ $("#veMsg").textContent="Didn't save – try again."; }
+  }catch(e){ $("#veMsg").textContent=e&&e.code==="nolist"?e.message:"Didn't save – try again."; }
   finally{ $("#veSave").disabled=false; }
 });
 document.addEventListener("click",e=>{
