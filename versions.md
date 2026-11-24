@@ -13,7 +13,7 @@ Last updated: 2026-11-24
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1192 |
 | Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v79 |
+| Levels of Development | `levels-of-development.html` | v80 |
 | Scout Board | `scout-board.html` | v14 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v85 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — Levels of Development v79 → v80: per Byron, "in Pipeline" → "in the Pipeline" in the request message's closing note.
 - **2026-11-24** — Levels of Development v78 → v79: per Byron, added a closing note to the default request message (`buildDefaultRequestMessage`) — "As assessments are completed, you can access the compiled, analyzed results in the Analysis tab. That same Analysis is one click away from the LOD pill on the project's hover card in Pipeline." (rephrased per his request — the sentence he drafted read awkwardly). Manual updated.
 - **2026-11-24** — Levels of Development v77 → v78: per Byron — Assess now splits into two independently-scrolling columns once a project is selected: **Scope of Work** on the left, the dimension-rating blocks/Open Notes/Submit on the right, with a draggable divider (`#assess-divider`) between them (position remembered via `localStorage`, a pure per-browser UI preference, not project data). Below 900px width they stack into one column like before. Address, CA Value, and Target Investment are now grouped together in the Assessment Setup card (previously Address/CA Value sat there while Target Investment's edit row did too, but Scope of Work used to follow directly below all three); Scope of Work moved out to its own card in the new left column. Requested Assessors stays in the setup card, right below the Address/CA Value/Target Investment row. Also added a map-pin link beside Address — same `MAP_PIN_SVG` glyph and Google-Maps-by-coordinates pattern as Project Pipeline's v1190 map pin — reading the already-shipped `Latitude`/`Longitude` columns on `CORE_Projects` (LOD only reads them; geocoding stays Project Pipeline's Doc Linker's job). Hidden when a project has no coordinates yet. Manual updated with a new "The split layout" section under Part I.
 - **2026-11-24** — Project Pipeline v1191 → v1192, Levels of Development v76 → v77: per Byron — the LOD pill on a project hover card opened Levels of Development to its default screen instead of that project's own Analysis tab. Clicking a lit LOD pill now opens `levels-of-development.html?project=<id>&tab=summary` (built from the stored `ProjectBasisUrl` link plus the project's own SharePoint item id) instead of the bare stored URL; LOD already had `?project=` deep-link support from an earlier delivery, and now also reads `?tab=` and switches to it (`summary` = Analysis) once the real project list has loaded. Also, per Byron's "if someone is coming from the Pipeline, that means they're signed in" — LOD's MSAL cache was `sessionStorage` while Pipeline's is `localStorage`; same clientId/tenantId/scope on both, so LOD now caches to `localStorage` too and picks up an existing Pipeline sign-in automatically instead of prompting again.
