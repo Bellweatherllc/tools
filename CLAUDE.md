@@ -99,6 +99,8 @@ The URL is the contract. `bellweatherllc.github.io/tools/<name>.html` is referen
 
 **Keep the index current.** `bw-tool-index.html` and `versions.md` are what a flat repo has instead of a folder tree. Update them when a tool is added, renamed at birth, or archived.
 
+**`tool-versions.json` is generated — never edit it by hand.** `.github/workflows/tool-versions.yml` rebuilds it on every push to `main` (each page's version, read from the page, plus its last commit time) and commits it back as `github-actions[bot]`. The Tool Index reads it to show version and last-updated on every tile. So `main` gains a bot commit shortly after each push: pull before merging, and if a push to `main` is rejected, pull and push again. For the version to be picked up, a page needs a `CORE_VERSION` / `MGR_VERSION` / `VERSION` constant or a badge element containing `vN`.
+
 ---
 
 ## The pipeline's deploy convention

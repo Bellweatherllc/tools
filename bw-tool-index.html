@@ -165,11 +165,15 @@
       color: var(--limestone); line-height: 1.25; padding-right: 20px;
     }
     .tile-desc { font-size: 0.8rem; color: var(--mahogany); line-height: 1.55; }
+    .tile-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--linen); display: flex; flex-direction: column; gap: 3px; padding-right: 22px; }
     .tile-url {
-      margin-top: auto; padding-top: 10px; border-top: 1px solid var(--linen);
       font-size: 0.7rem; color: var(--slate); letter-spacing: 0.02em;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .tile-meta { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; row-gap: 1px; font-size: 0.7rem; color: var(--slate); line-height: 1.5; }
+    .tile-meta span { white-space: nowrap; }
+    .tile-meta:empty { display: none; }
+    .tile-ver { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; color: var(--ver-red); }
 
     .drag-hdl { display: none; position: absolute; top: 12px; right: 12px; color: var(--teak); cursor: grab; padding: 2px; }
     .drag-hdl:active { cursor: grabbing; }
@@ -310,7 +314,7 @@
     <div class="page-head">
       <div class="page-label">Bellweather CORE</div>
       <h1 class="page-title">Every tool, in one place</h1>
-      <p class="page-desc">Open any CORE tool or manual. Each tile opens in a new tab.</p>
+      <p class="page-desc">Open any CORE tool or manual. Each tile opens in a new tab and shows the version now live and when it was last changed.</p>
     </div>
     <div id="main"></div>
   </main>
@@ -390,7 +394,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script>
-  const CORE_VERSION = 'v18';
+  const CORE_VERSION = 'v19';
   (() => { const v = document.getElementById('versionBadge'); if (v) v.textContent = CORE_VERSION; })();
 
   // ════════════════════════════════════════════════════════════════
@@ -610,9 +614,30 @@
     desc.textContent = tile.desc || '';
     if (!tile.desc) desc.style.display = 'none';
 
+    const foot = document.createElement('div');
+    foot.className = 'tile-foot';
     const urlTag = document.createElement('div');
     urlTag.className = 'tile-url';
     urlTag.textContent = tile.url;
+    const meta = document.createElement('div');
+    meta.className = 'tile-meta';
+    const info = toolInfo(tile.url);
+    if (info) {
+      if (info.version) {
+        const v = document.createElement('span');
+        v.className = 'tile-ver';
+        v.textContent = info.version;
+        meta.appendChild(v);
+      }
+      const when = fmtModified(info.modified);
+      if (when) {
+        const d = document.createElement('span');
+        d.textContent = 'Updated ' + when;
+        meta.appendChild(d);
+      }
+    }
+    foot.appendChild(urlTag);
+    foot.appendChild(meta);
 
     // Edit button
     const editBtn = document.createElement('button');
@@ -624,7 +649,7 @@
     el.appendChild(hdl);
     el.appendChild(name);
     el.appendChild(desc);
-    el.appendChild(urlTag);
+    el.appendChild(foot);
     el.appendChild(editBtn);
 
     // Admin-mode click intercept
@@ -968,10 +993,54 @@
   })();
 
   // ════════════════════════════════════════════════════════════════
+  //  Versions & last-modified (tool-versions.json)
+  // ════════════════════════════════════════════════════════════════
+  // A GitHub Action rebuilds tool-versions.json on every push to main: each
+  // page's version (read from the page) and its last commit time. Read from
+  // raw.githubusercontent first — it updates the moment the Action commits,
+  // before Pages redeploys — then fall back to the copy beside this page.
+  // Missing or unreadable manifest: tiles simply show no version line.
+
+  const MANIFEST_URLS = [
+    'https://raw.githubusercontent.com/Bellweatherllc/tools/main/tool-versions.json',
+    'tool-versions.json',
+  ];
+  let manifest = {};
+
+  async function loadManifest() {
+    for (const u of MANIFEST_URLS) {
+      try {
+        const r = await fetch(u, { cache: 'no-cache' });
+        if (!r.ok) continue;
+        const data = await r.json();
+        if (data && data.files) { manifest = data.files; return true; }
+      } catch (e) {}
+    }
+    return false;
+  }
+
+  // Tile URL → manifest key: relative path from the repo root, no query/hash.
+  function toolInfo(url) {
+    if (!url) return null;
+    let key = url.split('#')[0].split('?')[0];
+    key = key.replace(/^https?:\/\/bellweatherllc\.github\.io\/tools\//i, '').replace(/^\.\//, '');
+    if (/^https?:/i.test(key) || key.startsWith('/')) return null;
+    return manifest[key] || null;
+  }
+
+  function fmtModified(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d)) return '';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+      + ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
+  // ════════════════════════════════════════════════════════════════
   //  Init
   // ════════════════════════════════════════════════════════════════
 
   render();
+  loadManifest().then(ok => { if (ok) render(); });
 
   </script>
 </body>

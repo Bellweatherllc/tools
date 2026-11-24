@@ -36,7 +36,7 @@ Last updated: 2026-11-24
 | People Analyzer | `people-analyzer.html` | v27 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v7 |
-| FBA Matrix | `fba-matrix.html` | v4 |
+| FBA Matrix | `fba-matrix.html` | v11 |
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v14 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v2 |
@@ -44,7 +44,7 @@ Last updated: 2026-11-24
 | Team Members | `team-members.html` | v40 |
 | Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v18 |
+| BW Tool Index | `bw-tool-index.html` | v19 |
 | CORE System Map | `core-system-map.html` | v19 |
 | Brand Style Guide | `bellweather-style-guide.html` | v16 |
 
@@ -78,6 +78,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — BW Tool Index v19: each tile shows the tool's live version (red) and when it was last changed, read from the new `tool-versions.json`. That file is rebuilt on every push to `main` by `.github/workflows/tool-versions.yml` (script: `.github/scripts/build-tool-versions.js`). FBA Matrix row corrected to v11.
 - **2026-11-24** — BW Tool Index v18: restyled to the Style Guide — TT Norms Pro + Swear Text, brand palette, standard Tool Topbar (Monogram, title, admin toggle, red version badge), red admin strip, card-style tiles, guide buttons and inputs. Browser `alert`/`confirm` replaced with an in-page confirm dialog and toast.
 - **2026-11-24** — BW Tool Index v17: new **Selections** section (after Permits) holding Design, Warehouse, Field, LC and List Setup, moved out of SharePoint & Admin. Saved-layout key bumped to `bw-tool-index-v3` so browsers pick up the new section.
 - **2026-11-24** — Levels of Development v79 → v80: per Byron, "in Pipeline" → "in the Pipeline" in the request message's closing note.
