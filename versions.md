@@ -14,7 +14,7 @@ Last updated: 2026-11-24
 | Project Pipeline | `project-pipeline.html` | v1192 |
 | Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v81 |
-| Scout Board | `scout-board.html` | v14 |
+| Scout Board | `scout-board.html` | v15 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v85 |
 | PM Budget Planner | `pm-budget-planner.html` | v70 |
@@ -35,8 +35,8 @@ Last updated: 2026-11-24
 | Project Hours Analyzer | `project-hours-analyzer.html` | v58 |
 | People Analyzer | `people-analyzer.html` | v27 |
 | **Process** | | |
-| CP Process Scoring | `cp-process-scoring.html` | v7 |
-| FBA Matrix | `fba-matrix.html` | v11 |
+| CP Process Scoring | `cp-process-scoring.html` | v8 |
+| FBA Matrix | `fba-matrix.html` | v12 |
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v14 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v2 |
@@ -44,8 +44,8 @@ Last updated: 2026-11-24
 | Team Members | `team-members.html` | v40 |
 | Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v19 |
-| CORE System Map | `core-system-map.html` | v19 |
+| BW Tool Index | `bw-tool-index.html` | v20 |
+| CORE System Map | `core-system-map.html` | v20 |
 | Brand Style Guide | `bellweather-style-guide.html` | v17 |
 
 ## Manuals
@@ -78,6 +78,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — Version numbers are plain red text, no pill (per the Style Guide v17 note): Scout Board v14 → v15, CP Process Scoring v7 → v8, FBA Matrix v11 → v12 (also red now, was grey), BW Tool Index v19 → v20, CORE System Map v19 → v20. CSS only; nothing else changed. `CLAUDE.md` states the rule.
 - **2026-11-24** — Levels of Development v80 → v81: per Byron — dropped the `max-width:720px` cap on the intro guide text and the "Already assessed" strip at the top of Assess; both now span the same full width as the Assessment Setup card below them, instead of reading narrower.
 - **2026-11-24** — Style Guide v16 → v17: per Byron — version numbers are plain red text, just the `v` and the number, never outlined or set in a pill. Stated in the Standard Head Block conventions, and the guide's own topbar demos lost their pill styling.
 - **2026-11-24** — Selections · LC v10 → v11: the views and navigation design from prototype rounds P1–P13 (branch `proto/lc-job-menu`) goes live. Views menu on the page title: **All Projects**, **My views** (My projects + your saved views + New view), **Everyone's views** by person; Edit stars projects into a view; Copy to my views; project name is a searchable switcher; **M** / **A** keys; Receive and Pull for site follow the view; project cards link Plans folder, Map and Matterport from `CORE_Projects`. **My projects** = projects where you're `LogisticsCoordinator1`/`2` on the Pipeline, matched through your sign-in email in `CORE_TeamMembers` (`email` → `EmployeeName`), ignoring case and spacing. **Saved views live in the new `CORE_ProjectViews` list** (Title, ViewKey, OwnerEmail, OwnerName, JobCodes); until Setup creates it, saving a view says to run Setup. Bump `?v=11`.
