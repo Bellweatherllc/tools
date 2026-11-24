@@ -13,7 +13,7 @@ Last updated: 2026-11-24
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1192 |
 | Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v80 |
+| Levels of Development | `levels-of-development.html` | v81 |
 | Scout Board | `scout-board.html` | v14 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v85 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — Levels of Development v80 → v81: per Byron — dropped the `max-width:720px` cap on the intro guide text and the "Already assessed" strip at the top of Assess; both now span the same full width as the Assessment Setup card below them, instead of reading narrower.
 - **2026-11-24** — Levels of Development v79 → v80: per Byron, "in Pipeline" → "in the Pipeline" in the request message's closing note.
 - **2026-11-24** — Levels of Development v78 → v79: per Byron, added a closing note to the default request message (`buildDefaultRequestMessage`) — "As assessments are completed, you can access the compiled, analyzed results in the Analysis tab. That same Analysis is one click away from the LOD pill on the project's hover card in Pipeline." (rephrased per his request — the sentence he drafted read awkwardly). Manual updated.
 - **2026-11-24** — Levels of Development v77 → v78: per Byron — Assess now splits into two independently-scrolling columns once a project is selected: **Scope of Work** on the left, the dimension-rating blocks/Open Notes/Submit on the right, with a draggable divider (`#assess-divider`) between them (position remembered via `localStorage`, a pure per-browser UI preference, not project data). Below 900px width they stack into one column like before. Address, CA Value, and Target Investment are now grouped together in the Assessment Setup card (previously Address/CA Value sat there while Target Investment's edit row did too, but Scope of Work used to follow directly below all three); Scope of Work moved out to its own card in the new left column. Requested Assessors stays in the setup card, right below the Address/CA Value/Target Investment row. Also added a map-pin link beside Address — same `MAP_PIN_SVG` glyph and Google-Maps-by-coordinates pattern as Project Pipeline's v1190 map pin — reading the already-shipped `Latitude`/`Longitude` columns on `CORE_Projects` (LOD only reads them; geocoding stays Project Pipeline's Doc Linker's job). Hidden when a project has no coordinates yet. Manual updated with a new "The split layout" section under Part I.
