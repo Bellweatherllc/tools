@@ -358,7 +358,7 @@
         <span class="toggle-track"></span>
       </label>
       <span id="gear-icon" style="font-size:18px;line-height:18px;height:18px;display:flex;align-items:center;color:rgba(255,255,255,0.35);transition:color 0.2s">⚙</span>
-      <span class="header-version">v76</span>
+      <span class="header-version">v77</span>
     </div>
     <div class="header-divider"></div>
     <div style="display:flex;align-items:center;gap:8px">
@@ -864,6 +864,7 @@ let _requestMessageDirty = false;
 let _requestMessageProjectId = null;
 let currentUser  = {name:'', dept:'', email:''};
 let currentProjectId = ''; // shared across Assess/Raw Results/Analysis so switching tabs keeps the project selected
+let _deepLinkTab = ''; // v2026-11-24: ?tab=<id> seeded before sign-in, applied once real project data loads (see fetchProjects())
 
 async function initMsal() {
   if (msalInstance) return;
@@ -873,7 +874,11 @@ async function initMsal() {
       authority:   `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`,
       redirectUri: SP_CONFIG.redirectUri
     },
-    cache: { cacheLocation: 'sessionStorage' }
+    // v2026-11-24: localStorage (was sessionStorage) — same clientId/tenantId/scope
+    // as project-pipeline.html, so a Pipeline sign-in is already sitting in this
+    // origin's localStorage by the time someone opens LOD from a Pipeline hover
+    // card. getAllAccounts() below now finds it and skips the interactive prompt.
+    cache: { cacheLocation: 'localStorage' }
   });
   await msalInstance.initialize();
 
@@ -1133,6 +1138,10 @@ async function fetchProjects() {
     setConnected(true);
     populateAssessSelects();
     populateResultsSelect();
+    // v2026-11-24: a Pipeline deep link (?tab=summary) lands on the right tab only
+    // once the real project list has replaced the placeholder — switchTab() itself
+    // restores currentProjectId (seeded from ?project= before sign-in even started).
+    if(_deepLinkTab && TABS.includes(_deepLinkTab)){ switchTab(_deepLinkTab); _deepLinkTab=''; }
     fetchConfig();
     fetchTeamMembersList();
   } catch (err) {
@@ -2671,8 +2680,11 @@ async function copyAssessLink(){
 // so this is the only hook needed for "send a teammate a link straight to the
 // right project" to work.
 (function(){
-  const qp = new URLSearchParams(location.search).get('project');
+  const params = new URLSearchParams(location.search);
+  const qp = params.get('project');
   if(qp) currentProjectId = qp;
+  const tabQp = params.get('tab');
+  if(tabQp) _deepLinkTab = tabQp; // applied once fetchProjects() has real data — see there
 })();
 renderAssessBlocks();
 initMsal();

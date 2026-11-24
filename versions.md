@@ -4,16 +4,16 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-23
+Last updated: 2026-11-24
 
 ## Live tools
 
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1191 |
+| Project Pipeline | `project-pipeline.html` | v1192 |
 | Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v76 |
+| Levels of Development | `levels-of-development.html` | v77 |
 | Scout Board | `scout-board.html` | v14 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v85 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — Project Pipeline v1191 → v1192, Levels of Development v76 → v77: per Byron — the LOD pill on a project hover card opened Levels of Development to its default screen instead of that project's own Analysis tab. Clicking a lit LOD pill now opens `levels-of-development.html?project=<id>&tab=summary` (built from the stored `ProjectBasisUrl` link plus the project's own SharePoint item id) instead of the bare stored URL; LOD already had `?project=` deep-link support from an earlier delivery, and now also reads `?tab=` and switches to it (`summary` = Analysis) once the real project list has loaded. Also, per Byron's "if someone is coming from the Pipeline, that means they're signed in" — LOD's MSAL cache was `sessionStorage` while Pipeline's is `localStorage`; same clientId/tenantId/scope on both, so LOD now caches to `localStorage` too and picks up an existing Pipeline sign-in automatically instead of prompting again.
 - **2026-11-23** — Permit & Zoning Tracker v185 → v186: per Byron, after seeing v185's settings panel clip the last Permit stage column — "Let's shorten Submitted/In Review to be Submit/Rev. And Rev as short for Revisions is confusing (might be misunderstood as Review), so let's make the Revs." Both labels shortened in `STAGE_CATALOG`: `fullName` "Submitted / In Review" → "Submit/Rev" (all four tracks), and Revisions' bar text `renderName` "REV" → "REVS" (plural, to read distinctly from "Rev" now that Submit/Rev carries that syllable). The settings panel's 4-column grid sizes its label column to its single longest `fullName` across all tracks (`.stage-rows{grid-template-columns:max-content auto}`); "Submitted / In Review" was that longest label and was alone forcing the 4th (Permit B) column past the visible panel — confirmed with a headless-browser render at the panel's real width: the old label clipped column 4 to x=1188 past a 1150px container, the new one keeps it at x=1117, fully inside. Also fixed, per Byron's "a little housekeeping" note — "often when I open the page, one of the stage toggles is red, but the stages aren't open. Clicking off and on resets everything but the indicator should be correct upon opening": `lockToggleHtml` was reading the persisted `p.stageState.locked` field, which only `toggleGear` updates on an explicit click and so can go stale across a reload if a panel was left open at the end of a prior session; it now reads `OPEN_PANELS.has(pid)` — the in-memory set that's rebuilt fresh (and therefore always accurate) on every page load — matching the panel's actual open/closed state the moment the page renders, with no stale "unlocked" flash.
 - **2026-11-23** — Permit & Zoning Tracker v184 → v185: added **Revisions** and **Resubmit** to all four tracks (Zoning A/B, Permit A/B) — per Byron: "I've added two more stages to both the Zoning and Permitting trello lists. They are: Zoning Revisions, Zoning Resubmit, and Permit Revisions and Permit Resubmit... Revisions should have a two week default and resubmit the same." Appended after Submit in `STAGE_CATALOG` (so "approved" is now one past Resubmit, not Submit), synced from the matching new Trello lists the same way the original three stages are. Per Byron's own follow-up — "we'll have to figure out some way to fit the label on the stage. Maybe abbreviate + hover?" — the bar text is abbreviated (`REV`/`RESUB`) and every stage bar (not just these two) now carries its real full name as a `data-tip`, so the shared floating-tooltip engine shows "Revisions"/"Resubmit" on hover.
 - **2026-11-22** — Favicon sweep, all pages: the four-link favicon block from the Style Guide is now in every page that lacked it (30 pages, including the manuals and `planning-guide/index.html`; `project-basis.html` is a redirect stub and is skipped), and replaces the partial or relative icon links in `core-system-map.html`, `pm-budget-planner.html` and the planning guide. Every versioned tool changed here goes up one version; nothing else in them changed. Style Guide v15 → v16: new **Favicon — Every Tool** section with an example, the snippet, and instructions for Claude; the same rule added to `CLAUDE.md`. The manuals are generated from their `.md` files, so the block also needs to go into whatever template builds them.
