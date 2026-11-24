@@ -46,7 +46,7 @@ Last updated: 2026-11-24
 | **Reference** | | |
 | BW Tool Index | `bw-tool-index.html` | v19 |
 | CORE System Map | `core-system-map.html` | v19 |
-| Brand Style Guide | `bellweather-style-guide.html` | v16 |
+| Brand Style Guide | `bellweather-style-guide.html` | v17 |
 
 ## Manuals
 
@@ -78,6 +78,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — Style Guide v16 → v17: per Byron — version numbers are plain red text, just the `v` and the number, never outlined or set in a pill. Stated in the Standard Head Block conventions, and the guide's own topbar demos lost their pill styling.
 - **2026-11-24** — Selections · Field v15 → v16: header reads **Selections *Field Mechanic*** (also on phones) with the signed-in person's name below it; the job picker became a two-line **My projects ▾** button left of a narrower search box (equal 16px margins), like the LC screen; the open project shows in the search box. The project sheet lists **My projects** (starred), **All projects**, Archived. Page background is the LC screen's light gray `#f2f3f4`. Bump `?v=16`.
 - **2026-11-24** — BW Tool Index v19: each tile shows the tool's live version (red) and when it was last changed, read from the new `tool-versions.json`. That file is rebuilt on every push to `main` by `.github/workflows/tool-versions.yml` (script: `.github/scripts/build-tool-versions.js`). FBA Matrix row corrected to v11.
 - **2026-11-24** — BW Tool Index v18: restyled to the Style Guide — TT Norms Pro + Swear Text, brand palette, standard Tool Topbar (Monogram, title, admin toggle, red version badge), red admin strip, card-style tiles, guide buttons and inputs. Browser `alert`/`confirm` replaced with an in-page confirm dialog and toast.
