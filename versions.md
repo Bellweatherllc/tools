@@ -44,7 +44,7 @@ Last updated: 2026-11-24
 | Team Members | `team-members.html` | v40 |
 | Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v17 |
+| BW Tool Index | `bw-tool-index.html` | v18 |
 | CORE System Map | `core-system-map.html` | v19 |
 | Brand Style Guide | `bellweather-style-guide.html` | v16 |
 
@@ -78,6 +78,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-24** — BW Tool Index v18: restyled to the Style Guide — TT Norms Pro + Swear Text, brand palette, standard Tool Topbar (Monogram, title, admin toggle, red version badge), red admin strip, card-style tiles, guide buttons and inputs. Browser `alert`/`confirm` replaced with an in-page confirm dialog and toast.
 - **2026-11-24** — BW Tool Index v17: new **Selections** section (after Permits) holding Design, Warehouse, Field, LC and List Setup, moved out of SharePoint & Admin. Saved-layout key bumped to `bw-tool-index-v3` so browsers pick up the new section.
 - **2026-11-24** — Levels of Development v79 → v80: per Byron, "in Pipeline" → "in the Pipeline" in the request message's closing note.
 - **2026-11-24** — Levels of Development v78 → v79: per Byron, added a closing note to the default request message (`buildDefaultRequestMessage`) — "As assessments are completed, you can access the compiled, analyzed results in the Analysis tab. That same Analysis is one click away from the LOD pill on the project's hover card in Pipeline." (rephrased per his request — the sentence he drafted read awkwardly). Manual updated.
