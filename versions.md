@@ -23,6 +23,12 @@ Last updated: 2026-11-24
 | WIP Tracker | `wip-tracker.html` | v32 |
 | **Permits** | | |
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v186 |
+| **Selections** | | |
+| Selections List Setup | `selections/selections-setup.html` | v12 |
+| Selections · Design | `selections/design.html` | v5 |
+| Selections · LC | `selections/lc-portal.html` | v11 |
+| Selections · Field Mechanic | `selections/field-view.html` | v16 |
+| Selections · Warehouse | `selections/warehouse.html` | v5 |
 | **Operations** | | |
 | Fleet Tracker | `fleet-tracker.html` | v4 |
 | **Analyzers** | | |
@@ -30,22 +36,17 @@ Last updated: 2026-11-24
 | People Analyzer | `people-analyzer.html` | v27 |
 | **Process** | | |
 | CP Process Scoring | `cp-process-scoring.html` | v7 |
-| FBA Matrix | `fba-matrix.html` | v4 |
+| FBA Matrix | `fba-matrix.html` | v11 |
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v14 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v2 |
-| Selections List Setup | `selections/selections-setup.html` | v11 |
-| Selections · Design | `selections/design.html` | v5 |
-| Selections · LC | `selections/lc-portal.html` | v10 |
-| Selections · Field | `selections/field-view.html` | v15 |
-| Selections · Warehouse | `selections/warehouse.html` | v5 |
 | Core Admin | `core-admin.html` | v7 |
 | Team Members | `team-members.html` | v40 |
 | Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v16 |
+| BW Tool Index | `bw-tool-index.html` | v19 |
 | CORE System Map | `core-system-map.html` | v19 |
-| Brand Style Guide | `bellweather-style-guide.html` | v16 |
+| Brand Style Guide | `bellweather-style-guide.html` | v17 |
 
 ## Manuals
 
@@ -78,6 +79,13 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 Newest first. One line per delivery.
 
 - **2026-11-24** — Levels of Development v80 → v81: per Byron — dropped the `max-width:720px` cap on the intro guide text and the "Already assessed" strip at the top of Assess; both now span the same full width as the Assessment Setup card below them, instead of reading narrower.
+- **2026-11-24** — Style Guide v16 → v17: per Byron — version numbers are plain red text, just the `v` and the number, never outlined or set in a pill. Stated in the Standard Head Block conventions, and the guide's own topbar demos lost their pill styling.
+- **2026-11-24** — Selections · LC v10 → v11: the views and navigation design from prototype rounds P1–P13 (branch `proto/lc-job-menu`) goes live. Views menu on the page title: **All Projects**, **My views** (My projects + your saved views + New view), **Everyone's views** by person; Edit stars projects into a view; Copy to my views; project name is a searchable switcher; **M** / **A** keys; Receive and Pull for site follow the view; project cards link Plans folder, Map and Matterport from `CORE_Projects`. **My projects** = projects where you're `LogisticsCoordinator1`/`2` on the Pipeline, matched through your sign-in email in `CORE_TeamMembers` (`email` → `EmployeeName`), ignoring case and spacing. **Saved views live in the new `CORE_ProjectViews` list** (Title, ViewKey, OwnerEmail, OwnerName, JobCodes); until Setup creates it, saving a view says to run Setup. Bump `?v=11`.
+- **2026-11-24** — Selections · List Setup v11 → v12: adds the `CORE_ProjectViews` list (saved project views, one item per view; `ViewKey` and `OwnerEmail` indexed). Run Setup once to create it.
+- **2026-11-24** — Selections · Field v15 → v16: header reads **Selections *Field Mechanic*** (also on phones) with the signed-in person's name below it; the job picker became a two-line **My projects ▾** button left of a narrower search box (equal 16px margins), like the LC screen; the open project shows in the search box. The project sheet lists **My projects** (starred), **All projects**, Archived. Page background is the LC screen's light gray `#f2f3f4`. Bump `?v=16`.
+- **2026-11-24** — BW Tool Index v19: each tile shows the tool's live version (red) and when it was last changed, read from the new `tool-versions.json`. That file is rebuilt on every push to `main` by `.github/workflows/tool-versions.yml` (script: `.github/scripts/build-tool-versions.js`). FBA Matrix row corrected to v11.
+- **2026-11-24** — BW Tool Index v18: restyled to the Style Guide — TT Norms Pro + Swear Text, brand palette, standard Tool Topbar (Monogram, title, admin toggle, red version badge), red admin strip, card-style tiles, guide buttons and inputs. Browser `alert`/`confirm` replaced with an in-page confirm dialog and toast.
+- **2026-11-24** — BW Tool Index v17: new **Selections** section (after Permits) holding Design, Warehouse, Field, LC and List Setup, moved out of SharePoint & Admin. Saved-layout key bumped to `bw-tool-index-v3` so browsers pick up the new section.
 - **2026-11-24** — Levels of Development v79 → v80: per Byron, "in Pipeline" → "in the Pipeline" in the request message's closing note.
 - **2026-11-24** — Levels of Development v78 → v79: per Byron, added a closing note to the default request message (`buildDefaultRequestMessage`) — "As assessments are completed, you can access the compiled, analyzed results in the Analysis tab. That same Analysis is one click away from the LOD pill on the project's hover card in Pipeline." (rephrased per his request — the sentence he drafted read awkwardly). Manual updated.
 - **2026-11-24** — Levels of Development v77 → v78: per Byron — Assess now splits into two independently-scrolling columns once a project is selected: **Scope of Work** on the left, the dimension-rating blocks/Open Notes/Submit on the right, with a draggable divider (`#assess-divider`) between them (position remembered via `localStorage`, a pure per-browser UI preference, not project data). Below 900px width they stack into one column like before. Address, CA Value, and Target Investment are now grouped together in the Assessment Setup card (previously Address/CA Value sat there while Target Investment's edit row did too, but Scope of Work used to follow directly below all three); Scope of Work moved out to its own card in the new left column. Requested Assessors stays in the setup card, right below the Address/CA Value/Target Investment row. Also added a map-pin link beside Address — same `MAP_PIN_SVG` glyph and Google-Maps-by-coordinates pattern as Project Pipeline's v1190 map pin — reading the already-shipped `Latitude`/`Longitude` columns on `CORE_Projects` (LOD only reads them; geocoding stays Project Pipeline's Doc Linker's job). Hidden when a project has no coordinates yet. Manual updated with a new "The split layout" section under Part I.
