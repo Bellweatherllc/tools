@@ -3755,7 +3755,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1198';
+const CORE_VERSION = 'v1201';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -4039,7 +4039,7 @@ function _captureDragPre(drag){
   if(drag.type==='projCapacityReorder'){
     // Capture the project's current person assignment so we can show before→after in the description
     const proj2=PROJECTS.find(p=>p.id===drag.projId);
-    const personField=drag.capacitySection==='design'?'designer':drag.capacitySection==='lc'?'lc1':drag.capacitySection==='fm'?'fieldMechanic':'productionPM';
+    const personField=drag.capacitySection==='design'?'designer':drag.capacitySection==='lc'?'lc1':'productionPM';
     const oldPersonId=proj2?proj2[personField]:null;
     const nm=_projShortName(proj2);
     return {type:'projCapacityReorder',nm,projId:drag.projId,capacitySection:drag.capacitySection,oldPersonId,phInfo:null,msInfo:null,oldPerson:null,newPerson:null,phaseId:null};
@@ -4138,11 +4138,11 @@ function _buildDragDesc(pre){
   }
   if(type==='projCapacityReorder'){
     const proj2=PROJECTS.find(p=>p.id===projId);
-    const personField=pre.capacitySection==='design'?'designer':pre.capacitySection==='lc'?'lc1':pre.capacitySection==='fm'?'fieldMechanic':'productionPM';
+    const personField=pre.capacitySection==='design'?'designer':pre.capacitySection==='lc'?'lc1':'productionPM';
     const newPersonId=proj2?proj2[personField]:null;
     const oldLabel=pre.oldPersonId?_personLabel(pre.oldPersonId):'Unassigned';
     const newLabel=newPersonId?_personLabel(newPersonId):'Unassigned';
-    const role=pre.capacitySection==='design'?'Designer':pre.capacitySection==='lc'?'LC':pre.capacitySection==='fm'?'Field Mechanic':'PM';
+    const role=pre.capacitySection==='design'?'Designer':pre.capacitySection==='lc'?'LC':'PM';
     return `${nm}: ${role} ${oldLabel} → ${newLabel}`;
   }
   if(type==='personMove'){
@@ -4520,9 +4520,6 @@ let PROD_LC_COLLAPSED=new Set(); // set of lcId strings
 let LC_PROJ_EXPANDED=new Set(); // 'lcId:projId' pairs that are explicitly expanded; default is collapsed
 let LC_DESIGN_MS_HIDDEN=new Set(); // lcId values where T1/T2/T3/PD milestones are hidden
 let LC_COORDS=[]; // tracked Logistics Coordinators
-let PROD_FM_COLLAPSED=new Set(); // v1193: set of fieldMechanicId strings — assignment-only, no capacity/hours/time-off
-let PROD_FM_UNASSIGNED_COLLAPSED=false; // v1193: "Needs a Field Mechanic" bucket
-let PROD_FM_SECTION_COLLAPSED=true; // v1194: whole section, default collapsed — infrequent access per Byron
 let PROD_UNASSIGNED_COLLAPSED=false;
 let DESIGN_UNASSIGNED_COLLAPSED=false;
 let DESIGN_COLLAPSED=new Set();  // set of designerId strings
@@ -4550,23 +4547,10 @@ const DESIGNER_NAMES=[];
 const PM_NAMES=[];
 const SALES_PEOPLE=[];
 const ALL_TEAM=[]; // v1182: every CORE_TeamMembers row regardless of Role — {id,fullLabel,trello,alwaysAdd} — for Trello project-board rostering
-function personById(id){ return DESIGNERS.find(d=>d.id===id)||PROD_PMS.find(p=>p.id===id)||LC_COORDS.find(lc=>lc.id===id)||FIELD_MECHANICS.find(fm=>fm.id===id)||null; }
+function personById(id){ return DESIGNERS.find(d=>d.id===id)||PROD_PMS.find(p=>p.id===id)||LC_COORDS.find(lc=>lc.id===id)||null; }
 function isVisible(p){
   const st=(p.status||'').toLowerCase();
   return st!=='archived'&&st!=='cancelled'&&st!=='lost'&&!p.isLead;
-}
-// v1194: Field Mechanics only ever need to see CA-signed (in-construction) projects —
-// Lead, Design and open Slots don't belong in that section at all.
-function isInConstruction(p){
-  return isVisible(p)&&!p.isOpenSlot&&(p.status==='ca-signed'||p.status==='signed');
-}
-// v1194: index to insert the FM section at — after 'lc-section' AND every 'lc:' row that
-// follows it, not just the header string itself (which would wedge FM between the LC
-// header and its own rows).
-function _lastLcBlockIndex(arr){
-  let idx=arr.indexOf('lc-section');
-  arr.forEach((k,i)=>{ if(k.startsWith('lc:')&&i>idx) idx=i; });
-  return idx;
 }
 
 // ════════════════════════════════════════════════  PER-PERSON TARGETS
@@ -5145,7 +5129,7 @@ function addProdProject(){
   PROJECTS.unshift({
     id:newId, name:'Slot '+_nextSlotLetter(), status:'projected', collapsed:true,
     addedAt:Date.now(), isOpenSlot:true, projType:'', projBudget:'$'+SLOT_DEFAULT_BUDGET.toLocaleString(), salesPerson:'',
-    designer:null, secondaryDesigner:null, productionPM:null, logisticsCoord1:'', logisticsCoord2:'', fieldMechanic:null, scheduled:true, lod:2, lodReason:'',
+    designer:null, secondaryDesigner:null, productionPM:null, logisticsCoord1:'', logisticsCoord2:'', scheduled:true, lod:2, lodReason:'',
     designLane:{startWeek:sw,phases:[
       {id:newId+'-d1',name:'Phase I',durWeeks:6,hours:0,color:'#8EC5E0',linkedRight:true},
       {id:newId+'-d2',name:'Phase II',durWeeks:16,hours:0,color:'#4A8AB5',linkedRight:true},
@@ -5830,9 +5814,8 @@ function buildFcMsRow(proj, capacitySection, opts){
     const pr=el('div','tt-person');
     const lc1=proj.logisticsCoord1||'', lc2=proj.logisticsCoord2||'';
     const lcStr=[lc1,lc2].filter(Boolean).map(n=>n.split(' ')[0]).join(', ');
-    const fmP=personById(proj.fieldMechanic); // v1193
     pr.innerHTML=pm
-      ?`<span class="tt-person-role">Production</span>${escH(pm.label)}${lcStr?` · ${escH(lcStr)}`:''}${fmP?` · ${escH(fmP.label)}`:''}`
+      ?`<span class="tt-person-role">Production</span>${escH(pm.label)}${lcStr?` · ${escH(lcStr)}`:''}`
       :`<span class="tt-person-role">Production</span><span class="tt-person-unassigned">Unassigned</span>`;
     ppl.appendChild(pr);
     { const pplWrap=el('div','tt-ppl-wrap');
@@ -6310,9 +6293,8 @@ function buildFcLcProjectRow(proj,lcId){
   const pr2=el('div','tt-person');
   const lc1t=proj.logisticsCoord1||'', lc2t=proj.logisticsCoord2||'';
   const lcStr2=[lc1t,lc2t].filter(Boolean).map(n=>n.split(' ')[0]).join(', ');
-  const fmP2=personById(proj.fieldMechanic); // v1193
   pr2.innerHTML=pm
-    ?`<span class="tt-person-role">Production</span>${escH(pm.label)}${lcStr2?` · ${escH(lcStr2)}`:''}${fmP2?` · ${escH(fmP2.label)}`:''}`
+    ?`<span class="tt-person-role">Production</span>${escH(pm.label)}${lcStr2?` · ${escH(lcStr2)}`:''}`
     :`<span class="tt-person-role">Production</span><span class="tt-person-unassigned">Unassigned</span>`;
   ppl.appendChild(pr2);
   { const pplWrap=el('div','tt-ppl-wrap');
@@ -6522,25 +6504,6 @@ function buildTlLcTally(lcId){
     if(fillH>=14){ const lbl=el('span'); lbl.style.cssText=`font-size:7.5px;font-weight:700;color:${tallyTextColor(h,target)};pointer-events:none;`; lbl.textContent=h.toFixed(1)+'h'; bar.appendChild(lbl); }
     r.appendChild(bar);
   });
-  return r;
-}
-// v1193: Field Mechanics header — deliberately stripped down from buildFcLcPersonHeader.
-// No hours/capacity input, no Time Off, no milestone toggle, no eye — assignment only.
-function buildFcFmPersonHeader(fm,key){
-  const collapsed=PROD_FM_COLLAPSED.has(fm.id);
-  const c=el('div','fc-tally lc-person-hdr'); c.style.height=C.tallyH+'px';
-  c.dataset.personHeader=fm.id; c.dataset.personSection='fm';
-  const chev=el('div','fc-chevron'+(collapsed?' collapsed':''));
-  chev.style.cssText='width:20px;height:20px;flex-shrink:0;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--tm);';
-  chev.textContent='▾'; chev.dataset.toggleFmCollapse=fm.id;
-  const lbl=el('div','fc-tally-label'); lbl.textContent=fm.label; lbl.style.cssText='cursor:pointer;font-size:14px;';
-  c.appendChild(chev); c.appendChild(lbl);
-  return c;
-}
-function buildTlFmTally(fmId){
-  // No hours to chart — a plain band matching the header's height, for visual alignment only.
-  const r=el('div','tl-tally'); r.dataset.section='fm'; r.dataset.person=fmId;
-  r.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;background:#eceef0;`;
   return r;
 }
 function buildFcTallyTotal(){
@@ -8032,106 +7995,16 @@ function buildProdSection(){
         });
       }
     }
-
-    // v1193: Field Mechanics — assignment-only (no capacity/hours/time-off), beneath the
-    // LCs per Byron. Project rows reuse buildFcMsRow (name/status/hover/notes, no bars) —
-    // the real schedule already lives under the project's PM/LC row; this is a roster list.
-    else if(key==='fm-section'){
-      // v1196: marks where the "NOW" gold frame should stop — Field Mechanics rows
-      // have no gantt/schedule of their own, so the frame has no business down here.
-      const _nowStop=el('div','prod-now-frame-stop'); _nowStop.style.cssText='height:0;'; tl_els.push(_nowStop);
-      const[sep,tlSep]=buildPersonSep(); fc_els.push(sep); tl_els.push(tlSep);
-      // v1194: the whole section collapses as one unit — infrequent access, per Byron —
-      // on top of (not instead of) the per-FM and unassigned-bucket collapse already there.
-      const hdr=el('div','prod-section-lbl-row'); hdr.style.cssText=`height:20px;background:#eaeef1;border-bottom:1px solid rgba(40,40,40,.10);display:flex;align-items:center;cursor:pointer;`;
-      hdr.dataset.toggleFmSectionCollapse='1';
-      const sectionChev=el('span','');
-      sectionChev.style.cssText='font-size:9px;color:rgba(40,40,40,.40);margin-right:4px;display:inline-block;transition:transform .15s;transform:rotate('+(PROD_FM_SECTION_COLLAPSED?'-90deg':'0deg')+');';
-      sectionChev.textContent='▾';
-      const lbl=el('span',''); lbl.textContent='FIELD MECHANICS'; lbl.style.cssText='font-size:8px;font-weight:700;letter-spacing:.10em;color:rgba(40,40,40,.40);';
-      hdr.appendChild(sectionChev); hdr.appendChild(lbl); fc_els.push(hdr);
-      const tlH=el('div',''); tlH.style.cssText=`width:${w2px(C.numWeeks)}px;height:20px;background:#eaeef1;border-bottom:1px solid rgba(40,40,40,.10);`; tl_els.push(tlH);
-    }
-
-    else if(key==='fm-unassigned'){
-      if(PROD_FM_SECTION_COLLAPSED) return {fc_els,tl_els};
-      const[fcSep,tlSep]=buildPersonSep(); fc_els.push(fcSep); tl_els.push(tlSep);
-      const fmUnassigned=capSortedProjects(PROJECTS.filter(p=>isInConstruction(p)&&!p.fieldMechanic),'production');
-      const fcUnHdr=el('div','unassigned-hdr-fc fm-unassigned-hdr-fc'); fcUnHdr.style.cssText=`height:${C.tallyH}px;background:#c5cdd4;display:flex;align-items:center;padding:0 6px 0 0;gap:0;`;
-      fcUnHdr.appendChild(prodHdl('fm-unassigned'));
-      const sp1=el('span',''); sp1.style.flex='1'; fcUnHdr.appendChild(sp1);
-      const unLbl=el('span',''); unLbl.textContent='Needs a Field Mechanic'; unLbl.style.cssText='font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(40,40,40,.45);';
-      fcUnHdr.appendChild(unLbl);
-      const unChev=el('div','fc-chevron'+(PROD_FM_UNASSIGNED_COLLAPSED?' collapsed':''));
-      unChev.style.cssText='width:20px;height:20px;flex-shrink:0;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(40,40,40,.45);margin-left:auto;';
-      unChev.textContent='▾'; unChev.dataset.toggleFmUnassignedCollapse='1';
-      fcUnHdr.appendChild(unChev);
-      fc_els.push(fcUnHdr);
-      if(!PROD_FM_UNASSIGNED_COLLAPSED){
-        const fcGrp=el('div','unassigned-group-fc fm-unassigned-group-fc'); fcGrp.classList.toggle('has-projects',fmUnassigned.length>0);
-        if(fmUnassigned.length>0){ fmUnassigned.forEach(proj=>{ fcGrp.appendChild(buildFcMsRow(proj,'fm')); }); }
-        else { fcGrp.appendChild(el('div','unassigned-placeholder-fc')); }
-        fc_els.push(fcGrp);
-      }
-      // TL: plain spacer rows, same height as their FC counterparts — no schedule bars here
-      const tlUnHdr=el('div',''); tlUnHdr.style.cssText=`width:${w2px(C.numWeeks)}px;height:${C.tallyH}px;position:relative;overflow:hidden;background:#c5cdd4;border-bottom:1px solid rgba(40,40,40,.12);`;
-      tl_els.push(tlUnHdr);
-      if(!PROD_FM_UNASSIGNED_COLLAPSED){
-        const tlGrp=el('div',''); tlGrp.style.width=w2px(C.numWeeks)+'px';
-        if(fmUnassigned.length>0){ fmUnassigned.forEach(proj=>{ const rowH=proj.collapsed?BAND_H:C.laneH; const s=el('div',''); s.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;border-bottom:1px solid rgba(0,0,0,.06);`; tlGrp.appendChild(s); }); }
-        else { const s=el('div',''); s.style.cssText=`height:${BAND_H}px;`; tlGrp.appendChild(s); }
-        tl_els.push(tlGrp);
-      }
-    }
-
-    else if(key.startsWith('fm:')){
-      if(PROD_FM_SECTION_COLLAPSED) return {fc_els,tl_els};
-      const fmId=key.slice(3);
-      const fm=FIELD_MECHANICS.find(p=>p.id===fmId); if(!fm) return {fc_els,tl_els};
-      const[fcSep,tlSep]=buildPersonSep(); fc_els.push(fcSep); tl_els.push(tlSep);
-      const fmHdr=buildFcFmPersonHeader(fm,key);
-      fmHdr.classList.add('prod-draggable');
-      fmHdr.insertBefore(prodHdl(key),fmHdr.firstChild);
-      fc_els.push(fmHdr);
-      tl_els.push(buildTlFmTally(fmId));
-      if(!PROD_FM_COLLAPSED.has(fmId)){
-        const fmProjs=capSortedProjects(PROJECTS.filter(p=>isInConstruction(p)&&p.fieldMechanic===fmId),'production');
-        fmProjs.forEach(proj=>{
-          fc_els.push(buildFcMsRow(proj,'fm'));
-          const rowH=proj.collapsed?BAND_H:C.laneH;
-          const s=el('div',''); s.style.cssText=`width:${w2px(C.numWeeks)}px;height:${rowH}px;border-bottom:1px solid rgba(0,0,0,.06);`;
-          tl_els.push(s);
-        });
-      }
-    }
-
     return {fc_els, tl_els};
   }
 
-  // Sync PROD_ROW_ORDER with current PMs, LCs and Field Mechanics (add/remove as people change)
+  // Sync PROD_ROW_ORDER with current PMs and LCs (add/remove as people change)
   const pmKeys=PROD_PMS.map(p=>'pm:'+p.id);
   const lcKeys=LC_COORDS.map(lc=>'lc:'+lc.id);
-  const fmKeys=FIELD_MECHANICS.map(fm=>'fm:'+fm.id);
-  const fixedKeys=['total','revenue','unassigned','pm-section','lc-section','fm-section','fm-unassigned'];
+  const fixedKeys=['total','revenue','unassigned','pm-section','lc-section'];
   pmKeys.forEach(k=>{ if(!PROD_ROW_ORDER.includes(k)){ const idx=PROD_ROW_ORDER.findIndex(x=>x.startsWith('pm:')); PROD_ROW_ORDER.splice(idx>=0?idx:(PROD_ROW_ORDER.indexOf('pm-section')+1||1),0,k); } });
   lcKeys.forEach(k=>{ if(!PROD_ROW_ORDER.includes(k)){ const idx=PROD_ROW_ORDER.indexOf('lc-section'); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,k); } });
-  // v1195: Field Mechanics — beneath the LCs, per Byron. Re-verify the WHOLE block's
-  // position on every render, not just "insert if absent" — a saved order from before
-  // the v1194 placement fix already had fm-section sitting at the old, wrong spot (right
-  // after the lc-section header, ahead of its own rows), and "insert only if missing"
-  // never corrects a key that's already present, just misplaced. Pull the block out
-  // (section header + its own unassigned bucket + every fm: key, preserving whatever
-  // order existing ones were already in) and reinsert it as one unit after the LC block.
-  {
-    const existingFmKeys=PROD_ROW_ORDER.filter(k=>k.startsWith('fm:')&&fmKeys.includes(k));
-    const newFmKeys=fmKeys.filter(k=>!existingFmKeys.includes(k));
-    const fmBlock=['fm-section','fm-unassigned',...existingFmKeys,...newFmKeys];
-    const rest=PROD_ROW_ORDER.filter(k=>!fmBlock.includes(k));
-    const lastLc=_lastLcBlockIndex(rest);
-    rest.splice(lastLc>=0?lastLc+1:rest.length-1,0,...fmBlock);
-    PROD_ROW_ORDER=rest;
-  }
-  PROD_ROW_ORDER=PROD_ROW_ORDER.filter(k=>fixedKeys.includes(k)||pmKeys.includes(k)||lcKeys.includes(k)||fmKeys.includes(k));
+  PROD_ROW_ORDER=PROD_ROW_ORDER.filter(k=>fixedKeys.includes(k)||pmKeys.includes(k)||lcKeys.includes(k));
 
   // Populate fc and tl — no date stub in fixed-col; sticky band handles date header
   const tcInner=el('div','');
@@ -8161,11 +8034,6 @@ function buildProdSection(){
     const ganttSS=prodGanttScroll.querySelector('.section-scroll')||prodGanttScroll;
     // Revenue row scrolls naturally with gantt-row — no sync needed
     initProdRowDrag(sec);
-    // v1196: clamp the "NOW" frame's height to stop right where Field Mechanics begins —
-    // those rows carry no gantt bars, so there's nothing for "now" to mark down there.
-    // Needs real layout (offsetTop), hence done here rather than at construction time.
-    const _nf=sec.querySelector('.now-frame'), _stop=sec.querySelector('.prod-now-frame-stop');
-    if(_nf&&_stop) _nf.style.height=(_stop.offsetTop+60)+'px';
   });
   return sec;
   }finally{ C.weekW=_origWeekW; }
@@ -8832,7 +8700,7 @@ function initDrag(){
       // Reorder only works in grouped-PM mode; flat view has no person targets to drop onto
       if(capSection==='production'&&!PROD_SHOW_PMS) return;
       const proj=PROJECTS.find(p=>p.id===projId);
-      const _fld=reorderField||(capSection==='design'?'designer':capSection==='lc'?'lc1':capSection==='fm'?'fieldMechanic':'productionPM');
+      const _fld=reorderField||(capSection==='design'?'designer':capSection==='lc'?'lc1':'productionPM');
       // v928: non-admin drag is clamped to the project's current person — reorder only.
       // Cross-person moves and unassign stay admin-only. Unassigned projects have no
       // person to reorder within, so they remain admin-only too.
@@ -9040,12 +8908,6 @@ function initDrag(){
     if(pmColBtn){ const pmId=pmColBtn.dataset.togglePmCollapse; if(PROD_PM_COLLAPSED.has(pmId)) PROD_PM_COLLAPSED.delete(pmId); else PROD_PM_COLLAPSED.add(pmId); rebuildSection('production'); triggerSave(); return; }
     const lcColBtn=e.target.closest('[data-toggle-lc-collapse]');
     if(lcColBtn){ const lcId=lcColBtn.dataset.toggleLcCollapse; if(PROD_LC_COLLAPSED.has(lcId)) PROD_LC_COLLAPSED.delete(lcId); else PROD_LC_COLLAPSED.add(lcId); rebuildSection('production'); triggerSave(); return; }
-    const fmColBtn=e.target.closest('[data-toggle-fm-collapse]'); // v1193
-    if(fmColBtn){ const fmId=fmColBtn.dataset.toggleFmCollapse; if(PROD_FM_COLLAPSED.has(fmId)) PROD_FM_COLLAPSED.delete(fmId); else PROD_FM_COLLAPSED.add(fmId); rebuildSection('production'); triggerSave(); return; }
-    const fmUnColBtn=e.target.closest('[data-toggle-fm-unassigned-collapse]'); // v1193
-    if(fmUnColBtn){ PROD_FM_UNASSIGNED_COLLAPSED=!PROD_FM_UNASSIGNED_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
-    const fmSecBtn=e.target.closest('[data-toggle-fm-section-collapse]'); // v1194
-    if(fmSecBtn){ PROD_FM_SECTION_COLLAPSED=!PROD_FM_SECTION_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
     const lcMsBtn=e.target.closest('[data-toggle-lc-design-ms]');
     if(lcMsBtn){ const lcId=lcMsBtn.dataset.toggleLcDesignMs; if(LC_DESIGN_MS_HIDDEN.has(lcId)) LC_DESIGN_MS_HIDDEN.delete(lcId); else LC_DESIGN_MS_HIDDEN.add(lcId); rebuildSection('production'); triggerSave(); return; }
     const lcProjColBtn=e.target.closest('[data-toggle-lc-proj-collapse]');
@@ -9701,17 +9563,10 @@ function onMove(e){
 
   if(DRAG.type==='projCapacityReorder'){
     DRAG.ghost.style.left=e.clientX+12+'px'; DRAG.ghost.style.top=e.clientY-14+'px';
-    // v1193: Field Mechanics rows live in the Production section's own DOM too, same as LC
-    const _sec=(DRAG.capacitySection==='lc'||DRAG.capacitySection==='fm')?'production':DRAG.capacitySection;
+    const _sec=DRAG.capacitySection==='lc'?'production':DRAG.capacitySection;
     const sectionEl=document.querySelector(`.section[data-s-type="${_sec}"]`); if(!sectionEl)return;
-    // v1193: was a binary lc/not-lc filter — now a direct match, so a third ('fm') capacitySection
-    // only ever sees its own headers, and the other two don't see fm's either.
-    const personHdrs=Array.from(sectionEl.querySelectorAll('.fc-tally[data-person-header]')).filter(h=>h.dataset.personHeader!=='prod-total').filter(h=>h.dataset.personSection===DRAG.capacitySection);
-    // v1193: Field Mechanics get their own "Needs a Field Mechanic" bucket, separate from PM's
-    // Unassigned — an LC drag still has no dedicated bucket of its own (pre-existing behavior).
-    const _unassignedSel=DRAG.capacitySection==='fm'?'.fm-unassigned-group-fc':'.unassigned-group-fc';
-    const _unassignedHdrSel=DRAG.capacitySection==='fm'?'.fm-unassigned-hdr-fc':'.unassigned-hdr-fc';
-    const unassignedGroup=sectionEl.querySelector(_unassignedSel);
+    const personHdrs=Array.from(sectionEl.querySelectorAll('.fc-tally[data-person-header]')).filter(h=>h.dataset.personHeader!=='prod-total').filter(h=>DRAG.capacitySection==='lc'?h.dataset.personSection==='lc':h.dataset.personSection!=='lc');
+    const unassignedGroup=sectionEl.querySelector('.unassigned-group-fc');
     const projRows=Array.from(sectionEl.querySelectorAll('[data-capacity-section="'+DRAG.capacitySection+'"]')).filter(r=>r.dataset.projId&&(!unassignedGroup||!unassignedGroup.contains(r)));
     const items=[...personHdrs.map(e2=>({el:e2,isHeader:true,personId:e2.dataset.personHeader})),...projRows.map(e2=>({el:e2,isHeader:false,projId:e2.dataset.projId}))].sort((a,b)=>a.el.getBoundingClientRect().top-b.el.getBoundingClientRect().top);
     const sortedHdrs=personHdrs.sort((a,b)=>a.getBoundingClientRect().top-b.getBoundingClientRect().top);
@@ -9720,7 +9575,7 @@ function onMove(e){
     // Helper: resolve drop position within the unassigned group
     function resolveUnassignedDrop(cursorY){
       DRAG.targetPerson=null; DRAG.targetAfterProj=null;
-      const unGrp=sectionEl.querySelector(_unassignedSel);
+      const unGrp=sectionEl.querySelector('.unassigned-group-fc');
       const unRows=unGrp?Array.from(unGrp.querySelectorAll('.fc-ms-row[data-capacity-section]')).filter(r=>r.dataset.projId!==DRAG.projId):[];
       let indY=null, prevId=null;
       for(const row of unRows){
@@ -9731,7 +9586,7 @@ function onMove(e){
         indY=rr.bottom;
       }
       if(indY===null){
-        const unHdr=sectionEl.querySelector(_unassignedHdrSel);
+        const unHdr=sectionEl.querySelector('.unassigned-hdr-fc');
         if(unHdr) indY=unHdr.getBoundingClientRect().bottom;
       }
       if(indY!==null){ DROP_IND.style.left='0px'; DROP_IND.style.width='100vw'; DROP_IND.style.top=(indY-1)+'px'; DROP_IND.style.display='block'; }
@@ -9997,7 +9852,7 @@ function onUp(){
     if(proj&&DRAG.targetPerson!==undefined){
       // v1174: DRAG.personField carries 'secondaryDesigner' when the dragged band was a
       // two-designer project's secondary band; otherwise the field is the same as always.
-      const personField=DRAG.personField||(DRAG.capacitySection==='design'?'designer':DRAG.capacitySection==='lc'?'lc1':DRAG.capacitySection==='fm'?'fieldMechanic':'productionPM');
+      const personField=DRAG.personField||(DRAG.capacitySection==='design'?'designer':DRAG.capacitySection==='lc'?'lc1':'productionPM');
       const _reorderMoved=proj[personField]!==DRAG.targetPerson;
       if(_reorderMoved) _dragMoved=true; // person actually changed
       let _reorderPre=null;
@@ -10025,7 +9880,7 @@ function onUp(){
       // this only cleared on the unassigned branch, so a same-designer reorder in Design —
       // which opens sorted by Design Start by default — silently snapped back on every drop.
       if(CAP_SORT[DRAG.capacitySection]) CAP_SORT[DRAG.capacitySection].field=null;
-      rebuildSection((DRAG.capacitySection==='lc'||DRAG.capacitySection==='fm')?'production':DRAG.capacitySection); triggerSave(proj);
+      rebuildSection(DRAG.capacitySection==='lc'?'production':DRAG.capacitySection); triggerSave(proj);
       if(_reorderMoved && _reorderPre && DRAG._preSnap){ try{ _histPush(_buildDragDesc(_reorderPre), DRAG._preSnap); }catch(_e){ console.warn('[history] reorder record failed',_e); } }
     }
     _dragMoved=false;
@@ -10632,9 +10487,6 @@ function userPrefsPayload(){
     PROD_PM_COLLAPSED:[...PROD_PM_COLLAPSED],
     PROD_LC_COLLAPSED:[...PROD_LC_COLLAPSED],
     PROD_LC_EXPANDED:[...LC_COORDS.map(lc=>lc.id).filter(id=>!PROD_LC_COLLAPSED.has(id))],
-    PROD_FM_EXPANDED:[...FIELD_MECHANICS.map(fm=>fm.id).filter(id=>!PROD_FM_COLLAPSED.has(id))], // v1193
-    PROD_FM_UNASSIGNED_COLLAPSED, // v1193
-    PROD_FM_SECTION_COLLAPSED, // v1194
     LC_PROJ_EXPANDED:[...LC_PROJ_EXPANDED],
     LC_DESIGN_MS_HIDDEN:[...LC_DESIGN_MS_HIDDEN],
     PROD_UNASSIGNED_COLLAPSED, DESIGN_UNASSIGNED_COLLAPSED,
@@ -10666,7 +10518,7 @@ function projectGanttPayload(proj){
 // Write person display name to SP column when a project is assigned/unassigned
 function _patchPersonNameToSP(proj, personField, personId) {
   if (!proj._spItemId) return;
-  const spField = personField==='designer'?'DesignerName':personField==='secondaryDesigner'?'SecondaryDesigner':personField==='lc1'?'LogisticsCoordinator1':personField==='lc2'?'LogisticsCoordinator2':personField==='fieldMechanic'?'FieldMechanic':'PMName';
+  const spField = personField==='designer'?'DesignerName':personField==='secondaryDesigner'?'SecondaryDesigner':personField==='lc1'?'LogisticsCoordinator1':personField==='lc2'?'LogisticsCoordinator2':'PMName';
   const person = personId ? personById(personId) : null;
   // Use fullLabel (full name) not label (first name only)
   const displayName = person ? (person.fullLabel || person.label) : '';
@@ -10674,7 +10526,7 @@ function _patchPersonNameToSP(proj, personField, personId) {
     fields: { [spField]: displayName }
   }).catch(e => {
     console.warn('[pipeline] SP person name patch failed:', e);
-    // v1198: this write was failing silently — the assignment looked saved (the
+    // this write was failing silently — the assignment looked saved (the
     // generic triggerSave()/GanttData blob succeeded, a separate save path) while
     // this specific SharePoint column patch quietly failed in the background, so
     // the change was gone again on next load. Now it surfaces instead of hiding.
@@ -11865,7 +11717,7 @@ function buildPlanningSection(){
         html+='<div class="tt-type">'+escH(liveName)+'</div>';
         if(liveType) html+='<div class="tt-addr">'+escH(liveType)+'</div>';
         if(liveDesc) html+='<div class="tt-scope">'+escH(liveDesc)+'</div>';
-        if(liveAddress) html+='<div class="tt-addr-row"><div class="tt-addr">'+escH(liveAddress)+'</div>'+_MAP_BTN_HTML+'</div>';
+        if(liveAddress) html+='<div class="tt-addr-row"><div class="tt-addr">'+escH(liveAddress)+'</div>'+_mkMapPinHTML(origProj)+'</div>';
         if(liveValue) html+='<div class="tt-price">'+escH(liveValue)+'</div>';
         html+='<div class="tt-people">';
         html+='<div class="tt-person">';
@@ -12034,7 +11886,7 @@ function buildPlanningSection(){
         html+='<div class="tt-type">'+escH(liveName)+'</div>';
         if(liveType) html+='<div class="tt-addr">'+escH(liveType)+'</div>';
         if(liveDesc) html+='<div class="tt-scope">'+escH(liveDesc)+'</div>';
-        if(liveAddress) html+='<div class="tt-addr-row"><div class="tt-addr">'+escH(liveAddress)+'</div>'+_MAP_BTN_HTML+'</div>';
+        if(liveAddress) html+='<div class="tt-addr-row"><div class="tt-addr">'+escH(liveAddress)+'</div>'+_mkMapPinHTML(origProj)+'</div>';
         if(liveValue) html+='<div class="tt-price">'+escH(liveValue)+'</div>';
         html+='<div class="tt-people">';
         html+='<div class="tt-person">';
@@ -13068,12 +12920,6 @@ function _projectFromItem(item){
     const _lc2=matchPersonByName(proj.logisticsCoord2,LC_COORDS);
     proj.lc1=_lc1?.id||null; proj.lc2=_lc2?.id||null;
     if(!proj.lcHours) proj.lcHours={};
-    // v1193: Field Mechanics — single slot, assignment-only (no hours/capacity/time-off).
-    // Connects a project to a Field Mechanic for other tools (Selections); same
-    // name-match-by-text pattern as LC1/LC2 against the CORE_Projects FieldMechanic column.
-    if(f.FieldMechanic) proj.fieldMechanicName=f.FieldMechanic;
-    const _fm=matchPersonByName(proj.fieldMechanicName,FIELD_MECHANICS);
-    proj.fieldMechanic=_fm?.id||null;
     proj.jobCode=f.JobCode||''; // v1076: BT job code for AR Two-Week Report cross-check
     proj.caDateSeen=f.CADateSeen||''; // v1087: baseline for the CA movement monitor (YYYY-MM-DD)
     proj.salesPerson=f.SalesPerson||'';
@@ -13124,13 +12970,6 @@ function restoreSavedState(saved){
   if(saved.PROD_LC_EXPANDED&&Array.isArray(saved.PROD_LC_EXPANDED)){
     saved.PROD_LC_EXPANDED.forEach(id=>PROD_LC_COLLAPSED.delete(id));
   }
-  // v1193: Field Mechanics — same default-collapsed/restore-expanded pattern as LC
-  FIELD_MECHANICS.forEach(fm=>PROD_FM_COLLAPSED.add(fm.id));
-  if(saved.PROD_FM_EXPANDED&&Array.isArray(saved.PROD_FM_EXPANDED)){
-    saved.PROD_FM_EXPANDED.forEach(id=>PROD_FM_COLLAPSED.delete(id));
-  }
-  if(typeof saved.PROD_FM_UNASSIGNED_COLLAPSED==='boolean') PROD_FM_UNASSIGNED_COLLAPSED=saved.PROD_FM_UNASSIGNED_COLLAPSED;
-  if(typeof saved.PROD_FM_SECTION_COLLAPSED==='boolean') PROD_FM_SECTION_COLLAPSED=saved.PROD_FM_SECTION_COLLAPSED;
   if(saved.LC_PROJ_EXPANDED&&Array.isArray(saved.LC_PROJ_EXPANDED)) LC_PROJ_EXPANDED=new Set(saved.LC_PROJ_EXPANDED);
   if(saved.LC_DESIGN_MS_HIDDEN&&Array.isArray(saved.LC_DESIGN_MS_HIDDEN)) LC_DESIGN_MS_HIDDEN=new Set(saved.LC_DESIGN_MS_HIDDEN);
   if(typeof saved.PROD_UNASSIGNED_COLLAPSED==='boolean') PROD_UNASSIGNED_COLLAPSED=saved.PROD_UNASSIGNED_COLLAPSED;
@@ -13165,12 +13004,10 @@ function restoreSavedState(saved){
   // Sync PROD_ROW_ORDER to actual loaded PMs
   const validPmKeys=new Set(PROD_PMS.map(p=>'pm:'+p.id));
   const validLcKeys=new Set(LC_COORDS.map(lc=>'lc:'+lc.id));
-  const validFmKeys=new Set(FIELD_MECHANICS.map(fm=>'fm:'+fm.id));
   let order=(saved.PROD_ROW_ORDER&&Array.isArray(saved.PROD_ROW_ORDER))
     ?saved.PROD_ROW_ORDER
       .filter(k=>!k.startsWith('pm:')||validPmKeys.has(k))
       .filter(k=>!k.startsWith('lc:')||validLcKeys.has(k))
-      .filter(k=>!k.startsWith('fm:')||validFmKeys.has(k))
     :['pm-section','revenue','unassigned','lc-section','total'];
   // Ensure structural keys exist
   if(!order.includes('pm-section')) order.unshift('pm-section');
@@ -13192,23 +13029,6 @@ function restoreSavedState(saved){
       PROD_LC_COLLAPSED.add(lc.id);
     }
   });
-  // Mark any brand-new Field Mechanics as collapsed by default
-  FIELD_MECHANICS.forEach(fm=>{ if(!order.includes('fm:'+fm.id)) PROD_FM_COLLAPSED.add(fm.id); });
-  // v1195: Field Mechanics — beneath the LCs, per Byron. Re-verify the whole block's
-  // position here too (not just "insert if absent") — a saved order from before the
-  // v1194 placement fix already had fm-section at the old, wrong spot, and that guard
-  // never corrects a key that's already present, just misplaced. Same fix as the
-  // per-render sync in buildProdSection() below.
-  {
-    const fmKeysNow=FIELD_MECHANICS.map(fm=>'fm:'+fm.id);
-    const existingFmKeys=order.filter(k=>k.startsWith('fm:')&&fmKeysNow.includes(k));
-    const newFmKeys=fmKeysNow.filter(k=>!existingFmKeys.includes(k));
-    const fmBlock=['fm-section','fm-unassigned',...existingFmKeys,...newFmKeys];
-    const rest=order.filter(k=>!fmBlock.includes(k));
-    const lastLc=_lastLcBlockIndex(rest);
-    rest.splice(lastLc>=0?lastLc+1:rest.length-1,0,...fmBlock);
-    order=rest;
-  }
   PROD_ROW_ORDER=order;
   // Sync DES_ROW_ORDER to actual loaded Designers
   const validDesIds=new Set(DESIGNERS.map(d=>d.id));
@@ -16875,6 +16695,15 @@ function _mkMapPin(proj){
   const u=projMapUrl(proj); if(u) b.dataset.upcomingUrl=u; else b.style.opacity='0.45';
   if(proj&&proj._spItemId) b.dataset.dlProj=proj._spItemId;
   return b;
+}
+// String-HTML twin of _mkMapPin, for tooltips built via HTML-string concatenation (Sales screen) rather than DOM nodes
+function _mkMapPinHTML(proj){
+  const u=projMapUrl(proj);
+  return '<button class="tt-map-pin" aria-label="Map" data-upcoming-pill="map"'
+    +(u?' data-upcoming-url="'+escH(u)+'"':'')
+    +(proj&&proj._spItemId?' data-dl-proj="'+proj._spItemId+'"':'')
+    +(u?'':' style="opacity:.45"')
+    +'>'+MAP_PIN_SVG+'</button>';
 }
 function parseGeoText(s){
   s=String(s||'').trim();
