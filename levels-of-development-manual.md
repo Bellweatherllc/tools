@@ -26,6 +26,12 @@ Anyone with a Bellweather account can sign in, see the project list, and submit 
 
 A project only shows up in Raw Results and Analysis once at least one assessment has been submitted for it. Brand-new projects will only appear in Assess until then.
 
+### The split layout
+
+Once a project is selected, Assess splits into two columns: **Scope of Work** on the left, **the dimensions you're rating** on the right. Each side scrolls on its own, so Scope stays in view the whole time you're working through a long list of dimensions — no more scrolling back up to re-check it. Drag the small handle between the two columns to make either one wider. On a narrow window (phone, or a browser window resized small) the two columns stack into one, same as any other screen here.
+
+Address now shows a small pin icon beside it — a one-click link to that project's location in Google Maps (Street View is one click from there). It only appears once that project has a location on file; if it's missing, that's a Projects Manager data gap, not something to fix here.
+
 ## Part II — Setting up a project
 
 For whoever sets a project up before the team assesses it — today, that's Byron or Joey.
@@ -38,7 +44,7 @@ Turn it back off when you're done. Admin mode doesn't require any special permis
 
 ### Writing the Scope of Work
 
-With Admin on and a project selected in Assess, the **Scope of Work** box becomes an editable rich-text area with a small toolbar — **B** / *I* / U / bullet list — above it.
+With Admin on and a project selected in Assess, the **Scope of Work** box — the left-hand column once a project is selected — becomes an editable rich-text area with a small toolbar — **B** / *I* / U / bullet list — above it.
 
 - **Paste directly from the DA.** Bold, italic, underline, and bullet lists all carry over from a Word document or PDF. Messy source formatting (fonts, colors, odd spacing) gets cleaned up automatically — only the structure survives, not the clutter.
 - **Type from scratch** if there's nothing to paste yet. Use the toolbar buttons the same way you would in Word.
@@ -57,13 +63,13 @@ There's no required format — write it the way you'd say it out loud. Click **S
 
 ### Requesting assessments (Requested Assessors)
 
-Below Scope of Work, **Requested Assessors** tracks who's been asked to weigh in on a project and gives you a one-click way to actually ask them.
+Below Address, CA Value, and Target Investment in the setup area, **Requested Assessors** tracks who's been asked to weigh in on a project and gives you a one-click way to actually ask them.
 
 With Admin on, check off names from the team roster — grouped into **Sales**, **Design**, and **Production**, read live from Team Members' Department and Role fields (Operations, Logistics Coordinators, and Field Mechanics don't show here — they're not who you'd ask for an LOD read). Joey, Byron, and Ryan are pinned to the top of whichever group they're each in; everyone else is alphabetical. Each checkbox saves immediately, no separate Save button. That checked list does double duty: it's the record of who was asked (visible to everyone, Admin or not, right below the checkboxes), and it feeds the **Message** box below it.
 
 **Deadline** is an optional date field. Leave it blank for no deadline. Set it and two things happen: the Message box's text gains a "by \<date\>" clause, and the Trello card (if you create one) gets that date as its actual due date — so it shows up in Trello's own due-date UI, not just as text in the message.
 
-**Message** is a plain text box pre-filled for you — an `@mention` for each checked person who has a Trello username on file (plain name if they don't — see Team Members' Roster tab to add one), followed by a line asking them to assess the project (naming the deadline, if one's set) and the link to it. It updates automatically as you check or uncheck names or change the deadline, right up until you type your own edit into it — once you've changed it by hand, your wording sticks (checking another name won't overwrite it), until you switch projects, which starts the box (and the deadline field) fresh again for the new one.
+**Message** is a plain text box pre-filled for you — an `@mention` for each checked person who has a Trello username on file (plain name if they don't — see Team Members' Roster tab to add one), followed by a line asking them to assess the project (naming the deadline, if one's set) and the link to it, then a closing note pointing them to the Analysis tab for compiled results once assessments are in, and to the LOD pill on the project's Pipeline hover card as a shortcut straight to that same Analysis. It updates automatically as you check or uncheck names or change the deadline, right up until you type your own edit into it — once you've changed it by hand, your wording sticks (checking another name won't overwrite it), until you switch projects, which starts the box (and the deadline field) fresh again for the new one.
 
 **Create Request Card** sends whatever's currently in the Message box: it creates a real Trello card (named after the project, with the deadline as its due date if one's set), posts that text as the card's first **comment** (not the description — that's the only way Trello actually fires a "you were mentioned" notification for the `@mentions` in it), and adds each checked person who has a Trello username on file to it, so they actually get notified. This goes through a server-side proxy — CORE itself never holds a Trello credential — so it needs that proxy deployed and configured before it'll work; if it isn't, you'll get a toast saying so instead of a silent failure. *(Currently pointed at a test board while this feature is being dialed in — ask Byron if you're not sure it's live yet.)*
 

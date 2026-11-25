@@ -28,7 +28,7 @@ Three SharePoint locations — don't confuse them:
 ## Delivery discipline — follow every time
 
 - **Bump the version on every delivery.** Whole number.
-- **Version badges are always red — `#ef4444`, the Pipeline's badge red.** Every badge, including sign-in-screen badges and new tools. Don't let a tool's own palette override it.
+- **Version badges are always red — `#ef4444`, the Pipeline's badge red.** Every badge, including sign-in-screen badges and new tools. Don't let a tool's own palette override it. **Plain text only — just the `v` and the number, never outlined or set in a pill or box.**
 - **The version lives in the badge, never the filename.** In the pipeline it's a single `CORE_VERSION` constant; badge elements in the markup are empty and stamped by an IIFE right after the constant, so there's no stale flash.
 - **Every page carries the four-link favicon block** from the Style Guide ("Favicon — Every Tool"), right after `<title>`: absolute `logos/` URLs, current `?v=`. Add it to any page you create or touch that lacks it — manuals and guides too, not redirect stubs. Audit: `grep -L "logos/favicon.svg?v=" *.html */*.html`.
 - **Run `node --check` on the extracted script block before delivering.** Every time.
@@ -98,6 +98,8 @@ The URL is the contract. `bellweatherllc.github.io/tools/<name>.html` is referen
 **Naming — new files only:** all lowercase, hyphens not underscores, domain prefix where it groups things (`permit-`, `project-`, `ca-`). The repo currently mixes both styles (`core_roadmap.html` beside `core-projects-manager.html`); that's historical and stays. Don't retrofit.
 
 **Keep the index current.** `bw-tool-index.html` and `versions.md` are what a flat repo has instead of a folder tree. Update them when a tool is added, renamed at birth, or archived.
+
+**`tool-versions.json` is generated — never edit it by hand.** `.github/workflows/tool-versions.yml` rebuilds it on every push to `main` (each page's version, read from the page, plus its last commit time) and commits it back as `github-actions[bot]`. The Tool Index reads it to show version and last-updated on every tile. So `main` gains a bot commit shortly after each push: pull before merging, and if a push to `main` is rejected, pull and push again. For the version to be picked up, a page needs a `CORE_VERSION` / `MGR_VERSION` / `VERSION` constant or a badge element containing `vN`.
 
 ---
 
