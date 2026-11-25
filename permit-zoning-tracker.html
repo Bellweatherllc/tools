@@ -269,6 +269,19 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 .permit-band.permit-band-approved{flex-direction:column;gap:2px;}
 .permit-band-approved .pb-val{font-size:20px;}
 .permit-band-approved .pb-type{font-size:11px;font-weight:600;color:var(--mut);text-transform:none;letter-spacing:0;}
+/* AMENDMENTS — per Byron: "a solid color band above the permit number
+   that indicates 'AMENDMENTS' and... carries a direct link to the
+   trello card." Sits directly on top of the permit-band in the same
+   narrow column (.amendments-wrap stacks them), sharing its corner
+   radius so the two read as one joined element — reusing var(--grad-
+   orange), the same color this file already uses for the At Risk tier,
+   rather than introducing a new one. */
+.amendments-wrap{display:flex;flex-direction:column;}
+.amendments-band{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;background:var(--grad-orange);color:#fff;border-radius:6px 6px 0 0;padding:6px 14px;text-decoration:none;cursor:pointer;transition:filter .12s;}
+.amendments-band:hover{filter:brightness(1.08);}
+.amendments-lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;line-height:1.3;}
+.amendments-link{font-size:9.5px;font-weight:600;text-decoration:underline;opacity:.92;line-height:1.2;}
+.permit-band.has-amendments{border:1px solid var(--grad-orange);border-top:none;border-radius:0 0 6px 6px;padding-top:8px;}
 /* Replaces the gantt+stat-band entirely once a project is wholly
    approved — a plain factual record (what happened, when), no tier
    color or clock framing at all, per Byron. Zoning, Permitting, and (once
@@ -568,7 +581,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v189';
+const CORE_VERSION = 'v190';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -2437,7 +2450,19 @@ function renderCards(){
       ? `<div class="pb-lbl">Permit #</div><div class="pb-val">${esc(p.permitNumber)}</div>${wholeApproved&&permitType?`<div class="pb-type">${esc(permitType)}</div>`:''}`
       : '';
     const permitBandHtml = p.permitNumber || wholeApproved
-      ? `<div class="permit-band${wholeApproved?' permit-band-approved':''}"${p.permitNumber?' data-tip="Permit number"':''}>${permitBandInner}</div>`
+      ? `<div class="permit-band${wholeApproved?' permit-band-approved':''}${p.amendments?' has-amendments':''}"${p.permitNumber?' data-tip="Permit number"':''}>${permitBandInner}</div>`
+      : '';
+    // AMENDMENTS — per Byron: "a solid color band above the permit
+    // number that indicates 'AMENDMENTS' and that carries a direct link
+    // to the trello card to dig in for more details... it should
+    // probably also say 'link for details'." Only reachable once wholly
+    // approved (landing in the Amendments list forces an 'approved' rank
+    // in loadTrelloProjects), so it only needs wiring into this branch.
+    const amendmentsHtml = p.amendments
+      ? `<a class="amendments-band" href="https://trello.com/c/${esc(p.amendments.shortLink)}" target="_blank" rel="noopener" data-tip="Open this card in Trello">
+          <span class="amendments-lbl">Amendments</span>
+          <span class="amendments-link">Link for details</span>
+        </a>`
       : '';
     let appRowHtml;
     if(wholeApproved){
@@ -2446,7 +2471,7 @@ function renderCards(){
       // instead of a separate header pill, per Byron.
       appRowHtml = `<div class="app-row">
         <div class="row-mid row-mid-approved" data-pid="${pid}">${renderApprovedSummary(zoningStages, permitStages, p.remainingTasks, combineNumbers(p.zoningNumber,p.zoning2Number), combineNumbers(p.permitNumber,p.permit2Number))}</div>
-        ${permitBandHtml}
+        <div class="amendments-wrap">${amendmentsHtml}${permitBandHtml}</div>
         <div class="stat-band tier-on">
           <div class="sb-lbl">APPROVED</div>
         </div>
@@ -3019,6 +3044,14 @@ async function loadTrelloProjects(){
     tGet('boards/'+b+'/checklists', {fields:'name,idCard,pos', checkItems:'all', checkItem_fields:'name,state,pos'}),
   ]);
   const listMeta={}; lists.forEach(l=>{ listMeta[l.id]=parseTrelloListName(l.name); });
+  // AMENDMENTS — per Byron: "I've added another list called AMENDMENTS.
+  // If it gets used, it would be after a permit is approved... landing
+  // there is 'wholly approved,' it just means there are loose ends to
+  // resolve." Unlike every other tracked list, it carries no
+  // zoning/permit prefix (it's one shared list, not four), so it can't
+  // be routed through parseTrelloListName's prefix matching at all.
+  const AMENDMENTS_NORM=trelloNormName('Amendments');
+  const listNameById={}; lists.forEach(l=>{ listNameById[l.id]=l.name; });
 
   const histByCard={}; // ascending {listId,at} per card
   const commentsByCard={}; // ascending {author,date,text} per card
@@ -3082,7 +3115,28 @@ async function loadTrelloProjects(){
   const slotCollisions=[]; // "ProjectName: two zoning cards both landed in the same slot" — surfaced in the sync status, not just silently dropped
   const byProject={}; // trelloNormName(project) -> {name, zoning:cardInfo|null, zoning2:cardInfo|null, permitting:cardInfo|null, permitting2:cardInfo|null}
   cards.forEach(c=>{
-    const meta=listMeta[c.idList];
+    let meta=listMeta[c.idList];
+    let inAmendments=false;
+    // A card currently sitting in Amendments has no prefix for
+    // parseTrelloListName to match (it's one shared list, not four), so
+    // meta is always undefined for it above. Its category is inferred
+    // from its own move history instead — the last list it sat in that
+    // DOES resolve normally — and its rank is forced to 'approved' (per
+    // Byron: "landing there is 'wholly approved'"), same as a card that
+    // never left the real Approved list at all. Falls back to
+    // 'permitting' only if history is missing entirely (shouldn't happen
+    // in practice — a card doesn't reach Amendments without first having
+    // been somewhere trackable).
+    if(!meta && trelloNormName(listNameById[c.idList])===AMENDMENTS_NORM){
+      inAmendments=true;
+      const hist=histByCard[c.id]||[];
+      let inferred=null;
+      for(let i=hist.length-1;i>=0;i--){
+        const m=listMeta[hist[i].listId];
+        if(m){ inferred=m; break; }
+      }
+      meta=inferred ? {category:inferred.category, suffix:'approved'} : {category:'permitting', suffix:'approved'};
+    }
     if(!meta) return; // not one of the tracked lists (8, or up to 16 on a board that also runs ZONING2/PERMIT2 lists)
     const projectName=String(trelloCfValue(c,defs,'project')||'').trim();
     if(!projectName) return;
@@ -3092,7 +3146,7 @@ async function loadTrelloProjects(){
     const bucketCategory=slotCategory(meta.category, cardSlotOrdinal(c, defs));
     if(byProject[key][bucketCategory]) slotCollisions.push(projectName+': two '+meta.category+' cards both resolved to the same slot — only one can show (check each card\'s "Card Sequence" field)');
     byProject[key][bucketCategory]={
-      cardId:c.id, shortLink:c.shortLink, suffix:meta.suffix,
+      cardId:c.id, shortLink:c.shortLink, suffix:meta.suffix, inAmendments,
       // The list-derived (never slot-adjusted) category — STAGE_CATALOG and
       // TRELLO_SUFFIX_KEY are identical in content between a category and
       // its "2" counterpart, so bucketCategory works fine there too, but
@@ -3187,7 +3241,7 @@ async function loadTrelloProjects(){
     // real phase/CA data isn't actually there.
     const hasSched = sched && sched.I!=null;
     const p={ proj:entry.name, jur:'City', commercial:false, address:(sched&&sched.address)||'', trelloCardId:null,
-      permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null, permit2Number:null, zoningNumber:null, zoning2Number:null, remainingTasks:[],
+      permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null, permit2Number:null, zoningNumber:null, zoning2Number:null, remainingTasks:[], amendments:null,
       phaseWeeks:hasSched ? {I:sched.I, II:sched.II, III:sched.III} : {I:6,II:18,III:6},
       phaseIWeeksFromToday:hasSched ? sched.phaseIWeeksFromToday : null,
       phaseIIWeeksFromToday:hasSched ? sched.phaseIIWeeksFromToday : null,
@@ -3226,6 +3280,12 @@ async function loadTrelloProjects(){
         });
         if(!p.trelloCardId){ p.trelloCardId=card.cardId; p.trelloShortLink=card.shortLink; p.comments=card.comments; }
         if(!p.jurisdictionSet && card.jurisdiction){ p.jur=card.jurisdiction; p.jurisdictionSet=true; }
+        // AMENDMENTS — per Byron: "a solid color band above the permit
+        // number that indicates 'AMENDMENTS' and... carries a direct link
+        // to the trello card." Whichever card actually landed in the
+        // Amendments list wins (same "first one found" pattern as
+        // trelloCardId/comments above); realistically only one ever will.
+        if(card.inAmendments && !p.amendments) p.amendments={shortLink:card.shortLink};
         // Remaining Tasks pools unchecked items from WHICHEVER of this
         // project's cards actually carries the checklist — Byron hasn't
         // said which one yet, so this works the same regardless (zoning,
