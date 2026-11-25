@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-24
+Last updated: 2026-11-25
 
 ## Live tools
 
@@ -12,7 +12,7 @@ Last updated: 2026-11-24
 |---|---|---|
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1198 |
-| Projects Manager | `core-projects-manager.html` | v70 (`MGR_VERSION`) |
+| Projects Manager | `core-projects-manager.html` | v71 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v81 |
 | Scout Board | `scout-board.html` | v15 |
 | **PM Workbook & Budget** | | |
@@ -76,6 +76,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 | CA writing tools: `ca-setup.html`, `CA_DataSources.html`, `da_extractor.html`, `estimate_extractor.html`, `plan_note_extractor.html`, `reference_ca_extractor.html`, `scope_outline_extractor.html`, `selections_extractor.html`, `lib/ca-session.js` | System Map v2 |
 
 ## Log
+
+- **2026-11-25** — Projects Manager v70 → v71: relabeled the Team section's **Designer** and **Secondary Designer** fields to **Designer 1** and **Designer 2**, for consistency with the LC1/LC2 naming — display text only, per Byron. The underlying SharePoint columns (`DesignerName`, `SecondaryDesigner`) are unchanged, no data migration.
 
 Newest first. One line per delivery.
 
