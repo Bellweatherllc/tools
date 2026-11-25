@@ -11,7 +11,7 @@ Last updated: 2026-11-24
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1197 |
+| Project Pipeline | `project-pipeline.html` | v1198 |
 | Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v81 |
 | Scout Board | `scout-board.html` | v15 |
@@ -79,6 +79,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-25** — Project Pipeline v1197 → v1198: two fixes per Byron. (1) The map pin now hugs the address text with a fixed 5px gap instead of always sitting at the row's right edge — `.tt-addr` no longer stretches (`flex:1` removed), so the pin's position shifts with address length, wrapping to its own line if a long address and the pin can't both fit. (2) Dragging a project onto a Field Mechanic looked like it saved (the generic autosave indicator isn't tied to this write) but reset on refresh — `_patchPersonNameToSP()` (the SharePoint column patch backing every person-field drag: Designer, PM, LC1/2, Field Mechanic) was failing silently, only ever logging to the console. Failures now surface as a toast naming the field and the actual Graph error, so a bad/missing SharePoint column shows up immediately instead of silently losing the assignment on next load.
 - **2026-11-25** — Project Pipeline v1196 → v1197: two small hover-card tweaks per Byron. The Google Maps pin moved from beside the Permit & Zoning zone up to sit beside the address, right-aligned in that row (the `.tt-addr-row` layout was already built for exactly this — it previously held a since-disabled map button in the same spot). The Production line's Field Mechanic now shows as just the name after the LC names ("· Rachel, Mario · Alex") instead of "· FM: Alex".
 - **2026-11-25** — Project Pipeline v1195 → v1196: per Byron — the gold "NOW" column frame on the Production screen extended all the way down through the Field Mechanics section, which has no gantt/schedule bars of its own to mark "now" against. The frame's height is now clamped at render time (via a zero-height marker placed right where the Field Mechanics block begins, measured post-layout since the gold frame is otherwise sized via `calc(100% + 60px)`) so it stops at the bottom of the Logistics Coordinators rows instead of running the full section height. Design's own "NOW" frame is untouched.
 - **2026-11-25** — Project Pipeline v1194 → v1195: per Byron — the Field Mechanics label/chevron was still sitting above the LC rows, even though the FM rows and unassigned bucket themselves rendered correctly below. Root cause: v1194's placement fix only ran when `fm-section` was entirely absent from the saved row order — Byron's browser already had it saved at the old (wrong, v1193-era) position, so the fix never got a chance to correct it once it existed. The sync logic (both on initial load and on every re-render) now unconditionally pulls the whole Field Mechanics block (section header, unassigned bucket, every mechanic) out and reinserts it as one unit directly after the LC block every time, instead of only positioning it the first time it's created.
