@@ -568,7 +568,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v188';
+const CORE_VERSION = 'v189';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -637,6 +637,15 @@ function clearTestDate(){
 const DAY=86400000;
 const PX_PER_WEEK=28;
 const FONT="'TT Norms Pro', Arial, sans-serif";
+// Reserved for a collapsed "done, here's the number" summary bar only
+// (see collapseIfDoneWithNumber/barRow) — per Byron, wanting a track's own
+// completion bar to read as visually distinct from an ordinary in-progress
+// stage, not just another all-caps TT Norms Pro label. Swear Text is
+// already this file's "this number/name matters" font elsewhere (.proj-
+// name, .permit-band .pb-val) — same literal value as --font-swear, kept
+// as its own JS constant since SVG text here is built as plain strings,
+// not CSS, so a var() reference wouldn't resolve.
+const FONT_SWEAR="'Swear Text', serif";
 // final agreed layout numbers from the Artifact tuning session — VH is a
 // RESULT of these (topPad + lane + 1 + band + bottomPad), not an input.
 const CFG={ topPad:7, laneH:82, bandH:30, bottomPad:32, markerRise:19, rulerH:21,
@@ -730,7 +739,16 @@ function barRow(stages, y, barH, groupColor, insetFirst){
     // central puts its vertical center exactly on y, so half sits inside
     // the bar and half pokes out above it).
     const check=done?`<tspan fill="var(--grad-green)" stroke="#fff" stroke-width="1" paint-order="stroke" font-size="${fontSize*1.5}">✓ </tspan>`:'';
-    const label = `<text x="${x+w/2}" y="${y+barH/2+3.5}" text-anchor="middle" font-size="${fontSize}" font-weight="700" letter-spacing=".02em" fill="var(--ink)" font-family="${FONT}">${check}${esc(s.name.toUpperCase())}</text>`;
+    // A collapsed "track finished, here's its number" summary bar (see
+    // collapseIfDoneWithNumber) reads in Swear Text, mixed case, instead
+    // of the ordinary all-caps TT Norms Pro every real stage bar uses —
+    // per Byron, wanting it visually distinct, not just another stage
+    // label. A slightly larger size earns back the legibility Swear Text's
+    // lighter weight costs at this font size.
+    const labelFont=s.summary?FONT_SWEAR:FONT;
+    const labelSize=s.summary?fontSize+1:fontSize;
+    const nameText=s.summary?esc(s.name):esc(s.name.toUpperCase());
+    const label = `<text x="${x+w/2}" y="${y+barH/2+3.5}" text-anchor="middle" font-size="${labelSize}" font-weight="700" letter-spacing=".02em" fill="var(--ink)" font-family="${labelFont}">${check}${nameText}</text>`;
     const star=early?`<text x="${x+w/2}" y="${y}" text-anchor="middle" dominant-baseline="central" font-size="${fontSize*1.5}" fill="#f5c518" stroke="#fff" stroke-width="1" paint-order="stroke" font-family="${FONT}" style="filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45));">★</text>`:'';
     // Per Byron: "we'll have to figure out some way to fit the label on
     // the stage. Maybe abbreviate + hover?" — every bar now carries its
@@ -1409,7 +1427,7 @@ function renderCombinedTrack({ project, zoningStages, zoning2Stages, permitStage
 // star is kept for a single stage beating its own estimate (a fact about
 // what happened, same meaning as barRow's own early-star — not a live
 // clock), since that's still useful context for a closed-out project.
-function renderApprovedSummary(zoningStages, permitStages, remainingTasks){
+function renderApprovedSummary(zoningStages, permitStages, remainingTasks, zoningNumber, permitNumber){
   // A track with no stages at all (e.g. a permit-only project that never
   // needed zoning) used to still get its own mini-window with a plain
   // "Not Required" statement — per Byron's later follow-up, now that a
@@ -1418,7 +1436,7 @@ function renderApprovedSummary(zoningStages, permitStages, remainingTasks){
   // tracks (not just zoning) — the same "omit an empty box" rule a
   // permit-only project's missing Zoning section and a (hypothetical)
   // zoning-only project's missing Permitting section both get.
-  function trackBlock(label, stages){
+  function trackBlock(label, stages, number){
     if(!stages.length) return '';
     const rows=stages.map(s=>{
       const early=s.actualWeeks!=null && s.actualWeeks<s.estWeeks;
@@ -1427,7 +1445,12 @@ function renderApprovedSummary(zoningStages, permitStages, remainingTasks){
       return `<div class="rec-row"><div class="rec-row-top"><span class="rec-stage">${esc(s.name)}${early?' <span class="legend-glyph star" style="font-size:11px;">★</span>':''}</span><span class="rec-dur">${esc(dur)}</span></div><div class="rec-dates">${dates}</div></div>`;
     }).join('');
     const last=stages[stages.length-1];
-    const approvedOn=last&&last.endDate ? `<div class="rec-approved">Approved ${fmtShort(last.endDate)}</div>` : '';
+    // Per Byron: "a different way to show the permit number for zoning" —
+    // each track's own number (zoning's and permitting's are tracked
+    // separately now, see loadTrelloProjects) rides along on this same
+    // "Approved" line once the whole project is done, same place the
+    // in-flight gantt's collapsed summary bar shows it.
+    const approvedOn=last&&last.endDate ? `<div class="rec-approved">Approved ${fmtShort(last.endDate)}${number?' — #'+esc(number):''}</div>` : '';
     return `<div class="rec-track"><div class="rec-track-lbl">${esc(label)}</div>${rows}${approvedOn}</div>`;
   }
   // REMAINING TASKS — per Byron: "create one called REMAINING TASKS. I
@@ -1443,7 +1466,7 @@ function renderApprovedSummary(zoningStages, permitStages, remainingTasks){
     const rows=tasks.map(t=>`<div class="rec-task-row"><span class="rec-task-check"></span><span class="rec-task-name">${esc(t.name)}</span></div>`).join('');
     return `<div class="rec-track"><div class="rec-track-lbl">Remaining Tasks</div>${rows}</div>`;
   }
-  return `<div class="approved-summary">${trackBlock('Zoning',zoningStages)}${trackBlock('Permitting',permitStages)}${tasksBlock(remainingTasks)}</div>`;
+  return `<div class="approved-summary">${trackBlock('Zoning',zoningStages,zoningNumber)}${trackBlock('Permitting',permitStages,permitNumber)}${tasksBlock(remainingTasks)}</div>`;
 }
 
 /* ═══════════════════ stage catalog, settings, comments — ported
@@ -1551,6 +1574,36 @@ function isWhollyApproved(zoningStages, permitStages){
   return (zoningStages.length>0 || permitStages.length>0)
     && (zoningStages.length===0 || zoningStages.every(s=>s.status==='done'))
     && (permitStages.length===0 || permitStages.every(s=>s.status==='done'));
+}
+
+// Collapses a sub-track's real per-stage data into ONE completed summary
+// bar carrying its Trello permit/zoning number — used on the LIVE gantt
+// when one track is done but the project as a whole isn't yet (the other
+// track is still active), per Byron: "We need a different way to show
+// the permit number for zoning when that is complete. The timeline needs
+// to continue for permitting, so splashing the number on the right half
+// of the screen isn't the solution." Only collapses when EVERY stage is
+// done AND a real number exists — a done-but-unnumbered or still-active
+// track renders its real per-stage bars exactly as before, unchanged.
+// actualWeeks is the SUM of the real stages' own actualWeeks (not
+// recomputed from start/end calendar dates) specifically so the
+// collapsed bar's total width is pixel-identical to the uncollapsed
+// bars it replaces — buildLane's endWeek (and therefore wherever the
+// OTHER track's default chained start position falls) must not shift
+// just because this track got visually collapsed.
+// Zoning B (or Permit B) can carry its own distinct number from its own
+// Trello card — both show, comma-separated, rather than one silently
+// winning over the other.
+function combineNumbers(a, b){ return [a,b].filter(Boolean).join(', '); }
+function collapseIfDoneWithNumber(stages, number, name){
+  if(!number || !stages.length || !stages.every(s=>s.status==='done')) return stages;
+  const dated=stages.filter(s=>s.startDate && s.endDate);
+  if(!dated.length) return stages; // no real dates to show on hover — leave the per-stage view as-is
+  const startDate=dated.reduce((a,b)=>a.startDate<b.startDate?a:b).startDate;
+  const endDate=dated.reduce((a,b)=>a.endDate>b.endDate?a:b).endDate;
+  const actualWeeks=stages.reduce((sum,s)=>sum+(s.actualWeeks||0), 0);
+  const label=`${name} — Approved #${number}`;
+  return [{ name:label, fullName:label, estWeeks:actualWeeks, status:'done', actualWeeks, startDate, endDate, summary:true }];
 }
 
 /* ───────── mock Trello-shaped board data (same scenarios as the
@@ -2392,14 +2445,25 @@ function renderCards(){
       // project's tier — "APPROVED" replacing ON TRACK/AT RISK/OFF TRACK —
       // instead of a separate header pill, per Byron.
       appRowHtml = `<div class="app-row">
-        <div class="row-mid row-mid-approved" data-pid="${pid}">${renderApprovedSummary(zoningStages, permitStages, p.remainingTasks)}</div>
+        <div class="row-mid row-mid-approved" data-pid="${pid}">${renderApprovedSummary(zoningStages, permitStages, p.remainingTasks, combineNumbers(p.zoningNumber,p.zoning2Number), combineNumbers(p.permitNumber,p.permit2Number))}</div>
         ${permitBandHtml}
         <div class="stat-band tier-on">
           <div class="sb-lbl">APPROVED</div>
         </div>
       </div>`;
     }else{
-      const r=renderCombinedTrack({project:p.proj, zoningStages:zoningAStages, zoning2Stages, permitStages:permitAStages, permit2Stages, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, zoning2StartWeek:p.zoning2StartWeek, permitStartWeek:p.permitStartWeek, permit2StartWeek:p.permit2StartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday, zoningLabel:p.zoningLabel, zoning2Label:p.zoning2Label, permitLabel:p.permitLabel, permit2Label:p.permit2Label});
+      // A track that's finished early (zoning done and numbered, say, while
+      // permitting is still live) collapses to one completed summary bar
+      // instead of rendering its own real stage bars — per Byron: "the
+      // timeline needs to continue for permitting, so splashing the number
+      // on the right half of the screen isn't the solution." Each of the
+      // four sub-tracks checks independently, so this works the same
+      // whichever track (or tracks) happens to finish first.
+      const zoningABars=collapseIfDoneWithNumber(zoningAStages, p.zoningNumber, 'Zoning');
+      const zoning2Bars=collapseIfDoneWithNumber(zoning2Stages, p.zoning2Number, 'Zoning B');
+      const permitABars=collapseIfDoneWithNumber(permitAStages, p.permitNumber, 'Permitting');
+      const permit2Bars=collapseIfDoneWithNumber(permit2Stages, p.permit2Number, 'Permitting B');
+      const r=renderCombinedTrack({project:p.proj, zoningStages:zoningABars, zoning2Stages:zoning2Bars, permitStages:permitABars, permit2Stages:permit2Bars, gradientOffset:p.gradientOffset||0, phaseWeeks:p.phaseWeeks, zoningStartWeek:p.zoningStartWeek, zoning2StartWeek:p.zoning2StartWeek, permitStartWeek:p.permitStartWeek, permit2StartWeek:p.permit2StartWeek, caWeeksFromToday:p.caWeeksFromToday, phaseIWeeksFromToday:p.phaseIWeeksFromToday, phaseIIWeeksFromToday:p.phaseIIWeeksFromToday, preConWeeksFromToday:p.preConWeeksFromToday, zoningLabel:p.zoningLabel, zoning2Label:p.zoning2Label, permitLabel:p.permitLabel, permit2Label:p.permit2Label});
       const wks=Math.round(r.weekDelta);
       const wksLabel=wks===0?'On pace':Math.abs(wks)+' wks<br>'+(wks>0?'ahead':'behind');
       const tierLbl=r.tier.label.split(' ').map(esc).join('<br>');
@@ -3123,7 +3187,7 @@ async function loadTrelloProjects(){
     // real phase/CA data isn't actually there.
     const hasSched = sched && sched.I!=null;
     const p={ proj:entry.name, jur:'City', commercial:false, address:(sched&&sched.address)||'', trelloCardId:null,
-      permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null, remainingTasks:[],
+      permitOwner:null, archEngOwner:null, zoningOwner:null, permitNumber:null, permit2Number:null, zoningNumber:null, zoning2Number:null, remainingTasks:[],
       phaseWeeks:hasSched ? {I:sched.I, II:sched.II, III:sched.III} : {I:6,II:18,III:6},
       phaseIWeeksFromToday:hasSched ? sched.phaseIWeeksFromToday : null,
       phaseIIWeeksFromToday:hasSched ? sched.phaseIIWeeksFromToday : null,
@@ -3162,17 +3226,28 @@ async function loadTrelloProjects(){
         });
         if(!p.trelloCardId){ p.trelloCardId=card.cardId; p.trelloShortLink=card.shortLink; p.comments=card.comments; }
         if(!p.jurisdictionSet && card.jurisdiction){ p.jur=card.jurisdiction; p.jurisdictionSet=true; }
-        if(!p.permitNumber && card.permitNumber) p.permitNumber=card.permitNumber;
         // Remaining Tasks pools unchecked items from WHICHEVER of this
         // project's cards actually carries the checklist — Byron hasn't
         // said which one yet, so this works the same regardless (zoning,
         // permitting, or both), same spirit as trelloCardId/comments above
         // just taking whatever's there instead of picking one slot.
         if(card.checklistItems.length) p.remainingTasks=p.remainingTasks.concat(card.checklistItems);
-        if(category==='zoning'){ p.zoningOwner=card.owner||null; p.zoningLabel=card.permitType||null; }
-        else if(category==='zoning2'){ p.zoning2Owner=card.owner||null; p.zoning2Label=card.permitType||null; }
-        else if(category==='permitting'){ p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; p.permitLabel=card.permitType||null; }
-        else { p.permit2Owner=card.owner||null; p.permit2Label=card.permitType||null; }
+        // Permit Number is now read PER TRACK, not into one shared field —
+        // per Byron: "We need a different way to show the permit number
+        // for zoning when that is complete." The old `if(!p.permitNumber
+        // && card.permitNumber) p.permitNumber=card.permitNumber` grabbed
+        // whichever category's card happened to be processed first (zoning
+        // runs before permitting in this loop) and then never let a later
+        // category's own number in — so a zoning card numbered before the
+        // real building permit was issued would silently stand in for the
+        // whole project's "Permit #" display. zoningNumber/zoning2Number
+        // feed the new collapsed-done-bar treatment on the live gantt;
+        // permitNumber/permit2Number keep the existing big Permit Band
+        // (now correctly scoped to the actual building permit).
+        if(category==='zoning'){ p.zoningOwner=card.owner||null; p.zoningLabel=card.permitType||null; p.zoningNumber=card.permitNumber||null; }
+        else if(category==='zoning2'){ p.zoning2Owner=card.owner||null; p.zoning2Label=card.permitType||null; p.zoning2Number=card.permitNumber||null; }
+        else if(category==='permitting'){ p.permitOwner=card.owner||null; p.archEngOwner=card.archEngOwner||card.owner||null; p.permitLabel=card.permitType||null; p.permitNumber=card.permitNumber||null; }
+        else { p.permit2Owner=card.owner||null; p.permit2Label=card.permitType||null; p.permit2Number=card.permitNumber||null; }
       }
       p[{zoning:'zoningStages',zoning2:'zoning2Stages',permitting:'permitStages',permitting2:'permit2Stages'}[category]]=stagesOut;
     }
