@@ -41,6 +41,8 @@ Three SharePoint locations — don't confuse them:
 
 ## Hard rules
 
+**The Permit & Zoning Tracker's Trello board is `[PRE-CON] DESIGN ABSOLUTES`.** That's the only board it reads from — lists like `Zoning Prep`, `Permit Submitted`, etc., and the `Project`/`PermitType`/`Permit Number`/`Card Sequence` custom fields. Don't search for or guess at any other board name for it; if a Trello MCP connection can't see it (it may be outside whatever workspace that connection has access to), say so and ask Byron for a direct link rather than re-searching.
+
 **No SharePoint column may be named `Status`** — it's reserved. Build state is `BuildStatus`.
 
 **Graph `$select` / `$expand` must name every field explicitly, including lookups.** An omitted field returns empty with no error. This has cost real debugging time.
