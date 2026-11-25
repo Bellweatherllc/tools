@@ -30,6 +30,9 @@ Last updated: 2026-11-25
 | Selections · Field Mechanic | `selections/field-view.html` | v19 |
 | Selections · Warehouse | `selections/warehouse.html` | v8 |
 | Selections · Device Viewer | `selections/device-viewer.html` | v1 |
+| Selections · Clients | `selections/clients.html` | v1 |
+| Selections · Sales | `selections/sales.html` | v1 |
+| Selections · Trades | `selections/trades.html` | v1 |
 | **Operations** | | |
 | Fleet Tracker | `fleet-tracker.html` | v4 |
 | **Analyzers** | | |
@@ -76,6 +79,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 | CA writing tools: `ca-setup.html`, `CA_DataSources.html`, `da_extractor.html`, `estimate_extractor.html`, `plan_note_extractor.html`, `reference_ca_extractor.html`, `scope_outline_extractor.html`, `selections_extractor.html`, `lib/ca-session.js` | System Map v2 |
 
 ## Log
+
+- **2026-11-25** — Selections · Clients v1, Sales v1, Trades v1 (new, `selections/clients.html`, `sales.html`, `trades.html`): placeholder screens, layout only, per Byron (content not defined yet). Same shell as Warehouse: CORE topbar with a Placeholder pill, Microsoft sign-in, left icon rail that becomes a bottom tab bar under 960px, Light / dark. Every box reads "To be defined."; nothing is read from or saved to SharePoint. Clients (Clients, Client portal) and Sales (Overview, Pipeline, Allowances and overages, Reports) are desktop; Trades (Today, Schedule, Rough-in, Manuals and files) also has a phone layout under 640px. Each page's address needs adding as a redirect URI on the Azure app registration before sign-in works there.
 
 - **2026-11-25** — Project Pipeline v1200 → v1201: added the Google Maps pin to the Sales screen's project hover card, matching Design/Production. The Sales tooltip is built from HTML strings rather than DOM nodes (unlike the other two), so it had been left on the old, permanently-disabled `_MAP_BTN_HTML` placeholder; new `_mkMapPinHTML(proj)` is a string-HTML twin of `_mkMapPin()` (same classes/dataset, so it runs through the same delegated `[data-upcoming-pill]` click handling) and is now used in both Sales tooltip builders, keyed off `origProj` so it reflects the live project's coordinates.
 
