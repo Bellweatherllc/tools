@@ -11,7 +11,7 @@ Last updated: 2026-11-24
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1196 |
+| Project Pipeline | `project-pipeline.html` | v1197 |
 | Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v81 |
 | Scout Board | `scout-board.html` | v15 |
@@ -79,6 +79,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-25** — Project Pipeline v1196 → v1197: two small hover-card tweaks per Byron. The Google Maps pin moved from beside the Permit & Zoning zone up to sit beside the address, right-aligned in that row (the `.tt-addr-row` layout was already built for exactly this — it previously held a since-disabled map button in the same spot). The Production line's Field Mechanic now shows as just the name after the LC names ("· Rachel, Mario · Alex") instead of "· FM: Alex".
 - **2026-11-25** — Project Pipeline v1195 → v1196: per Byron — the gold "NOW" column frame on the Production screen extended all the way down through the Field Mechanics section, which has no gantt/schedule bars of its own to mark "now" against. The frame's height is now clamped at render time (via a zero-height marker placed right where the Field Mechanics block begins, measured post-layout since the gold frame is otherwise sized via `calc(100% + 60px)`) so it stops at the bottom of the Logistics Coordinators rows instead of running the full section height. Design's own "NOW" frame is untouched.
 - **2026-11-25** — Project Pipeline v1194 → v1195: per Byron — the Field Mechanics label/chevron was still sitting above the LC rows, even though the FM rows and unassigned bucket themselves rendered correctly below. Root cause: v1194's placement fix only ran when `fm-section` was entirely absent from the saved row order — Byron's browser already had it saved at the old (wrong, v1193-era) position, so the fix never got a chance to correct it once it existed. The sync logic (both on initial load and on every re-render) now unconditionally pulls the whole Field Mechanics block (section header, unassigned bucket, every mechanic) out and reinserts it as one unit directly after the LC block every time, instead of only positioning it the first time it's created.
 - **2026-11-25** — Project Pipeline v1193 → v1194: three Field Mechanics follow-ups per Byron. (1) Both the "Needs a Field Mechanic" bucket and each mechanic's project list now only show CA-signed (in-construction) projects — Lead, Design-stage and open Slots no longer appear. (2) Fixed a placement bug from v1193: the Field Mechanics section was landing between the LC section's header and its own LC rows (an `indexOf('lc-section')` lookup found only the header, not the end of its content) — it now correctly sits after every LC row. (3) The whole Field Mechanics section now collapses as one unit (default collapsed — infrequent access, per Byron), on top of the existing per-mechanic and unassigned-bucket collapses.
