@@ -12,7 +12,7 @@ Last updated: 2026-11-24
 |---|---|---|
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1198 |
-| Projects Manager | `core-projects-manager.html` | v69 (`MGR_VERSION`) |
+| Projects Manager | `core-projects-manager.html` | v70 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v81 |
 | Scout Board | `scout-board.html` | v15 |
 | **PM Workbook & Budget** | | |
@@ -79,6 +79,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-25** — Projects Manager v69 → v70: broke the Scope section out into three fields, per Byron — "Design Scope" relabeled to **DA Scope** (same `DesignScope` column, no data migration), a new free-text **Scope Outline** field (`ScopeOutlineText` — distinct from the existing `ScopeOutline` URL/doc-link field), and **CA Scope** unchanged, in that order. Both new columns (`ScopeOutlineText` here, `FieldMechanic` from the v69 delivery) added to `NEW_COLUMNS`, the schema the orphaned-but-functional `setupColumns()` helper creates from — run `setupColumns()` from the browser console (Sign in first) to create both in SharePoint in one shot, Graph API column creation taking the `name` verbatim as the internal name, so no typed-with-a-space mismatch risk the way a manual SharePoint UI column add has.
 - **2026-11-25** — Projects Manager v68 → v69: added Field Mechanic to the Team section — `FieldMechanic` added to `CORE_COLUMNS`, a `window._teamFieldMechanics` roster list (same fuzzy Role-contains-"mechanic" match the Pipeline uses) populated alongside the other team arrays, and a `personSelect` row in the detail panel's Team grid, same pattern as Logistics Coordinator 1/2. Also added to the Field Mapping schema reference panel ("Set manually in Projects Manager", same as the other people fields).
 - **2026-11-25** — Project Pipeline v1197 → v1198: two fixes per Byron. (1) The map pin now hugs the address text with a fixed 5px gap instead of always sitting at the row's right edge — `.tt-addr` no longer stretches (`flex:1` removed), so the pin's position shifts with address length, wrapping to its own line if a long address and the pin can't both fit. (2) Dragging a project onto a Field Mechanic looked like it saved (the generic autosave indicator isn't tied to this write) but reset on refresh — `_patchPersonNameToSP()` (the SharePoint column patch backing every person-field drag: Designer, PM, LC1/2, Field Mechanic) was failing silently, only ever logging to the console. Failures now surface as a toast naming the field and the actual Graph error, so a bad/missing SharePoint column shows up immediately instead of silently losing the assignment on next load.
 - **2026-11-25** — Project Pipeline v1196 → v1197: two small hover-card tweaks per Byron. The Google Maps pin moved from beside the Permit & Zoning zone up to sit beside the address, right-aligned in that row (the `.tt-addr-row` layout was already built for exactly this — it previously held a since-disabled map button in the same spot). The Production line's Field Mechanic now shows as just the name after the LC names ("· Rachel, Mario · Alex") instead of "· FM: Alex".
