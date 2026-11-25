@@ -11,7 +11,7 @@ Last updated: 2026-11-25
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1200 |
+| Project Pipeline | `project-pipeline.html` | v1201 |
 | Projects Manager | `core-projects-manager.html` | v71 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v82 |
 | Scout Board | `scout-board.html` | v15 |
@@ -76,6 +76,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 | CA writing tools: `ca-setup.html`, `CA_DataSources.html`, `da_extractor.html`, `estimate_extractor.html`, `plan_note_extractor.html`, `reference_ca_extractor.html`, `scope_outline_extractor.html`, `selections_extractor.html`, `lib/ca-session.js` | System Map v2 |
 
 ## Log
+
+- **2026-11-25** — Project Pipeline v1200 → v1201: added the Google Maps pin to the Sales screen's project hover card, matching Design/Production. The Sales tooltip is built from HTML strings rather than DOM nodes (unlike the other two), so it had been left on the old, permanently-disabled `_MAP_BTN_HTML` placeholder; new `_mkMapPinHTML(proj)` is a string-HTML twin of `_mkMapPin()` (same classes/dataset, so it runs through the same delegated `[data-upcoming-pill]` click handling) and is now used in both Sales tooltip builders, keyed off `origProj` so it reflects the live project's coordinates.
 
 - **2026-11-25** — Project Pipeline v1199 → v1200: re-applied the two non-FM tweaks dropped by the FM revert in v1199, per Byron. Hover-card map pin sits beside the address again (both `.tt-addr-row` builders, 5px gap, `flex-wrap` fallback for long addresses), and `_patchPersonNameToSP()` surfaces a toast on SharePoint patch failure instead of only logging to console, so a missing/misnamed person-field column (Designer/Secondary Designer/LC1/LC2/PM) shows up immediately rather than silently reverting on refresh.
 
