@@ -11,7 +11,7 @@ Last updated: 2026-11-24
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1194 |
+| Project Pipeline | `project-pipeline.html` | v1195 |
 | Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v81 |
 | Scout Board | `scout-board.html` | v15 |
@@ -79,6 +79,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-25** — Project Pipeline v1194 → v1195: per Byron — the Field Mechanics label/chevron was still sitting above the LC rows, even though the FM rows and unassigned bucket themselves rendered correctly below. Root cause: v1194's placement fix only ran when `fm-section` was entirely absent from the saved row order — Byron's browser already had it saved at the old (wrong, v1193-era) position, so the fix never got a chance to correct it once it existed. The sync logic (both on initial load and on every re-render) now unconditionally pulls the whole Field Mechanics block (section header, unassigned bucket, every mechanic) out and reinserts it as one unit directly after the LC block every time, instead of only positioning it the first time it's created.
 - **2026-11-25** — Project Pipeline v1193 → v1194: three Field Mechanics follow-ups per Byron. (1) Both the "Needs a Field Mechanic" bucket and each mechanic's project list now only show CA-signed (in-construction) projects — Lead, Design-stage and open Slots no longer appear. (2) Fixed a placement bug from v1193: the Field Mechanics section was landing between the LC section's header and its own LC rows (an `indexOf('lc-section')` lookup found only the header, not the end of its content) — it now correctly sits after every LC row. (3) The whole Field Mechanics section now collapses as one unit (default collapsed — infrequent access, per Byron), on top of the existing per-mechanic and unassigned-bucket collapses.
 - **2026-11-24** — Project Pipeline v1192 → v1193: new Field Mechanics section in the Production screen, beneath the Logistics Coordinators — per Byron, connecting projects to Field Mechanics for other tools (Selections) with nothing tracked in the pipeline itself. One mechanic per project (`CORE_Projects.FieldMechanic`, single line of text — needs adding in SharePoint, same way `TrelloAlwaysAdd` was). Deliberately stripped down from the LC section it sits under: no capacity/hours, no Time Off, no milestone toggle — just each mechanic's name and a plain list of their assigned projects, reusing the same drag-a-project-onto-a-header gesture already used for PM/LC (the capacity-reorder drag system was generalized from a binary PM/LC check to a proper per-section match so a third section could join it cleanly). A dedicated "Needs a Field Mechanic" bucket lists every active project with none assigned, so what's unattached is always visible at a glance. The assigned Field Mechanic also now shows on every project's hover card, next to PM/LC: "PRODUCTION: Zaire · Rachel, Mario · FM: Name".
 

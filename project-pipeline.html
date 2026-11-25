@@ -3755,7 +3755,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1194';
+const CORE_VERSION = 'v1195';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -8114,12 +8114,22 @@ function buildProdSection(){
   const fixedKeys=['total','revenue','unassigned','pm-section','lc-section','fm-section','fm-unassigned'];
   pmKeys.forEach(k=>{ if(!PROD_ROW_ORDER.includes(k)){ const idx=PROD_ROW_ORDER.findIndex(x=>x.startsWith('pm:')); PROD_ROW_ORDER.splice(idx>=0?idx:(PROD_ROW_ORDER.indexOf('pm-section')+1||1),0,k); } });
   lcKeys.forEach(k=>{ if(!PROD_ROW_ORDER.includes(k)){ const idx=PROD_ROW_ORDER.indexOf('lc-section'); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,k); } });
-  // v1193/v1194: Field Mechanics — beneath the LCs, per Byron. Section header + its own
-  // "Needs a Field Mechanic" bucket, inserted after ALL of lc-section's content (not just
-  // the header string — that would land FM between the LC header and its own rows).
-  if(!PROD_ROW_ORDER.includes('fm-section')){ const idx=_lastLcBlockIndex(PROD_ROW_ORDER); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,'fm-section'); }
-  if(!PROD_ROW_ORDER.includes('fm-unassigned')){ const idx=PROD_ROW_ORDER.indexOf('fm-section'); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,'fm-unassigned'); }
-  fmKeys.forEach(k=>{ if(!PROD_ROW_ORDER.includes(k)){ const idx=PROD_ROW_ORDER.indexOf('fm-unassigned'); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,k); } });
+  // v1195: Field Mechanics — beneath the LCs, per Byron. Re-verify the WHOLE block's
+  // position on every render, not just "insert if absent" — a saved order from before
+  // the v1194 placement fix already had fm-section sitting at the old, wrong spot (right
+  // after the lc-section header, ahead of its own rows), and "insert only if missing"
+  // never corrects a key that's already present, just misplaced. Pull the block out
+  // (section header + its own unassigned bucket + every fm: key, preserving whatever
+  // order existing ones were already in) and reinsert it as one unit after the LC block.
+  {
+    const existingFmKeys=PROD_ROW_ORDER.filter(k=>k.startsWith('fm:')&&fmKeys.includes(k));
+    const newFmKeys=fmKeys.filter(k=>!existingFmKeys.includes(k));
+    const fmBlock=['fm-section','fm-unassigned',...existingFmKeys,...newFmKeys];
+    const rest=PROD_ROW_ORDER.filter(k=>!fmBlock.includes(k));
+    const lastLc=_lastLcBlockIndex(rest);
+    rest.splice(lastLc>=0?lastLc+1:rest.length-1,0,...fmBlock);
+    PROD_ROW_ORDER=rest;
+  }
   PROD_ROW_ORDER=PROD_ROW_ORDER.filter(k=>fixedKeys.includes(k)||pmKeys.includes(k)||lcKeys.includes(k)||fmKeys.includes(k));
 
   // Populate fc and tl — no date stub in fixed-col; sticky band handles date header
@@ -13152,9 +13162,6 @@ function restoreSavedState(saved){
   // Ensure structural keys exist
   if(!order.includes('pm-section')) order.unshift('pm-section');
   if(!order.includes('lc-section')){ const ui=order.indexOf('unassigned'); order.splice(ui>=0?ui+1:order.length-1,0,'lc-section'); }
-  // v1193/v1194: Field Mechanics — beneath the LCs, after all of lc-section's own rows
-  if(!order.includes('fm-section')){ const li=_lastLcBlockIndex(order); order.splice(li>=0?li+1:order.length-1,0,'fm-section'); }
-  if(!order.includes('fm-unassigned')){ const fi=order.indexOf('fm-section'); order.splice(fi>=0?fi+1:order.length-1,0,'fm-unassigned'); }
   // Add any new PMs not yet in the order
   PROD_PMS.forEach(pm=>{
     const key='pm:'+pm.id;
@@ -13172,14 +13179,23 @@ function restoreSavedState(saved){
       PROD_LC_COLLAPSED.add(lc.id);
     }
   });
-  // Add any new Field Mechanics not yet in the order (default to collapsed)
-  FIELD_MECHANICS.forEach(fm=>{
-    const key='fm:'+fm.id;
-    if(!order.includes(key)){
-      const fmSec=order.indexOf('fm-unassigned'); order.splice(fmSec>=0?fmSec+1:order.length-1,0,key);
-      PROD_FM_COLLAPSED.add(fm.id);
-    }
-  });
+  // Mark any brand-new Field Mechanics as collapsed by default
+  FIELD_MECHANICS.forEach(fm=>{ if(!order.includes('fm:'+fm.id)) PROD_FM_COLLAPSED.add(fm.id); });
+  // v1195: Field Mechanics — beneath the LCs, per Byron. Re-verify the whole block's
+  // position here too (not just "insert if absent") — a saved order from before the
+  // v1194 placement fix already had fm-section at the old, wrong spot, and that guard
+  // never corrects a key that's already present, just misplaced. Same fix as the
+  // per-render sync in buildProdSection() below.
+  {
+    const fmKeysNow=FIELD_MECHANICS.map(fm=>'fm:'+fm.id);
+    const existingFmKeys=order.filter(k=>k.startsWith('fm:')&&fmKeysNow.includes(k));
+    const newFmKeys=fmKeysNow.filter(k=>!existingFmKeys.includes(k));
+    const fmBlock=['fm-section','fm-unassigned',...existingFmKeys,...newFmKeys];
+    const rest=order.filter(k=>!fmBlock.includes(k));
+    const lastLc=_lastLcBlockIndex(rest);
+    rest.splice(lastLc>=0?lastLc+1:rest.length-1,0,...fmBlock);
+    order=rest;
+  }
   PROD_ROW_ORDER=order;
   // Sync DES_ROW_ORDER to actual loaded Designers
   const validDesIds=new Set(DESIGNERS.map(d=>d.id));
