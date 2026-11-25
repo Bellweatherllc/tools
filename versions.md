@@ -4,7 +4,7 @@ Current version of every deployed file in this repo. Update the row whenever a d
 
 Versions are whole numbers. The version lives in the file's badge, never in the filename or the tab title. Version badges are always red, `#ef4444`.
 
-Last updated: 2026-11-24
+Last updated: 2026-11-25
 
 ## Live tools
 
@@ -13,7 +13,7 @@ Last updated: 2026-11-24
 | **Pipeline & Projects** | | |
 | Project Pipeline | `project-pipeline.html` | v1192 |
 | Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
-| Levels of Development | `levels-of-development.html` | v81 |
+| Levels of Development | `levels-of-development.html` | v82 |
 | Scout Board | `scout-board.html` | v14 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v85 |
@@ -78,6 +78,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 Newest first. One line per delivery.
 
+- **2026-11-25** — Levels of Development v81 → v82: per Byron — "I'm pretty sure we've set the LOD to auto save but there are save buttons scattered throughout, at least for the admin setup." Confirmed Scope of Work and Target Investment were the only two fields with no autosave wiring at all (ratings/notes already autosave; Analysis's "Submissions" edit-notes Save/Cancel is a different, deliberately-explicit case — editing someone else's submitted record — and was left alone). Both now autosave 2s after a pause in typing (`scheduleScopeAutosave()`/`scheduleTiAutosave()`, separate debounce timers so one field's pending save can't cancel the other's); their Save buttons are gone. Also, per "make the whole layout more flexible so that filling a screen allows columns to grow" — `.main`'s fixed `max-width:1000px` is now fluid, `min(1700px,96vw)`; the Assess split columns size off it in percentages/flex already, so they now actually grow on a wide screen instead of staying boxed in. Manual updated.
 - **2026-11-24** — Levels of Development v80 → v81: per Byron — dropped the `max-width:720px` cap on the intro guide text and the "Already assessed" strip at the top of Assess; both now span the same full width as the Assessment Setup card below them, instead of reading narrower.
 - **2026-11-24** — Style Guide v16 → v17: per Byron — version numbers are plain red text, just the `v` and the number, never outlined or set in a pill. Stated in the Standard Head Block conventions, and the guide's own topbar demos lost their pill styling.
 - **2026-11-24** — Selections · LC v10 → v11: the views and navigation design from prototype rounds P1–P13 (branch `proto/lc-job-menu`) goes live. Views menu on the page title: **All Projects**, **My views** (My projects + your saved views + New view), **Everyone's views** by person; Edit stars projects into a view; Copy to my views; project name is a searchable switcher; **M** / **A** keys; Receive and Pull for site follow the view; project cards link Plans folder, Map and Matterport from `CORE_Projects`. **My projects** = projects where you're `LogisticsCoordinator1`/`2` on the Pipeline, matched through your sign-in email in `CORE_TeamMembers` (`email` → `EmployeeName`), ignoring case and spacing. **Saved views live in the new `CORE_ProjectViews` list** (Title, ViewKey, OwnerEmail, OwnerName, JobCodes); until Setup creates it, saving a view says to run Setup. Bump `?v=11`.
