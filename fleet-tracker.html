@@ -260,7 +260,7 @@ legend{font:500 17px/1.3 var(--serif);padding:0;margin-bottom:8px;color:var(--na
       <p id="summary" hidden style="display:none"></p>
     </div>
     <div class="actions">
-      <button class="btn" id="setupBtn" hidden>Setup</button>
+      <button class="btn" id="setupBtn" hidden style="display:none">Setup</button>
       <button class="btn" id="exportBtn" hidden>Export Spreadsheet</button>
       <button class="btn primary" id="addBtn" hidden>Add vehicle</button>
       <a class="manual-btn" href="fleet-tracker-manual.html" target="_blank" rel="noopener" data-tip="Help &amp; repair manual" aria-label="Help &amp; repair manual">?</a>
@@ -406,7 +406,11 @@ legend{font:500 17px/1.3 var(--serif);padding:0;margin-bottom:8px;color:var(--na
         <p class="sub" style="margin:0 0 10px">Registration and insurance-card links came in as folder paths, which break when a file moves. This looks up each file and stores its SharePoint item id so the link keeps working.</p>
         <button type="button" class="btn" id="anchorBtn">Anchor file links</button>
       </fieldset>
-      <fieldset><legend>4. Give people access</legend>
+      <fieldset><legend>4. Bring over open issues</legend>
+        <p class="sub" style="margin:0 0 10px">Adds the open issues logged in the Claude tracker after the November 13 snapshot (F-150 check engine light, Escape 3 seat and door handle, Escape 5 recall). Skips any that are already there, so it’s safe to run again.</p>
+        <button type="button" class="btn" id="issuesBtn">Add open issues</button>
+      </fieldset>
+      <fieldset><legend>5. Give people access</legend>
         <p class="sub" style="margin:0">Open <a href="team-members.html" target="_blank" rel="noopener" style="color:var(--navy);font-weight:600">Team Members</a> → Access and set <b>Fleet</b> to Admin (edit) or Member (view only). Blank = no access.</p>
       </fieldset>
       <div class="setup-log" id="setupLog"></div>
@@ -474,7 +478,7 @@ legend{font:500 17px/1.3 var(--serif);padding:0;margin-bottom:8px;color:var(--na
    Until the FleetRole column exists, PipelineRole admins are Fleet admins
    (bootstrap only, so someone can run Setup).
    ═══════════════════════════════════════════════════════════════════════ */
-const CORE_VERSION = 'v4';
+const CORE_VERSION = 'v6';
 (()=>{['versionBadge','authVersionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -512,7 +516,7 @@ const VCOLS=[
 const LINKCOLS=[['registrationLink','RegistrationFile'],['insuranceLink','InsuranceCard']];
 const LINK_PARTS=[['name','Name'],['url','Url'],['driveId','DriveId'],['itemId','ItemId']];
 const VEH_SELECT=['Title','VehicleKey',...VCOLS.map(c=>c[1]),...LINKCOLS.flatMap(([,p])=>LINK_PARTS.map(([,s])=>p+s)),'ServiceLog','ExtraJSON'];
-const MAPPED=new Set(['id','log',...VCOLS.map(c=>c[0]),...LINKCOLS.map(c=>c[0])]);
+const MAPPED=new Set(['id','log','issues',...VCOLS.map(c=>c[0]),...LINKCOLS.map(c=>c[0])]);
 
 function spErr(e){ return (e&&e.message)||String(e); }
 async function gGet(url){ return SherpaAuth.graph(url); }
@@ -520,6 +524,12 @@ async function gAll(url){ let out=[], next=url; while(next){ const j=await Sherp
 async function gSend(url,method,body){ return SherpaAuth.graph(url,{method,body:body===undefined?undefined:JSON.stringify(body)}); }
 async function gDelete(url){ return SherpaAuth.graph(url,{method:'DELETE',raw:true}); }
 
+/* Open issues: each is its own entry {id,text,date}. Stored as a JSON list in the
+   OpenIssue column; a plain-text OpenIssue from v4 is read as one issue. */
+function newIssueId(){ return 'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function issuesOf(v){ const list=Array.isArray(v.issues)?v.issues.filter(x=>x&&x.text):[];
+  const legacy=v.issue&&!list.some(x=>x.text===v.issue)?[{id:'legacy',text:v.issue,date:''}]:[];
+  return [...list,...legacy]; }
 function vehToFields(id,d){
   const f={Title:(vName(d)||d.plate||id).slice(0,255), VehicleKey:id};
   VCOLS.forEach(([k,col,kind])=>{ let v=d[k];
@@ -529,6 +539,7 @@ function vehToFields(id,d){
     f[col]=v; });
   LINKCOLS.forEach(([k,p])=>{ const l=d[k]||{}; LINK_PARTS.forEach(([a,s])=>{ f[p+s]=l[a]?String(l[a]):''; }); });
   f.ServiceLog=JSON.stringify(Array.isArray(d.log)?d.log:[]);
+  { const iss=issuesOf(d).map(x=>({id:x.id==='legacy'?newIssueId():x.id,text:x.text,date:x.date||''})); f.OpenIssue=iss.length?JSON.stringify(iss):''; }
   const extra={}; Object.keys(d).forEach(k=>{ if(!MAPPED.has(k)&&d[k]!==undefined) extra[k]=d[k]; });
   f.ExtraJSON=JSON.stringify(extra);
   return f;
@@ -539,6 +550,9 @@ function fieldsToVeh(f){
   if(!d.status) d.status='active';
   LINKCOLS.forEach(([k,p])=>{ const l={}; let any=false; LINK_PARTS.forEach(([a,s])=>{ if(f[p+s]){ l[a]=f[p+s]; any=true; } }); d[k]=any?l:null; });
   try{ d.log=JSON.parse(f.ServiceLog||'[]')||[]; }catch(_){ d.log=[]; }
+  { const raw=String(f.OpenIssue||'').trim(); let arr=null;
+    if(raw.startsWith('[')){ try{ const j=JSON.parse(raw); if(Array.isArray(j)) arr=j.filter(x=>x&&x.text).map(x=>({id:String(x.id||newIssueId()),text:String(x.text),date:x.date||''})); }catch(_){} }
+    if(arr){ d.issues=arr; d.issue=''; } else { d.issues=Array.isArray(d.issues)?d.issues:[]; d.issue=raw; } }
   return d;
 }
 
@@ -743,7 +757,6 @@ const FIELDS=[
     ['nickname','Nickname'],['driver','Assigned to'],['year','Year','number'],['make','Make'],['model','Model'],['color','Color'],
     ['plate','Plate'],['state','Plate state'],['vin','VIN'],['titleNumber','Title number'],['owner','Owner'],
     ['status','Status','select',null,[['active','Company vehicle'],['employee','Personal vehicle (BWC pays placard)']]],['use','Company use','select',null,[['office','Office vehicle'],['field','Field vehicle'],['personal','Personal vehicle']]]]},
-  {group:'Open Issue',fields:[['issue','Anything that needs a look (shows on Needs Attention)','textarea','wide']]},
   {group:'Registration',fields:[
     ['registrationExpires','Expires','date'],['registrationIssued','Issued','date'],['registeredTo','Registered to']]},
   {group:'Insurance',fields:[
@@ -762,6 +775,7 @@ const FIELDS=[
 ];
 
 let db=null, user=null, canWrite=true, vehicles=[], info=null, downloads=null, ezInfo=null, compassInfo=null, decalInfo=null, contactInfo=null, drvInfo=null;
+let draftIssues=[];
 let current=null, draftLog=[], delArmed=false, draftReg, draftLink, assets=null, mcp=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -787,7 +801,7 @@ function render(){
   // board
   const rows=[];
   active.forEach(v=>{
-    if(v.issue) rows.push({v,flag:true,days:-99999,what:'Open issue',detail:v.issue});
+    issuesOf(v).forEach(it=>rows.push({v,flag:true,days:-99999,what:'Open issue',detail:it.text,issueId:it.id}));
     if(v.status==='active'&&v.spareKey==='N') rows.push({v,flag:true,days:-99997,what:'No spare key in office',detail:v.spareKeyNotes?v.spareKeyNotes:'Get a spare key made and leave it in the office.',key:true});
     if(v.status==='employee'&&!v.ppaExpires&&!v.ppaResidential) rows.push({v,flag:true,days:-99998,what:'Placard expiration not on file',detail:vName(v)+' — add the date from the placard'});
     due(v).filter(d=>d.state!=='ok'&&d.key!=='registrationExpires'&&d.key!=='nextOilDate').forEach(d=>rows.push({v,days:d.state==='ask'?1e6:d.days,state:d.state,what:d.state==='ask'?'Oil change: ask for an update':d.label,when:fmt(d.value,d.month)}));
@@ -799,7 +813,7 @@ function render(){
     <li class="${r.flag?'flag over':r.state}" data-id="${esc(r.v.id)}" tabindex="0" role="button">
       ${plateHTML(r.v.plate,r.v.state)}
       <div><div class="what">${esc(r.what)}</div><div class="who">${esc(r.flag?r.detail:vName(r.v)+(r.v.driver?' — '+r.v.driver:''))}</div></div>
-      <div class="when">${r.flag?`<span class="who">${esc(vName(r.v))}</span>`:r.state==='ask'?`<b>Not recorded</b>Last due date on file: ${esc(r.when)}`:`<b>${esc(rel(r.days))}</b>${esc(r.when)}`}${canWrite&&(r.state==='ask'||r.what==='Open issue'||r.key)?`<button type="button" class="linkbtn" data-resolve="${esc(r.v.id)}|${r.state==='ask'?'oil':r.key?'key':'issue'}" style="color:var(--navy);display:block;margin:4px 0 0 auto;font-size:13px">${r.key?'Spare key now in office':'Mark resolved'}</button>`:''}</div>
+      <div class="when">${r.flag?`<span class="who">${esc(vName(r.v))}</span>`:r.state==='ask'?`<b>Not recorded</b>Last due date on file: ${esc(r.when)}`:`<b>${esc(rel(r.days))}</b>${esc(r.when)}`}${canWrite&&(r.state==='ask'||r.what==='Open issue'||r.key)?`<button type="button" class="linkbtn" data-resolve="${esc(r.v.id)}|${r.state==='ask'?'oil':r.key?'key':'issue|'+esc(r.issueId||'')}" style="color:var(--navy);display:block;margin:4px 0 0 auto;font-size:13px">${r.key?'Spare key now in office':'Mark resolved'}</button>`:''}</div>
     </li>`).join('') : `<li class="empty">All clear. Check back as dates approach.</li>`;
 
   // placards
@@ -957,7 +971,7 @@ function render(){
       ${plateHTML(v.plate,v.state)}
       <div><div class="name">${esc([v.year,v.make,v.model].filter(Boolean).join(' '))}${v.nickname?` <span class="meta">${esc(v.nickname)}</span>`:''}</div>
       <div class="meta">${esc(v.driver||'Unassigned')}</div></div>
-      ${ds.length||v.issue?`<div class="pills">${v.issue?'<span class="pill issue">Open issue</span>':''}${ds.map(d=>`<span class="pill ${d.state}">${d.state==='ask'?'Oil: ask for update':esc(d.short)+' '+esc(fmt(d.value,d.month))}</span>`).join('')}</div>`:''}
+      ${ds.length||issuesOf(v).length?`<div class="pills">${issuesOf(v).length?`<span class="pill issue">${issuesOf(v).length===1?'Open issue':issuesOf(v).length+' open issues'}</span>`:''}${ds.map(d=>`<span class="pill ${d.state}">${d.state==='ask'?'Oil: ask for update':esc(d.short)+' '+esc(fmt(d.value,d.month))}</span>`).join('')}</div>`:''}
     </button>`;};
   const useOf=v=>v.use||(/escape/i.test(v.model||'')?'office':'field');
   const numOf=v=>{const m=String(v.nickname||'').match(/\d+/)||String(v.model||'').match(/\d+/); return m?+m[0]:999;};
@@ -980,11 +994,12 @@ function render(){
 function openVehicle(id){
   const v=id?vehicles.find(x=>x.id===id):{status:'active',make:'',log:[]};
   if(!v)return;
-  current=v; draftLog=(v.log||[]).map(x=>({...x})); delArmed=false; draftReg=undefined; draftLink=undefined;
+  current=v; draftIssues=issuesOf(v).map(x=>({...x})); draftLog=(v.log||[]).map(x=>({...x})); delArmed=false; draftReg=undefined; draftLink=undefined;
   $('dlg-plate').innerHTML=plateHTML(v.plate,v.state);
   $('dlg-title').textContent=id?vName(v):'New vehicle';
   const dis=canWrite?'':'disabled';
   let h='';
+  const issuesHTML=`<fieldset><legend>Open Issues</legend><ul class="log" id="issueList"></ul>${canWrite?`<div class="addlog" style="grid-template-columns:1fr auto"><input id="issueText" placeholder="Describe something that needs a look" aria-label="New open issue"><button type="button" class="btn" id="issueAdd">Add issue</button></div>`:''}</fieldset>`;
   const histHTML=`<fieldset><legend>Service History</legend><ul class="log" id="log"></ul>
      ${canWrite?`<div class="addlog"><input type="date" id="logDate" value="${iso(today())}" aria-label="Service date"><input id="logText" placeholder="What was done, where, cost" aria-label="Service description"><button type="button" class="btn" id="logAdd">Add entry</button></div>`:''}</fieldset>`;
   const isOffice=!!id&&(v.use||(/escape/i.test(v.model||'')?'office':'field'))==='office';
@@ -995,7 +1010,7 @@ function openVehicle(id){
     'Registration':`<div style="margin-top:12px"><div id="regBox"></div><div id="regLinkBox" style="margin-top:10px;font-size:14px"></div><div id="spResults"></div>${assets&&canWrite?`<label class="btn" style="display:inline-block;margin-top:8px">${v.registrationDoc?'Replace':'Attach'} registration<input type="file" id="regFile" accept="image/*,application/pdf" hidden></label>`:''}</div>`,
     'Insurance': v.insuranceLink&&v.insuranceLink.url?`<p class="sub" style="margin:10px 0 0;font-size:14px">Insurance card: <a ${linkAttrs(v.insuranceLink)} style="color:var(--navy)">${esc(v.insuranceLink.name||'Open insurance card')}</a></p>`:''
   };
-  const after={'Oil Changes':histHTML};
+  const after={'Vehicle':issuesHTML,'Oil Changes':histHTML};
   let ezDone=false; const ezOnce=()=>{ if(ezDone)return ''; ezDone=true; return ezHTML; };
   FIELDS.forEach(g=>{
     if(g.group==='Spare Key') h+=ezOnce();
@@ -1019,7 +1034,10 @@ function openVehicle(id){
   });
   h+=ezOnce();
   $('dlg-body').innerHTML=h;
-  renderLog(); renderReg(v.registrationDoc); renderRegLink(v.registrationLink);
+  renderLog(); renderIssues();
+  if(canWrite&&$('issueAdd')){ $('issueAdd').onclick=()=>{ const t=$('issueText').value.trim(); if(!t)return $('issueText').focus(); draftIssues.push({id:newIssueId(),text:t,date:iso(today())}); $('issueText').value=''; renderIssues(); $('saveStatus').textContent='Unsaved changes'; };
+    $('issueText').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); $('issueAdd').click(); } }; }
+  renderReg(v.registrationDoc); renderRegLink(v.registrationLink);
   { const stSel=$('form').status, fsKey=document.querySelector('#dlg fieldset[data-group="Spare Key"]'); if(stSel&&fsKey) stSel.addEventListener('change',()=>{ fsKey.hidden=stSel.value==='employee'; const lu=document.querySelector('#dlg label[data-k="use"]'); if(lu) lu.hidden=stSel.value==='employee'&&$('form').use.value!=='personal'; }); }
   const rf=$('regFile'); if(rf) rf.onchange=async()=>{const f=rf.files[0]; if(!f)return; $('saveStatus').textContent='Uploading…';
     try{
@@ -1112,6 +1130,9 @@ function renderReg(d){ const b=$('regBox'); if(!b)return;
   b.innerHTML=isPdf?`<a ${linkAttrs(d)} style="color:var(--navy)">${d.source==='sharepoint'?'Open in SharePoint: ':'Open '}${esc(d.name||'registration')}</a>`
     :`<a href="${esc(d.url)}" target="_blank" rel="noopener"><img class="regimg" src="${esc(d.url)}" alt="Registration card"></a>`;
 }
+function renderIssues(){ const ul=$('issueList'); if(!ul)return;
+  ul.innerHTML=draftIssues.length?draftIssues.map((t,i)=>`<li><span class="d">${t.date?esc(fmt(t.date)):''}</span><span>${esc(t.text)}</span>${canWrite?`<button type="button" data-iss="${i}">Resolve</button>`:'<span></span>'}</li>`).join(''):'<li><span></span><span class="d">No open issues.</span><span></span></li>';
+  ul.querySelectorAll('[data-iss]').forEach(b=>b.onclick=()=>{ const [it]=draftIssues.splice(+b.dataset.iss,1); draftLog.push({date:iso(today()),text:'Resolved: '+it.text}); renderIssues(); renderLog(); $('saveStatus').textContent='Unsaved changes'; }); }
 function renderLog(){
   const items=draftLog.map((e,i)=>({...e,i})).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   $('log').innerHTML=items.length?items.map(e=>`<li><span class="d">${e.date?esc(fmt(e.date)):'No date'}</span><span>${esc(e.text)}</span>${canWrite?`<button type="button" data-i="${e.i}" aria-label="Remove entry">Remove</button>`:'<span></span>'}</li>`).join(''):'<li><span></span><span class="d">No service recorded yet.</span><span></span></li>';
@@ -1122,7 +1143,7 @@ async function save(){
   const f=$('form'); const out={};
   FIELDS.forEach(g=>g.fields.forEach(([k,,type])=>{if(!f[k]||f[k].closest('[hidden]'))return; let val=f[k].value.trim(); if(type==='number')val=val===''?null:Number(val); out[k]=val;}));
   if(!out.make&&!out.model&&!out.plate){$('saveStatus').textContent='Add at least a make, model or plate.';return;}
-  out.log=draftLog; out.updatedAt=new Date().toISOString();
+  out.log=draftLog; out.issues=draftIssues.map(x=>x.id==='legacy'?{...x,id:newIssueId()}:x); out.issue=''; out.updatedAt=new Date().toISOString();
   if(draftReg!==undefined) out.registrationDoc=draftReg;
   if(draftLink!==undefined) out.registrationLink=draftLink;
   const base={...current}; delete base.id;
@@ -1304,9 +1325,11 @@ $('remGroups').addEventListener('click',async e=>{
 $('remCopyAll').onclick=async()=>{ if(!remMsgs.length)return toast('No reminders this month.'); const all=remMsgs.map(m=>'— '+m.who+' —\n'+m.msg).join('\n\n\n'); const ok=await copyText(all,null); toast(ok?'All '+remMsgs.length+' messages copied':'Use Copy message on each card instead'); };
 $('remGroups').addEventListener('keydown',e=>{const li=e.target.closest('li[data-id]'); if(li&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openVehicle(li.dataset.id);}});
 $('board').addEventListener('click',async e=>{const b=e.target.closest('[data-resolve]'); if(!b||!db)return; e.stopPropagation();
-  const [id,kind]=b.dataset.resolve.split('|'); const v=vehicles.find(x=>x.id===id); if(!v)return; b.disabled=true;
-  const log=[...(v.log||[]),{date:iso(today()),text:kind==='oil'?'Oil change reminder marked resolved.':kind==='key'?'Spare key placed in the office.':'Resolved: '+v.issue}];
-  try{ await db.collection('vehicles').doc(id).update(kind==='oil'?{nextOilDate:'',log}:kind==='key'?{spareKey:'Y',log}:{issue:'',log}); toast('Marked resolved'); }catch(err){ b.disabled=false; toast('Couldn’t update. Try again.'); } });
+  const [id,kind,iid]=b.dataset.resolve.split('|'); const v=vehicles.find(x=>x.id===id); if(!v)return; b.disabled=true;
+  const it=kind==='issue'?(issuesOf(v).find(x=>x.id===iid)||issuesOf(v)[0]):null;
+  const log=[...(v.log||[]),{date:iso(today()),text:kind==='oil'?'Oil change reminder marked resolved.':kind==='key'?'Spare key placed in the office.':'Resolved: '+(it?it.text:'')}];
+  const upd=kind==='oil'?{nextOilDate:'',log}:kind==='key'?{spareKey:'Y',log}:{issues:issuesOf(v).filter(x=>!it||x.id!==it.id).map(x=>x.id==='legacy'?{...x,id:newIssueId()}:x),issue:'',log};
+  try{ await db.collection('vehicles').doc(id).update(upd); toast('Marked resolved'); }catch(err){ b.disabled=false; toast('Couldn’t update. Try again.'); } });
 $('drvAddBtn').onclick=async()=>{ const name=$('drvName').value.trim(); if(!name||!db)return $('drvName').focus();
   const drivers=[...((drvInfo&&drvInfo.drivers)||[]),{name,notes:$('drvNote').value.trim()}].sort(byLastName);
   try{ await db.doc('settings/drivers').set({drivers}); $('drvName').value=''; $('drvNote').value=''; $('drvName').focus(); toast('Added '+name); }catch(e){ toast('Couldn’t add the driver. Try again.'); } };
@@ -1345,11 +1368,11 @@ async function fleetMain(){
   canWrite=access.role==='admin';
   renderWho();
   downloads=BLOB_DOWNLOADS; $('exportBtn').hidden=false;
-  if(canWrite){ $('addBtn').hidden=false; $('setupBtn').hidden=false; }
-  if(access.bootstrap&&canWrite){ $('topNote').hidden=false; $('topNote').innerHTML='Setup isn’t finished: the <b>FleetRole</b> column doesn’t exist yet, so Pipeline admins are standing in as Fleet admins. Open <b>Setup</b> to create it, then grant access on Team Members.'; }
+  if(canWrite){ $('addBtn').hidden=false; }
+  if(access.bootstrap&&canWrite){ $('topNote').hidden=false; $('topNote').innerHTML='Setup isn’t finished: the <b>FleetRole</b> column doesn’t exist yet, so Pipeline admins are standing in as Fleet admins. Contact whoever maintains the Fleet Tracker.'; }
   db=FleetStore;
   db.collection('vehicles').onSnapshot(s=>{vehicles=s.docs.map(d=>({id:d.id,...d.data()}));render();},
-    e=>{ $('board').innerHTML=`<li class="empty">${e&&e.status===404?(canWrite?'The Fleet lists don’t exist yet. Open <b>Setup</b> to create them and import the data.':'The Fleet lists haven’t been set up yet. Ask a Fleet admin.'):'The fleet couldn’t load. Reload the page to try again.'}</li>`; });
+    e=>{ $('board').innerHTML=`<li class="empty">${e&&e.status===404?(canWrite?'The Fleet lists couldn’t be found in SharePoint. Contact whoever maintains the Fleet Tracker.':'The Fleet lists haven’t been set up yet. Ask a Fleet admin.'):'The fleet couldn’t load. Reload the page to try again.'}</li>`; });
   ['fleet','ezpass','compass','decals','contacts','drivers'].forEach(k=>db.doc('settings/'+k).onSnapshot(s=>{ const d=s.exists?s.data():null;
     if(k==='fleet')info=d; else if(k==='ezpass')ezInfo=d; else if(k==='compass')compassInfo=d; else if(k==='decals')decalInfo=d; else if(k==='contacts')contactInfo=d; else drvInfo=d; render(); }));
   FleetStore.load().catch(e=>console.error('[fleet load]',e));
@@ -1379,6 +1402,27 @@ $('importBtn').onclick=async()=>{ if(!importSnap)return; const b=$('importBtn');
   try{ const r=await runImport(importSnap,setupLog);
     setupLog(`Done. Added ${r.addV} vehicle${r.addV===1?'':'s'} (${r.skipV} already there) and ${r.addS} settings block${r.addS===1?'':'s'} (${r.skipS} already there).`); }
   catch(e){ setupLog('Import stopped: '+spErr(e)+(e&&e.status===404?' Create the lists first (step 1).':'')); } finally{ b.disabled=false; } };
+const ISSUE_SEED={
+  'f150-2007':[{id:'f150-cel',date:'2026-08-10',text:"Check engine light on since 8/10/26. Run the code next time it's in."}],
+  'escape-3-2019':[{id:'esc3-seat',date:'2026-11-20',text:'Rip in seat'},{id:'esc3-handle',date:'2026-11-20',text:'Plastic piece broken on interior door handle'}],
+  'escape-5-2020':[{id:'esc5-recall',date:'2026-11-19',text:'Safety Recall Notice 26S14 / NHTSA Recall 26V117. Can be addressed during January inspection.'}]
+};
+$('issuesBtn').onclick=async()=>{ const b=$('issuesBtn'); b.disabled=true; let added=0, skipped=0;
+  try{
+    const norm=t=>String(t||'').replace(/\s+/g,' ').trim().toLowerCase();
+    for(const [key,seed] of Object.entries(ISSUE_SEED)){
+      const v=vehicles.find(x=>x.id===key); if(!v){ setupLog(`Not found: ${key}. Import the vehicles first (step 2).`); continue; }
+      const cur=issuesOf(v); const have=new Set(cur.map(x=>norm(x.text)));
+      // the old Escape 3 note held both problems in one line; treat it as covered by the two split entries
+      const merged=cur.filter(x=>!(key==='escape-3-2019'&&/rip in seat.*door handle/i.test(x.text)));
+      const add=seed.filter(x=>!have.has(norm(x.text)));
+      skipped+=seed.length-add.length;
+      if(!add.length&&merged.length===cur.length) continue;
+      await db.collection('vehicles').doc(key).update({issues:[...merged.map(x=>x.id==='legacy'?{...x,id:newIssueId()}:x),...add],issue:''});
+      added+=add.length; setupLog(`${vName(v)}: added ${add.length} open issue${add.length===1?'':'s'}.`);
+    }
+    setupLog(`Done. Added ${added} open issue${added===1?'':'s'}`+(skipped?` (${skipped} already there).`:'.'));
+  }catch(e){ setupLog('Failed: '+spErr(e)); } finally{ b.disabled=false; } };
 $('anchorBtn').onclick=async()=>{ const b=$('anchorBtn'); b.disabled=true;
   try{ const r=await runAnchor(setupLog); setupLog(`Anchored ${r.ok} link${r.ok===1?'':'s'} on ${r.done} vehicle${r.done===1?'':'s'}.`+(r.fail.length?`\nCouldn’t find ${r.fail.length} file${r.fail.length===1?'':'s'} (moved, renamed or no access):\n  `+r.fail.join('\n  '):'')); }
   catch(e){ setupLog('Failed: '+spErr(e)); } finally{ b.disabled=false; } };
