@@ -11,7 +11,7 @@ Last updated: 2026-11-25
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1199 |
+| Project Pipeline | `project-pipeline.html` | v1200 |
 | Projects Manager | `core-projects-manager.html` | v71 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v82 |
 | Scout Board | `scout-board.html` | v15 |
@@ -76,6 +76,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 | CA writing tools: `ca-setup.html`, `CA_DataSources.html`, `da_extractor.html`, `estimate_extractor.html`, `plan_note_extractor.html`, `reference_ca_extractor.html`, `scope_outline_extractor.html`, `selections_extractor.html`, `lib/ca-session.js` | System Map v2 |
 
 ## Log
+
+- **2026-11-25** — Project Pipeline v1199 → v1200: re-applied the two non-FM tweaks dropped by the FM revert in v1199, per Byron. Hover-card map pin sits beside the address again (both `.tt-addr-row` builders, 5px gap, `flex-wrap` fallback for long addresses), and `_patchPersonNameToSP()` surfaces a toast on SharePoint patch failure instead of only logging to console, so a missing/misnamed person-field column (Designer/Secondary Designer/LC1/LC2/PM) shows up immediately rather than silently reverting on refresh.
 
 - **2026-11-25** — Selections · Field Mechanic v18 → v19: the project picker has no pre-populated "My projects" list, per Byron ("it should just say Projects and people can select projects to appear first in the list"). The button beside the search box now reads **Projects**; the sheet is one list titled Projects with each person's starred projects first, then the rest, and Archived below. The empty-state hint is "Tap a star to put a project at the top of this list." Stars were already saved per sign-in in SharePoint (`CORE_SelectionDesignDocs`, Job `_prefs`, Collection `fieldStars`, DocId = sign-in name), so no data changes. The LC screen's "My projects" (from the Pipeline's LC fields) is a different thing and is unchanged.
 - **2026-11-25** — Project Pipeline v1198 → v1199: removed the Field Mechanics section from the Production screen — Byron decided against using it ("we won't be using or referencing it"). Reverted the file to its pre-FM state (commit `05bb1c7`, v1192) and re-applied the version bump; this also rolls back two smaller v1197/v1198 tweaks that shipped alongside it (the hover-card map pin reposition beside the address, and surfacing person-field save failures via toast) — flag if either of those should come back on their own. The pre-existing, unrelated `FIELD_MECHANICS` roster array used by the exploratory assignment list is untouched. Projects Manager's Field Mechanic field and the separate Selections · Field Mechanic tool are untouched — this only affects the Pipeline Production screen.
