@@ -28,7 +28,7 @@ A project only shows up in Raw Results and Analysis once at least one assessment
 
 ### The split layout
 
-Once a project is selected, Assess splits into two columns: **Scope of Work** on the left, **the dimensions you're rating** on the right. Each side scrolls on its own, so Scope stays in view the whole time you're working through a long list of dimensions — no more scrolling back up to re-check it. Drag the small handle between the two columns to make either one wider. On a narrow window (phone, or a browser window resized small) the two columns stack into one, same as any other screen here.
+Once a project is selected, Assess splits into two columns: **Scope of Work** on the left, **the dimensions you're rating** on the right. Each side scrolls on its own, so Scope stays in view the whole time you're working through a long list of dimensions — no more scrolling back up to re-check it. Drag the small handle between the two columns to make either one wider. On a narrow window (phone, or a browser window resized small) the two columns stack into one, same as any other screen here. The page itself also stretches with a wide browser window instead of staying boxed into a fixed width, so both columns get more room on a large monitor.
 
 Address now shows a small pin icon beside it — a one-click link to that project's location in Google Maps (Street View is one click from there). It only appears once that project has a location on file; if it's missing, that's a Projects Manager data gap, not something to fix here.
 
@@ -48,7 +48,7 @@ With Admin on and a project selected in Assess, the **Scope of Work** box — th
 
 - **Paste directly from the DA.** Bold, italic, underline, and bullet lists all carry over from a Word document or PDF. Messy source formatting (fonts, colors, odd spacing) gets cleaned up automatically — only the structure survives, not the clutter.
 - **Type from scratch** if there's nothing to paste yet. Use the toolbar buttons the same way you would in Word.
-- Click **Save Scope** when you're done. It saves straight back to the project's record — the same place Projects Manager reads scope from — so this isn't a separate copy that can drift out of sync.
+- **It autosaves** a couple of seconds after you stop typing — same as everywhere else in this tool, no Save button. It saves straight back to the project's record — the same place Projects Manager reads scope from — so this isn't a separate copy that can drift out of sync.
 
 Do this *before* asking people to assess the project. Scope of Work is the main context assessors read before they rate anything; an empty box means they're guessing.
 
@@ -59,7 +59,7 @@ Same idea, smaller field. With Admin on, **Target Investment** becomes a single 
 - A specific number: `$950,000`
 - A range: `$900,000 – $950,000`
 
-There's no required format — write it the way you'd say it out loud. Click **Save** next to the field.
+There's no required format — write it the way you'd say it out loud. It autosaves the same way Scope of Work does — no Save button here either.
 
 ### Requesting assessments (Requested Assessors)
 
