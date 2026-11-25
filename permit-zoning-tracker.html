@@ -568,7 +568,7 @@ body{margin:0;font-family:var(--font-tt);background:var(--bg);color:var(--ink);-
 // prototype alone went through well over a hundred tuning rounds since,
 // almost none of which get their own number here. This keeps that history
 // visible instead of hiding a hundred-plus iterations behind "v13".
-const CORE_VERSION = 'v187';
+const CORE_VERSION = 'v188';
 (()=>{const v=document.getElementById('versionBadge');if(v)v.textContent=CORE_VERSION;const a=document.getElementById('authVersionBadge');if(a)a.textContent=CORE_VERSION;})();
 
 const GRAPH='https://graph.microsoft.com/v1.0';
@@ -2898,6 +2898,14 @@ function parseTrelloListName(name){
   if(n.indexOf('permit')===0) return {category:'permitting', suffix:n.slice('permit'.length)};
   return null;
 }
+// The one checklist REMAINING TASKS reads from — per Byron: "I have the
+// specific list for the piece we were working on. It's already on
+// Trello and called 'Submission and Follow through'. That's the exact
+// checklist to use." Matched by name (trelloNormName'd, same
+// case/punctuation-insensitive comparison as every other Trello name
+// match in this file), not by position or id, so it still matches if
+// Byron ever reorders a card's checklists.
+const REMAINING_TASKS_CHECKLIST_NAME = 'Submission and Follow through';
 // suffix (post-prefix, normalized) -> STAGE_CATALOG key. 'approved' has no
 // entry — it's resolved as "one past the last real stage" in trelloStageRank.
 const TRELLO_SUFFIX_KEY = {
@@ -2969,14 +2977,21 @@ async function loadTrelloProjects(){
   // Remaining Tasks box's whole point is "what's left"). Ordered by each
   // checklist's own pos, then each item's pos within it, so a card with
   // more than one checklist still reads top to bottom as Byron built it.
+  // ONLY the "Submission and Follow through" checklist counts — per
+  // Byron, "I have the specific list for the piece we were working on.
+  // It's already on Trello... That's the exact checklist to use" — a
+  // card can carry other checklists for unrelated purposes (sales prep,
+  // internal notes, etc.), and those must never leak into this box.
   const checklistItemsByCard={};
-  checklists.slice().sort((a,b)=>a.pos-b.pos).forEach(cl=>{
-    const items=(cl.checkItems||[]).slice().sort((a,b)=>a.pos-b.pos);
-    items.forEach(ci=>{
-      if(ci.state==='complete') return;
-      (checklistItemsByCard[cl.idCard]=checklistItemsByCard[cl.idCard]||[]).push({name:ci.name});
+  checklists.slice().sort((a,b)=>a.pos-b.pos)
+    .filter(cl=>trelloNormName(cl.name)===trelloNormName(REMAINING_TASKS_CHECKLIST_NAME))
+    .forEach(cl=>{
+      const items=(cl.checkItems||[]).slice().sort((a,b)=>a.pos-b.pos);
+      items.forEach(ci=>{
+        if(ci.state==='complete') return;
+        (checklistItemsByCard[cl.idCard]=checklistItemsByCard[cl.idCard]||[]).push({name:ci.name});
+      });
     });
-  });
 
   // Per Byron: "I don't want to have another set of lists for a new zoning
   // sequence... I'd prefer to have the cards carry the distinction and just
