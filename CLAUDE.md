@@ -28,7 +28,7 @@ Three SharePoint locations — don't confuse them:
 ## Delivery discipline — follow every time
 
 - **Bump the version on every delivery.** Whole number.
-- **Version badges are always red — `#ef4444`, the Pipeline's badge red.** Every badge, including sign-in-screen badges and new tools. Don't let a tool's own palette override it.
+- **Version badges are always red — `#ef4444`, the Pipeline's badge red.** Every badge, including sign-in-screen badges and new tools. Don't let a tool's own palette override it. **Plain text only — just the `v` and the number, never outlined or set in a pill or box.**
 - **The version lives in the badge, never the filename.** In the pipeline it's a single `CORE_VERSION` constant; badge elements in the markup are empty and stamped by an IIFE right after the constant, so there's no stale flash.
 - **Every page carries the four-link favicon block** from the Style Guide ("Favicon — Every Tool"), right after `<title>`: absolute `logos/` URLs, current `?v=`. Add it to any page you create or touch that lacks it — manuals and guides too, not redirect stubs. Audit: `grep -L "logos/favicon.svg?v=" *.html */*.html`.
 - **Run `node --check` on the extracted script block before delivering.** Every time.

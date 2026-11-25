@@ -673,7 +673,7 @@ nav.views>button:first-child{margin-left:0}
 @media (max-width:640px){.jm-btn{max-width:52vw;font-size:16px}}
 .bwtb-sub{font:500 10px/1.2 'TT Norms Pro',sans-serif;color:#B7A9A3;text-transform:uppercase;letter-spacing:2px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
 .bwtb-right{display:flex;align-items:center;gap:14px;flex-shrink:0}
-.bwtb-ver{font:700 10px/1 'TT Norms Pro',sans-serif;color:#ef4444;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:2px 7px;letter-spacing:.5px}
+.bwtb-ver{font:700 10px/1 'TT Norms Pro',sans-serif;color:#ef4444;letter-spacing:.5px}
 .bwtb-ver:empty{display:none}
 .bwtb-dot{width:8px;height:8px;border-radius:50%;background:#B7A9A3;flex-shrink:0}
 .bwtb-dot.on{background:#2d8a5e}
@@ -727,7 +727,7 @@ nav.views>button:first-child{margin-left:0}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v11';
+const CORE_VERSION = 'v15';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -847,7 +847,7 @@ const CORE_VERSION = 'v11';
   let projP=null; const PROJ=new Map(), PLANS=new Map(); let _custDrive=null;
   function loadProjects(){
     if(projP) return projP;
-    projP=gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=Title,JobCode,Address,Latitude,Longitude,GeocodedAddress,MatterportUrl,SPFolderItemId,LogisticsCoordinator1,LogisticsCoordinator2,DocLinkMeta)&$top=999`)
+    projP=gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=Title,JobCode,ProjectName,PipelineStage,Address,Latitude,Longitude,GeocodedAddress,MatterportUrl,SPFolderItemId,LogisticsCoordinator1,LogisticsCoordinator2,DocLinkMeta)&$top=999`)
       .then(rows=>{ for(const r of rows){ const c=String(r.fields.JobCode||'').trim().toUpperCase(); if(c) PROJ.set(c,{spId:String(r.id),f:r.fields}); } })
       .catch(e=>{ console.warn('Selections: could not read CORE_Projects',e); });
     return projP;
@@ -857,7 +857,7 @@ const CORE_VERSION = 'v11';
   function cpView(name){
     const p=cpFor(name); if(!p) return {cp:false};
     const f=p.f; const meta=parseJ(f.DocLinkMeta);
-    return {cp:true,lc:fullName(f.LogisticsCoordinator1),lc2:fullName(f.LogisticsCoordinator2),address:f.Address||null,
+    return {cp:true,projectName:String(f.ProjectName||'').trim()||null,lc:fullName(f.LogisticsCoordinator1),lc2:fullName(f.LogisticsCoordinator2),address:f.Address||null,
       lat:num(f.Latitude),lng:num(f.Longitude),geoFor:f.GeocodedAddress||null,mp:f.MatterportUrl||null,folderId:f.SPFolderItemId||null,links:meta.links||{}};
   }
   async function custDrive(){
@@ -902,10 +902,23 @@ const CORE_VERSION = 'v11';
       try{ await patch('CORE_Projects',p.spId,fields); }catch(e){ p.f=before; emit(['jobs']); throw e; }
     }
   };
-  async function jobsView(){ const js=await loadJobs(); await loadProjects(); return js.map(j=>[String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),{...(jobExtra.get(j.name)||{}),...cpView(j.name),name:j.name,archived:j.archived,createdAt:j.createdAt}]); }
+  /* Active on the Pipeline = DA Signed, CA Signed or Paused (the Pipeline's own rule: not a lead, archived, cancelled or lost).
+     Active projects with no selections imported yet still appear ("No selections yet"), so every LC's projects show. */
+  const ACTIVE_STAGES=new Set(['DA Signed','CA Signed','Paused']);
+  const pipeOnly=new Set();   // job codes listed only because they're active on the Pipeline
+  async function allJobs(){
+    const js=await loadJobs(); await loadProjects();
+    const have=new Set(js.map(j=>String(j.name).trim().toUpperCase()));
+    const extra=[]; pipeOnly.clear();
+    for(const [code,p] of PROJ){ if(have.has(code)||!ACTIVE_STAGES.has(String(p.f.PipelineStage||'').trim())) continue;
+      const name=String(p.f.JobCode).trim(); pipeOnly.add(name); extra.push({name,archived:false,createdAt:0}); }
+    return js.concat(extra.sort((a,b)=>a.name.localeCompare(b.name)));
+  }
+  async function jobsView(){ const js=await allJobs(); return js.map(j=>[String(j.name).toLowerCase().replace(/[^a-z0-9]+/g,'-'),{...(jobExtra.get(j.name)||{}),...cpView(j.name),name:j.name,archived:j.archived,createdAt:j.createdAt}]); }
   function emit(which){ for(const c of which||['items','checkins','trips','receipts']){ if(c==='jobs'){ jobsView().then(r=>subs.jobs.forEach(f=>f(snap(r)))); continue; } const r=views[c](); subs[c].forEach(f=>f(snap(r))); } }
   function loadJob(job){
     if(!job||job==='All'||cache.has(job)) return Promise.resolve();
+    if(pipeOnly.has(job)){ cache.set(job,build(job,[],[],[],[],[])); emit(); return Promise.resolve(); }
     if(inflight.has(job)) return inflight.get(job);
     const p=(async()=>{
       const lists=['CORE_Selections','CORE_SelectionAllowances','CORE_SelectionChoices','CORE_SelectionLineItems','CORE_SelectionComments','CORE_SelectionDesignDocs'];
@@ -1046,7 +1059,7 @@ const CORE_VERSION = 'v11';
   async function saveJob(slug,op,data){
     const js=await loadJobs(); let j=js.find(x=>String(x.name).toLowerCase().replace(/[^a-z0-9]+/g,'-')===slug)||(data&&js.find(x=>x.name===data.name));
     const name=(data&&data.name)||(j&&j.name); if(!name) throw Object.assign(new Error('Job needs a name'),{code:'invalid'});
-    const extra={...(jobExtra.get(name)||{}),...(op==='update'?data:clone(data)||{})}; const archived=!!extra.archived; delete extra.archived; delete extra.name; delete extra.createdAt; for(const k of ['cp','lc','lc2','lat','lng','geoFor','mp','folderId','links']) delete extra[k];
+    const extra={...(jobExtra.get(name)||{}),...(op==='update'?data:clone(data)||{})}; const archived=!!extra.archived; delete extra.archived; delete extra.name; delete extra.createdAt; for(const k of ['cp','projectName','lc','lc2','lat','lng','geoFor','mp','folderId','links']) delete extra[k];
     if(j){ if(j.archived!==archived){ await patch('CORE_SelectionJobs',j.spId,{Archived:archived}); j.archived=archived; } }
     else{ const r=await post('CORE_SelectionJobs',{Title:name,Job:name,Archived:archived}); j={spId:String(r.id),name,archived,createdAt:Date.now()}; js.push(j); }
     jobExtra.set(name,extra);
@@ -1239,7 +1252,8 @@ const CORE_VERSION = 'v11';
   async function teamName(email){
     const em=String(email||'').trim().toLowerCase(); if(!em) return;
     try{
-      const rows=await gAll(`${LISTS}/CORE_TeamMembers/items?$expand=fields($select=Title,EmployeeName,email,Active)&$top=999`);
+      const rows=await gAll(`${LISTS}/CORE_TeamMembers/items?$expand=fields($select=Title,EmployeeName,email,Role,Active)&$top=999`);
+      window.spLCs=rows.map(r=>r.fields||{}).filter(f=>String(f.Role||'').trim().toLowerCase()==='logistics coordinator'&&f.Active!==false).map(f=>String(f.EmployeeName||f.Title||'').trim().replace(/\s+/g,' ')).filter(Boolean);
       const hit=rows.map(r=>r.fields||{}).find(f=>String(f.email||'').split(/[;,]/).map(x=>x.trim().toLowerCase()).includes(em));
       const nm=hit&&String(hit.EmployeeName||hit.Title||'').trim().replace(/\s+/g,' ');
       if(nm){ ME=nm; window.spMe={name:nm,id:MEID}; bwSub(nm); emit(['views']); }
@@ -1427,25 +1441,25 @@ function weekStrip(){
   for(const n of Object.keys(JOBS)){if(isArch(n)||!inView(n))continue;const m=JOBS[n].milestones||{};for(const [k,l] of activeMs(n)){const d=m[k];if(d&&dayDiff(d)>=0&&dayDiff(d)<=14)L.push({n,l,d})}}
   L.sort((a,b)=>a.d.localeCompare(b.d));
   const dl=d=>{const dd=dayDiff(d);if(dd===0)return "Today";if(dd===1)return "Tomorrow";return new Date(d+"T12:00:00").toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})};
-  return `<h2 class="hsec">Coming up</h2>${L.length?`<div class="week">${L.map(x=>`<button class="wk ${x.d===today?"today":""}" data-job="${esc(x.n)}" data-open="1"><span class="wday">${dl(x.d)}</span><span class="wjob">${esc(x.n)}</span><span class="wms">${esc(x.l)}</span></button>`).join("")}</div>`:`<div class="weekempty">Nothing on the timeline for the next two weeks.${canEditSel?" Open a project and tap its timeline to add stage dates.":""}</div>`}`;
+  return `<h2 class="hsec">Coming up</h2>${L.length?`<div class="week">${L.map(x=>`<button class="wk ${x.d===today?"today":""}" data-job="${esc(x.n)}" data-open="1"><span class="wday">${dl(x.d)}</span><span class="wjob">${esc(PN(x.n))}</span><span class="wms">${esc(x.l)}</span></button>`).join("")}</div>`:`<div class="weekempty">Nothing on the timeline for the next two weeks.${canEditSel?" Open a project and tap its timeline to add stage dates.":""}</div>`}`;
 }
 function home(){
   const act=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&inView(n))), arc=cur().kind==="all"?Object.keys(JOBS).filter(isArch):[];
-  const sub=n=>esc([JOBS[n].address,JOBS[n].neighborhood,JOBS[n].lc?"LC: "+JOBS[n].lc:""].filter(Boolean).join(" · "));
+  const sub=n=>esc([PN(n)!==n?n:"",JOBS[n].address,JOBS[n].neighborhood,JOBS[n].lc?"LC: "+JOBS[n].lc:""].filter(Boolean).join(" · "));
   window.mapLink=mapLink;
   const bubble=n=>{const s=jobStats(n),nx=nextMs(n),d=JOBS[n]||{};
-    return `<div class="bubble"><button class="bopen" data-job="${esc(n)}" data-open="1">${ring(s.pct)}<span class="bname">${esc(n)}</span><span class="bsub">${sub(n)}</span>
+    return `<div class="bubble"><button class="bopen" data-job="${esc(n)}" data-open="1">${ring(s.pct)}<span class="bname">${esc(PN(n))}</span><span class="bsub">${sub(n)}</span>
       <span class="bnext ${nx&&nx.soon?"soon":""}">${nx?`Next: ${esc(nx.label)} · ${fmtDate(nx.date)}`:"No timeline dates yet"}</span>
       <span class="bmeta">${s.ord} on order · ${s.need} to order</span></button>
       ${cardLinks(n)}</div>`};
-  const row=n=>{const s=jobStats(n),d=JOBS[n];return `<button class="prow ${isArch(n)?"arch":""}" data-job="${esc(n)}" data-open="1"><span class="pname">${esc(n)}</span><span class="pinfo">${sub(n)}${d.client?" · "+esc(d.client):""}${(()=>{const nx=nextMs(n);return nx?` · <span class="${nx.soon?"pnext soon":"pnext"}">Next: ${esc(nx.label)} · ${fmtDate(nx.date)}</span>`:""})()}</span>
+  const row=n=>{const s=jobStats(n),d=JOBS[n];return `<button class="prow ${isArch(n)?"arch":""}" data-job="${esc(n)}" data-open="1"><span class="pname">${esc(PN(n))}</span><span class="pinfo">${sub(n)}${d.client?" · "+esc(d.client):""}${(()=>{const nx=nextMs(n);return nx?` · <span class="${nx.soon?"pnext soon":"pnext"}">Next: ${esc(nx.label)} · ${fmtDate(nx.date)}</span>`:""})()}</span>
     <span class="pbar" aria-label="${s.pct}% in"><span style="width:${s.pct}%"></span></span><span class="pnum">${s.n?s.inn+" of "+s.n+" in":"No selections yet"}</span></button>`};
   return `<section class="home">
   ${viewHead()}
   ${weekStrip()}
   ${attentionHtml()}
   ${(()=>{ const byNext=[...act].sort((a,b)=>{ const x=nextMs(a),y=nextMs(b); return (x?x.date:"9999").localeCompare(y?y.date:"9999")||a.localeCompare(b); });
-    if(!byNext.length) return `<div class="empty"><b>${cur().kind==="all"?"No active projects on the Pipeline.":"No projects in this view yet."}</b>${cur().kind!=="all"&&mine(cur())?"Use Edit to star the projects you want here.":""}</div>`;
+    if(!byNext.length) return `<div class="empty"><b>${cur().kind==="all"?"No active projects on the Pipeline.":cur().kind==="my"?"No projects list you as LC on the Pipeline.":"No projects in this view yet."}</b>${cur().kind==="my"?"The Pipeline's LC 1 and LC 2 fields fill this list. Press A or pick All Projects in the menu to see everything.":cur().kind!=="all"&&mine(cur())?"Use Edit to star the projects you want here.":""}</div>`;
     return cur().kind==="all"?`<div class="plist vrows">${byNext.map(row).join("")}</div>`:`<div class="bubbles vcards">${byNext.map(bubble).join("")}</div>`; })()}
   ${arc.length?`<button class="link" data-toggle-arch style="margin-top:16px">${showArchived?"Hide archived":"Show archived ("+arc.length+")"}</button>${showArchived?`<div class="plist" style="margin-top:8px">${arc.map(row).join("")}</div>`:""}`:""}
   </section>`;
@@ -1459,7 +1473,7 @@ function renderJobs(){
   document.querySelector("nav.views").style.visibility=view==="home"?"hidden":"";
   if(view==="home")window._bar=null; else if(!window._bar)window._bar=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)));
   const act=[...window._bar||[],...Object.keys(JOBS).filter(n=>!isArch(n)&&!(window._bar||[]).includes(n))].filter(n=>JOBS[n]&&!isArch(n)), arc=Object.keys(JOBS).filter(isArch);
-  const btn=n=>`<button aria-pressed="${n===job}" data-job="${esc(n)}" class="${isArch(n)?"arch":""}">${esc(n)}</button>`;
+  const btn=n=>`<button aria-pressed="${n===job}" data-job="${esc(n)}" class="${isArch(n)?"arch":""}">${esc(PN(n))}</button>`;
   $("#jobs").innerHTML=act.map(btn).join("")
     +(arc.length?`<button class="archtoggle" data-toggle-arch aria-expanded="${showArchived}">${showArchived?"Hide archived":"Archived ("+arc.length+")"}</button>`+(showArchived?arc.map(btn).join(""):""):"");
 }
@@ -1474,7 +1488,7 @@ function render(){
   if(jobsReady&&!Object.keys(JOBS).length){m.innerHTML=`<div class="empty"><b>No projects yet.</b>Projects appear here when they're active on the Pipeline.</div>`;return}
   document.body.classList.toggle("homeview",view==="home");
   if(view==="home"){m.innerHTML=home();return}
-  if(!items.some(i=>i.Job===job)&&view!=="pull"){m.innerHTML=`<h2 class="ph">${ptitle()} selections</h2><div class="empty"><b>No selections on ${esc(job)} yet.</b>It's active on the Pipeline. Send the Buildertrend selections PDF to Claude and they'll be loaded here for everyone.</div>`;return}
+  if(!items.some(i=>i.Job===job)&&view!=="pull"){m.innerHTML=`<h2 class="ph">${ptitle()} selections</h2><div class="empty"><b>No selections on ${esc(PN(job))} yet.</b>It's active on the Pipeline. Send the Buildertrend selections PDF to Claude and they'll be loaded here for everyone.</div>`;return}
   if(!items.length){m.innerHTML=`<div class="empty"><b>No selections loaded yet.</b>Ask Claude to load a project's selections from Buildertrend or the spreadsheet, and they'll appear here for everyone.</div>`;return}
   if(view==="overview") m.innerHTML=overview();
   else if(view==="receive") m.innerHTML=receive();
@@ -1493,7 +1507,7 @@ function overview(){
     const rets=items.filter(i=>i.Job===j&&state(i)==="ret").length;
     const done=(c.recv||0)+(c.site||0)+(c.owner||0)+(c.elec||0)+(c.done||0), n=L.length||1;
     const roughOut=L.filter(i=>i.Category===ROUGH&&["ord","need","tbd"].includes(state(i))).length;
-    return `<div class="job"><h3>${canEditSel?`<button class="jobname" data-editjob="${esc(j)}" data-tip="Edit project details">${esc(j)}</button>`:esc(j)}</h3><div class="addr">${JOBS[j]&&JOBS[j].client?`<div class="jclient">${esc(JOBS[j].client)}</div>`:""}${JOBS[j]&&JOBS[j].address?`<div>${mapUrl(j)?`<a class="addrlink" href="${mapUrl(j)}" target="_blank" rel="noopener" data-tip="Open in Maps">${esc(JOBS[j].address)}</a>`:esc(JOBS[j].address)}</div>`:""}${JOBS[j]&&JOBS[j].neighborhood?`<div>${esc(JOBS[j].neighborhood)}</div>`:""}${scanLink(j)||plansLink(j)?`<div class="jlinks">${plansLink(j)}${scanLink(j)}</div>`:""}</div>
+    return `<div class="job"><h3>${canEditSel?`<button class="jobname" data-editjob="${esc(j)}" data-tip="Edit project details">${esc(PN(j))}</button>`:esc(PN(j))}</h3><div class="addr">${JOBS[j]&&JOBS[j].client?`<div class="jclient">${esc(JOBS[j].client)}</div>`:""}${JOBS[j]&&JOBS[j].address?`<div>${mapUrl(j)?`<a class="addrlink" href="${mapUrl(j)}" target="_blank" rel="noopener" data-tip="Open in Maps">${esc(JOBS[j].address)}</a>`:esc(JOBS[j].address)}</div>`:""}${JOBS[j]&&JOBS[j].neighborhood?`<div>${esc(JOBS[j].neighborhood)}</div>`:""}${scanLink(j)||plansLink(j)?`<div class="jlinks">${plansLink(j)}${scanLink(j)}</div>`:""}</div>
       ${teamBlock(j)}
       ${timelineBlock(j)}
       <div class="bar" aria-hidden="true"><span class="r" style="width:${done/n*100}%"></span><span class="o" style="width:${(c.ord||0)/n*100}%"></span><span class="n" style="width:${((c.need||0)+(c.tbd||0))/n*100}%"></span></div>
@@ -1587,7 +1601,7 @@ function receive(){
     <div class="note swap">${esc(r.condition)}${r.damageNote?": "+esc(r.damageNote):""}</div></div>
     <div class="stack" style="align-items:flex-end"><button class="btn ghost" data-resolve="${r.id}" ${canWrite?"":"disabled"}>Mark resolved</button><button class="link" data-sendback="${r.id}">Send it back</button></div></div>`;
   const jobsList=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&inView(n)));
-  const jobBox=(n,inner,sum)=>{const c=jobColor(n),closed=rClosed.has(n);return `<section class="rbox ${closed?"closed":""}" style="--jc:${c}"><button class="rboxhead" data-rbox="${esc(n)}" aria-expanded="${!closed}"><span class="jdot"></span><span class="rbname">${esc(n)}</span><span class="rbsum">${sum}</span><span class="chev" aria-hidden="true"></span></button>${closed?"":`<div class="rboxbody">${inner}</div>`}</section>`};
+  const jobBox=(n,inner,sum)=>{const c=jobColor(n),closed=rClosed.has(n);return `<section class="rbox ${closed?"closed":""}" style="--jc:${c}"><button class="rboxhead" data-rbox="${esc(n)}" aria-expanded="${!closed}"><span class="jdot"></span><span class="rbname">${esc(PN(n))}</span><span class="rbsum">${sum}</span><span class="chev" aria-hidden="true"></span></button>${closed?"":`<div class="rboxbody">${inner}</div>`}</section>`};
   const late=groups.filter(g=>g.exp&&dayDiff(g.exp.d)<0).length;
   const jobOrder=byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&inView(n)));
   const byJob=rScope==="all"?jobOrder.filter(n=>groups.some(g=>g.Job===n)).map(n=>({n,gs:groups.filter(g=>g.Job===n)})):[{n:job,gs:groups}];
@@ -1608,7 +1622,7 @@ function receive(){
   const rvJobs=(rScope==="all"?jobsList:[job]).filter(n=>D.some(i=>i.Job===n)||R.some(i=>i.Job===n));
   const retView=rvJobs.length?`<p class="lede">Damaged, wrong or short deliveries for your LC to follow up, and items going back to the vendor. Mark each one once it's sorted.</p>`+(rScope==="all"?rvJobs.map(n=>{const d=D.filter(i=>i.Job===n).length,r=R.filter(i=>i.Job===n).length;return jobBox(n,rvInner(n),[d?d+" flagged":"",r?r+" to return":""].filter(Boolean).join(" · "))}).join(""):rvInner(job)):`<div class="empty"><b>Nothing flagged or waiting to go back.</b>Damaged, wrong or short deliveries and items to return or cancel will show up here.</div>`;
   const doneHtml=G2.length?`<div class="shelf"><h4>Recently returned or cancelled</h4>${G2.map(r=>`<div class="card"><div><div class="meta">${esc(r.Job)} · ${esc(r.Location||"")}</div><div class="title">${esc(r.Title)}</div><div class="note">${r.returnNeeded==="cancel"?"Cancelled":"Returned"} ${fmtDate(r.returnedAt)}${r.returnNote?" · "+esc(r.returnNote):""}</div></div></div>`).join("")}</div>`:"";
-  return `<div class="recvview"><div class="rscope"><label class="pick-sel"><span>Showing</span><select data-rscope aria-label="Which projects"><option value="all" ${rScope==="all"?"selected":""}>${cur().kind==="all"?"All Projects":"All in "+esc(cur().name)}</option>${byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&(inView(n)||n===job))).map(n=>`<option value="job:${esc(n)}" ${rScope==="job"&&job===n?"selected":""}>${esc(n)} only</option>`).join("")}</select></label></div>`+subTabs+(rSub==="ret"?retView+doneHtml:`<h2>Check in a delivery</h2><p class="lede">Everything ordered that hasn't arrived${rScope==="all"?", by project,":""} grouped by order with the soonest expected first${late?` \u2013 <span class="late">${late} order${late>1?"s":""} overdue</span>`:""}.</p>
+  return `<div class="recvview"><div class="rscope"><label class="pick-sel"><span>Showing</span><select data-rscope aria-label="Which projects"><option value="all" ${rScope==="all"?"selected":""}>${cur().kind==="all"?"All Projects":"All in "+esc(cur().name)}</option>${byRecent(Object.keys(JOBS).filter(n=>!isArch(n)&&(inView(n)||n===job))).map(n=>`<option value="job:${esc(n)}" ${rScope==="job"&&job===n?"selected":""}>${esc(PN(n))} only</option>`).join("")}</select></label></div>`+subTabs+(rSub==="ret"?retView+doneHtml:`<h2>Check in a delivery</h2><p class="lede">Everything ordered that hasn't arrived${rScope==="all"?", by project,":""} grouped by order with the soonest expected first${late?` \u2013 <span class="late">${late} order${late>1?"s":""} overdue</span>`:""}.</p>
   <div class="toolbar"><input id="q" class="search" type="search" placeholder="Search by item, SKU, vendor or order # on the box" aria-label="Search"></div>
   <div class="list">${body||`<div class="empty"><b>Nothing waiting.</b>Every ordered item${rScope==="all"?(cur().kind==="all"?"":" in "+esc(cur().name)):" on "+esc(job)} has been checked in.</div>`}</div>
   ${recent.length?`<div class="shelf"><h4>Recently checked in</h4>${recent.map(r=>`<div class="card"><div><div class="meta">${rScope==="all"?esc(r.Job)+" · ":""}${esc(r.OnHandLocation||"")}${r.Location?" · "+esc(r.Location):""}</div><div class="title">${esc(r.Title)}</div><div class="note">Checked in ${fmtTs(r.receivedAt)}${r.ReceivedBy?" by "+who(r.ReceivedBy):""}${r.condition&&r.condition!=="OK"?` · <span class="swap">${esc(r.condition)}</span>`:""}</div></div><button class="btn ghost" data-undo-recv="${r.id}">Undo</button></div>`).join("")}</div>`:""}`)+`</div>`;
@@ -2107,7 +2121,7 @@ function attentionHtml(){
   const summary=counts.map((c,l)=>c?`<span class="apill">${ic[l]} ${c} ${names[l].toLowerCase()}</span>`:"").join("");
   const tabs=`<div class="atabs" role="tablist"><button role="tab" data-attnf="-1" aria-selected="${attnF<0}">All <span>${A0.length}</span></button>${counts.map((c,l)=>c?`<button role="tab" data-attnf="${l}" aria-selected="${attnF===l}">${ic[l]}${names[l]} <span>${c}</span></button>`:"").join("")}</div>`;
   return `<button class="attnhead" data-toggleattn aria-expanded="${open}"><span class="chev ${open?"":"shut"}" aria-hidden="true"></span><span class="hsec" style="margin:0">Needs attention</span><span class="acount">${A0.length}</span><span class="asum">${open?"":summary}</span></button>
-  ${open?`${tabs}<div class="attn">${shown.map(a=>`<button class="arow" data-job="${esc(a.i.Job)}" data-open="1" data-then="${a.i.id}"><span class="aic" aria-hidden="true">${ic[a.lvl]}</span><span class="atxt"><span class="aproj">${esc(a.i.Job)}${a.i.Location?` <i>· ${esc(a.i.Location)}</i>`:""}</span><b>${esc(a.i.Title)}</b><span>${esc(a.why)}</span></span></button>`).join("")}
+  ${open?`${tabs}<div class="attn">${shown.map(a=>`<button class="arow" data-job="${esc(a.i.Job)}" data-open="1" data-then="${a.i.id}"><span class="aic" aria-hidden="true">${ic[a.lvl]}</span><span class="atxt"><span class="aproj">${esc(PN(a.i.Job))}${a.i.Location?` <i>· ${esc(a.i.Location)}</i>`:""}</span><b>${esc(a.i.Title)}</b><span>${esc(a.why)}</span></span></button>`).join("")}
   ${A.length>5?`<button class="link" data-allattn style="margin:8px 0 0">${showAllAttn?"Show fewer":"Show all "+A.length}</button>`:""}</div>`:""}`;
 }
 async function exportJob(){
@@ -2703,9 +2717,11 @@ window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(["ho
 let VIEWS={}, curView=(()=>{try{return localStorage.getItem("bw-view")||""}catch(e){return ""}})(), veMode=null, veFor=null;
 const first=s=>String(s||"").trim().split(/\s+/)[0]||"";
 const meN=()=>(window.spMe||{}).name||"", meI=()=>(window.spMe||{}).id||"";
+/* Project names: shown as the Projects Manager's Project Name (CORE_Projects.ProjectName); the Job Code stays the key and shows where a name is missing. */
+const PN=n=>{const d=JOBS[n];return (d&&d.projectName)||n};
 const nm=s=>String(s||"").trim().replace(/\s+/g," ").toLowerCase();
 const MEF=()=>String(meN()||"").trim().replace(/\s+/g," ");
-const lcs=()=>[...new Set(Object.keys(JOBS).flatMap(n=>[JOBS[n].lc,JOBS[n].lc2]).filter(Boolean))];
+const lcs=()=>[...new Set([...Object.keys(JOBS).flatMap(n=>[JOBS[n].lc,JOBS[n].lc2]),...(window.spLCs||[])].filter(Boolean))];
 function people(){ const me=MEF(), seen=new Set(), out=[]; for(const p of [me,...Object.values(VIEWS).map(v=>v.owner).sort(),...lcs().sort()]){ if(p&&!seen.has(nm(p))){ seen.add(nm(p)); out.push(p); } } return out; }
 function myViewFor(p){
   const name=nm(p)===nm(MEF())?"My projects":first(p)+"'s projects";   // always the Pipeline's LC fields
@@ -2731,7 +2747,7 @@ function viewHead(){
   return `<div class="vhead"><div class="vrow"><button class="vtitle" id="vTitle" aria-haspopup="true" aria-expanded="${!$("#jm").hidden}">${esc(v.name)}${CHEV}</button>
     ${mine(v)&&v.kind!=="my"?`<button class="vbtn" id="vEdit" aria-haspopup="true" aria-expanded="${!$("#pm").hidden}">Edit</button>`:""}
     ${v.kind==="view"&&!mine(v)?`<button class="vbtn" data-ve-copy="${esc(v.id)}">Copy to my views</button>`:""}</div>
-    <div class="vmeta">${who?who+" · ":""}${v.kind==="all"?n+" projects":n+" of "+all+" projects"}${empty?" · Use Edit to star the projects you want here":""}</div></div>`;
+    <div class="vmeta">${who?who+" · ":""}${v.kind==="all"?n+" projects":n+" of "+all+" projects"}${empty&&v.kind!=="my"?" · Use Edit to star the projects you want here":""}</div></div>`;
 }
 function jmSync(){
   const b=$("#backBtn"); if(b) b.textContent="← "+cur().name;
@@ -2759,10 +2775,10 @@ function jmRender(){
 function pmRender(){
   const v=cur(); if(!mine(v)||v.kind==="my"){ pmClose(); return; }
   const q=($("#pmQ").value||"").trim().toLowerCase(), inV=new Set(viewJobs(v));
-  const L=Object.keys(JOBS).filter(n=>!isArch(n)).sort((a,b)=>a.localeCompare(b)).filter(n=>{ const d=JOBS[n]||{}; return !q||[n,d.address,d.client,d.lc].filter(Boolean).join(" ").toLowerCase().includes(q); });
+  const L=Object.keys(JOBS).filter(n=>!isArch(n)).sort((a,b)=>PN(a).localeCompare(PN(b))).filter(n=>{ const d=JOBS[n]||{}; return !q||[n,d.projectName,d.address,d.client,d.lc].filter(Boolean).join(" ").toLowerCase().includes(q); });
   $("#pmHead").innerHTML=`Star the projects that belong in <span class="pm-vname">${esc(v.name)}</span>. The list is every active project on the Pipeline.`;
   $("#pmList").innerHTML=L.map(n=>{ const on=inV.has(n), s=jobStats(n), d=JOBS[n]||{};
-    return `<button class="pm-row" data-star="${esc(n)}" aria-pressed="${on}"><span class="pm-star" aria-hidden="true">${on?"★":"☆"}</span><span class="jm-name">${esc(n)}</span><span class="jm-num">${s.n?s.inn+" of "+s.n+" in":"No selections yet"}</span><span class="jm-meta">${d.lc?"LC "+esc(d.lc):"No LC yet"}</span></button>`; }).join("")||`<div class="jm-empty">No project matches “${esc(q)}”.</div>`;
+    return `<button class="pm-row" data-star="${esc(n)}" aria-pressed="${on}"><span class="pm-star" aria-hidden="true">${on?"★":"☆"}</span><span class="jm-name">${esc(PN(n))}</span><span class="jm-num">${s.n?s.inn+" of "+s.n+" in":"No selections yet"}</span><span class="jm-meta">${d.lc?"LC "+esc(d.lc):"No LC yet"}</span></button>`; }).join("")||`<div class="jm-empty">No project matches “${esc(q)}”.</div>`;
   $("#pmFoot").innerHTML=`<span>${inV.size} starred</span>`+(v.kind==="view"?`<span><button class="jm-link" data-ve-rename>Rename</button><button class="jm-link" data-ve-del>Delete view</button></span>`:"")+`<button class="jm-link" data-pm-done>Done</button>`;
 }
 async function toggleStar(n){
@@ -2832,9 +2848,9 @@ addEventListener("resize",()=>{ if(!$("#jm").hidden&&$("#vTitle")) place($("#jm"
 /* ── project switcher on project pages (prototype P4) ── */
 function psRender(){
   const q=($("#psQ").value||"").trim().toLowerCase(), v=cur();
-  const hit=n=>{ if(!q) return true; const d=JOBS[n]||{}; return [n,d.address,d.neighborhood,d.client,d.lc].filter(Boolean).join(" ").toLowerCase().includes(q); };
+  const hit=n=>{ if(!q) return true; const d=JOBS[n]||{}; return [n,d.projectName,d.address,d.neighborhood,d.client,d.lc].filter(Boolean).join(" ").toLowerCase().includes(q); };
   const row=n=>{ const s=jobStats(n), nx=nextMs(n), on=n===job, d=JOBS[n]||{};
-    return `<button class="jm-row" data-job="${esc(n)}" ${on?'aria-current="true"':""}><span class="jm-mark">${on?"✓":""}</span><span class="jm-name">${esc(n)}</span><span class="jm-num">${s.n?s.inn+" of "+s.n+" in":"No selections yet"}</span>
+    return `<button class="jm-row" data-job="${esc(n)}" ${on?'aria-current="true"':""}><span class="jm-mark">${on?"✓":""}</span><span class="jm-name">${esc(PN(n))}</span><span class="jm-num">${s.n?s.inn+" of "+s.n+" in":"No selections yet"}</span>
       <span class="jm-meta ${nx&&nx.soon?"soon":""}">${d.lc?"LC "+esc(d.lc):"No LC"}${nx?" · Next: "+esc(nx.label)+" · "+fmtDate(nx.date):""}</span></button>`; };
   const act=Object.keys(JOBS).filter(n=>!isArch(n)).sort((a,b)=>a.localeCompare(b));
   const inV=act.filter(n=>inView(n)&&hit(n)), out=act.filter(n=>!inView(n)&&hit(n));
@@ -2860,7 +2876,7 @@ document.addEventListener("click",e=>{
 addEventListener("resize",()=>{ if(!$("#ps").hidden) place($("#ps"),$("#pswBtn"),380); });
 
 /* ── project name as the switcher; M / A shortcuts (prototype P7) ── */
-function ptitle(){ return `<button class="ptitle" id="pswBtn" aria-haspopup="true" aria-expanded="${!$("#ps").hidden}" aria-label="Switch project, now ${esc(job)}">${esc(job)}${CHEV}</button>`; }
+function ptitle(){ return `<button class="ptitle" id="pswBtn" aria-haspopup="true" aria-expanded="${!$("#ps").hidden}" aria-label="Switch project, now ${esc(PN(job))}">${esc(PN(job))}${CHEV}</button>`; }
 function keyTo(id){
   jmClose(); pmClose(); psClose();
   if(cur().id===id&&view==="home") return;
@@ -2881,7 +2897,7 @@ document.addEventListener("keydown",e=>{
 let pScope="view", pvStage="all";
 function pScopeSel(){
   const v=cur(), opts=Object.keys(JOBS).filter(n=>!isArch(n)&&(inView(n)||n===job)).sort((a,b)=>a.localeCompare(b));
-  return `<div class="rscope"><label class="pick-sel"><span>Showing</span><select data-pscope aria-label="Which projects"><option value="view" ${pScope==="view"?"selected":""}>${v.kind==="all"?"All Projects":"All in "+esc(v.name)}</option>${opts.map(n=>`<option value="job:${esc(n)}" ${pScope==="job"&&job===n?"selected":""}>${esc(n)} only</option>`).join("")}</select></label></div>`;
+  return `<div class="rscope"><label class="pick-sel"><span>Showing</span><select data-pscope aria-label="Which projects"><option value="view" ${pScope==="view"?"selected":""}>${v.kind==="all"?"All Projects":"All in "+esc(v.name)}</option>${opts.map(n=>`<option value="job:${esc(n)}" ${pScope==="job"&&job===n?"selected":""}>${esc(PN(n))} only</option>`).join("")}</select></label></div>`;
 }
 function pullView(){
   const today=new Date().toISOString().slice(0,10), v=cur();
@@ -2899,9 +2915,9 @@ function pullView(){
       <span><span class="title">${esc(r.Title)}</span><div class="note">${esc([r.Location,r.color,r.qty&&("Qty "+r.qty),r.sku].filter(Boolean).join(" · "))}</div>
       ${r.condition&&r.condition!=="OK"?`<div class="note swap">${esc(r.condition)}${r.damageNote?": "+esc(r.damageNote):""} – check with your LC before taking it</div>`:""}</span></label></div>`;
     const inner=shelves.map(s=>{ const rows=L.filter(i=>(i.OnHandLocation||"No location noted")===s); return `<div class="shelf"><h4>${esc(s)}</h4><p>${rows.length} item${rows.length===1?"":"s"}</p>${rows.map(row).join("")}</div>`; }).join("")
-      +`<div class="pvopen"><button class="btn ghost small" data-pjob="${esc(n)}">Open pull for ${esc(n)} →</button></div>`;
+      +`<div class="pvopen"><button class="btn ghost small" data-pjob="${esc(n)}">Open pull for ${esc(PN(n))} →</button></div>`;
     const closed=rClosed.has("pull:"+n);
-    return `<section class="rbox pvbox ${closed?"closed":""}" style="--jc:${jobColor(n)}"><button class="rboxhead" data-rbox="pull:${esc(n)}" aria-expanded="${!closed}"><span class="jdot"></span><span class="rbname">${esc(n)}</span><span class="rbsum">${left} waiting${st?" · for "+esc(MSL[st]):""}</span><span class="chev" aria-hidden="true"></span></button>${closed?"":`<div class="rboxbody">${inner}</div>`}</section>`;
+    return `<section class="rbox pvbox ${closed?"closed":""}" style="--jc:${jobColor(n)}"><button class="rboxhead" data-rbox="pull:${esc(n)}" aria-expanded="${!closed}"><span class="jdot"></span><span class="rbname">${esc(PN(n))}</span><span class="rbsum">${left} waiting${st?" · for "+esc(MSL[st]):""}</span><span class="chev" aria-hidden="true"></span></button>${closed?"":`<div class="rboxbody">${inner}</div>`}</section>`;
   }).filter(Boolean);
   const n=boxes.length; boxes=boxes.join("");
   const stageSel=`<label class="pick-sel"><span>For</span><select data-pvstage aria-label="Stage"><option value="all" ${pvStage==="all"?"selected":""}>Everything</option><option value="next" ${pvStage==="next"?"selected":""}>Each project's next stage</option></select></label>`;

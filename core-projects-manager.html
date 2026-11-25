@@ -413,6 +413,7 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
     <div class="schema-row"><div class="schema-sp-field">SecondaryDesigner</div><div class="schema-trello-key">Set manually in Projects Manager</div></div>
     <div class="schema-row"><div class="schema-sp-field">LogisticsCoordinator1</div><div class="schema-trello-key">Set manually in Projects Manager</div></div>
     <div class="schema-row"><div class="schema-sp-field">LogisticsCoordinator2</div><div class="schema-trello-key">Set manually in Projects Manager</div></div>
+    <div class="schema-row"><div class="schema-sp-field">FieldMechanic</div><div class="schema-trello-key">Set manually in Projects Manager</div></div>
   </div>
 </div>
 
@@ -637,8 +638,8 @@ body{font-family:'TT Norms Pro',sans-serif;background:var(--cotton);color:var(--
     <div class="detail-notes-section" style="padding-top:10px;margin-top:8px;">
     <div style="font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:rgba(40,40,40,.30);margin-bottom:10px;">Team</div>
     <div class="detail-grid" style="margin-bottom:0"><div class="df"><label>Sales Person</label>
-      <div class="v empty">—</div></div><div class="df"><label>Designer</label>
-      <div class="v empty">—</div></div><div class="df"><label>Secondary Designer</label>
+      <div class="v empty">—</div></div><div class="df"><label>Designer 1</label>
+      <div class="v empty">—</div></div><div class="df"><label>Designer 2</label>
       <div class="v empty">—</div></div><div class="df"><label>Project Manager</label>
       <div class="v empty">—</div></div><div class="df"><label>Logistics Coordinator 1</label>
       <div class="v empty">—</div></div><div class="df"><label>Logistics Coordinator 2</label>
@@ -1021,18 +1022,20 @@ const SP_CONFIG = {
 // v59 — single version constant stamps both badges (header + splash overlay)
 // so they can never drift apart. The splash badge matters: the overlay blocks
 // the header when testing locally before sign-in.
-const MGR_VERSION='v68';
+const MGR_VERSION='v71';
 (()=>{ const h=document.getElementById('mgrVerBadge'); if(h) h.textContent=MGR_VERSION;
        const p=document.getElementById('mgrVerSplash'); if(p) p.textContent=MGR_VERSION; })();
 const CORE_COLUMNS = [
   {key:'ClientName',            label:'Client Name',               type:'text',     req:true},
   {key:'ProjectName',           label:'Project Name',              type:'text'},
   {key:'JobCode',               label:'Job Code',                  type:'text',     req:true},
-  {key:'DesignerName',          label:'Designer',                  type:'text'},
-  {key:'SecondaryDesigner',     label:'Secondary Designer',        type:'text'},
+  {key:'DesignerName',          label:'Designer 1',                type:'text'},
+  {key:'SecondaryDesigner',     label:'Designer 2',                type:'text'},
   {key:'PMName',                label:'Project Manager',           type:'text'},
   {key:'LogisticsCoordinator1', label:'Logistics Coordinator 1',   type:'text'},
   {key:'LogisticsCoordinator2', label:'Logistics Coordinator 2',   type:'text'},
+  {key:'FieldMechanic',         label:'Field Mechanic',            type:'text'}, // v69
+
   {key:'SalesPerson',           label:'Sales Person',              type:'text'},
   {key:'ProjectDescription',    label:'Project Description',       type:'text'},
   {key:'Address',               label:'Address',                   type:'text'},
@@ -1065,7 +1068,8 @@ const CORE_COLUMNS = [
   {key:'CAPrice',               label:'CA Price',                  type:'currency'},
   {key:'WarrantyStartDate',     label:'Warranty Start Date',       type:'date'},
   {key:'DataResource',          label:'Data Resource',             type:'bool'},
-  {key:'DesignScope',           label:'Design Scope',              type:'multiline'},
+  {key:'DesignScope',           label:'DA Scope',                  type:'multiline'}, // v69: relabeled — column stays DesignScope
+  {key:'ScopeOutlineText',      label:'Scope Outline',             type:'multiline'}, // v69: free text — distinct from the ScopeOutline URL/doc-link field below
   {key:'CAScope',               label:'CA Scope',                  type:'multiline'},
   {key:'EstimateUrl',           label:'Estimate',                  type:'url'},
   {key:'ProjectBasisUrl',       label:'Project Basis',             type:'url'},
@@ -1213,6 +1217,7 @@ async function fetchProjects(){
     window._teamPMs=[];
     window._teamSales=[];
     window._teamLogistics=[];
+    window._teamFieldMechanics=[]; // v69
     window._teamAll=[];
     (teamData.value||[]).forEach(item=>{
       const f=item.fields||{};
@@ -1224,9 +1229,10 @@ async function fetchProjects(){
       if(role==='designer') window._teamDesigners.push(name);
       else if(role==='project manager') window._teamPMs.push(name);
       else if(role==='logistics coordinator') window._teamLogistics.push(name);
+      else if(role.includes('mechanic')) window._teamFieldMechanics.push(name); // v69 — same fuzzy match as the Pipeline
       if(dept.startsWith('sale')) window._teamSales.push(name);
     });
-    window._teamDesigners.sort(); window._teamPMs.sort(); window._teamSales.sort(); window._teamLogistics.sort(); window._teamAll.sort();
+    window._teamDesigners.sort(); window._teamPMs.sort(); window._teamSales.sort(); window._teamLogistics.sort(); window._teamFieldMechanics.sort(); window._teamAll.sort();
     allProjects=(data.value||[]).map(normalizeProject);
     document.getElementById('projects-loading').style.display='none';
     document.getElementById('projects-content').style.display='block';
@@ -1494,11 +1500,12 @@ function buildDetailPanel(p){
   // ── Team section — Sales Person, Designer, PM, Secondary Designer ──
   const teamGrid=
     personSelect('SalesPerson','Sales Person',salesNames,p.SalesPerson||'')
-    +personSelect('DesignerName','Designer',designerNames,p.DesignerName||'')
-    +personSelect('SecondaryDesigner','Secondary Designer',designerNames,p.SecondaryDesigner||'')
+    +personSelect('DesignerName','Designer 1',designerNames,p.DesignerName||'')
+    +personSelect('SecondaryDesigner','Designer 2',designerNames,p.SecondaryDesigner||'')
     +personSelect('PMName','Project Manager',pmNames,p.PMName||'')
     +personSelect('LogisticsCoordinator1','Logistics Coordinator 1',window._teamLogistics||[],p.LogisticsCoordinator1||'')
-    +personSelect('LogisticsCoordinator2','Logistics Coordinator 2',window._teamLogistics||[],p.LogisticsCoordinator2||'');
+    +personSelect('LogisticsCoordinator2','Logistics Coordinator 2',window._teamLogistics||[],p.LogisticsCoordinator2||'')
+    +personSelect('FieldMechanic','Field Mechanic',window._teamFieldMechanics||[],p.FieldMechanic||'');
 
   const teamSection=`<div class="pm-sec pm-sec-team">
     <div class="pm-sec-hd"><span class="pm-sec-title">Team</span><span class="pm-sec-rule"></span></div>
@@ -1580,7 +1587,7 @@ function buildDetailPanel(p){
   </div>`;
 
   // ── Scope section ──
-  const scopeFields=[{k:'DesignScope',l:'Design Scope'},{k:'CAScope',l:'CA Scope'}];
+  const scopeFields=[{k:'DesignScope',l:'DA Scope'},{k:'ScopeOutlineText',l:'Scope Outline'},{k:'CAScope',l:'CA Scope'}]; // v69
   const scopeBlocks=scopeFields.map(f=>{
     const v=p[f.k]||'';
     if(adminMode) return `<div class="detail-notes-section" style="margin-top:10px">
@@ -1631,8 +1638,10 @@ function buildDetailPanel(p){
 // ══════════════════════════════════ COLUMN SETUP
 const NEW_COLUMNS=[
   {name:'InitialDesignSigningDate', displayName:'Design Signing Date',  dateTime:{displayAs:'default',format:'dateOnly'}},
-  {name:'DesignScope',              displayName:'Design Scope',          text:{allowMultipleLines:true,linesForEditing:6}},
+  {name:'DesignScope',              displayName:'DA Scope',              text:{allowMultipleLines:true,linesForEditing:6}},
+  {name:'ScopeOutlineText',         displayName:'Scope Outline',         text:{allowMultipleLines:true,linesForEditing:6}}, // v69 — free text, distinct from the ScopeOutline URL/doc-link column below
   {name:'CAScope',                  displayName:'CA Scope',              text:{allowMultipleLines:true,linesForEditing:6}},
+  {name:'FieldMechanic',            displayName:'Field Mechanic',        text:{}}, // v69
   {name:'CAPrice',                  displayName:'CA Price',              number:{decimalPlaces:'two',displayAs:'number'}},
   {name:'WarrantyStartDate',        displayName:'Warranty Start Date',   dateTime:{displayAs:'default',format:'dateOnly'}},
   {name:'DataResource',             displayName:'Data Resource',         boolean:{}},

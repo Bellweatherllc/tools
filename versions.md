@@ -11,10 +11,10 @@ Last updated: 2026-11-25
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1192 |
-| Projects Manager | `core-projects-manager.html` | v68 (`MGR_VERSION`) |
+| Project Pipeline | `project-pipeline.html` | v1198 |
+| Projects Manager | `core-projects-manager.html` | v71 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v82 |
-| Scout Board | `scout-board.html` | v14 |
+| Scout Board | `scout-board.html` | v15 |
 | **PM Workbook & Budget** | | |
 | PM Workbook | `pm-workbook.html` | v85 |
 | PM Budget Planner | `pm-budget-planner.html` | v70 |
@@ -22,21 +22,22 @@ Last updated: 2026-11-25
 | Revenue Tracker | `revenue-tracker.html` | v12 |
 | WIP Tracker | `wip-tracker.html` | v32 |
 | **Permits** | | |
-| Permit & Zoning Tracker | `permit-zoning-tracker.html` | v186 |
+| Permit & Zoning Tracker | `permit-zoning-tracker.html` | v187 |
 | **Selections** | | |
-| Selections List Setup | `selections/selections-setup.html` | v12 |
-| Selections · Design | `selections/design.html` | v5 |
-| Selections · LC | `selections/lc-portal.html` | v11 |
-| Selections · Field Mechanic | `selections/field-view.html` | v16 |
-| Selections · Warehouse | `selections/warehouse.html` | v5 |
+| Selections List Setup | `selections/selections-setup.html` | v13 |
+| Selections · Design | `selections/design.html` | v6 |
+| Selections · LC | `selections/lc-portal.html` | v15 |
+| Selections · Field Mechanic | `selections/field-view.html` | v18 |
+| Selections · Warehouse | `selections/warehouse.html` | v8 |
+| Selections · Device Viewer | `selections/device-viewer.html` | v1 |
 | **Operations** | | |
 | Fleet Tracker | `fleet-tracker.html` | v4 |
 | **Analyzers** | | |
 | Project Hours Analyzer | `project-hours-analyzer.html` | v58 |
 | People Analyzer | `people-analyzer.html` | v27 |
 | **Process** | | |
-| CP Process Scoring | `cp-process-scoring.html` | v7 |
-| FBA Matrix | `fba-matrix.html` | v11 |
+| CP Process Scoring | `cp-process-scoring.html` | v8 |
+| FBA Matrix | `fba-matrix.html` | v12 |
 | **SharePoint & Admin** | | |
 | SharePoint Sherpa | `sharepoint-sherpa.html` | v14 |
 | Sherpa Lookup Tester | `sherpa-lookup-tester.html` | v2 |
@@ -44,8 +45,8 @@ Last updated: 2026-11-25
 | Team Members | `team-members.html` | v40 |
 | Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v19 |
-| CORE System Map | `core-system-map.html` | v19 |
+| BW Tool Index | `bw-tool-index.html` | v21 |
+| CORE System Map | `core-system-map.html` | v20 |
 | Brand Style Guide | `bellweather-style-guide.html` | v17 |
 
 ## Manuals
@@ -76,9 +77,30 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 ## Log
 
+- **2026-11-25** — Projects Manager v70 → v71: relabeled the Team section's **Designer** and **Secondary Designer** fields to **Designer 1** and **Designer 2**, for consistency with the LC1/LC2 naming — display text only, per Byron. The underlying SharePoint columns (`DesignerName`, `SecondaryDesigner`) are unchanged, no data migration.
+
 Newest first. One line per delivery.
 
 - **2026-11-25** — Levels of Development v81 → v82: per Byron — "I'm pretty sure we've set the LOD to auto save but there are save buttons scattered throughout, at least for the admin setup." Confirmed Scope of Work and Target Investment were the only two fields with no autosave wiring at all (ratings/notes already autosave; Analysis's "Submissions" edit-notes Save/Cancel is a different, deliberately-explicit case — editing someone else's submitted record — and was left alone). Both now autosave 2s after a pause in typing (`scheduleScopeAutosave()`/`scheduleTiAutosave()`, separate debounce timers so one field's pending save can't cancel the other's); their Save buttons are gone. Also, per "make the whole layout more flexible so that filling a screen allows columns to grow" — `.main`'s fixed `max-width:1000px` is now fluid, `min(1700px,96vw)`; the Assess split columns size off it in percentages/flex already, so they now actually grow on a wide screen instead of staying boxed in. Manual updated.
+- **2026-11-25** — Permit & Zoning Tracker v186 → v187: a **REMAINING TASKS** mini-window, per Byron — "I want to add a section that will appear once a permit has been approved and the number entered into trello... create one called REMAINING TASKS. I will create a checklist in the Trello cards that will have about seven items that will need to be ticked off." Synced via one new whole-board `boards/{id}/checklists` fetch (bulk, same pattern as the existing lists/cards/customFields/actions calls — not a per-card round trip), listing only the UNCHECKED items from whichever of the project's cards carries the checklist; the box doesn't render at all once nothing's left (or no checklist exists yet), same as the two track boxes below. The existing Zoning/Permitting mini-windows are narrower and taller now — per Byron, "compress their horizontal space" so they read "more of a square than rectangle" now that a 3rd window shares the row (300px wide → 210px; each stage row's date range moved to its own line underneath, instead of beside the stage name, to still read fine at the narrower width). Per Byron, "if zoning didn't occur, don't show the box" — a track with no stages at all no longer renders a "Not Required" placeholder, it's omitted entirely; applied symmetrically, so a zoning-only project's Permitting box is handled the same way. The Permit # readout shrinks (28px → 20px) on approved rows only and now shows the permit's synced PermitType (e.g. "Demolition") underneath it, small and muted — per Byron, "the Permit # section and type may need to be made smaller to accommodate this new element."
+- **2026-11-25** — Projects Manager v69 → v70: broke the Scope section out into three fields, per Byron — "Design Scope" relabeled to **DA Scope** (same `DesignScope` column, no data migration), a new free-text **Scope Outline** field (`ScopeOutlineText` — distinct from the existing `ScopeOutline` URL/doc-link field), and **CA Scope** unchanged, in that order. Both new columns (`ScopeOutlineText` here, `FieldMechanic` from the v69 delivery) added to `NEW_COLUMNS`, the schema the orphaned-but-functional `setupColumns()` helper creates from — run `setupColumns()` from the browser console (Sign in first) to create both in SharePoint in one shot, Graph API column creation taking the `name` verbatim as the internal name, so no typed-with-a-space mismatch risk the way a manual SharePoint UI column add has.
+- **2026-11-25** — Projects Manager v68 → v69: added Field Mechanic to the Team section — `FieldMechanic` added to `CORE_COLUMNS`, a `window._teamFieldMechanics` roster list (same fuzzy Role-contains-"mechanic" match the Pipeline uses) populated alongside the other team arrays, and a `personSelect` row in the detail panel's Team grid, same pattern as Logistics Coordinator 1/2. Also added to the Field Mapping schema reference panel ("Set manually in Projects Manager", same as the other people fields).
+- **2026-11-25** — Project Pipeline v1197 → v1198: two fixes per Byron. (1) The map pin now hugs the address text with a fixed 5px gap instead of always sitting at the row's right edge — `.tt-addr` no longer stretches (`flex:1` removed), so the pin's position shifts with address length, wrapping to its own line if a long address and the pin can't both fit. (2) Dragging a project onto a Field Mechanic looked like it saved (the generic autosave indicator isn't tied to this write) but reset on refresh — `_patchPersonNameToSP()` (the SharePoint column patch backing every person-field drag: Designer, PM, LC1/2, Field Mechanic) was failing silently, only ever logging to the console. Failures now surface as a toast naming the field and the actual Graph error, so a bad/missing SharePoint column shows up immediately instead of silently losing the assignment on next load.
+- **2026-11-25** — Project Pipeline v1196 → v1197: two small hover-card tweaks per Byron. The Google Maps pin moved from beside the Permit & Zoning zone up to sit beside the address, right-aligned in that row (the `.tt-addr-row` layout was already built for exactly this — it previously held a since-disabled map button in the same spot). The Production line's Field Mechanic now shows as just the name after the LC names ("· Rachel, Mario · Alex") instead of "· FM: Alex".
+- **2026-11-25** — Project Pipeline v1195 → v1196: per Byron — the gold "NOW" column frame on the Production screen extended all the way down through the Field Mechanics section, which has no gantt/schedule bars of its own to mark "now" against. The frame's height is now clamped at render time (via a zero-height marker placed right where the Field Mechanics block begins, measured post-layout since the gold frame is otherwise sized via `calc(100% + 60px)`) so it stops at the bottom of the Logistics Coordinators rows instead of running the full section height. Design's own "NOW" frame is untouched.
+- **2026-11-25** — Project Pipeline v1194 → v1195: per Byron — the Field Mechanics label/chevron was still sitting above the LC rows, even though the FM rows and unassigned bucket themselves rendered correctly below. Root cause: v1194's placement fix only ran when `fm-section` was entirely absent from the saved row order — Byron's browser already had it saved at the old (wrong, v1193-era) position, so the fix never got a chance to correct it once it existed. The sync logic (both on initial load and on every re-render) now unconditionally pulls the whole Field Mechanics block (section header, unassigned bucket, every mechanic) out and reinserts it as one unit directly after the LC block every time, instead of only positioning it the first time it's created.
+- **2026-11-25** — Project Pipeline v1193 → v1194: three Field Mechanics follow-ups per Byron. (1) Both the "Needs a Field Mechanic" bucket and each mechanic's project list now only show CA-signed (in-construction) projects — Lead, Design-stage and open Slots no longer appear. (2) Fixed a placement bug from v1193: the Field Mechanics section was landing between the LC section's header and its own LC rows (an `indexOf('lc-section')` lookup found only the header, not the end of its content) — it now correctly sits after every LC row. (3) The whole Field Mechanics section now collapses as one unit (default collapsed — infrequent access, per Byron), on top of the existing per-mechanic and unassigned-bucket collapses.
+- **2026-11-24** — Project Pipeline v1192 → v1193: new Field Mechanics section in the Production screen, beneath the Logistics Coordinators — per Byron, connecting projects to Field Mechanics for other tools (Selections) with nothing tracked in the pipeline itself. One mechanic per project (`CORE_Projects.FieldMechanic`, single line of text — needs adding in SharePoint, same way `TrelloAlwaysAdd` was). Deliberately stripped down from the LC section it sits under: no capacity/hours, no Time Off, no milestone toggle — just each mechanic's name and a plain list of their assigned projects, reusing the same drag-a-project-onto-a-header gesture already used for PM/LC (the capacity-reorder drag system was generalized from a binary PM/LC check to a proper per-section match so a third section could join it cleanly). A dedicated "Needs a Field Mechanic" bucket lists every active project with none assigned, so what's unattached is always visible at a glance. The assigned Field Mechanic also now shows on every project's hover card, next to PM/LC: "PRODUCTION: Zaire · Rachel, Mario · FM: Name".
+
+- **2026-11-24** — Selections · Warehouse v7 → v8 and Field Mechanic v17 → v18: jobs show their **Project Name** from the Projects Manager (`CORE_Projects.ProjectName`, matched by Job Code), as LC v15 does: Warehouse job chips, delivery groups, bays, pull, returns and panels; Field's project list and search box. Lists sort by Project Name; a project with no name shows its Job Code. Bump `?v=8` / `?v=18`.
+- **2026-11-24** — Selections · LC v14 → v15: projects show their **Project Name** from the Projects Manager (`CORE_Projects.ProjectName`) on cards, Coming up, Needs attention, the views and Edit menus, the project switcher and heading, Receive and Pull; the Job Code stays the key and shows under the name on cards (and in place of a missing name). Search and the Edit list also go by Project Name. Bump `?v=15`.
+- **2026-11-24** — Selections · LC v13 → v14: **active Pipeline projects appear even before any selections are imported** (`CORE_Projects.PipelineStage` DA Signed, CA Signed or Paused, the Pipeline's own active rule; shown as "No selections yet", nothing extra loaded for them), and **every active Logistics Coordinator in `CORE_TeamMembers`** (Role "Logistics Coordinator") gets an "X's projects" view, even with no projects. Before, the views menu only knew LCs named on projects that already had selections, so an LC whose projects weren't imported was missing. Bump `?v=14`.
+- **2026-11-24** — Selections · Device Viewer v1 (new, `selections/device-viewer.html`): the live LC, Warehouse and Field Mechanic screens, with live data, inside true-size device frames (Surface and iPad tablets, Windows laptops, iPhones). Rotate keeps the screen's state. Opened in: Edge or Full screen on tablets and laptops; Edge, Safari or Home Screen on iPhones, with each device's safe-area insets written into the framed page. FM opens in practice mode (nothing saves) unless Practice is unticked; LC and Warehouse save for real. Frames the pages from the same site, so they share the viewer's sign-in. Needs its address added as a redirect URI on the Azure app registration to sign in from this page.
+- **2026-11-24** — Selections · LC v12 → v13: an empty **My projects** says no projects list you as LC on the Pipeline and points to All Projects, instead of "Use Edit to star" (My projects has no Edit).
+- **2026-11-24** — BW Tool Index v20 → v21: Selections section adds **Device Viewer**; Warehouse, Field Mechanic and LC tiles describe the current screens.
+- **2026-11-24** — Selections pages: version number is plain red text, no box (CLAUDE.md rule). Warehouse v6 → v7, Field Mechanic v16 → v17, LC v11 → v12, List Setup v12 → v13, Design v5 → v6.
+- **2026-11-24** — Selections · Warehouse v5 → v6: tablet redesign, in the LC screen's look (navy topbar "Selections *Warehouse*" with the signed-in name, LC fonts, light gray page `#f2f3f4`). Side tabs: **Check in** (deliveries grouped by vendor, soonest due first; one panel checks in a whole delivery with a condition per line; bay grid that shows where the job already is; model numbers from the choice descriptions are searchable), **Bays** (Stokley bay tiles with counts and jobs; tap for contents, move, audit), **Pull for site** (in bay order, category filter, mark all loaded, copy list), **Returns & flags** (damaged/wrong/short, send back, missing in audit, unlisted deliveries to match), **Tools & supplies** (shop stock; new, empty list). Turned upright, tabs move to the bottom and the panel becomes a sheet. Saves: `OnHandLocation`, `DateReceived`, `ReceivedBy` (in `CoreEditedFields`) and `OpsData.checkin` with the LC/Field names (`condition`, `damageNote`, `receivedAt`, `pulledAt/By/From`, `returnNeeded`, `returnReason`, `returnedAt`, `auditedAt`, `auditMissing`, `moves`); unlisted deliveries and shop stock in `CORE_SelectionDesignDocs` (`_shared`, `unknownItems` / `shopStock`). Replaces v5's Match / Expecting / Shelves tabs and label printing. Bump `?v=6`.
+- **2026-11-24** — Version numbers are plain red text, no pill (per the Style Guide v17 note): Scout Board v14 → v15, CP Process Scoring v7 → v8, FBA Matrix v11 → v12 (also red now, was grey), BW Tool Index v19 → v20, CORE System Map v19 → v20. CSS only; nothing else changed. `CLAUDE.md` states the rule.
 - **2026-11-24** — Levels of Development v80 → v81: per Byron — dropped the `max-width:720px` cap on the intro guide text and the "Already assessed" strip at the top of Assess; both now span the same full width as the Assessment Setup card below them, instead of reading narrower.
 - **2026-11-24** — Style Guide v16 → v17: per Byron — version numbers are plain red text, just the `v` and the number, never outlined or set in a pill. Stated in the Standard Head Block conventions, and the guide's own topbar demos lost their pill styling.
 - **2026-11-24** — Selections · LC v10 → v11: the views and navigation design from prototype rounds P1–P13 (branch `proto/lc-job-menu`) goes live. Views menu on the page title: **All Projects**, **My views** (My projects + your saved views + New view), **Everyone's views** by person; Edit stars projects into a view; Copy to my views; project name is a searchable switcher; **M** / **A** keys; Receive and Pull for site follow the view; project cards link Plans folder, Map and Matterport from `CORE_Projects`. **My projects** = projects where you're `LogisticsCoordinator1`/`2` on the Pipeline, matched through your sign-in email in `CORE_TeamMembers` (`email` → `EmployeeName`), ignoring case and spacing. **Saved views live in the new `CORE_ProjectViews` list** (Title, ViewKey, OwnerEmail, OwnerName, JobCodes); until Setup creates it, saving a view says to run Setup. Bump `?v=11`.
