@@ -11,7 +11,7 @@ Last updated: 2026-11-25
 | Tool | File | Version |
 |---|---|---|
 | **Pipeline & Projects** | | |
-| Project Pipeline | `project-pipeline.html` | v1198 |
+| Project Pipeline | `project-pipeline.html` | v1199 |
 | Projects Manager | `core-projects-manager.html` | v71 (`MGR_VERSION`) |
 | Levels of Development | `levels-of-development.html` | v81 |
 | Scout Board | `scout-board.html` | v15 |
@@ -76,6 +76,8 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 | CA writing tools: `ca-setup.html`, `CA_DataSources.html`, `da_extractor.html`, `estimate_extractor.html`, `plan_note_extractor.html`, `reference_ca_extractor.html`, `scope_outline_extractor.html`, `selections_extractor.html`, `lib/ca-session.js` | System Map v2 |
 
 ## Log
+
+- **2026-11-25** — Project Pipeline v1198 → v1199: removed the Field Mechanics section from the Production screen — Byron decided against using it ("we won't be using or referencing it"). Reverted the file to its pre-FM state (commit `05bb1c7`, v1192) and re-applied the version bump; this also rolls back two smaller v1197/v1198 tweaks that shipped alongside it (the hover-card map pin reposition beside the address, and surfacing person-field save failures via toast) — flag if either of those should come back on their own. The pre-existing, unrelated `FIELD_MECHANICS` roster array used by the exploratory assignment list is untouched. Projects Manager's Field Mechanic field and the separate Selections · Field Mechanic tool are untouched — this only affects the Pipeline Production screen.
 
 - **2026-11-25** — Projects Manager v70 → v71: relabeled the Team section's **Designer** and **Secondary Designer** fields to **Designer 1** and **Designer 2**, for consistency with the LC1/LC2 naming — display text only, per Byron. The underlying SharePoint columns (`DesignerName`, `SecondaryDesigner`) are unchanged, no data migration.
 
