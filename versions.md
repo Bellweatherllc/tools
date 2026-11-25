@@ -27,7 +27,7 @@ Last updated: 2026-11-25
 | Selections List Setup | `selections/selections-setup.html` | v13 |
 | Selections · Design | `selections/design.html` | v6 |
 | Selections · LC | `selections/lc-portal.html` | v15 |
-| Selections · Field Mechanic | `selections/field-view.html` | v18 |
+| Selections · Field Mechanic | `selections/field-view.html` | v19 |
 | Selections · Warehouse | `selections/warehouse.html` | v8 |
 | Selections · Device Viewer | `selections/device-viewer.html` | v1 |
 | **Operations** | | |
@@ -81,6 +81,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 - **2026-11-25** — Project Pipeline v1199 → v1200: re-applied the two non-FM tweaks dropped by the FM revert in v1199, per Byron. Hover-card map pin sits beside the address again (both `.tt-addr-row` builders, 5px gap, `flex-wrap` fallback for long addresses), and `_patchPersonNameToSP()` surfaces a toast on SharePoint patch failure instead of only logging to console, so a missing/misnamed person-field column (Designer/Secondary Designer/LC1/LC2/PM) shows up immediately rather than silently reverting on refresh.
 
+- **2026-11-25** — Selections · Field Mechanic v18 → v19: the project picker has no pre-populated "My projects" list, per Byron ("it should just say Projects and people can select projects to appear first in the list"). The button beside the search box now reads **Projects**; the sheet is one list titled Projects with each person's starred projects first, then the rest, and Archived below. The empty-state hint is "Tap a star to put a project at the top of this list." Stars were already saved per sign-in in SharePoint (`CORE_SelectionDesignDocs`, Job `_prefs`, Collection `fieldStars`, DocId = sign-in name), so no data changes. The LC screen's "My projects" (from the Pipeline's LC fields) is a different thing and is unchanged.
 - **2026-11-25** — Project Pipeline v1198 → v1199: removed the Field Mechanics section from the Production screen — Byron decided against using it ("we won't be using or referencing it"). Reverted the file to its pre-FM state (commit `05bb1c7`, v1192) and re-applied the version bump; this also rolls back two smaller v1197/v1198 tweaks that shipped alongside it (the hover-card map pin reposition beside the address, and surfacing person-field save failures via toast) — flag if either of those should come back on their own. The pre-existing, unrelated `FIELD_MECHANICS` roster array used by the exploratory assignment list is untouched. Projects Manager's Field Mechanic field and the separate Selections · Field Mechanic tool are untouched — this only affects the Pipeline Production screen.
 
 - **2026-11-25** — Projects Manager v70 → v71: relabeled the Team section's **Designer** and **Secondary Designer** fields to **Designer 1** and **Designer 2**, for consistency with the LC1/LC2 naming — display text only, per Byron. The underlying SharePoint columns (`DesignerName`, `SecondaryDesigner`) are unchanged, no data migration.
