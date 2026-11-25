@@ -3755,7 +3755,7 @@ table.ops-table{width:auto;border-collapse:separate;border-spacing:0;font-varian
 // It used to be parsed out of <title>, but the tab now reads "Project Pipeline"
 // with no version in it. Everything downstream — both badges, the console log
 // tag, the snapshot stamp — reads this constant. Bump this one line per release.
-const CORE_VERSION = 'v1193';
+const CORE_VERSION = 'v1194';
 // Stamp the version badges the moment the constant exists — the auth overlay
 // shows before init runs, and the splash must always carry the version (the
 // overlay blocks the topbar when testing locally). Markup badges are empty by
@@ -4522,6 +4522,7 @@ let LC_DESIGN_MS_HIDDEN=new Set(); // lcId values where T1/T2/T3/PD milestones a
 let LC_COORDS=[]; // tracked Logistics Coordinators
 let PROD_FM_COLLAPSED=new Set(); // v1193: set of fieldMechanicId strings — assignment-only, no capacity/hours/time-off
 let PROD_FM_UNASSIGNED_COLLAPSED=false; // v1193: "Needs a Field Mechanic" bucket
+let PROD_FM_SECTION_COLLAPSED=true; // v1194: whole section, default collapsed — infrequent access per Byron
 let PROD_UNASSIGNED_COLLAPSED=false;
 let DESIGN_UNASSIGNED_COLLAPSED=false;
 let DESIGN_COLLAPSED=new Set();  // set of designerId strings
@@ -4553,6 +4554,19 @@ function personById(id){ return DESIGNERS.find(d=>d.id===id)||PROD_PMS.find(p=>p
 function isVisible(p){
   const st=(p.status||'').toLowerCase();
   return st!=='archived'&&st!=='cancelled'&&st!=='lost'&&!p.isLead;
+}
+// v1194: Field Mechanics only ever need to see CA-signed (in-construction) projects —
+// Lead, Design and open Slots don't belong in that section at all.
+function isInConstruction(p){
+  return isVisible(p)&&!p.isOpenSlot&&(p.status==='ca-signed'||p.status==='signed');
+}
+// v1194: index to insert the FM section at — after 'lc-section' AND every 'lc:' row that
+// follows it, not just the header string itself (which would wedge FM between the LC
+// header and its own rows).
+function _lastLcBlockIndex(arr){
+  let idx=arr.indexOf('lc-section');
+  arr.forEach((k,i)=>{ if(k.startsWith('lc:')&&i>idx) idx=i; });
+  return idx;
 }
 
 // ════════════════════════════════════════════════  PER-PERSON TARGETS
@@ -8026,15 +8040,22 @@ function buildProdSection(){
     // the real schedule already lives under the project's PM/LC row; this is a roster list.
     else if(key==='fm-section'){
       const[sep,tlSep]=buildPersonSep(); fc_els.push(sep); tl_els.push(tlSep);
-      const hdr=el('div','prod-section-lbl-row'); hdr.style.cssText=`height:20px;background:#eaeef1;border-bottom:1px solid rgba(40,40,40,.10);`;
+      // v1194: the whole section collapses as one unit — infrequent access, per Byron —
+      // on top of (not instead of) the per-FM and unassigned-bucket collapse already there.
+      const hdr=el('div','prod-section-lbl-row'); hdr.style.cssText=`height:20px;background:#eaeef1;border-bottom:1px solid rgba(40,40,40,.10);display:flex;align-items:center;cursor:pointer;`;
+      hdr.dataset.toggleFmSectionCollapse='1';
+      const sectionChev=el('span','');
+      sectionChev.style.cssText='font-size:9px;color:rgba(40,40,40,.40);margin-right:4px;display:inline-block;transition:transform .15s;transform:rotate('+(PROD_FM_SECTION_COLLAPSED?'-90deg':'0deg')+');';
+      sectionChev.textContent='▾';
       const lbl=el('span',''); lbl.textContent='FIELD MECHANICS'; lbl.style.cssText='font-size:8px;font-weight:700;letter-spacing:.10em;color:rgba(40,40,40,.40);';
-      hdr.appendChild(lbl); fc_els.push(hdr);
+      hdr.appendChild(sectionChev); hdr.appendChild(lbl); fc_els.push(hdr);
       const tlH=el('div',''); tlH.style.cssText=`width:${w2px(C.numWeeks)}px;height:20px;background:#eaeef1;border-bottom:1px solid rgba(40,40,40,.10);`; tl_els.push(tlH);
     }
 
     else if(key==='fm-unassigned'){
+      if(PROD_FM_SECTION_COLLAPSED) return {fc_els,tl_els};
       const[fcSep,tlSep]=buildPersonSep(); fc_els.push(fcSep); tl_els.push(tlSep);
-      const fmUnassigned=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&!p.fieldMechanic),'production');
+      const fmUnassigned=capSortedProjects(PROJECTS.filter(p=>isInConstruction(p)&&!p.fieldMechanic),'production');
       const fcUnHdr=el('div','unassigned-hdr-fc fm-unassigned-hdr-fc'); fcUnHdr.style.cssText=`height:${C.tallyH}px;background:#c5cdd4;display:flex;align-items:center;padding:0 6px 0 0;gap:0;`;
       fcUnHdr.appendChild(prodHdl('fm-unassigned'));
       const sp1=el('span',''); sp1.style.flex='1'; fcUnHdr.appendChild(sp1);
@@ -8063,6 +8084,7 @@ function buildProdSection(){
     }
 
     else if(key.startsWith('fm:')){
+      if(PROD_FM_SECTION_COLLAPSED) return {fc_els,tl_els};
       const fmId=key.slice(3);
       const fm=FIELD_MECHANICS.find(p=>p.id===fmId); if(!fm) return {fc_els,tl_els};
       const[fcSep,tlSep]=buildPersonSep(); fc_els.push(fcSep); tl_els.push(tlSep);
@@ -8072,7 +8094,7 @@ function buildProdSection(){
       fc_els.push(fmHdr);
       tl_els.push(buildTlFmTally(fmId));
       if(!PROD_FM_COLLAPSED.has(fmId)){
-        const fmProjs=capSortedProjects(PROJECTS.filter(p=>isVisible(p)&&p.fieldMechanic===fmId),'production');
+        const fmProjs=capSortedProjects(PROJECTS.filter(p=>isInConstruction(p)&&p.fieldMechanic===fmId),'production');
         fmProjs.forEach(proj=>{
           fc_els.push(buildFcMsRow(proj,'fm'));
           const rowH=proj.collapsed?BAND_H:C.laneH;
@@ -8092,9 +8114,10 @@ function buildProdSection(){
   const fixedKeys=['total','revenue','unassigned','pm-section','lc-section','fm-section','fm-unassigned'];
   pmKeys.forEach(k=>{ if(!PROD_ROW_ORDER.includes(k)){ const idx=PROD_ROW_ORDER.findIndex(x=>x.startsWith('pm:')); PROD_ROW_ORDER.splice(idx>=0?idx:(PROD_ROW_ORDER.indexOf('pm-section')+1||1),0,k); } });
   lcKeys.forEach(k=>{ if(!PROD_ROW_ORDER.includes(k)){ const idx=PROD_ROW_ORDER.indexOf('lc-section'); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,k); } });
-  // v1193: Field Mechanics — beneath the LCs, per Byron. Section header + its own
-  // "Needs a Field Mechanic" bucket, both inserted right after lc-section's content.
-  if(!PROD_ROW_ORDER.includes('fm-section')){ const idx=PROD_ROW_ORDER.indexOf('lc-section'); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,'fm-section'); }
+  // v1193/v1194: Field Mechanics — beneath the LCs, per Byron. Section header + its own
+  // "Needs a Field Mechanic" bucket, inserted after ALL of lc-section's content (not just
+  // the header string — that would land FM between the LC header and its own rows).
+  if(!PROD_ROW_ORDER.includes('fm-section')){ const idx=_lastLcBlockIndex(PROD_ROW_ORDER); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,'fm-section'); }
   if(!PROD_ROW_ORDER.includes('fm-unassigned')){ const idx=PROD_ROW_ORDER.indexOf('fm-section'); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,'fm-unassigned'); }
   fmKeys.forEach(k=>{ if(!PROD_ROW_ORDER.includes(k)){ const idx=PROD_ROW_ORDER.indexOf('fm-unassigned'); PROD_ROW_ORDER.splice(idx>=0?idx+1:PROD_ROW_ORDER.length-1,0,k); } });
   PROD_ROW_ORDER=PROD_ROW_ORDER.filter(k=>fixedKeys.includes(k)||pmKeys.includes(k)||lcKeys.includes(k)||fmKeys.includes(k));
@@ -9005,6 +9028,8 @@ function initDrag(){
     if(fmColBtn){ const fmId=fmColBtn.dataset.toggleFmCollapse; if(PROD_FM_COLLAPSED.has(fmId)) PROD_FM_COLLAPSED.delete(fmId); else PROD_FM_COLLAPSED.add(fmId); rebuildSection('production'); triggerSave(); return; }
     const fmUnColBtn=e.target.closest('[data-toggle-fm-unassigned-collapse]'); // v1193
     if(fmUnColBtn){ PROD_FM_UNASSIGNED_COLLAPSED=!PROD_FM_UNASSIGNED_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
+    const fmSecBtn=e.target.closest('[data-toggle-fm-section-collapse]'); // v1194
+    if(fmSecBtn){ PROD_FM_SECTION_COLLAPSED=!PROD_FM_SECTION_COLLAPSED; rebuildSection('production'); triggerSave(); return; }
     const lcMsBtn=e.target.closest('[data-toggle-lc-design-ms]');
     if(lcMsBtn){ const lcId=lcMsBtn.dataset.toggleLcDesignMs; if(LC_DESIGN_MS_HIDDEN.has(lcId)) LC_DESIGN_MS_HIDDEN.delete(lcId); else LC_DESIGN_MS_HIDDEN.add(lcId); rebuildSection('production'); triggerSave(); return; }
     const lcProjColBtn=e.target.closest('[data-toggle-lc-proj-collapse]');
@@ -10593,6 +10618,7 @@ function userPrefsPayload(){
     PROD_LC_EXPANDED:[...LC_COORDS.map(lc=>lc.id).filter(id=>!PROD_LC_COLLAPSED.has(id))],
     PROD_FM_EXPANDED:[...FIELD_MECHANICS.map(fm=>fm.id).filter(id=>!PROD_FM_COLLAPSED.has(id))], // v1193
     PROD_FM_UNASSIGNED_COLLAPSED, // v1193
+    PROD_FM_SECTION_COLLAPSED, // v1194
     LC_PROJ_EXPANDED:[...LC_PROJ_EXPANDED],
     LC_DESIGN_MS_HIDDEN:[...LC_DESIGN_MS_HIDDEN],
     PROD_UNASSIGNED_COLLAPSED, DESIGN_UNASSIGNED_COLLAPSED,
@@ -13081,6 +13107,7 @@ function restoreSavedState(saved){
     saved.PROD_FM_EXPANDED.forEach(id=>PROD_FM_COLLAPSED.delete(id));
   }
   if(typeof saved.PROD_FM_UNASSIGNED_COLLAPSED==='boolean') PROD_FM_UNASSIGNED_COLLAPSED=saved.PROD_FM_UNASSIGNED_COLLAPSED;
+  if(typeof saved.PROD_FM_SECTION_COLLAPSED==='boolean') PROD_FM_SECTION_COLLAPSED=saved.PROD_FM_SECTION_COLLAPSED;
   if(saved.LC_PROJ_EXPANDED&&Array.isArray(saved.LC_PROJ_EXPANDED)) LC_PROJ_EXPANDED=new Set(saved.LC_PROJ_EXPANDED);
   if(saved.LC_DESIGN_MS_HIDDEN&&Array.isArray(saved.LC_DESIGN_MS_HIDDEN)) LC_DESIGN_MS_HIDDEN=new Set(saved.LC_DESIGN_MS_HIDDEN);
   if(typeof saved.PROD_UNASSIGNED_COLLAPSED==='boolean') PROD_UNASSIGNED_COLLAPSED=saved.PROD_UNASSIGNED_COLLAPSED;
@@ -13125,8 +13152,8 @@ function restoreSavedState(saved){
   // Ensure structural keys exist
   if(!order.includes('pm-section')) order.unshift('pm-section');
   if(!order.includes('lc-section')){ const ui=order.indexOf('unassigned'); order.splice(ui>=0?ui+1:order.length-1,0,'lc-section'); }
-  // v1193: Field Mechanics — beneath the LCs, same structural-key bootstrap as lc-section
-  if(!order.includes('fm-section')){ const li=order.indexOf('lc-section'); order.splice(li>=0?li+1:order.length-1,0,'fm-section'); }
+  // v1193/v1194: Field Mechanics — beneath the LCs, after all of lc-section's own rows
+  if(!order.includes('fm-section')){ const li=_lastLcBlockIndex(order); order.splice(li>=0?li+1:order.length-1,0,'fm-section'); }
   if(!order.includes('fm-unassigned')){ const fi=order.indexOf('fm-section'); order.splice(fi>=0?fi+1:order.length-1,0,'fm-unassigned'); }
   // Add any new PMs not yet in the order
   PROD_PMS.forEach(pm=>{
