@@ -137,6 +137,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn.primary:hover{filter:brightness(1.08)}
 .btn.quiet{border-color:transparent;background:transparent;color:var(--muted)}
 .btn.quiet:hover{color:var(--ink)}
+.btn.plain{border-color:transparent;background:transparent;color:var(--ink);text-decoration:none}
+.btn.plain:hover{background:var(--soft)}
+.tab-sep{flex:none;width:1px;background:var(--line-strong);margin:10px 6px 10px auto}
 .btn.danger{color:var(--over)}
 .btn.small{padding:5px 10px;font-size:13px}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
@@ -629,7 +632,7 @@ button.bwtb-link{background:none;border:0;padding:0;cursor:pointer}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v8';
+const CORE_VERSION = 'v9';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -1206,7 +1209,7 @@ async function fillNames(root) {
 const clientUI = () => !S.team || S.preview;
 function viewsFor() {
   return clientUI() ? [["selections","Your selections"],["boards","Mood boards"],["recaps","Meeting recaps"]]
-                    : [["tracker","Budget tracker"],["sheet","Selection sheet"],["library","Library"],["boards","Mood boards"],["meetings","Meetings"],["schedules","Schedules"]];
+                    : [["tracker","Budget tracker"],["sheet","Selection sheet"],["boards","Mood boards"],["meetings","Meetings"],["schedules","Schedules"],["library","Library"]];
 }
 function setView(v) { S.view = v; S.search = ""; if (S.libEditing) { S.libEditing = false; if (!S.drawerId) S.optDraft = null; } renderTabs(); renderToolbar(); renderContent(); }
 
@@ -1220,12 +1223,14 @@ function renderHeader() {
   $("#previewBar").hidden = !(S.team && S.preview);
   const a = $("#headActions");
   const insp = safeUrl(s.inspirationUrl);
-  a.innerHTML = (insp ? `<a class="btn" style="text-decoration:none" href="${esc(insp)}" target="_blank" rel="noopener">Inspiration board</a>` : "") + ((S.team && !S.preview) ? `<button class="btn" data-act="preview">Preview client view</button><button class="btn" data-act="settings">Project settings</button>` : "");
+  const team = S.team && !S.preview;
+  a.innerHTML = (insp ? `<a class="btn plain" href="${esc(insp)}" target="_blank" rel="noopener" data-tip="Opens in a new tab">Inspiration board</a>` : team ? `<button class="btn plain" data-act="settings-insp" data-tip="Add the link to this project's inspiration board (Pinterest, Houzz, a shared folder)">Inspiration board</button>` : "")
+    + (team ? `<button class="btn plain" data-act="preview">Preview client view</button><button class="btn plain" data-act="settings">Project settings</button>` : "");
 }
 function renderTabs() {
   const vs = viewsFor();
   if (!vs.some(v => v[0] === S.view)) S.view = vs[0][0];
-  $("#tabs").innerHTML = vs.map(([k, l]) => `<button class="tab" role="tab" aria-selected="${k === S.view}" data-act="view" data-v="${k}">${l}</button>`).join("");
+  $("#tabs").innerHTML = vs.map(([k, l]) => (k === "library" ? `<span class="tab-sep" aria-hidden="true"></span>` : "") + `<button class="tab" role="tab" aria-selected="${k === S.view}" data-act="view" data-v="${k}">${l}</button>`).join("");
 }
 function renderToolbar() {
   const t = $("#toolbar");
@@ -2231,6 +2236,7 @@ function settingsDlg() {
     <div class="field" style="margin-top:16px"><label class="f" for="s-name">Project name</label><input class="input" id="s-name" value="${esc(s.projectName || "")}" placeholder="Project name"></div>
     <div class="grid2"><div class="field"><label class="f" for="s-sub">Project type</label><input class="input" id="s-sub" value="${esc(s.subtitle || "")}" placeholder="Whole Home Renovation"></div>
     <div class="field"><label class="f" for="s-addr">Address</label><input class="input" id="s-addr" value="${esc(s.address || "")}"></div></div>
+    <div class="field"><label class="f" for="s-insp">Inspiration board link</label><input class="input" id="s-insp" value="${esc(s.inspirationUrl || "")}" placeholder="https://www.pinterest.com/…"><p class="muted" style="font-size:13px;margin:4px 0 0">Shows as an Inspiration board button at the top of the page, for the team and the client.</p></div>
     <div class="field"><label class="f" for="s-target">Target material budget ($)</label><input class="input" id="s-target" inputmode="decimal" value="${esc(dollars(s.targetBudgetCents) ?? "")}" style="max-width:220px"></div>
     <h3 style="font-size:15px;margin:22px 0 4px">Selection tiers</h3>
     <p class="muted" style="font-size:14px;margin:0 0 12px">Copy each tier’s date from the project pipeline once its milestones are set.${safeUrl(s.pipelineUrl) ? ` <a href="${esc(safeUrl(s.pipelineUrl))}" target="_blank" rel="noopener">Open the pipeline</a>` : ""}</p>
@@ -2245,7 +2251,7 @@ function settingsDlg() {
   </div><div class="d-foot"><button class="btn quiet" data-act="close-dlg">Cancel</button><button class="btn primary" data-act="save-settings">Save settings</button></div></div>`);
 }
 async function saveSettings() {
-  const data = Object.assign({}, S.settings, { projectName: $("#s-name").value.trim(), subtitle: $("#s-sub").value.trim(), address: $("#s-addr").value.trim(), targetBudgetCents: toCents(num($("#s-target").value)), tierDates: { "1": $("#s-t1").value || null, "2": $("#s-t2").value || null, "3": $("#s-t3").value || null }, pipelineUrl: safeUrl($("#s-pipe").value), tierByCategory: Object.fromEntries(DIVS.map((_, i) => [String(i + 1), num($("#s-cat-" + (i + 1)).value)]).filter(e => e[1])) });
+  const data = Object.assign({}, S.settings, { inspirationUrl: safeUrl($("#s-insp").value) || "", projectName: $("#s-name").value.trim(), subtitle: $("#s-sub").value.trim(), address: $("#s-addr").value.trim(), targetBudgetCents: toCents(num($("#s-target").value)), tierDates: { "1": $("#s-t1").value || null, "2": $("#s-t2").value || null, "3": $("#s-t3").value || null }, pipelineUrl: safeUrl($("#s-pipe").value), tierByCategory: Object.fromEntries(DIVS.map((_, i) => [String(i + 1), num($("#s-cat-" + (i + 1)).value)]).filter(e => e[1])) });
   try { await setDoc("portal/settings", data); closeDlg(); toast("Settings saved."); } catch (_) {}
 }
 
@@ -2554,6 +2560,7 @@ const actions = {
   "preview": () => { S.preview = true; closeDrawer(); renderAll(); },
   "exit-preview": () => { S.preview = false; closeDrawer(); renderAll(); },
   "settings": () => settingsDlg(),
+  "settings-insp": () => { settingsDlg(); setTimeout(() => { const i = $("#s-insp"); if (i) { i.focus(); i.scrollIntoView({ block: "center" }); } }, 0); },
   "save-settings": () => saveSettings(),
   "finalize": async a => { if (!armConfirm(a)) return; try { await setDoc("portal/settings", Object.assign({}, S.settings, { finalized: { at: nowIso(), by: S.myId } })); toast("Selection sheet finalized."); } catch (_) {} },
   "lock": async () => { try { await setDoc("portal/settings", Object.assign({}, S.settings, { finalized: S.settings.finalized || { at: nowIso(), by: S.myId }, locked: true, lockedAt: nowIso(), lockedBy: S.myId })); toast("Allowances locked. The selection sheet is ready."); } catch (_) {} },
