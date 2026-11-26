@@ -25,7 +25,7 @@ Last updated: 2026-11-25
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v190 |
 | **Selections** | | |
 | Selections List Setup | `selections/selections-setup.html` | v13 |
-| Selections · Design | `selections/design.html` | v6 |
+| Selections · Design | `selections/design.html` | v7 |
 | Selections · LC | `selections/lc-portal.html` | v15 |
 | Selections · Field Mechanic | `selections/field-view.html` | v19 |
 | Selections · Warehouse | `selections/warehouse.html` | v8 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 ## Log
 
+- **2026-11-26** — Selections · Design v6 → v7, per Byron: (1) the circular Bellweather seal is gone from the page header (an uploaded project logo still shows); (2) a **Projects** picker like the LC screen's My projects replaces the job list and the *Switch job* link: **My projects** = Pipeline projects where you are Designer 1 or 2 (`CORE_Projects.DesignerName` / `SecondaryDesigner`, matched to your sign-in through `CORE_TeamMembers.email` → `EmployeeName`, falling back to the Microsoft account name), then **All projects** (every active Pipeline project — DA Signed, CA Signed, Paused — plus every job that already has selections), then Archived; searchable by name, job code or designer; names are the Projects Manager's Project Name with the job code beside it; projects with no selections yet can be opened. Nothing is stored. (3) The top bar shows the designer's name instead of `BWCore › JOB`. The page title defaults to the Project Name instead of the job code until settings are saved. One `CORE_Projects` read now serves the picker, the name and the tier dates.
 - **2026-11-25** — Project Pipeline v1200 → v1201: added the Google Maps pin to the Sales screen's project hover card, matching Design/Production. The Sales tooltip is built from HTML strings rather than DOM nodes (unlike the other two), so it had been left on the old, permanently-disabled `_MAP_BTN_HTML` placeholder; new `_mkMapPinHTML(proj)` is a string-HTML twin of `_mkMapPin()` (same classes/dataset, so it runs through the same delegated `[data-upcoming-pill]` click handling) and is now used in both Sales tooltip builders, keyed off `origProj` so it reflects the live project's coordinates.
 
 - **2026-11-25** — Project Pipeline v1199 → v1200: re-applied the two non-FM tweaks dropped by the FM revert in v1199, per Byron. Hover-card map pin sits beside the address again (both `.tt-addr-row` builders, 5px gap, `flex-wrap` fallback for long addresses), and `_patchPersonNameToSP()` surfaces a toast on SharePoint patch failure instead of only logging to console, so a missing/misnamed person-field column (Designer/Secondary Designer/LC1/LC2/PM) shows up immediately rather than silently reverting on refresh.
