@@ -45,6 +45,25 @@ body:has(#previewBar:not([hidden])) .bwtb{display:none}   /* client preview: no 
 .pp-c{font-size:12px;color:#6E625C;text-align:right;white-space:nowrap}
 .pp-m{grid-column:1/-1;font-size:12px;color:#6E625C}
 .pp-empty{color:#6E625C;font-size:14px;padding:10px 2px}
+.pp-views{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.pp-chip{font:500 13px/1 var(--sans);color:#263860;background:#fff;border:1px solid #D6D0C5;border-radius:999px;padding:8px 12px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.pp-chip span{color:#6E625C;font-weight:400}
+.pp-chip[aria-selected="true"]{background:#263860;border-color:#263860;color:#fff}
+.pp-chip[aria-selected="true"] span{color:rgba(255,255,255,.75)}
+.pp-add{border-style:dashed;color:#6E625C}
+.pp-oth{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%;margin-top:4px}
+.pp-oth>span{font:600 11px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:#6E625C;margin-right:4px}
+.pp-vbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin:0 0 10px;min-height:20px}
+.pp-vbar .pp-hint{margin:0}
+.pp-acts{display:flex;gap:8px;align-items:center}
+.pp-lk{font:600 13px/1 var(--sans);color:#263860;background:none;border:0;padding:6px 4px;cursor:pointer;text-decoration:underline}
+.pp-lk[data-armed="1"]{color:#8A2F2F}
+.pp-name{display:flex;gap:8px;width:100%;align-items:center}
+.pp-name .pp-q{flex:1}
+.pp-err{width:100%;margin:0;color:#8A2F2F;font-size:13px}
+.pp-row[data-star]{grid-template-columns:auto 1fr auto}
+.pp-row[data-star] .pp-m{grid-column:2/-1}
+.pp-s{font-size:18px;line-height:1;color:#263860;grid-row:1/3;align-self:center}
 :root{
   --bg:#F6F6F4; --surface:#FFFFFF; --soft:#EEEFEC; --band:#E4E6E1; --sel:#F4F1ED; --sel-soft:#282828; --dec-bg:#8E91A0; --dec-ink:#FFFFFF; --ink:#1E2326; --muted:#646C74; --line:#DFE1DD; --line-strong:#C6CAC4;
   --accent:#2E4A55; --accent-ink:#FFFFFF; --accent-soft:#E1EAED;
@@ -610,7 +629,7 @@ button.bwtb-link{background:none;border:0;padding:0;cursor:pointer}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v7';
+const CORE_VERSION = 'v8';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -842,38 +861,102 @@ const CORE_VERSION = 'v7';
       const o=by.get(k)||{code,name:code,stage:'',des:[]}; o.sel=true; o.archived=!!f.Archived; by.set(k,o); }
     return [...by.values()].filter(o=>o.sel||ACTIVE_STAGES.has(o.stage)).sort((a,b)=>a.name.localeCompare(b.name));
   }
+  /* Saved views: a named list of projects, owned by one person, visible to everyone (like the LC screen's views).
+     Stored in CORE_SelectionDesignDocs, one row per view: Job '_prefs', Collection 'designViews', DocId = the view key,
+     Data {name, owner, ownerId (sign-in email), jobs:[job codes]}. "My projects" and "All projects" are never stored. */
+  let VIEWS=null; const viewSp=new Map();
+  async function loadViews(){
+    const rows=await gAll(`${LISTS}/${L.D}/items?$filter=fields/Job eq '_prefs'&$expand=fields($select=${SEL.D})&$top=999`).catch(e=>{ console.warn('Selections: could not read saved views',e); return []; });
+    VIEWS=new Map(); viewSp.clear();
+    for(const r of rows){ const f=r.fields||{}; if(f.Collection!=='designViews'||!f.DocId) continue; const d=parseJ(f.Data);
+      VIEWS.set(f.DocId,{name:String(d.name||'Untitled view'),owner:String(d.owner||''),ownerId:String(d.ownerId||'').toLowerCase(),jobs:Array.isArray(d.jobs)?d.jobs.map(String):[]}); viewSp.set(f.DocId,String(r.id)); }
+    return VIEWS;
+  }
+  async function saveView(id,v){   // v = null deletes
+    const sp=viewSp.get(id);
+    if(!v){ if(sp){ await del(L.D,sp); viewSp.delete(id); } VIEWS.delete(id); return; }
+    const data=JSON.stringify({name:v.name,owner:v.owner,ownerId:v.ownerId,jobs:v.jobs});
+    if(sp) await patch(L.D,sp,{Data:data});
+    else{ const r=await post(L.D,{Title:('designViews/'+id).slice(0,255),Job:'_prefs',Collection:'designViews',DocId:id,Data:data}); viewSp.set(id,String(r.id)); }
+    VIEWS.set(id,v);
+  }
   function pickJob(cancelable){
     if(!cancelable){ const q=new URLSearchParams(location.search).get('job'); if(q) return Promise.resolve(q); }
     let last=''; try{ last=localStorage.getItem('dz-job')||''; }catch(e){}
-    showGate(`<div class="pp"><div class="pp-top"><h2>Projects</h2>${cancelable?'<button class="pp-x" data-pp-close>Close</button>':''}</div><input class="pp-q" id="ppQ" type="search" placeholder="Search projects, job codes or designers" aria-label="Search projects" autocomplete="off"><div id="ppList"><p class="pp-empty">Loading projects…</p></div></div>`);
-    gate.classList.add('pp-open');
-    let list=[];
-    const me=[nmz(ME),nmz(ACCT)].filter(Boolean);
+    let cur='my'; try{ cur=localStorage.getItem('dz-view')||'my'; }catch(e){}
+    let list=[], editing=false, naming=null, busy=false;
+    const me=[nmz(ME),nmz(ACCT)].filter(Boolean), myId=nmz(MEID);
     const isMine=o=>o.des.some(d=>me.includes(nmz(d)));
-    const row=o=>`<button class="pp-row${o.code===JOB||(!JOB&&o.code===last)?' cur':''}" data-job="${esc1(o.code)}"><span class="pp-n">${esc1(o.name)}</span><span class="pp-c">${o.name!==o.code?esc1(o.code):''}</span><span class="pp-m">${o.des.length?'Designer '+esc1(o.des.join(', ')):'No designer on the Pipeline'}${o.sel?'':' · No selections yet'}${o.archived?' · Archived':''}</span></button>`;
-    const paint=()=>{ const q=nmz(document.getElementById('ppQ').value);
-      const hit=o=>!q||nmz([o.name,o.code,...o.des].join(' ')).includes(q);
-      const mine=list.filter(o=>!o.archived&&isMine(o)&&hit(o)), rest=list.filter(o=>!o.archived&&!isMine(o)&&hit(o)), arch=list.filter(o=>o.archived&&hit(o));
-      let h='';
-      if(!q||mine.length) h+=`<div class="pp-h">My projects</div>`+(mine.length?mine.map(row).join(''):`<p class="pp-hint">Projects where you're Designer 1 or 2 on the Pipeline appear here. None yet${ME?' for '+esc1(ME):''}.</p>`);
-      if(rest.length) h+=`<div class="pp-h">All projects</div>`+rest.map(row).join('');
-      if(arch.length) h+=`<div class="pp-h">Archived</div>`+arch.map(row).join('');
-      if(q&&!mine.length&&!rest.length&&!arch.length) h=`<p class="pp-empty">No project matches “${esc1(q)}”.</p>`;
-      document.getElementById('ppList').innerHTML=h; };
-    document.getElementById('ppQ').oninput=paint;
-    projectChoices().then(L=>{ list=L; if(!list.length){ document.getElementById('ppList').innerHTML='<p class="pp-empty">No projects found. Check the Pipeline, or import a job on the setup page.</p>'; return; } paint(); })
-      .catch(e=>{ document.getElementById('ppList').innerHTML=`<p class="pp-empty">Couldn’t load projects: ${esc1(e&&e.message||e)}</p>`; });
-    setTimeout(()=>{ const q=document.getElementById('ppQ'); if(q&&matchMedia('(hover:hover)').matches) q.focus(); },0);
+    const ownView=v=>!!v&&nmz(v.ownerId)===myId;
+    const byCode=c=>list.find(o=>o.code===c);
+    showGate(`<div class="pp"><div class="pp-top"><h2>Projects</h2>${cancelable?'<button class="pp-x" data-pp-close>Close</button>':''}</div><div class="pp-views" id="ppViews" role="tablist" aria-label="Views"></div><div class="pp-vbar" id="ppVbar"></div><input class="pp-q" id="ppQ" type="search" placeholder="Search projects, job codes or designers" aria-label="Search projects" autocomplete="off"><div id="ppList"><p class="pp-empty">Loading projects…</p></div></div>`);
+    gate.classList.add('pp-open');
+    const $g=id=>document.getElementById(id);
+    const viewJobs=id=>id==='all'?list.filter(o=>!o.archived):id==='my'?list.filter(o=>!o.archived&&isMine(o)):((VIEWS.get(id)||{}).jobs||[]).map(byCode).filter(Boolean);
+    const row=(o,star)=>`<button class="pp-row${o.code===JOB||(!JOB&&o.code===last)?' cur':''}" ${star?`data-star="${esc1(o.code)}" aria-pressed="${star==='on'}"`:`data-job="${esc1(o.code)}"`}>${star?`<span class="pp-s" aria-hidden="true">${star==='on'?'★':'☆'}</span>`:''}<span class="pp-n">${esc1(o.name)}</span><span class="pp-c">${o.name!==o.code?esc1(o.code):''}</span><span class="pp-m">${o.des.length?'Designer '+esc1(o.des.join(', ')):'No designer on the Pipeline'}${o.sel?'':' · No selections yet'}${o.archived?' · Archived':''}</span></button>`;
+    function paintViews(){
+      if(!VIEWS.has(cur)&&cur!=='my'&&cur!=='all') cur='my';
+      const chip=(id,label,n)=>`<button class="pp-chip" role="tab" data-view="${esc1(id)}" aria-selected="${id===cur}">${esc1(label)}<span>${n}</span></button>`;
+      const mineV=[...VIEWS].filter(([,v])=>ownView(v)).sort((a,b)=>a[1].name.localeCompare(b[1].name));
+      const others=[...VIEWS].filter(([,v])=>!ownView(v)).sort((a,b)=>(a[1].owner+a[1].name).localeCompare(b[1].owner+b[1].name));
+      $g('ppViews').innerHTML=chip('my','My projects',viewJobs('my').length)+mineV.map(([id,v])=>chip(id,v.name,viewJobs(id).length)).join('')+chip('all','All projects',viewJobs('all').length)
+        +`<button class="pp-chip pp-add" data-pp-new>+ New view</button>`
+        +(others.length?`<div class="pp-oth"><span>Everyone's views</span>${others.map(([id,v])=>chip(id,v.name+' · '+(v.owner.split(' ')[0]||'?'),viewJobs(id).length)).join('')}</div>`:'');
+      const v=VIEWS.get(cur);
+      let bar='';
+      if(naming) bar=`<form class="pp-name" id="ppNameF"><input class="pp-q" id="ppName" maxlength="80" placeholder="Name this view" value="${naming==='rename'&&v?esc1(v.name):''}" aria-label="View name"><button class="pp-x" type="submit">${naming==='new'?'Create':'Save'}</button><button class="pp-lk" type="button" data-pp-cancel>Cancel</button></form>`;
+      else if(cur==='my') bar=`<p class="pp-hint">Projects where you're Designer 1 or 2 on the Pipeline${ME?' ('+esc1(ME)+')':''}.</p>`;
+      else if(cur==='all') bar=`<p class="pp-hint">Every active Pipeline project, plus every job that has selections.</p>`;
+      else if(ownView(v)) bar=`<p class="pp-hint">${editing?'Star the projects that belong in this view.':'Your view.'}</p><span class="pp-acts"><button class="pp-x" data-pp-edit>${editing?'Done':'Edit'}</button>${editing?'':`<button class="pp-lk" data-pp-rename>Rename</button><button class="pp-lk" data-pp-del data-armed="0">Delete view</button>`}</span>`;
+      else if(v) bar=`<p class="pp-hint">${esc1(v.owner||'Someone')}'s view.</p><span class="pp-acts"><button class="pp-x" data-pp-copy>Copy to my views</button></span>`;
+      $g('ppVbar').innerHTML=bar;
+      if(naming) setTimeout(()=>{ const n=$g('ppName'); if(n){ n.focus(); n.select(); } },0);
+    }
+    function paintList(){
+      const q=nmz($g('ppQ').value), hit=o=>!q||nmz([o.name,o.code,...o.des].join(' ')).includes(q);
+      const v=VIEWS.get(cur);
+      if(editing&&ownView(v)){
+        const on=new Set(v.jobs), L=list.filter(o=>!o.archived&&hit(o)).sort((a,b)=>(on.has(b.code)-on.has(a.code))||a.name.localeCompare(b.name));
+        $g('ppList').innerHTML=`<div class="pp-h">${on.size} starred</div>`+(L.map(o=>row(o,on.has(o.code)?'on':'off')).join('')||`<p class="pp-empty">No project matches “${esc1(q)}”.</p>`); return; }
+      const inV=viewJobs(cur).filter(hit), inSet=new Set(inV.map(o=>o.code));
+      let h=inV.length?inV.map(o=>row(o)).join(''):(q?'':cur==='my'?`<p class="pp-empty">No Pipeline project lists ${ME?esc1(ME):'you'} as Designer 1 or 2. Use All projects, or make a view.</p>`:cur==='all'?'<p class="pp-empty">No projects found. Check the Pipeline, or import a job on the setup page.</p>':`<p class="pp-empty">${ownView(v)?'This view is empty. Use Edit to star projects.':'This view is empty.'}</p>`);
+      if(q){ const rest=list.filter(o=>!inSet.has(o.code)&&hit(o)); if(rest.length) h+=`<div class="pp-h">${inV.length?'Other projects':'Not in this view'}</div>`+rest.map(o=>row(o)).join(''); if(!inV.length&&!rest.length) h=`<p class="pp-empty">No project matches “${esc1(q)}”.</p>`; }
+      if(!q&&cur==='all'){ const arch=list.filter(o=>o.archived); if(arch.length) h+=`<div class="pp-h">Archived</div>`+arch.map(o=>row(o)).join(''); }
+      $g('ppList').innerHTML=h;
+    }
+    const paint=()=>{ paintViews(); paintList(); };
+    const setCur=id=>{ cur=id; editing=false; naming=null; try{ localStorage.setItem('dz-view',id); }catch(e){} paint(); };
+    async function act(fn,msg){ if(busy) return; busy=true; try{ await fn(); }catch(e){ console.warn(e); const b=$g('ppVbar'); if(b) b.insertAdjacentHTML('afterbegin',`<p class="pp-err">${esc1(msg)}</p>`); busy=false; return; } busy=false; paint(); }
+    $g('ppQ').oninput=paintList;
+    Promise.all([projectChoices(),loadViews()]).then(([L])=>{ list=L; paint(); })
+      .catch(e=>{ $g('ppList').innerHTML=`<p class="pp-empty">Couldn’t load projects: ${esc1(e&&e.message||e)}</p>`; });
+    setTimeout(()=>{ const q=$g('ppQ'); if(q&&matchMedia('(hover:hover)').matches) q.focus(); },0);
     return new Promise(res=>{
+      gate.onsubmit=e=>{ if(e.target.id!=='ppNameF') return; e.preventDefault(); const name=($g('ppName').value||'').trim(); if(!name) return;
+        if(naming==='new'){ const id='v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+          act(async()=>{ await saveView(id,{name,owner:ME,ownerId:MEID,jobs:[]}); cur=id; editing=true; naming=null; try{ localStorage.setItem('dz-view',id); }catch(_){} },'Couldn’t save the view. Try again.'); }
+        else{ const v=VIEWS.get(cur); act(async()=>{ await saveView(cur,{...v,name}); naming=null; },'Couldn’t rename the view. Try again.'); } };
       gate.onclick=e=>{
-        if(e.target.closest('[data-pp-close]')){ gate.classList.remove('show','pp-open'); return; }
-        const b=e.target.closest('[data-job]'); if(!b) return; const j=b.dataset.job; try{ localStorage.setItem('dz-job',j); }catch(_){}
+        const t=e.target;
+        if(t.closest('[data-pp-close]')){ gate.classList.remove('show','pp-open'); return; }
+        const vb=t.closest('[data-view]'); if(vb){ setCur(vb.dataset.view); return; }
+        if(t.closest('[data-pp-new]')){ naming='new'; paintViews(); return; }
+        if(t.closest('[data-pp-cancel]')){ naming=null; paintViews(); return; }
+        if(t.closest('[data-pp-edit]')){ editing=!editing; paint(); return; }
+        if(t.closest('[data-pp-rename]')){ naming='rename'; paintViews(); return; }
+        const db=t.closest('[data-pp-del]'); if(db){ if(db.dataset.armed!=='1'){ db.dataset.armed='1'; db.textContent='Click again to delete'; return; }
+          act(async()=>{ await saveView(cur,null); cur='my'; try{ localStorage.setItem('dz-view','my'); }catch(_){} },'Couldn’t delete the view. Try again.'); return; }
+        if(t.closest('[data-pp-copy]')){ const v=VIEWS.get(cur); naming=null; const id='v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+          act(async()=>{ await saveView(id,{name:v.name,owner:ME,ownerId:MEID,jobs:v.jobs.slice()}); cur=id; try{ localStorage.setItem('dz-view',id); }catch(_){} },'Couldn’t copy the view. Try again.'); return; }
+        const sb=t.closest('[data-star]'); if(sb){ const v=VIEWS.get(cur); if(!ownView(v)) return; const c=sb.dataset.star, jobs=new Set(v.jobs); jobs.has(c)?jobs.delete(c):jobs.add(c);
+          act(async()=>{ await saveView(cur,{...v,jobs:[...jobs]}); },'Couldn’t save the change. Try again.'); return; }
+        const b=t.closest('[data-job]'); if(!b) return; const j=b.dataset.job; try{ localStorage.setItem('dz-job',j); }catch(_){}
         if(cancelable){ if(j!==JOB) location.href='?job='+encodeURIComponent(j); else gate.classList.remove('show','pp-open'); return; }
         history.replaceState(null,'','?job='+encodeURIComponent(j)+location.hash); gate.classList.remove('show','pp-open'); res(j); };
     });
   }
   const esc1=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let ACCT='';
+  let ACCT='', MEID='';
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&gate.classList.contains('pp-open')&&JOB) gate.classList.remove('show','pp-open'); });
   const ready=(async()=>{
     await SherpaAuth.init();
@@ -882,7 +965,7 @@ const CORE_VERSION = 'v7';
       document.getElementById('spSignIn').onclick=()=>SherpaAuth.signIn().catch(e=>{ document.getElementById('spGateMsg').textContent='Sign-in failed: '+e.message; });
       await new Promise(()=>{});
     }
-    const a=SherpaAuth.getAccount(); ACCT=(a&&a.name)||''; ME=ACCT||(a&&a.username)||'';
+    const a=SherpaAuth.getAccount(); ACCT=(a&&a.name)||''; MEID=String(a&&a.username||'').toLowerCase(); ME=ACCT||(a&&a.username)||'';
     const tn=await teamName(a&&a.username); if(tn) ME=tn;
     bwSub(ME);
     const sw=document.getElementById('jobSwitch'); if(sw) sw.onclick=()=>pickJob(true);

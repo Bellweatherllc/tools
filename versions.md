@@ -25,7 +25,7 @@ Last updated: 2026-11-25
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v190 |
 | **Selections** | | |
 | Selections List Setup | `selections/selections-setup.html` | v13 |
-| Selections · Design | `selections/design.html` | v7 |
+| Selections · Design | `selections/design.html` | v8 |
 | Selections · LC | `selections/lc-portal.html` | v15 |
 | Selections · Field Mechanic | `selections/field-view.html` | v19 |
 | Selections · Warehouse | `selections/warehouse.html` | v8 |
@@ -77,6 +77,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 ## Log
 
+- **2026-11-26** — Selections · Design v7 → v8: **saved views** in the Projects picker, like the LC screen. View chips across the top: **My projects** (Designer 1 or 2 on the Pipeline), your saved views, **All projects**, *+ New view*, then **Everyone's views** (anyone can open anyone's; only the owner edits). A new view opens in edit mode: star the projects that belong in it; *Edit* / *Done*, *Rename*, *Delete view* (click twice) for your own; *Copy to my views* for someone else's. Search covers the current view and lists matches outside it underneath. Stored in `CORE_SelectionDesignDocs`, one row per view: `Job` `_prefs`, `Collection` `designViews`, `DocId` the view key, `Data` `{"name","owner","ownerId" (sign-in email),"jobs":[job codes]}`. No new list or column, and the LC screen's views (`CORE_ProjectViews`) are untouched. The last view used is remembered on the device as a convenience only.
 - **2026-11-26** — Selections · Design v6 → v7, per Byron: (1) the circular Bellweather seal is gone from the page header (an uploaded project logo still shows); (2) a **Projects** picker like the LC screen's My projects replaces the job list and the *Switch job* link: **My projects** = Pipeline projects where you are Designer 1 or 2 (`CORE_Projects.DesignerName` / `SecondaryDesigner`, matched to your sign-in through `CORE_TeamMembers.email` → `EmployeeName`, falling back to the Microsoft account name), then **All projects** (every active Pipeline project — DA Signed, CA Signed, Paused — plus every job that already has selections), then Archived; searchable by name, job code or designer; names are the Projects Manager's Project Name with the job code beside it; projects with no selections yet can be opened. Nothing is stored. (3) The top bar shows the designer's name instead of `BWCore › JOB`. The page title defaults to the Project Name instead of the job code until settings are saved. One `CORE_Projects` read now serves the picker, the name and the tier dates.
 - **2026-11-25** — Project Pipeline v1200 → v1201: added the Google Maps pin to the Sales screen's project hover card, matching Design/Production. The Sales tooltip is built from HTML strings rather than DOM nodes (unlike the other two), so it had been left on the old, permanently-disabled `_MAP_BTN_HTML` placeholder; new `_mkMapPinHTML(proj)` is a string-HTML twin of `_mkMapPin()` (same classes/dataset, so it runs through the same delegated `[data-upcoming-pill]` click handling) and is now used in both Sales tooltip builders, keyed off `origProj` so it reflects the live project's coordinates.
 
