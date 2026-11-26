@@ -608,9 +608,11 @@ dd .ph{color:var(--muted);font-weight:400;font-style:italic}
 .blinks .bl-off:hover{opacity:.75;border-color:var(--ink)}
 .blinks .bl-off:focus-visible{outline:2px solid var(--focus);outline-offset:2px;opacity:.75}
 .lp-acts{margin:0 0 8px}
-nav.views .tkbtn{margin-left:14px;border:1px solid var(--line-2);border-radius:999px;padding:6px 14px;color:var(--ink)}
-nav.views .tkbtn:hover{border-color:var(--ink)}
-nav.views .tkbtn[aria-current]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+nav.views .tkbtn{margin-left:14px;border:0;border-radius:999px;padding:6px 14px;color:var(--ink)}
+nav.views .tkbtn[aria-current]{background:var(--ink);color:var(--paper)}
+.tk-pick{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 12px}
+.tk-card{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--line-2);border-radius:10px;padding:12px 14px;margin:0 0 18px;background:var(--paper)}
+.tk-trd{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;margin:0 0 12px}
 .tk-trades{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 16px}
 .tk-trades button{border:1px solid var(--line-2);background:var(--paper);color:var(--ink-2);border-radius:999px;padding:6px 12px;font:500 13px/1 var(--sans);cursor:pointer}
 .tk-trades button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
@@ -747,7 +749,7 @@ nav.views>button:first-child{margin-left:0}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'P14';
+const CORE_VERSION = 'P15';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line) */
@@ -852,7 +854,7 @@ const CORE_VERSION = 'P14';
     jobsP.catch(()=>{ jobsP=null; });
     return jobsP;
   }
-  const cache=new Map(), inflight=new Map(), subs={items:new Set(),checkins:new Set(),trips:new Set(),receipts:new Set(),jobs:new Set(),views:new Set()}; let itemsErr=null;
+  const cache=new Map(), inflight=new Map(), subs={items:new Set(),checkins:new Set(),trips:new Set(),receipts:new Set(),jobs:new Set(),views:new Set(),trades:new Set()}; let itemsErr=null;
   const snap=rows=>({docs:rows.map(([id,d])=>({id,data:()=>clone(d)}))});
   const views={
     items:()=>[...cache.values()].flat().map(r=>[r.id,r]),
@@ -860,6 +862,7 @@ const CORE_VERSION = 'P14';
     trips:()=>[...(docs.get('trips')||new Map()).entries()],
     receipts:()=>[...(docs.get('receipts')||new Map()).entries()],
     views:()=>[...(docs.get('views')||new Map()).entries()],
+    trades:()=>[...(docs.get('trades')||new Map()).entries()],
     jobs:()=>[]};
   /* ── CORE_Projects (prototype P12): the Pipeline's project record, matched by JobCode = Job.
      Read: LC1/LC2 (for "My projects"), Address + coordinates (map, Street View), MatterportUrl, the folder anchor (Plans folder).
@@ -950,9 +953,9 @@ const CORE_VERSION = 'P14';
     if(started) return started;
     started=(async()=>{
       const js=await loadJobs();
-      forJob('CORE_SelectionDesignDocs','_shared').then(dd=>{ if(!docs.has('views')) docs.set('views',new Map());
-        for(const d of dd){ const f=d.fields; if(f.Collection!=='views') continue; docs.get('views').set(f.DocId,parseJ(f.Data)); docSp.set('views/'+f.DocId,String(d.id)); }
-        emit(['views']); }).catch(e=>console.warn('Selections: could not load views',e));
+      forJob('CORE_SelectionDesignDocs','_shared').then(dd=>{ for(const c of ['views','trades']) if(!docs.has(c)) docs.set(c,new Map());
+        for(const d of dd){ const f=d.fields; if(f.Collection!=='views'&&f.Collection!=='trades') continue; docs.get(f.Collection).set(f.DocId,parseJ(f.Data)); docSp.set(f.Collection+'/'+f.DocId,String(d.id)); }
+        emit(['views','trades']); }).catch(e=>console.warn('Selections: could not load views and trade directory',e));
       let cur=null; try{ cur=localStorage.getItem('bw-job'); }catch(e){}
       if(!js.some(j=>j.name===cur)) cur=(js.find(j=>!j.archived)||js[0]||{}).name;
       if(cur){ await loadJob(cur); }
@@ -3024,9 +3027,9 @@ function tradeKit(){
     }
   }
   else{
-    const c=((d.tradeContacts||{})[tkTrade])||{}, log=(d.tradeShares||[]).filter(s=>s.trade===tkTrade).sort((a,b)=>b.at-a.at);
+    const log=(d.tradeShares||[]).filter(s=>s.trade===tkTrade).sort((a,b)=>b.at-a.at);
     body=`<p class="lede">Who does ${esc(T.label.toLowerCase())} on ${esc(n)}, and what they've been sent.</p>
-      <div class="tk-contact">${[["name","Name"],["company","Company"],["email","Email"],["phone","Phone"]].map(([k,l])=>`<label><span>${l}</span><input type="text" data-tkcontact="${k}" value="${esc(c[k]||"")}" ${canWrite?"":"disabled"}></label>`).join("")}</div>
+      ${tkContactHtml(n)}
       <h4 class="rsubh">Packet</h4>
       <div class="tk-pack">${[["takeoff","Takeoff",L.length+" items"],["manuals","Manuals & cut sheets",files?L.filter(i=>tkDocs(n,i).length).length+" items":"…"],["rough","Rough-in sheet",T.rough?"notes on "+L.filter(i=>i.roughIn).length+" items":"n/a"]].map(([k,l,m])=>`<label class="check" style="border:0;padding:4px 0"><input type="checkbox" data-tkpart="${k}" ${k==="rough"&&!T.rough?"disabled":"checked"}><span>${l} <span class="note">· ${m}</span></span></label>`).join("")}</div>
       <div class="tk-acts"><button class="btn ghost small" data-tkcopy="message">Copy message</button><button class="btn small" data-tksent ${canWrite?"":"disabled"}>Mark as sent</button></div>
@@ -3041,7 +3044,7 @@ function tkText(kind){
   const rough=()=>{ const by={}; L.forEach(i=>{ (by[i.Location||"No room"]=by[i.Location||"No room"]||[]).push(i); });
     return Object.entries(by).map(([r,rs])=>r.toUpperCase()+"\n"+rs.map(i=>"  - "+i.Title+(tkSpec(i).length?" ("+tkSpec(i).join("; ")+")":"")+"\n      Rough-in: "+(i.roughIn||"—")).join("\n")).join("\n\n"); };
   if(kind==="rough") return `${n} – ${T.label} rough-in sheet\n${(JOBS[n]||{}).address||""}\n\n`+rough();
-  const parts=[...document.querySelectorAll("[data-tkpart]:checked")].map(x=>x.dataset.tkpart), c=(((JOBS[n]||{}).tradeContacts||{})[tkTrade])||{};
+  const parts=[...document.querySelectorAll("[data-tkpart]:checked")].map(x=>x.dataset.tkpart), c=tkContact(n)||{};
   let t=`Hi${c.name?" "+first(c.name):""},\n\nHere's the ${T.label.toLowerCase()} information for ${n}${(JOBS[n]||{}).address?" ("+JOBS[n].address+")":""}.\n`;
   if(parts.includes("takeoff")) t+=`\nTAKEOFF\n`+L.map(i=>`- ${i.Location||""}: ${i.Title} x${i.qty||1}${tkSpec(i).length?" – "+tkSpec(i).join("; "):""}`).join("\n")+"\n";
   if(parts.includes("manuals")) t+=`\nMANUALS & CUT SHEETS\n`+L.filter(i=>tkDocs(n,i).length).map(i=>`- ${i.Title}: `+tkDocs(n,i).map(f=>f.fields.FileLeafRef).join(", ")).join("\n")+"\n";
@@ -3051,12 +3054,12 @@ function tkText(kind){
 async function tkCopy(text){ try{ await navigator.clipboard.writeText(text); toast("Copied"); }catch(e){ const ta=document.createElement("textarea"); ta.value=text; ta.style.cssText="position:fixed;opacity:0"; document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand("copy"); }catch(_){} ta.remove(); toast(ok?"Copied":"Couldn't copy – select and copy by hand"); } }
 document.addEventListener("click",e=>{
   const t=e.target.closest("[data-tktrade],[data-tktab],[data-tkcopy],[data-tksent],[data-tkdetail]"); if(!t) return;
-  if(t.dataset.tktrade){ tkTrade=t.dataset.tktrade; render(); }
+  if(t.dataset.tktrade){ tkTrade=t.dataset.tktrade; tkEdit=null; render(); }
   else if(t.dataset.tktab){ tkTab=t.dataset.tktab; render(); }
   else if(t.dataset.tkcopy) tkCopy(tkText(t.dataset.tkcopy));
   else if(t.dataset.tkdetail) openDetail(t.dataset.tkdetail);
   else if(t.hasAttribute("data-tksent")){
-    const n=job, d=JOBS[n]||{}, c=((d.tradeContacts||{})[tkTrade])||{}, parts=[...document.querySelectorAll("[data-tkpart]:checked")].map(x=>({takeoff:"Takeoff",manuals:"Manuals",rough:"Rough-in sheet"})[x.dataset.tkpart]);
+    const n=job, d=JOBS[n]||{}, c=tkContact(n)||{}, parts=[...document.querySelectorAll("[data-tkpart]:checked")].map(x=>({takeoff:"Takeoff",manuals:"Manuals",rough:"Rough-in sheet"})[x.dataset.tkpart]);
     if(!parts.length){ toast("Tick what was sent"); return; }
     const entry={trade:tkTrade,to:[c.name,c.company].filter(Boolean).join(", ")||TRADES.find(x=>x.k===tkTrade).label,parts,at:Date.now(),by:(window.spMe||{}).name||""};
     jobDoc(n).update({tradeShares:[...(d.tradeShares||[]),entry]}).then(()=>toast("Logged as sent")).catch(()=>toast("Didn't save – try again"));
@@ -3065,8 +3068,51 @@ document.addEventListener("click",e=>{
 document.addEventListener("change",e=>{
   const t=e.target;
   if(t.matches&&t.matches("[data-tkrough]")){ db.collection("items").doc(t.dataset.tkrough).update({roughIn:t.value.trim()||null}).then(()=>toast("Saved")).catch(()=>toast("Didn't save – try again")); }
-  else if(t.matches&&t.matches("[data-tkcontact]")){ const n=job, d=JOBS[n]||{}, all={...(d.tradeContacts||{})}; all[tkTrade]={...(all[tkTrade]||{}),[t.dataset.tkcontact]:t.value.trim()};
-    jobDoc(n).update({tradeContacts:all}).then(()=>toast("Saved")).catch(()=>toast("Didn't save – try again")); }
+});
+
+/* ── Trade directory (prototype P15) ──
+   One shared list of trade contacts (CORE_SelectionDesignDocs, Job = _shared, Collection = trades), used by every
+   project and every LC. Each project only records who does each trade there: tradeContacts[trade] = contact id. */
+let TRADE_DIR={}, tkEdit=null;   // tkEdit: null | "new" | contact id
+function tkContact(n){ const v=(((JOBS[n]||{}).tradeContacts)||{})[tkTrade]; return typeof v==="string"?(TRADE_DIR[v]?{id:v,...TRADE_DIR[v]}:null):null; }
+const tkLabel=k=>(TRADES.find(t=>t.k===k)||{}).label||k;
+function tkUsedOn(id){ return Object.keys(JOBS).filter(n=>Object.values(((JOBS[n]||{}).tradeContacts)||{}).includes(id)); }
+function tkContactHtml(n){
+  const T=TRADES.find(t=>t.k===tkTrade), cur=tkContact(n), all=Object.entries(TRADE_DIR).sort((a,b)=>String(a[1].name||a[1].company).localeCompare(String(b[1].name||b[1].company)));
+  const mine=all.filter(([,c])=>(c.trades||[]).includes(tkTrade)), other=all.filter(([,c])=>!(c.trades||[]).includes(tkTrade));
+  const opt=([id,c])=>`<option value="${esc(id)}" ${cur&&cur.id===id?"selected":""}>${esc([c.name,c.company].filter(Boolean).join(" · "))}</option>`;
+  const form=(c,isNew)=>`<div class="tk-contact">${[["name","Name"],["company","Company"],["email","Email"],["phone","Phone"]].map(([k,l])=>`<label><span>${l}</span><input type="text" id="tkc-${k}" value="${esc((c||{})[k]||"")}"></label>`).join("")}</div>
+    <div class="tk-trd"><span class="note">Trades</span>${TRADES.filter(t=>t.k!=="other").map(t=>`<label class="check" style="border:0;padding:2px 0"><input type="checkbox" class="tkc-trade" value="${t.k}" ${((c&&c.trades)||[tkTrade]).includes(t.k)?"checked":""}><span>${esc(t.label)}</span></label>`).join("")}</div>
+    <div class="tk-acts"><button class="btn small" data-tkcsave="${isNew?"new":esc(c.id)}">${isNew?"Add to directory":"Save contact"}</button><button class="btn ghost small" data-tkccancel>Cancel</button></div>
+    <p class="note">${isNew?"Added to the shared trade directory, so every project and LC can pick them.":"The directory is shared: changes show on every project"+(tkUsedOn(c.id).length>1?" ("+tkUsedOn(c.id).join(", ")+")":"")+"."}</p>`;
+  let h=`<div class="tk-pick"><label class="pick-sel"><span>${esc(T.label)} on ${esc(n)}</span><select data-tkassign ${canWrite?"":"disabled"} aria-label="Who does ${esc(T.label)} on ${esc(n)}">
+    <option value="">Not chosen yet</option>${mine.length?`<optgroup label="${esc(T.label)}">${mine.map(opt).join("")}</optgroup>`:""}${other.length?`<optgroup label="Other trades">${other.map(opt).join("")}</optgroup>`:""}<option value="__new">+ Add someone to the directory…</option></select></label>
+    <span class="note">${all.length} contact${all.length===1?"":"s"} in the trade directory</span></div>`;
+  if(tkEdit==="new") h+=form(null,true);
+  else if(cur&&tkEdit===cur.id) h+=form(cur,false);
+  else if(cur) h+=`<div class="tk-card"><div><div class="tk-t">${esc(cur.name||cur.company||"")}</div><div class="note">${esc([cur.name?cur.company:"",cur.email,cur.phone].filter(Boolean).join(" · "))}</div><div class="note">${esc((cur.trades||[]).map(tkLabel).join(", "))}${tkUsedOn(cur.id).length>1?" · also on "+esc(tkUsedOn(cur.id).filter(x=>x!==n).join(", ")):""}</div></div>${canWrite?`<button class="btn ghost small" data-tkcedit="${esc(cur.id)}">Edit contact</button>`:""}</div>`;
+  return h;
+}
+async function tkAssign(n,id){ const d=JOBS[n]||{}, all={...(d.tradeContacts||{})}; if(id) all[tkTrade]=id; else delete all[tkTrade]; await jobDoc(n).update({tradeContacts:all}); }
+document.addEventListener("change",async e=>{
+  const t=e.target; if(!(t.matches&&t.matches("[data-tkassign]"))) return;
+  if(t.value==="__new"){ tkEdit="new"; render(); return; }
+  tkEdit=null; try{ await tkAssign(job,t.value); toast(t.value?"Saved":"Cleared"); }catch(err){ toast("Didn't save – try again"); }
+});
+document.addEventListener("click",async e=>{
+  const ed=e.target.closest("[data-tkcedit]"); if(ed){ tkEdit=ed.dataset.tkcedit; render(); return; }
+  if(e.target.closest("[data-tkccancel]")){ tkEdit=null; render(); return; }
+  const sv=e.target.closest("[data-tkcsave]"); if(!sv) return;
+  const val=k=>($("#tkc-"+k).value||"").trim(), trades=[...document.querySelectorAll(".tkc-trade:checked")].map(x=>x.value);
+  const c={name:val("name"),company:val("company"),email:val("email"),phone:val("phone"),trades};
+  if(!c.name&&!c.company){ toast("Add a name or a company"); return; }
+  const isNew=sv.dataset.tkcsave==="new", id=isNew?"t"+Date.now().toString(36):sv.dataset.tkcsave, was=TRADE_DIR[id]||{};
+  sv.disabled=true;
+  try{
+    await db.collection("trades").doc(id).set({...was,...c,updatedAt:Date.now(),updatedBy:(window.spMe||{}).name||"",...(isNew?{createdAt:Date.now(),createdBy:(window.spMe||{}).name||""}:{})});
+    if(isNew) await tkAssign(job,id);
+    tkEdit=null; toast(isNew?"Added to the directory":"Contact saved"); render();
+  }catch(err){ sv.disabled=false; toast("Didn't save – try again"); }
 });
 
 render();
@@ -3083,6 +3129,7 @@ render();
     const J={};snap.docs.map(d=>({...d.data(),_id:d.id})).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(d=>{if(d&&d.name)J[d.name]=d});JOBS=J;jobsReady=true;
     if(!JOBS[job])job=Object.keys(JOBS).find(n=>!JOBS[n].archived)||Object.keys(JOBS)[0]||"";if(isArch(job))showArchived=true;render();
   },()=>{});
+  db.collection("trades").limit(1000).onSnapshot(snap=>{ TRADE_DIR={}; snap.docs.forEach(d=>{ TRADE_DIR[d.id]=d.data(); }); if(view==="trades") render(); },()=>{});
   db.collection("views").limit(500).onSnapshot(snap=>{ VIEWS={}; snap.docs.forEach(d=>{ VIEWS[d.id]=d.data(); }); render(); },()=>{});
   let gotItems=false,gotChecks=false;
   db.collection("items").limit(1000).onSnapshot(snap=>{
