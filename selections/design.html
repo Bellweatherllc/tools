@@ -337,6 +337,8 @@ body.cv main.wrap{max-width:none;padding:0;margin:0}
 @keyframes gxsh{from{background-position:-50% 0}to{background-position:150% 0}}
 @media (prefers-reduced-motion:reduce){.gx-bgbusy{animation:none}}
 .gx-bgs{font-size:12px;margin-top:6px;min-height:1em}
+.gx-bgc{flex-basis:100%;text-align:left;background:none;border:0;padding:0;font-size:13px;color:var(--ink);text-decoration:underline;cursor:pointer}
+span.gx-bgc{text-decoration:none}
 .gx-thumbs img{width:100%;height:100%;object-fit:cover}
 .gx-thumbs button.gx-x{position:absolute;top:2px;right:2px;border:0;border-radius:50%;width:20px;height:20px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;line-height:20px;padding:0;cursor:pointer}
 .gx-opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:20px}
@@ -880,7 +882,7 @@ button.bwtb-link{background:none;border:0;padding:0;cursor:pointer}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v18';
+const CORE_VERSION = 'v19';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -1336,6 +1338,10 @@ const CORE_VERSION = 'v18';
       return (await libRows()).filter(x=>String(x.fields.SelectionLookupId)===m.spId).map(x=>{ const d=x.driveItem||{};
         return {id:x.id,name:d.name||x.fields.FileLeafRef||'File',kind:x.fields.Kind||'',url:d.webUrl||'',choiceId:back.get(String(x.fields.ChoiceLookupId))||''}; });
     },
+    async download(rowId){   // the full picture, for background removal: the driveItem's pre-authorised download address
+      const it=await g(`${LISTS}/CORE_SelectionFiles/items/${rowId}/driveItem?$select=id,name,file,@microsoft.graph.downloadUrl`);
+      const u=it&&it['@microsoft.graph.downloadUrl']; if(!u) throw new Error('no download address');
+      const r=await fetch(u); if(!r.ok) throw new Error('download '+r.status); return {blob:await r.blob(),name:it.name||'picture'}; },
     async thumb(rowId){ if(LINK){ const f=((LINKDATA&&LINKDATA.files)||[]).find(x=>String(x.id)===String(rowId)); return (f&&f.thumb)||null; } try{ const t=await g(`${LISTS}/CORE_SelectionFiles/items/${rowId}/driveItem/thumbnails?$select=medium`); return (t&&t.value&&t.value[0]&&t.value[0].medium&&t.value[0].medium.url)||null; }catch(e){ return null; } },
     async add(itemId,file,{kind,choiceId,hold},onPct){
       const m=meta.get(itemId); if(!m) throw Object.assign(new Error('unsaved'),{code:'unsaved'});
@@ -3059,7 +3065,7 @@ const actions = {
    Description (BuilderTrend's place for them), pictures into the files library tagged to the choice (Kind Image).
    Inbox: ideas not yet placed, kept in CORE_SelectionDesignDocs (gather/inbox); its pictures stay in this tab until moved.
    Reading a link by itself, and filling in with Claude, need the server function (not built yet). */
-const GX = { sel: null, filter: "need", q: "", capText: "", capImgs: [], draft: null, editing: null, lib: false, libQ: "", busy: false, local: {}, rows: {}, inbox: [], inboxPics: {} };
+const GX = { localFile: {}, bgOpt: {}, sel: null, filter: "need", q: "", capText: "", capImgs: [], draft: null, editing: null, lib: false, libQ: "", busy: false, local: {}, rows: {}, inbox: [], inboxPics: {} };
 const gxInbox = () => GX.inbox;
 const gxIsInbox = () => GX.sel === "inbox";
 function gxParse(text) {
@@ -3090,14 +3096,21 @@ async function gxLoadRows(id) {
   try { GX.rows[id] = (await S.files.list(id)).filter(f => f.kind === "Image" || (!f.kind && /\.(jpe?g|png|gif|webp|heic)$/i.test(f.name))); } catch (_) { GX.rows[id] = []; }
   if (S.view === "gather" && GX.sel === id) gxPaint();
 }
+/* An option's picture: a cut-out (name ends "-cutout.png") is preferred unless the option is set back to its original (cutoutOff). */
+const isCutout = f => /-cutout\.png$/i.test(String(f && f.name || ""));
+function pickPicRow(rows, o) {
+  const mine = (rows || []).filter(f => f.choiceId === o.id).sort((a, b) => Number(b.id) - Number(a.id));
+  const cut = mine.filter(isCutout), orig = mine.filter(f => !isCutout(f));
+  return (o.cutoutOff ? orig[0] || cut[0] : cut[0] || orig[0]) || null;
+}
 function gxPic(it, o) {
   if (GX.local[o.id]) return `<img src="${esc(GX.local[o.id])}" alt="">`;
-  const u = safeUrl(o.image && o.image.url); if (u) return `<img src="${esc(u)}" alt="">`;
-  const r = (GX.rows[it ? it.id : ""] || []).find(f => f.choiceId === o.id);
+  const r = pickPicRow(GX.rows[it ? it.id : ""], o);
+  const u = safeUrl(o.image && o.image.url); if (u && !(r && isCutout(r) && !o.cutoutOff)) return `<img src="${esc(u)}" alt="">`;
   return r ? `<span class="gx-th" data-gxth="${esc(r.id)}"></span>` : `<span class="gx-none">No picture</span>`;
 }
 function gxPaintThumbs() {
-  document.querySelectorAll("#gx [data-gxth]:not([data-done])").forEach(async el => { el.dataset.done = "1"; const id = el.dataset.gxth; const u = await ((S.thumbP || (S.thumbP = {}))[id] || (S.thumbP[id] = S.files.thumb(id))); if (u && el.isConnected) el.outerHTML = `<img src="${esc(u)}" alt="">`; });
+  document.querySelectorAll("#gx [data-gxth]:not([data-done])").forEach(async el => { el.dataset.done = "1"; const id = el.dataset.gxth; const u = await ((S.thumbP || (S.thumbP = {}))[id] || (S.thumbP[id] = S.files.thumb(id))); if (u && el.isConnected) el.outerHTML = `<img src="${esc(u)}" alt="" data-row="${esc(id)}">`; });
 }
 function gxVs(it, price) {
   if (!it || price == null || !isDollar(it)) return "";
@@ -3132,8 +3145,47 @@ function gxCard(o, it) {
       <div class="gx-price">${num(o.eachCents) != null ? `${money(o.eachCents)} ${esc(o.unit || "ea")}${num(o.qtyAt) > 1 ? ` × ${esc(o.qtyAt)} = <b>${money(o.PriceCents)}</b>` : ""}` : num(o.PriceCents) != null ? money(o.PriceCents) : `<span class="gx-meta">No price yet</span>`}</div>
       ${gxVs(it, num(o.PriceCents))}${o.LeadTime ? `<div class="gx-meta">Lead time ${esc(o.LeadTime)}</div>` : ""}${o.companions ? `<div class="gx-meta">Also needs: ${esc(o.companions)}</div>` : ""}
       <div class="gx-links">${safeUrl(o.link) ? `<a href="${esc(safeUrl(o.link))}" target="_blank" rel="noopener">Product page</a>` : ""}${safeUrl(o.specUrl) ? `<a href="${esc(safeUrl(o.specUrl))}" target="_blank" rel="noopener">Spec sheet</a>` : ""}</div>
-      ${hasPic && !gxIsInbox() ? `<div class="gx-uses"><label><input type="checkbox" data-gxuse="render" data-oid="${esc(o.id)}" ${use.render !== false ? "checked" : ""}> Use for renderings</label><label><input type="checkbox" data-gxuse="schedule" data-oid="${esc(o.id)}" ${use.schedule !== false ? "checked" : ""}> Show on schedule</label></div>` : ""}</div>
+      ${hasPic && !gxIsInbox() ? `<div class="gx-uses">${gxBgCtl(it, o)}<label><input type="checkbox" data-gxuse="render" data-oid="${esc(o.id)}" ${use.render !== false ? "checked" : ""}> Use for renderings</label><label><input type="checkbox" data-gxuse="schedule" data-oid="${esc(o.id)}" ${use.schedule !== false ? "checked" : ""}> Show on schedule</label></div>` : ""}</div>
     <div class="gx-acts">${gxIsInbox() ? moveTo : `<button class="btn small ${ch ? "" : "primary"}" data-act="gx-choose" data-oid="${esc(o.id)}">${ch ? "Unchoose" : "Choose"}</button>`}<button class="btn small quiet" data-act="gx-edit" data-oid="${esc(o.id)}">Edit</button><span class="spacer"></span>${gxIsInbox() ? "" : `<button class="btn small quiet" data-act="gx-tolib" data-oid="${esc(o.id)}">Save to library</button>`}<button class="btn small quiet" data-act="gx-rm" data-oid="${esc(o.id)}" data-confirm="Click again to remove" aria-label="Remove ${esc(o.Title)}">Remove</button></div></article>`;
+}
+function gxBgCtl(it, o) {
+  if (!S.files) return "";
+  if (GX.bgOpt[o.id]) return `<span class="gx-bgc muted">${esc(GX.bgOpt[o.id])}</span>`;
+  const rows = (GX.rows[it.id] || []).filter(f => f.choiceId === o.id), hasCut = rows.some(isCutout) || GX.localCut === o.id;
+  if (hasCut && !o.cutoutOff) return `<button class="gx-bgc" data-act="gx-cardbg-undo" data-oid="${esc(o.id)}" data-tip="Show the original picture again. The cut-out is kept.">Undo background removal</button>`;
+  if (hasCut && o.cutoutOff) return `<button class="gx-bgc" data-act="gx-cardbg-use" data-oid="${esc(o.id)}">Use the cut-out</button>`;
+  return `<button class="gx-bgc" data-act="gx-cardbg" data-oid="${esc(o.id)}" data-tip="Cuts the product out of its background, in this browser, and saves the cut-out as a new picture. The original is kept.">Remove background</button>`;
+}
+async function gxSetCutoutOff(it, oid, off) {
+  const opts = (it.Choices || []).map(x => x.id === oid ? Object.assign({}, x, { cutoutOff: off }) : x);
+  await upd("items/" + it.id, { Choices: opts });
+}
+async function gxCardBg(oid) {
+  const it = byId(GX.sel), o = it && (it.Choices || []).find(x => x.id === oid); if (!o || GX.bgOpt[oid] || GX.bgBusy) return;
+  GX.bgBusy = true; const say = m => { GX.bgOpt[oid] = m; gxPaint(); };
+  try {
+    say("Getting the picture…");
+    let src = GX.localFile[oid] || null, name = src && src.name;
+    if (!src) { const mine = (GX.rows[it.id] || []).filter(f => f.choiceId === oid).sort((x, y) => Number(y.id) - Number(x.id)), r = mine.find(f => !isCutout(f)) || mine[0];   // always cut from the original
+      if (r) { const d = await S.files.download(r.id); src = d.blob; name = d.name; }
+      else if (safeUrl(o.image && o.image.url)) { const res = await fetch(safeUrl(o.image.url)); if (!res.ok) throw new Error("picture " + res.status); src = await res.blob(); name = "picture"; }
+      else throw new Error("no picture"); }
+    say("Getting the background tool ready…");
+    const lib = await bgLib(), opts = { device: navigator.gpu ? "gpu" : "cpu", output: { format: "image/png" },
+      progress: (key, cur, total) => { GX.bgOpt[oid] = /fetch/.test(String(key)) && total ? `Downloading the background tool (first time only): ${Math.round(cur / total * 100)}%` : "Removing the background…"; const el = document.querySelector(`.gx-bgc.muted`); if (el) el.textContent = GX.bgOpt[oid]; } };
+    let out; try { out = await lib.removeBackground(src, opts); } catch (e) { if (opts.device !== "gpu") throw e; opts.device = "cpu"; out = await lib.removeBackground(src, opts); }
+    say("Saving the cut-out…");
+    const file = new File([out], String(name || "picture").replace(/\.[^.]+$/, "") + "-cutout.png", { type: "image/png" });
+    await S.files.add(it.id, file, { kind: "Image", choiceId: oid });
+    GX.local[oid] = URL.createObjectURL(file); GX.localCut = oid;
+    if (o.cutoutOff) await gxSetCutoutOff(it, oid, false);
+    if (S.fileRows) S.fileRows[it.id] = undefined;
+    delete GX.bgOpt[oid]; GX.bgBusy = false; await gxLoadRows(it.id); toast("Background removed. The original is kept.");
+  } catch (e) {
+    console.warn("Background removal failed", e); delete GX.bgOpt[oid]; GX.bgBusy = false;
+    toast(e && e.untagged ? "The cut-out is in the library but couldn\u2019t be tagged. Try again." : "The background couldn\u2019t be removed. Check your connection (the first use downloads the tool) and try again.");
+  }
+  gxPaint();
 }
 function gxLibHtml(it) {
   if (!GX.lib) return "";
@@ -3183,7 +3235,7 @@ function gxPaint() { if (S.view !== "gather") return; const c = $("#content"); c
 const gxBusy = () => { const a = document.activeElement; return !!(a && a.closest && a.closest("#gx,.gx-lib") && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && a.type !== "checkbox" && a.type !== "file"); };
 async function gxUpload(it, oid, imgs) {
   if (!S.files || !imgs.length) return;
-  GX.local[oid] = imgs[0].url;
+  GX.local[oid] = imgs[0].url; GX.localFile[oid] = imgs[0].file;
   let bad = 0;
   for (const x of imgs) { try { await S.files.add(it.id, x.file, { kind: "Image", choiceId: oid }); } catch (e) { bad++; } }
   if (bad) toast(bad === 1 ? "One picture didn’t upload. Add it again from the selection’s Pictures & manuals." : bad + " pictures didn’t upload. Add them again from the selection’s Pictures & manuals.");
@@ -3245,6 +3297,9 @@ Object.assign(actions, {
     try { await upd("items/" + it.id, { Choices: (it.Choices || []).concat([o]) }); toast("Added from the library."); } catch (_) {} gxPaint(); },
   "gx-unimg": a => { GX.capImgs.splice(+a.dataset.i, 1); gxPaint(); },
   "gx-bg": a => gxRemoveBg(+a.dataset.i),
+  "gx-cardbg": a => gxCardBg(a.dataset.oid),
+  "gx-cardbg-undo": async a => { const it = byId(GX.sel), oid = a.dataset.oid; if (!it) return; if (GX.local[oid] && GX.localCut === oid) { delete GX.local[oid]; GX.localCut = null; if (GX.localFile[oid]) GX.local[oid] = URL.createObjectURL(GX.localFile[oid]); } try { await gxSetCutoutOff(it, oid, true); } catch (_) {} gxPaint(); },
+  "gx-cardbg-use": async a => { const it = byId(GX.sel), oid = a.dataset.oid; if (!it) return; if (GX.localCut !== oid) delete GX.local[oid]; try { await gxSetCutoutOff(it, oid, false); } catch (_) {} gxPaint(); },
   "gx-bgundo": a => { const x = GX.capImgs[+a.dataset.i]; if (!x || !x.orig) return; x.file = x.orig.file; x.url = x.orig.url; x.orig = null; x.cut = false; gxPaint(); },
 });
 /* Background removal, in the browser (@imgly/background-removal 1.7.0, AGPL-3.0; this repo is public, the library is used unmodified).
@@ -3317,7 +3372,7 @@ function cvVs(it, c) {
 }
 function cvRow(it, c) {
   const rows = CV.rows[it.id]; if (!rows || !rows.length) return null;
-  return (c && rows.find(f => f.choiceId === c.id)) || rows.find(f => !f.choiceId) || null;
+  return (c && pickPicRow(rows, c)) || rows.find(f => !f.choiceId) || null;
 }
 function cvPic(it, c) {
   const u = safeUrl(c && c.image && c.image.url);
