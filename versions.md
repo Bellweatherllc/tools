@@ -27,7 +27,7 @@ Last updated: 2026-11-25
 | Selections List Setup | `selections/selections-setup.html` | v13 |
 | Selections · Design | `selections/design.html` | v22 |
 | Selections · Client link | `selections/client.html` | v1 |
-| Selections · LC | `selections/lc-portal.html` | v15 |
+| Selections · LC | `selections/lc-portal.html` | v16 |
 | Selections · Field Mechanic | `selections/field-view.html` | v19 |
 | Selections · Warehouse | `selections/warehouse.html` | v8 |
 | Selections · Device Viewer | `selections/device-viewer.html` | v1 |
