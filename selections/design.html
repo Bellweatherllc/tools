@@ -18,7 +18,8 @@
 /* CORE chrome: version badge (always #ef4444), tooltip, sign-in / job gate */
 .ver{font:700 11px/1 var(--sans);letter-spacing:.08em;color:#ef4444;margin-left:6px;vertical-align:middle}
 .jobsw{font:500 12px/1 var(--sans);margin-left:10px;color:inherit;opacity:.7;vertical-align:middle}
-body:has(#previewBar:not([hidden])) .bwtb{display:none}   /* client preview: no internal chrome */
+body:has(#previewBar:not([hidden])) .bwtb{display:none}
+body.client-link .bwtb{display:none}   /* client preview: no internal chrome */
 #tt{position:fixed;z-index:9999;pointer-events:none;background:#282828;color:#fff;font:400 12px/1.4 var(--sans);padding:6px 9px;border-radius:5px;max-width:280px;opacity:0;transition:opacity .1s}
 #tt.show{opacity:1}
 #tt .tt-d{opacity:.75;margin-top:2px}
@@ -712,7 +713,7 @@ button.bwtb-link{background:none;border:0;padding:0;cursor:pointer}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v11';
+const CORE_VERSION = 'v12';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -743,7 +744,12 @@ const CORE_VERSION = 'v11';
     D:'Title,Job,Collection,DocId,Data'};
   const SHARED=new Set(['library','choicelib']);
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-  async function g(url,opts){ for(let a=0;;a++){ try{ return await SherpaAuth.graph(url,opts); }catch(e){ if([429,503,504].includes(e.status)&&a<5){ await sleep(1500*2**a); continue; } if(e&&!e.code) e.code=e.status===403?'permission_denied':e.status===404?'not_found':'unavailable'; throw e; } } }
+  /* Client link mode: client.html#k=<code>&f=<function address>. No Microsoft sign-in; one job's data comes from the
+     clientView server function, which checks the code. Read only: nothing is ever written in this mode. */
+  const LINK=(location.hash.match(/[#&]k=([A-Za-z0-9_-]{32,64})(?:&|$)/)||[])[1]||null;
+  const LINK_FN=(()=>{ const m=location.hash.match(/[#&]f=([^&]+)/); if(!m) return null; try{ const u=decodeURIComponent(m[1]); return /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.azurewebsites\.net\/api\/clientView$/.test(u)?u:null; }catch(e){ return null; } })();
+  let LINKDATA=null;
+  async function g(url,opts){ if(LINK) throw Object.assign(new Error('read only'),{code:'permission_denied'}); for(let a=0;;a++){ try{ return await SherpaAuth.graph(url,opts); }catch(e){ if([429,503,504].includes(e.status)&&a<5){ await sleep(1500*2**a); continue; } if(e&&!e.code) e.code=e.status===403?'permission_denied':e.status===404?'not_found':'unavailable'; throw e; } } }
   async function gAll(url){ let out=[], next=url; while(next){ const j=await g(next); out=out.concat(j.value||[]); next=j['@odata.nextLink']||null; } return out; }
   const enc=v=>encodeURIComponent(String(v).replace(/'/g,"''"));
   const byJob=(list,job,sel)=>gAll(`${LISTS}/${list}/items?$filter=fields/Job eq '${enc(job)}'&$expand=fields($select=${sel})&$top=999`);
@@ -792,14 +798,25 @@ const CORE_VERSION = 'v11';
 
   async function load(){
     const [S,C,A,D,DS]=await Promise.all([byJob(L.S,JOB,SEL.S),byJob(L.C,JOB,SEL.C),byJob(L.A,JOB,SEL.A),byJob(L.D,JOB,SEL.D),byJob(L.D,'_shared',SEL.D)]);
+    await fromRows(S,C,A,D,DS);
+  }
+  async function loadLink(){
+    if(!LINK_FN) throw new Error('This link is incomplete. Ask your designer for a new one.');
+    let r; try{ r=await fetch(LINK_FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({k:LINK})}); }catch(e){ throw new Error('Couldn’t reach Bellweather. Check your connection and reload.'); }
+    if(r.status===404) throw new Error('This link isn’t active. Ask your designer for a new one.');
+    if(!r.ok) throw new Error('Your selections couldn’t load right now. Please try again later.');
+    LINKDATA=await r.json(); JOB=LINKDATA.job;
+    await fromRows(LINKDATA.S||[],LINKDATA.C||[],LINKDATA.A||[],LINKDATA.D||[],[]);
+  }
+  async function fromRows(S,C,A,D,DS){
     const alw=new Map(A.map(a=>[String(a.id),a])), chBy=new Map();
     for(const c of C){ const k=String(c.fields.SelectionLookupId); if(!chBy.has(k)) chBy.set(k,[]); chBy.get(k).push(c); }
     for(const s of S){ if(s.fields.DesignStatus==='removed') continue; const it=buildItem(s,chBy.get(String(s.id))||[],s.fields.AllowanceLookupId!=null?alw.get(String(s.fields.AllowanceLookupId)):null); items.set(it.id,it); }
     for(const d of [...D,...DS]){ const f=d.fields; if(!f.Collection||!f.DocId) continue; if(!docs.has(f.Collection)) docs.set(f.Collection,new Map()); docs.get(f.Collection).set(f.DocId,parseJ(f.Data)); docSp.set(f.Collection+'/'+f.DocId,String(d.id)); }
     if(!docs.has('portal')) docs.set('portal',new Map());
-    if(!docs.get('portal').has('settings')){ const pr=await projFor(JOB); docs.get('portal').set('settings',{projectName:String(pr&&pr.fields.ProjectName||'').trim()||JOB}); }   // the Projects Manager's Project Name, until someone saves settings
+    if(!docs.get('portal').has('settings')){ const pr=LINK?(LINKDATA.project?{fields:LINKDATA.project}:null):await projFor(JOB); docs.get('portal').set('settings',{projectName:String(pr&&pr.fields.ProjectName||'').trim()||JOB}); }   // the Projects Manager's Project Name, until someone saves settings
     // selection tier dates come from the Pipeline (CORE_Projects → GanttData.tiers) when it has them
-    try{ const t=await pipelineTiers(JOB); if(t&&Object.keys(t.dates).length){ const st=docs.get('portal').get('settings'); st.tierDates={...(st.tierDates||{}),...t.dates}; window.spTierSource=t; } }
+    try{ const t=LINK?(LINKDATA.project?{dates:tiersFrom(LINKDATA.project.GanttData),project:LINKDATA.project.ProjectName||JOB}:null):await pipelineTiers(JOB); if(t&&Object.keys(t.dates).length){ const st=docs.get('portal').get('settings'); st.tierDates={...(st.tierDates||{}),...t.dates}; window.spTierSource=t; } }
     catch(e){ console.warn('Selections: could not read Pipeline tier dates',e); }
   }
   // Pipeline week w → that week's Friday. Week 0 is the week of Monday 2025-01-06 (Pipeline: CAL_ABS_EARLIEST 2025-01-01, weeks start Monday).
@@ -814,10 +831,11 @@ const CORE_VERSION = 'v11';
     const hit=rows.find(r=>String(r.fields.JobCode||'').trim().toUpperCase()===String(job).trim().toUpperCase());
     if(!hit) return null;
     const it=await g(`${LISTS}/CORE_Projects/items/${hit.id}?$expand=fields($select=Title,JobCode,GanttData)`);
-    const gd=parseJ(it.fields&&it.fields.GanttData), dates={};
-    for(const t of (Array.isArray(gd.tiers)?gd.tiers:[])){ const n=Number(String(t&&t.name||'').replace(/\D/g,'')); if(n>=1&&n<=3&&Number.isFinite(t.week)) dates[n]=tierFriday(t.week); }
-    return {dates,project:(it.fields&&it.fields.Title)||job};
+    return {dates:tiersFrom(it.fields&&it.fields.GanttData),project:(it.fields&&it.fields.Title)||job};
   }
+  function tiersFrom(gdJson){ const gd=parseJ(gdJson), dates={};
+    for(const t of (Array.isArray(gd.tiers)?gd.tiers:[])){ const n=Number(String(t&&t.name||'').replace(/\D/g,'')); if(n>=1&&n<=3&&Number.isFinite(t.week)) dates[n]=tierFriday(t.week); }
+    return dates; }
 
   /* writing one selection: canon fields, design data, allowance, choices */
   async function persistItem(id,it){
@@ -1042,6 +1060,7 @@ const CORE_VERSION = 'v11';
   let ACCT='', MEID='';
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&gate.classList.contains('pp-open')&&JOB) gate.classList.remove('show','pp-open'); });
   const ready=(async()=>{
+    if(LINK){ document.body.classList.add('client-link'); await loadLink(); return; }
     await SherpaAuth.init();
     if(!SherpaAuth.isSignedIn()){
       showGate('<div><p>Sign in with your Bellweather Microsoft account to open a job.</p><button class="spbtn" id="spSignIn">Sign in</button><p id="spGateMsg"></p></div>');
@@ -1056,7 +1075,7 @@ const CORE_VERSION = 'v11';
     await load();
     bwConn(true);
   })();
-  ready.catch(e=>{ bwConn(false); showGate(`<div><p>Couldn’t open this job: ${String(e&&e.message||e).replace(/</g,'&lt;')}</p><p><a href="?">Choose another job</a></p></div>`); });
+  ready.catch(e=>{ bwConn(false); const msg=String(e&&e.message||e).replace(/</g,'&lt;'); showGate(LINK?`<div><h2>Your selections</h2><p>${msg}</p></div>`:`<div><p>Couldn’t open this job: ${msg}</p><p><a href="?">Choose another job</a></p></div>`); });
 
   function saveFile({filename,data}){ const url=URL.createObjectURL(new Blob([data])); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); return Promise.resolve({status:'saved'}); }
   /* ── Files library: upload and tag ─────────────────────────────────────────────
@@ -1135,12 +1154,14 @@ const CORE_VERSION = 'v11';
   const filesApi={
     kinds:FILE_KINDS, guess:guessKind, errText:fileErrText, size:fmtSize,
     async list(itemId){
+      if(LINK){ const m=meta.get(itemId); if(!m) return []; const back=new Map(); if(m.choices) for(const [oid,c] of m.choices) back.set(String(c.spId),oid);
+        return ((LINKDATA&&LINKDATA.files)||[]).filter(f=>f.sel===m.spId).map(f=>({id:f.id,name:f.name,kind:f.kind,url:'',choiceId:back.get(f.choice)||''})); }
       const m=meta.get(itemId); if(!m) return [];
       const back=new Map(); if(m.choices) for(const [oid,c] of m.choices) back.set(String(c.spId),oid);
       return (await libRows()).filter(x=>String(x.fields.SelectionLookupId)===m.spId).map(x=>{ const d=x.driveItem||{};
         return {id:x.id,name:d.name||x.fields.FileLeafRef||'File',kind:x.fields.Kind||'',url:d.webUrl||'',choiceId:back.get(String(x.fields.ChoiceLookupId))||''}; });
     },
-    async thumb(rowId){ try{ const t=await g(`${LISTS}/CORE_SelectionFiles/items/${rowId}/driveItem/thumbnails?$select=medium`); return (t&&t.value&&t.value[0]&&t.value[0].medium&&t.value[0].medium.url)||null; }catch(e){ return null; } },
+    async thumb(rowId){ if(LINK){ const f=((LINKDATA&&LINKDATA.files)||[]).find(x=>String(x.id)===String(rowId)); return (f&&f.thumb)||null; } try{ const t=await g(`${LISTS}/CORE_SelectionFiles/items/${rowId}/driveItem/thumbnails?$select=medium`); return (t&&t.value&&t.value[0]&&t.value[0].medium&&t.value[0].medium.url)||null; }catch(e){ return null; } },
     async add(itemId,file,{kind,choiceId,hold},onPct){
       const m=meta.get(itemId); if(!m) throw Object.assign(new Error('unsaved'),{code:'unsaved'});
       const ch=choiceId&&m.choices&&m.choices.get(choiceId);
@@ -1148,8 +1169,23 @@ const CORE_VERSION = 'v11';
       libCache.delete(JOB); return it;
     },
   };
+  /* Client links: one active link per job. Rows in CORE_SelectionDesignDocs: Job '_links', Collection 'clientLinks',
+     DocId = the code (43 random characters), Data {job, active, by, at}. The function address comes from CORE_Config (Title ClientViewUrl). */
+  const linkApi={
+    async endpoint(){ try{ const rows=await gAll(`${LISTS}/CORE_Config/items?$expand=fields($select=Title,Value)&$top=999`); const r=rows.find(x=>String(x.fields&&x.fields.Title||'').trim()==='ClientViewUrl'); const u=r&&String(r.fields.Value||'').trim(); return u&&/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.azurewebsites\.net\/api\/clientView$/.test(u)?u:null; }catch(e){ return null; } },
+    async rows(){ return (await gAll(`${LISTS}/${L.D}/items?$filter=fields/Job eq '_links'&$expand=fields($select=${SEL.D})&$top=999`)).filter(r=>r.fields.Collection==='clientLinks'&&parseJ(r.fields.Data).job===JOB); },
+    url(code,fn){ return new URL('client.html',location.href).href.split('#')[0]+'#k='+code+'&f='+encodeURIComponent(fn); },
+    async get(){ const fn=await this.endpoint(); const r=(await this.rows()).find(x=>parseJ(x.fields.Data).active!==false); return {fn,code:r?r.fields.DocId:null,url:r&&fn?this.url(r.fields.DocId,fn):null,at:r?parseJ(r.fields.Data).at:null}; },
+    async revoke(){ for(const r of await this.rows()) await del(L.D,r.id); },
+    async create(){ const fn=await this.endpoint(); if(!fn) throw Object.assign(new Error('no endpoint'),{code:'no_endpoint'});
+      await this.revoke(); const b=new Uint8Array(32); crypto.getRandomValues(b); const code=btoa(String.fromCharCode(...b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+      await post(L.D,{Title:'clientLinks/'+JOB,Job:'_links',Collection:'clientLinks',DocId:code,Data:JSON.stringify({job:JOB,active:true,by:ME,at:new Date().toISOString()})});
+      return this.url(code,fn); },
+  };
   window.claude={ use: async name=>{
     await ready;
+    if(LINK){ if(name==='db') return db; if(name==='user') return { id:async()=>'client', profiles:async ids=>Object.fromEntries(ids.map(i=>[i,{name:''}])), can:async()=>false, canEdit:async()=>false }; if(name==='files') return filesApi; if(name==='downloads') return {save:saveFile}; return null; }
+    if(name==='links') return linkApi;
     if(name==='db') return db;
     if(name==='user'){ const acct=SherpaAuth.getAccount(), me=acct&&(acct.username||acct.homeAccountId);
       return { id:async()=>me, profiles:async ids=>Object.fromEntries(ids.map(i=>[i,{name:i===me?(acct.name||i):i}])), can:async()=>true, canEdit:async()=>true }; }
@@ -1305,7 +1341,7 @@ function renderHeader() {
   const insp = safeUrl(s.inspirationUrl);
   const team = S.team && !S.preview;
   a.innerHTML = (insp ? `<a class="btn plain" href="${esc(insp)}" target="_blank" rel="noopener" data-tip="Opens in a new tab">Inspiration board</a>` : team ? `<button class="btn plain" data-act="settings-insp" data-tip="Add the link to this project's inspiration board (Pinterest, Houzz, a shared folder)">Inspiration board</button>` : "")
-    + (team ? `<button class="btn plain" data-act="preview">Preview client view</button><button class="btn plain" data-act="settings">Project settings</button>` : "");
+    + (team ? `<button class="btn plain" data-act="client-link">Client link</button><button class="btn plain" data-act="preview">Preview client view</button><button class="btn plain" data-act="settings">Project settings</button>` : "");
 }
 function renderTabs() {
   const vs = viewsFor();
@@ -2307,6 +2343,19 @@ async function recordSelection(it, opt, meetingId, status) {
 }
 
 /* ---------- dialogs: settings, add room, meeting planner ---------- */
+async function linkDlg() {
+  const head = `<div class="d-in"><div class="d-head"><div><h2>Client link</h2></div><button class="btn quiet" data-act="close-dlg">Close</button></div><div class="d-body">`;
+  openDlg(head + `<p class="muted">Checking…</p></div></div>`);
+  let L, cur; try { L = await window.claude.use("links"); cur = await L.get(); } catch (_) { openDlg(head + `<p>Couldn’t read the link. Try again.</p></div></div>`); return; }
+  const intro = `<p>Send this link to your client. It opens their selections, with full prices, without a Microsoft sign-in. It shows exactly what Preview client view shows. Anyone with the link can open it, so send it only to the client.</p>`;
+  let body;
+  if (!cur.fn) body = `<p>Client links aren’t set up yet. An administrator needs to finish the setup (the server function and its address in CORE_Config, <b>ClientViewUrl</b>).</p>`;
+  else if (cur.url) body = intro + `<div class="field"><label class="f" for="linkUrl">Link</label><input class="input" id="linkUrl" readonly value="${esc(cur.url)}"></div>
+    ${cur.at ? `<p class="muted" style="font-size:13px">Made ${esc(fmtDate(String(cur.at).slice(0, 10)))}.</p>` : ""}
+    <div class="actions"><button class="btn primary" data-act="link-copy">Copy link</button><span class="spacer" style="flex:1"></span><button class="btn quiet" data-act="link-create" data-tip="Turns off the old link and makes a new one">Make a new link</button><button class="btn danger" data-act="link-off" data-confirm="Click again to turn off">Turn off link</button></div>`;
+  else body = intro + `<div class="actions"><button class="btn primary" data-act="link-create">Make a link</button></div>`;
+  openDlg(head + body + `</div></div>`);
+}
 function openDlg(html) { const d = $("#dlg"); d.innerHTML = html; if (!d.open) d.showModal(); }
 function closeDlg() { const d = $("#dlg"); if (d.open) d.close(); }
 
@@ -2641,6 +2690,10 @@ const actions = {
   "preview": () => { S.preview = true; closeDrawer(); renderAll(); },
   "exit-preview": () => { S.preview = false; closeDrawer(); renderAll(); },
   "settings": () => settingsDlg(),
+  "client-link": () => linkDlg(),
+  "link-create": async a => { a.disabled = true; try { await (await window.claude.use("links")).create(); toast("Link made. Copy it and send it to the client."); } catch (e) { toast(e && e.code === "no_endpoint" ? "Client links aren\u2019t set up yet." : "The link couldn\u2019t be made. Try again."); } linkDlg(); },
+  "link-copy": async () => { const i = $("#linkUrl"); if (!i) return; try { await navigator.clipboard.writeText(i.value); toast("Link copied."); } catch (_) { i.select(); toast("Press Ctrl+C or \u2318C to copy."); } },
+  "link-off": async a => { if (!armConfirm(a)) return; try { await (await window.claude.use("links")).revoke(); toast("Link turned off. The old link no longer opens."); } catch (_) { toast("The link couldn\u2019t be turned off. Try again."); } linkDlg(); },
   "settings-insp": () => { settingsDlg(); setTimeout(() => { const i = $("#s-insp"); if (i) { i.focus(); i.scrollIntoView({ block: "center" }); } }, 0); },
   "save-settings": () => saveSettings(),
   "finalize": async a => { if (!armConfirm(a)) return; try { await setDoc("portal/settings", Object.assign({}, S.settings, { finalized: { at: nowIso(), by: S.myId } })); toast("Selection sheet finalized."); } catch (_) {} },
