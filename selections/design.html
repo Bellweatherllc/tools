@@ -141,6 +141,17 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn.plain:hover{background:var(--soft)}
 .tab-sep{flex:none;width:1px;background:var(--line-strong);margin:10px 6px 10px auto}
 /* Gather */
+.gx-status{--gx-t1:#263860;--gx-t2:#3F7A8C;--gx-t3:#A0705A;--gx-track:#E4E6E1;display:flex;flex-wrap:wrap;gap:20px 32px;align-items:center;padding:18px 0;border-bottom:1px solid var(--line);margin-bottom:14px}
+.gx-rset{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px}
+.gx-rset svg{display:block}
+.gx-rset figcaption{font-size:13px;color:var(--muted);font-weight:500}
+.gx-tiers{flex:1 1 420px;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px 24px}
+.gx-tier{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:baseline}
+.gx-tier .sw{width:10px;height:10px;border-radius:50%;display:inline-block}
+.gx-tier .nm{font:400 18px/1.2 var(--serif)}
+.gx-tier .dt{font:400 13px var(--sans);color:var(--muted)}
+.gx-tier .ds{grid-column:2;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.gx-notier{grid-column:1/-1;margin:0;font-size:13px;color:var(--muted)}
 .gx{display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;padding:8px 0 48px}
 @media (max-width:860px){.gx{grid-template-columns:1fr}}
 .gx-rail{min-width:0}
@@ -701,7 +712,7 @@ button.bwtb-link{background:none;border:0;padding:0;cursor:pointer}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v10';
+const CORE_VERSION = 'v11';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -2865,6 +2876,28 @@ function gxLibHtml(it) {
     <input class="input" id="gxLibQ" type="search" placeholder="Search the library" aria-label="Search the library" value="${esc(GX.libQ)}">
     <div class="gx-ll">${L.map(e => `<div class="gx-li"><div class="thumb">${imgOrMono(e.image && e.image.url, e.Title)}</div><div><div class="t">${esc(e.Title)}</div><div class="m">${esc([e.maker, e.finish, num(e.PriceCents) != null ? money(e.PriceCents) : ""].filter(Boolean).join(" · "))}</div></div><button class="btn small" data-act="gx-libadd" data-lid="${esc(e.id)}">Add</button></div>`).join("") || `<p class="muted">${(S.choicelib || []).length ? "Nothing matches." : "The library is empty. Use Save to library on any option to add one."}</p>`}</div></aside>`;
 }
+/* completion rings, as on the Sales screen: outer Tier 1, middle Tier 2, inner Tier 3.
+   Gathered closes when every selection in the tier has at least one option; Approved when every one has a chosen, priced option. */
+function gxTiers() {
+  const approved = it => { if (!isChosen(it)) return false; const c = chosen(it); return !isDollar(it) || !!(c && num(c.PriceCents) > 0); };   // as on Sales: a chosen option with a price (BuilderTrend's $0 choices are not decided)
+  return [1, 2, 3].map(t => { const ss = S.items.filter(it => tierOf(it) === t), g = ss.filter(it => (it.Choices || []).length || isChosen(it)).length, a = ss.filter(approved).length;
+    return { t, n: ss.length, g, a, gp: ss.length ? g / ss.length : 0, ap: ss.length ? a / ss.length : 0, date: ((S.settings || {}).tierDates || {})[t] || "" }; });
+}
+function gxRings(ts, key, size) {
+  const sw = size >= 80 ? 8 : 5, gap = 2, c = size / 2, word = key === "gp" ? "gathered" : "approved";
+  let o = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${ts.map(t => "Tier " + t.t + " " + Math.round(t[key] * 100) + "% " + word).join(", ")}">`;
+  ts.forEach((t, i) => { const r = c - sw / 2 - i * (sw + gap), L = 2 * Math.PI * r, v = Math.max(0, Math.min(1, t[key])) * L;
+    o += `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--gx-track)" stroke-width="${sw}"/>`;
+    if (t.n && v > 0) o += `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--gx-t${t.t})" stroke-opacity="${key === "gp" ? 0.55 : 1}" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${v} ${L}" transform="rotate(-90 ${c} ${c})"/>`; });
+  return o + "</svg>";
+}
+function gxStatusHtml() {
+  const ts = gxTiers(), none = S.items.filter(it => !tierOf(it)).length, pc = x => Math.round(x * 100) + "%";
+  const set = (key, label) => `<figure class="gx-rset">${gxRings(ts, key, 84)}<figcaption>${label}</figcaption></figure>`;
+  return `<div class="gx-status">${set("gp", "Gathered")}${set("ap", "Approved")}<div class="gx-tiers">${ts.map(t => `<div class="gx-tier"><span class="sw" style="background:var(--gx-t${t.t})"></span><span class="nm">Tier ${t.t}${t.date ? ` <span class="dt">due ${esc(fmtDate(t.date))}</span>` : ""}</span>
+      <span class="ds">${t.n ? `${t.g} of ${t.n} gathered (${pc(t.gp)}) · ${t.a} approved (${pc(t.ap)})` : "No selections in this tier"}</span></div>`).join("")}
+      ${none ? `<p class="gx-notier">${none} selection${none === 1 ? " has" : "s have"} no tier yet. Set tiers on the Selection sheet or by category in Project settings.</p>` : ""}</div></div>`;
+}
 function gatherHtml() {
   if (!GX.sel || (!gxIsInbox() && !byId(GX.sel))) { const first = S.items.find(i => !(i.Choices || []).length) || S.items[0]; GX.sel = first ? first.id : "inbox"; }
   const inbox = gxIsInbox(), it = inbox ? null : byId(GX.sel), os = inbox ? GX.inbox : (it.Choices || []);
@@ -2876,7 +2909,7 @@ function gatherHtml() {
     <div class="gx-row"><label class="btn small">Add pictures<input type="file" id="gxF" accept="image/*" multiple hidden></label><button class="btn small" data-act="gx-add" ${GX.busy || GX.draft ? "disabled" : ""}>+ Add option</button>
       <span class="gx-hint">Details are read from the text you paste. Check them before saving.</span><span class="spacer"></span><button class="btn small gx-libbtn" data-act="gx-lib-open">Library</button></div></div>`;
   const cards = (GX.draft ? gxForm(GX.draft, it, "new") : "") + os.map(o => gxCard(o, it)).join("");
-  return `<div class="gx" id="gx"><aside class="gx-rail">${gxRail()}</aside><section class="gx-board">${head}${cap}${cards ? `<div class="gx-opts">${cards}</div>` : `<div class="empty"><h3>No options yet</h3><p>Paste a link or a product page, add pictures, or add one from the Library.</p></div>`}</section></div>${gxLibHtml(it)}`;
+  return gxStatusHtml() + `<div class="gx" id="gx"><aside class="gx-rail">${gxRail()}</aside><section class="gx-board">${head}${cap}${cards ? `<div class="gx-opts">${cards}</div>` : `<div class="empty"><h3>No options yet</h3><p>Paste a link or a product page, add pictures, or add one from the Library.</p></div>`}</section></div>${gxLibHtml(it)}`;
 }
 function gxPaint() { if (S.view !== "gather") return; const c = $("#content"); const sy = window.scrollY; c.innerHTML = gatherHtml(); gxPaintThumbs(); window.scrollTo(0, sy); }
 const gxBusy = () => { const a = document.activeElement; return !!(a && a.closest && a.closest("#gx,.gx-lib") && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && a.type !== "checkbox" && a.type !== "file"); };
