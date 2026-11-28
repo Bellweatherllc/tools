@@ -882,7 +882,7 @@ button.bwtb-link{background:none;border:0;padding:0;cursor:pointer}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v20';
+const CORE_VERSION = 'v21';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -1353,27 +1353,34 @@ const CORE_VERSION = 'v20';
   /* Client links: one active link per job. Rows in CORE_SelectionDesignDocs: Job '_links', Collection 'clientLinks',
      DocId = the code (43 random characters), Data {job, active, by, at}. The function address comes from CORE_Config (Title ClientViewUrl). */
   const linkApi={
-    /* The function address lives in CORE_Config (Title ClientViewUrl). The value column's internal name differs between sites
-       (Value, Value0, …), so it is found from the list's columns. Hyperlink columns give {Url}. Why it failed is kept in `why`. */
+    /* The function address lives in CORE_Config (item ClientViewUrl). Column internal names differ between sites (Value, Value0, …),
+       so the list's own columns are read first. The item is matched loosely: Title or Key, any case, spaces/punctuation ignored
+       ("Client View URL"), or any column holding that name. The address is taken from the Value column, else from any column of that
+       item that holds a …azurewebsites.net/api/clientView address. Why it failed is kept in `why`; it names items, never values. */
     why:'',
     async endpoint(){
       this.why='';
+      const FN_RX=/https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.azurewebsites\.net\/api\/clientView(?![a-z0-9])/i;
+      const norm=v=>String(v==null?'':v).toLowerCase().replace(/[^a-z0-9]/g,'');
+      const txt=v=>v&&typeof v==='object'?String(v.Url||v.url||''):String(v==null?'':v);
       try{
-        const cols=(await g(`${LISTS}/CORE_Config/columns?$select=name,displayName`)).value||[];
-        const titleCol=(cols.find(c=>c.name==='Title')||{}).name||'Title';
-        const keyCol=(cols.find(c=>/^key$/i.test(c.name)||/^key$/i.test(c.displayName))||{}).name;
+        const cols=(await g(`${LISTS}/CORE_Config/columns?$select=name,displayName,hidden,readOnly`)).value||[];
+        const use=cols.filter(c=>c.name==='Title'||(!c.hidden&&!c.readOnly&&!/^(_|ContentType$|Attachments$|LinkTitle|DocIcon$|Edit$|ComplianceAssetId$|ItemChildCount$|FolderChildCount$|App(Author|Editor)$)/.test(c.name))).map(c=>c.name);
+        if(!use.includes('Title')) use.unshift('Title');
+        const keyCols=['Title',...cols.filter(c=>/^key$/i.test(c.name)||/^key$/i.test(String(c.displayName||'').trim())).map(c=>c.name)];
         const valCols=cols.filter(c=>/^value\d*$/i.test(c.name)||/^value$/i.test(String(c.displayName||'').trim())).map(c=>c.name);
-        if(!valCols.length){ this.why='CORE_Config has no Value column.'; return null; }
-        const sel=[...new Set([titleCol,keyCol,...valCols].filter(Boolean))].join(',');
-        const rows=await gAll(`${LISTS}/CORE_Config/items?$expand=fields($select=${sel})&$top=999`);
-        const r=rows.find(x=>[x.fields&&x.fields[titleCol],x.fields&&keyCol&&x.fields[keyCol]].some(v=>String(v||'').trim().toLowerCase()==='clientviewurl'));
-        if(!r){ this.why='No item with Title “ClientViewUrl” was found in CORE_Config.'; return null; }
-        let raw=''; for(const c of valCols){ const v=r.fields[c]; if(v){ raw=typeof v==='object'?(v.Url||v.url||''):String(v); if(raw) break; } }
-        let u=String(raw).trim().replace(/^<|>$/g,''); const md=u.match(/\((https:\/\/[^)\s]+)\)/); if(md) u=md[1];
-        u=u.split(/[?#]/)[0].replace(/\/+$/,'');
-        if(!u){ this.why='The ClientViewUrl item in CORE_Config has an empty Value.'; return null; }
-        if(!/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.azurewebsites\.net\/api\/clientView$/i.test(u)){ this.why='The ClientViewUrl value in CORE_Config isn’t an Azure function address ending in /api/clientView: '+raw; return null; }
-        return u;
+        const rows=await gAll(`${LISTS}/CORE_Config/items?$expand=fields($select=${[...new Set(use)].join(',')})&$top=999`);
+        const isKey=v=>{ const n=norm(txt(v)); return n==='clientviewurl'||(n.startsWith('clientviewurl')&&FN_RX.test(txt(v))); };
+        const r=rows.find(x=>x.fields&&keyCols.some(c=>isKey(x.fields[c])))||rows.find(x=>x.fields&&use.some(c=>isKey(x.fields[c])));
+        if(!r){
+          const names=rows.map(x=>String(x.fields&&x.fields.Title||'').trim()).filter(Boolean).slice(0,40);
+          this.why='No item named “ClientViewUrl” was found in CORE_Config ('+rows.length+' items read'+(names.length?': '+names.join(', '):'')+').'; return null; }
+        let raw=''; for(const c of valCols){ const v=txt(r.fields[c]).trim(); if(v){ raw=v; break; } }
+        let m=raw.match(FN_RX);
+        if(!m){ for(const c of use){ const mm=txt(r.fields[c]).match(FN_RX); if(mm){ m=mm; break; } } }
+        if(m) return m[0].replace(/clientview$/i,'clientView');
+        this.why=raw?'The ClientViewUrl value in CORE_Config isn’t an Azure function address ending in /api/clientView: '+raw:'The ClientViewUrl item in CORE_Config has no address in its Value column.';
+        return null;
       }catch(e){ this.why='CORE_Config couldn’t be read'+(e&&e.status?' (error '+e.status+')':'')+'.'; console.warn('Client link: CORE_Config read failed',e); return null; }
     },
     async rows(){ return (await gAll(`${LISTS}/${L.D}/items?$filter=fields/Job eq '_links'&$expand=fields($select=${SEL.D})&$top=999`)).filter(r=>r.fields.Collection==='clientLinks'&&parseJ(r.fields.Data).job===JOB); },
