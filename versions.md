@@ -46,7 +46,7 @@ Last updated: 2026-11-25
 | Team Members | `team-members.html` | v40 |
 | Core Roadmap | `core_roadmap.html` | v58 |
 | **Reference** | | |
-| BW Tool Index | `bw-tool-index.html` | v21 |
+| BW Tool Index | `bw-tool-index.html` | v22 |
 | CORE System Map | `core-system-map.html` | v20 |
 | Brand Style Guide | `bellweather-style-guide.html` | v17 |
 
@@ -65,6 +65,7 @@ Each HTML manual is built from the `.md` file of the same name. The manuals have
 | Levels of Development Manual | `levels-of-development-manual.html` / `.md` |
 | Fleet Tracker Manual | `fleet-tracker-manual.html` / `.md` |
 | Permit & Zoning Tracker Manual | `permit-zoning-tracker-manual.html` / `.md` |
+| Selections Design Manual | `selections/design-manual.html` / `.md` |
 
 ## Retired
 
@@ -78,6 +79,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 ## Log
 
+- **2026-11-28** — New **Selections Design Manual** (`selections/design-manual.html` / `.md`): Part I for designers (making, copying, replacing and turning off a client link); Part II for administrators (how client links work, the app registration, permission, Function App settings, `CORE_Config` `ClientViewUrl`, renewing the client secret every 24 months, the duplicate `CORE_Config1` list, troubleshooting by message). BW Tool Index v21 → v22 adds it under Reference.
 - **2026-11-28** — Selections · Design v21 → v22: when client links aren't set up, the Client link dialog has a **Function address** box and **Save address**. It saves the address to `CORE_Config` as Title `ClientViewUrl` (address in the Value column), updating that item if it exists, so it always lands in the list the tools read (BWCore also has a second list with the display name CORE_Config at `Lists/CORE_Config1`, which the tools don't read). Only an `…azurewebsites.net/api/clientView` address is accepted.
 - **2026-11-28** — Selections · Design v20 → v21: the `ClientViewUrl` item in `CORE_Config` is matched loosely — Title or Key, any case, spaces and punctuation ignored ("Client View URL"), or any column of the item holding that name — and the address is taken from the Value column, else from any column of that item holding a `…azurewebsites.net/api/clientView` address (e.g. name and address both typed into Title). When no item matches, the dialog lists the item names it read (names only, never values).
 - **2026-11-28** — Selections · Design v19 → v20: **Client link setup is read reliably and explains itself.** The function address is read from `CORE_Config` (item Title `ClientViewUrl`) by first listing the list's columns, so the value column is found whatever its internal name (`Value`, `Value0`, …); a hyperlink column (`{Url}`) also works; the address is trimmed and a trailing `/` or `?…` is dropped. When links can't be made, the dialog now says what is missing: no `ClientViewUrl` item, an empty value, a value that isn't an `…azurewebsites.net/api/clientView` address (shown), or `CORE_Config` couldn't be read (with the error code).
