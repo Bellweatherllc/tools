@@ -25,7 +25,7 @@ Last updated: 2026-11-25
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v190 |
 | **Selections** | | |
 | Selections List Setup | `selections/selections-setup.html` | v13 |
-| Selections · Design | `selections/design.html` | v20 |
+| Selections · Design | `selections/design.html` | v21 |
 | Selections · Client link | `selections/client.html` | v1 |
 | Selections · LC | `selections/lc-portal.html` | v15 |
 | Selections · Field Mechanic | `selections/field-view.html` | v19 |
@@ -78,6 +78,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 ## Log
 
+- **2026-11-28** — Selections · Design v20 → v21: the `ClientViewUrl` item in `CORE_Config` is matched loosely — Title or Key, any case, spaces and punctuation ignored ("Client View URL"), or any column of the item holding that name — and the address is taken from the Value column, else from any column of that item holding a `…azurewebsites.net/api/clientView` address (e.g. name and address both typed into Title). When no item matches, the dialog lists the item names it read (names only, never values).
 - **2026-11-28** — Selections · Design v19 → v20: **Client link setup is read reliably and explains itself.** The function address is read from `CORE_Config` (item Title `ClientViewUrl`) by first listing the list's columns, so the value column is found whatever its internal name (`Value`, `Value0`, …); a hyperlink column (`{Url}`) also works; the address is trimmed and a trailing `/` or `?…` is dropped. When links can't be made, the dialog now says what is missing: no `ClientViewUrl` item, an empty value, a value that isn't an `…azurewebsites.net/api/clientView` address (shown), or `CORE_Config` couldn't be read (with the error code).
 - **2026-11-28** — Selections · Design v18 → v19, per Byron: **Remove background on saved option pictures** in the Gather tab. The full original is downloaded from `CORE_SelectionFiles` (the driveItem's pre-authorised download address), cut out in the browser, and saved as a new picture `<name>-cutout.png` tagged to the same option (Kind Image); the original is kept (nothing is overwritten or deleted). An option shows its cut-out when it has one; **Undo background removal** sets `cutoutOff` on the option (kept in `DesignData`) so the original shows again, and **Use the cut-out** switches back without redoing it. The client view follows the same choice. Same library and loading as v18.
 - **2026-11-28** — Selections · Design v17 → v18, per Byron: **Remove background** on pictures in the Gather tab's capture box (pasted, dropped or chosen), before they are saved. Runs in the browser with `@imgly/background-removal` 1.7.0 (AGPL-3.0; used unmodified from jsDelivr, and this repo is public), WebGPU when available, otherwise WASM. The picture never leaves the browser; the first use downloads the model from IMG.LY's CDN (tens of MB, cached by the browser afterwards), with progress shown. The result is a transparent PNG (`<name>-cutout.png`) shown on a checkerboard; **Undo** puts the original back. The cut-out is what gets uploaded to the files library when the option is saved. The library loads only when someone clicks Remove background, never on page load and never in the client view. Not yet: removing the background from a picture already saved, or click-to-select for cluttered photos.
