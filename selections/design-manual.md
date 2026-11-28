@@ -79,7 +79,7 @@ The secret was created in November 2026 and expires about **November 2028**. The
 
 The Design screen reads the address from `CORE_Config`. The easiest way to set it is from the Design screen itself: when links aren't set up, the **Client link** dialog has a **Function address** box. Paste the address, click **Save address**. It saves to the right list automatically.
 
-> **Watch out for the second list.** BWCore has two lists that both show as "CORE_Config". The one the CORE tools read is at `…/Lists/CORE_Config/`. The other is at `…/Lists/CORE_Config1/`, and the tools don't read it. If you add the item by hand, check the address bar.
+> **Watch out for the second list.** BWCore has two lists that both show as "CORE_Config". The CORE tools read one of them; the one whose address ends in `…/Lists/CORE_Config1/` is the one they **don't** read. If you add the item by hand, check the address bar, or simply use **Save address** in the dialog.
 
 ### When something goes wrong
 
