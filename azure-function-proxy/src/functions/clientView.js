@@ -8,9 +8,11 @@ const { app } = require('@azure/functions');
 // - The code is checked HERE, on the server. CORS is not access control.
 // - A code maps to exactly one job. Codes are rows in CORE_SelectionDesignDocs (Job '_links', Collection 'clientLinks',
 //   DocId = the code, Data {job, active}). Turning a link off in the Design screen deletes the row; the code stops working at once.
+// - Choice descriptions are cut to spec lines and public links (safeDesc); BuilderTrend notes never leave.
 // - Only what the client view shows leaves here: selections, choices, allowances, project settings, mood boards,
 //   confirmed meeting recaps, picture thumbnails (Kind Image only). Never internal notes, builder costs, quotes,
-//   schedules, other jobs, or anything on the shared library.
+//   schedules, other jobs, or anything on the shared library. Contacts: Designer 1 and PM names from the Pipeline, emails from Team Members.
+//   Upcoming meetings: date and title only (never the agenda or notes).
 // - Graph thumbnail links expire (about an hour); they are fetched fresh on every request and never stored.
 //
 // App settings (Function App > Configuration), never in code:
@@ -53,6 +55,17 @@ const enc = v => encodeURIComponent(String(v).replace(/'/g, "''"));
 const byJob = (list, job, sel) => gAll(`${LISTS}/${list}/items?$filter=fields/Job eq '${enc(job)}'&$expand=fields($select=${sel})&$top=999`);
 const parseJ = s => { try { const v = JSON.parse(s || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } };
 const strip = (json, keys) => { const o = parseJ(json); for (const k of keys) delete o[k]; return JSON.stringify(o); };
+/* BuilderTrend descriptions carry internal notes (pricing sources, quotes, people's names). Clients get only spec lines
+   (Manufacturer, Model, Finish, Size and the like, with no $ amounts) and public product links; everything else is dropped. */
+const SAFE_KEYS = /^(manufacturer|mfr|maker|brand|model|model #|model number|sku|finish|color|colour|size|dimensions?|style|material|type|series|collection|lead time|link|product page|spec sheet)$/i;
+function safeDesc(d) {
+  const out = [];
+  for (const raw of String(d || '').split('\n')) {
+    const l = raw.replace(/^[•◦\s-]+/, '').trim(); const m = l.match(/^([A-Za-z][A-Za-z /#&-]{1,28}?)\s*:\s*(.{1,120})$/);
+    if (m && SAFE_KEYS.test(m[1].trim()) && !/\$|quote|pricing|price|allowance|@/i.test(m[2])) { const v = m[2].trim(); if (!/https?:/i.test(v) || /^https:\/\//i.test(v) && !/sharepoint|buildertrend|onedrive|1drv/i.test(v)) out.push(m[1].trim() + ': ' + v.split(/[?#]/)[0]); }
+  }
+  return [...new Set(out)].join('\n');
+}
 async function pool(items, n, fn) { const out = []; let i = 0; await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]); } })); return out; }
 
 app.http('clientView', {
@@ -72,21 +85,36 @@ app.http('clientView', {
       const [S, C, A, D, P, F] = await Promise.all([
         byJob('CORE_Selections', job, SEL.S), byJob('CORE_SelectionChoices', job, SEL.C), byJob('CORE_SelectionAllowances', job, SEL.A),
         byJob('CORE_SelectionDesignDocs', job, SEL.D),
-        gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=Title,JobCode,ProjectName,GanttData)&$top=999`).catch(() => []),
+        gAll(`${LISTS}/CORE_Projects/items?$expand=fields($select=Title,JobCode,ProjectName,GanttData,DesignerName,PMName)&$top=999`).catch(() => []),
         gAll(`${LISTS}/CORE_SelectionFiles/items?$filter=fields/Job eq '${enc(job)}'&$expand=fields($select=Job,SelectionLookupId,ChoiceLookupId,Kind,FileLeafRef),driveItem($select=id,name)&$top=999`).catch(() => []),
       ]);
       const sels = S.filter(s => s.fields.DesignStatus !== 'removed').map(s => ({ id: s.id, fields: { ...s.fields, DesignData: strip(s.fields.DesignData, TEAM_ONLY_ITEM) } }));
-      const docs = D.filter(d => CLIENT_DOCS.has(d.fields.Collection)).filter(d => d.fields.Collection !== 'meetings' || parseJ(d.fields.Data).confirmed)
-        .map(d => ({ id: d.id, fields: d.fields.Collection === 'portal' ? { ...d.fields, Data: strip(d.fields.Data, TEAM_ONLY_SETTINGS) } : d.fields }));
+      const today = new Date().toISOString().slice(0, 10);
+      const docs = D.filter(d => CLIENT_DOCS.has(d.fields.Collection)).map(d => {
+        if (d.fields.Collection === 'portal') return { id: d.id, fields: { ...d.fields, Data: strip(d.fields.Data, TEAM_ONLY_SETTINGS) } };
+        if (d.fields.Collection !== 'meetings') return { id: d.id, fields: d.fields };
+        const m = parseJ(d.fields.Data);
+        if (m.confirmed) return { id: d.id, fields: d.fields };                                   // a confirmed recap, as the client initialled it
+        if (m.date && m.date >= today) return { id: d.id, fields: { ...d.fields, Data: JSON.stringify({ date: m.date, title: m.title || '' }) } };   // the next meeting: date and title only
+        return null;
+      }).filter(Boolean);
       const pr = P.find(r => String(r.fields.JobCode || '').trim().toUpperCase() === job.trim().toUpperCase());
       const project = pr ? { ProjectName: pr.fields.ProjectName || '', GanttData: pr.fields.GanttData || '' } : null;
+      let contacts = [];
+      if (pr) {
+        const team = await gAll(`${LISTS}/CORE_TeamMembers/items?$expand=fields($select=Title,EmployeeName,email)&$top=999`).then(r => r.map(x => x.fields || {})).catch(() => []);
+        const nz = x => String(x || '').trim().replace(/\s+/g, ' ').toLowerCase();
+        const mail = n => { const t = team.find(f => nz(f.EmployeeName || f.Title) === nz(n)); return t ? String(t.email || '').split(/[;,]/)[0].trim() : ''; };
+        contacts = [['Your designer', pr.fields.DesignerName], ['Your project manager', pr.fields.PMName]].map(([role, n]) => ({ role, name: String(n || '').trim(), email: mail(n) })).filter(c => c.name);
+      }
       const pics = F.filter(x => x.fields && (x.fields.Kind === 'Image' || (!x.fields.Kind && /\.(jpe?g|png|gif|webp|heic)$/i.test(x.fields.FileLeafRef || '')))).slice(0, 300);
       const files = (await pool(pics, 8, async x => {
         try { const t = await g(`${LISTS}/CORE_SelectionFiles/items/${x.id}/driveItem/thumbnails?$select=medium,large`); const s = t.value && t.value[0];
           return { id: x.id, sel: String(x.fields.SelectionLookupId || ''), choice: x.fields.ChoiceLookupId != null ? String(x.fields.ChoiceLookupId) : '', kind: 'Image', name: (x.driveItem && x.driveItem.name) || x.fields.FileLeafRef || '', thumb: (s && ((s.large && s.large.url) || (s.medium && s.medium.url))) || '' };
         } catch (e) { return null; } })).filter(Boolean);
       context.log(`clientView: ${job} opened`);
-      return { status: 200, headers, jsonBody: { job, S: sels, C, A, D: docs, project, files } };
+      const choices = C.map(c => ({ id: c.id, fields: { ...c.fields, Description: safeDesc(c.fields.Description) } }));
+      return { status: 200, headers, jsonBody: { job, S: sels, C: choices, A, D: docs, project, contacts, files } };
     } catch (e) {
       context.error('clientView failed:', e.message);
       return { status: e.status === 503 ? 503 : 502, headers, jsonBody: { error: e.status === 503 ? 'not_configured' : 'unavailable' } };
