@@ -713,7 +713,7 @@ button.bwtb-link{background:none;border:0;padding:0;cursor:pointer}
 /* topbar: SharePoint connection state (green dot = connected) */
 function bwConn(ok,label){ const d=document.getElementById('bwtbDot'), l=document.getElementById('bwtbConn'); if(d) d.classList.toggle('on',!!ok); if(l) l.textContent=label||(ok?'SharePoint':'Not connected'); }
 function bwSub(t){ const el=document.getElementById('bwtbSub'); if(el) el.textContent=t; }
-const CORE_VERSION = 'v12';
+const CORE_VERSION = 'v13';
 (()=>{['versionBadge'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent=CORE_VERSION;});})();
 
 /* tooltip engine: data-tip (+ optional data-tip-d detail line); hover devices only */
@@ -1172,7 +1172,8 @@ const CORE_VERSION = 'v12';
   /* Client links: one active link per job. Rows in CORE_SelectionDesignDocs: Job '_links', Collection 'clientLinks',
      DocId = the code (43 random characters), Data {job, active, by, at}. The function address comes from CORE_Config (Title ClientViewUrl). */
   const linkApi={
-    async endpoint(){ try{ const rows=await gAll(`${LISTS}/CORE_Config/items?$expand=fields($select=Title,Value)&$top=999`); const r=rows.find(x=>String(x.fields&&x.fields.Title||'').trim()==='ClientViewUrl'); const u=r&&String(r.fields.Value||'').trim(); return u&&/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.azurewebsites\.net\/api\/clientView$/.test(u)?u:null; }catch(e){ return null; } },
+    async endpoint(){ try{ let rows; try{ rows=await gAll(`${LISTS}/CORE_Config/items?$expand=fields($select=Title,Value)&$top=999`); }catch(e){ rows=await gAll(`${LISTS}/CORE_Config/items?$expand=fields($select=Title,Value0)&$top=999`); }   // the Pipeline reads either column name
+      const r=rows.find(x=>String(x.fields&&x.fields.Title||'').trim()==='ClientViewUrl'); const u=r&&String(r.fields.Value||r.fields.Value0||'').trim(); return u&&/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.azurewebsites\.net\/api\/clientView$/.test(u)?u:null; }catch(e){ return null; } },
     async rows(){ return (await gAll(`${LISTS}/${L.D}/items?$filter=fields/Job eq '_links'&$expand=fields($select=${SEL.D})&$top=999`)).filter(r=>r.fields.Collection==='clientLinks'&&parseJ(r.fields.Data).job===JOB); },
     url(code,fn){ return new URL('client.html',location.href).href.split('#')[0]+'#k='+code+'&f='+encodeURIComponent(fn); },
     async get(){ const fn=await this.endpoint(); const r=(await this.rows()).find(x=>parseJ(x.fields.Data).active!==false); return {fn,code:r?r.fields.DocId:null,url:r&&fn?this.url(r.fields.DocId,fn):null,at:r?parseJ(r.fields.Data).at:null}; },
