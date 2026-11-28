@@ -25,7 +25,7 @@ Last updated: 2026-11-25
 | Permit & Zoning Tracker | `permit-zoning-tracker.html` | v190 |
 | **Selections** | | |
 | Selections List Setup | `selections/selections-setup.html` | v13 |
-| Selections · Design | `selections/design.html` | v17 |
+| Selections · Design | `selections/design.html` | v18 |
 | Selections · Client link | `selections/client.html` | v1 |
 | Selections · LC | `selections/lc-portal.html` | v15 |
 | Selections · Field Mechanic | `selections/field-view.html` | v19 |
@@ -78,6 +78,7 @@ Removed from the repo. These files are gone from `main`; they are still in git h
 
 ## Log
 
+- **2026-11-28** — Selections · Design v17 → v18, per Byron: **Remove background** on pictures in the Gather tab's capture box (pasted, dropped or chosen), before they are saved. Runs in the browser with `@imgly/background-removal` 1.7.0 (AGPL-3.0; used unmodified from jsDelivr, and this repo is public), WebGPU when available, otherwise WASM. The picture never leaves the browser; the first use downloads the model from IMG.LY's CDN (tens of MB, cached by the browser afterwards), with progress shown. The result is a transparent PNG (`<name>-cutout.png`) shown on a checkerboard; **Undo** puts the original back. The cut-out is what gets uploaded to the files library when the option is saved. The library loads only when someone clicks Remove background, never on page load and never in the client view. Not yet: removing the background from a picture already saved, or click-to-select for cluttered photos.
 - **2026-11-28** — Selections · Design v16 → v17, per Byron: **Client link** in the preview bar above the client view header (beside *Exit preview*), opening the same Client link dialog. The bar shows only to the team in Preview client view; clients and client links never see it.
 - **2026-11-28** — Selections · Design v15 → v16, per Byron: with no inspiration board link saved, the header button reads **Add inspiration board** (it opens Project settings at the link field), so it no longer looks like a second Project settings button. With a link saved it reads **Inspiration board** and opens the board in a new tab, as before.
 - **2026-11-28** — Selections · Design v14 → v15, Selection sheet per Byron: (1) each **group row** shows its own allowance, final price and delta in the table's columns. (2) **Low / Medium / High** delta for each group and overall: today's delta plus every open selection at its least expensive, middle (median) or most expensive priced option; a selection with a priced choice counts as decided; an open one with no priced option counts at its allowance and is reported ("2 unpriced"); a fully decided group says *All decided*; non-dollar allowances are left out. Integer cents; delta = allowance − price, negative = over (red). (3) The **Total** moved from the bottom to a sticky row at the top of the sheet: selections shown and how many have a final price, allowance, final price, delta, and *Delta when every selection is decided* Low / Medium / High. Follows the filter and search.
