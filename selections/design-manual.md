@@ -79,7 +79,7 @@ The secret was created in November 2026 and expires about **November 2028**. The
 
 The Design screen reads the address from `CORE_Config`. The easiest way to set it is from the Design screen itself: when links aren't set up, the **Client link** dialog has a **Function address** box. Paste the address, click **Save address**. It saves to the right list automatically.
 
-> **Watch out for the second list.** BWCore has two lists that both show as "CORE_Config". The CORE tools read one of them; the one whose address ends in `…/Lists/CORE_Config1/` is the one they **don't** read. If you add the item by hand, check the address bar, or simply use **Save address** in the dialog.
+> **If you add the item by hand in SharePoint,** make sure it actually saves. SharePoint's list screen can keep a new row in your browser (the item panel says "This item is saved locally") without uploading it, and then the tools can't see it. Opening the list in a private window shows what is really saved. Using **Save address** in the dialog avoids this. (The list's web address ends in `CORE_Config1`; that is just its address, not a second list.)
 
 ### When something goes wrong
 
